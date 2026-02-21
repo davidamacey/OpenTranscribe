@@ -65,7 +65,7 @@ class RefreshToken(Base):
         from datetime import datetime
         from datetime import timezone
 
-        return datetime.now(timezone.utc) > self.expires_at  # type: ignore[no-any-return]
+        return bool(datetime.now(timezone.utc) > self.expires_at)
 
     @property
     def is_valid(self) -> bool:

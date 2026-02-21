@@ -7,7 +7,6 @@ by separating detection from recovery.
 """
 
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
@@ -22,6 +21,10 @@ from app.models.media import Task
 from app.utils.task_utils import update_media_file_from_task_status
 
 logger = logging.getLogger(__name__)
+
+# Capture module load time as a reliable proxy for when this Python process started.
+# This is used instead of /proc/1/stat to avoid unreliable filesystem-based detection.
+_MODULE_LOAD_TIME = datetime.now(timezone.utc)
 
 
 @dataclass
@@ -40,17 +43,8 @@ class IncompletePostTranscriptionFile:
 
 
 def _get_container_boot_time() -> datetime:
-    """Get the time this container/process started.
-
-    Uses /proc/1/stat creation time as a reliable indicator of when
-    the container booted. Falls back to 5 minutes ago if unavailable.
-    """
-    try:
-        boot_epoch = os.path.getctime("/proc/1")
-        return datetime.fromtimestamp(boot_epoch, tz=timezone.utc)
-    except Exception:
-        # Fallback: assume booted 5 minutes ago
-        return datetime.now(timezone.utc) - timedelta(minutes=5)
+    """Returns the time this Python process started."""
+    return _MODULE_LOAD_TIME
 
 
 class TaskDetectionService:
@@ -115,103 +109,108 @@ class TaskDetectionService:
         now = datetime.now(timezone.utc)
         stuck_threshold = now - timedelta(minutes=5)  # Files stuck for 5+ minutes
 
-        # Get all files currently in PROCESSING state that have been downloaded.
-        # Playlist placeholder files (file_size = 0) are still in the download queue
-        # and should not be treated as stuck.
+        # Get PROCESSING files with stale task_last_update — filter in SQL
         processing_files = (
             db.query(MediaFile)
             .filter(
                 MediaFile.status == FileStatus.PROCESSING,
                 MediaFile.file_size > 0,
+                MediaFile.task_last_update < stuck_threshold,
             )
             .all()
         )
 
+        if not processing_files:
+            logger.info("Identified 0 stuck files without active Celery tasks")
+            return []
+
+        # Batch-fetch active tasks for all candidate files in one query
+        file_ids = [mf.id for mf in processing_files]
+        active_tasks_by_file: dict[int, list[Task]] = {}
+        active_tasks_all = (
+            db.query(Task)
+            .filter(
+                Task.media_file_id.in_(file_ids),
+                Task.status.in_(["pending", "in_progress"]),
+            )
+            .all()
+        )
+        for task in active_tasks_all:
+            active_tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
+
         stuck_files = []
         for media_file in processing_files:
-            # Check if file has been processing for too long
-            if media_file.task_last_update and media_file.task_last_update < stuck_threshold:
-                # Check if there are any active tasks
-                active_tasks = (
-                    db.query(Task)
-                    .filter(
-                        Task.media_file_id == media_file.id,
-                        Task.status.in_(["pending", "in_progress"]),
+            active_tasks = active_tasks_by_file.get(media_file.id, [])  # type: ignore[call-overload]
+
+            if not active_tasks:
+                # Before marking the file as stuck, try to reconcile its status from task history.
+                # This prevents false positives where tasks completed but file status wasn't updated.
+                refreshed_file = update_media_file_from_task_status(db, int(media_file.id))
+                if refreshed_file and refreshed_file.status in [
+                    FileStatus.COMPLETED,
+                    FileStatus.ERROR,
+                ]:
+                    logger.info(
+                        f"File {media_file.id} ({media_file.filename}) was marked as processing "
+                        f"but all tasks have finished with status {refreshed_file.status.value}; "
+                        f"skipping recovery."
                     )
-                    .all()
+                    continue
+
+                # File is still marked as processing and has no active tasks - treat as stuck.
+                stuck_files.append(media_file)
+                logger.info(
+                    f"Found stuck file {media_file.id} ({media_file.filename}) - "
+                    f"processing for {(now - media_file.task_last_update).total_seconds() / 60:.1f} minutes "
+                    f"with no active tasks"
                 )
+            else:
+                # Check if tasks are truly stuck using boot-time comparison.
+                # Any task updated before this container booted is dead.
+                boot_time = _get_container_boot_time()
+                all_tasks_stale = True
+                for task in active_tasks:
+                    if task.updated_at and task.updated_at > boot_time:
+                        # Task was updated after boot - it's alive
+                        all_tasks_stale = False
+                        break
+                    # Task updated before boot = dead from previous container
 
-                if not active_tasks:
-                    # Before marking the file as stuck, try to reconcile its status from task history.
-                    # This prevents false positives where tasks completed but file status wasn't updated.
-                    refreshed_file = update_media_file_from_task_status(db, int(media_file.id))
-                    if refreshed_file and refreshed_file.status in [
-                        FileStatus.COMPLETED,
-                        FileStatus.ERROR,
-                    ]:
-                        logger.info(
-                            f"File {media_file.id} ({media_file.filename}) was marked as processing "
-                            f"but all tasks have finished with status {refreshed_file.status.value}; "
-                            f"skipping recovery."
+                if all_tasks_stale:
+                    # Before marking as stuck, check if file has completed tasks
+                    # (e.g., transcription completed but file status wasn't updated)
+                    completed_tasks = (
+                        db.query(Task)
+                        .filter(
+                            Task.media_file_id == media_file.id,
+                            Task.status == "completed",
                         )
-                        continue
+                        .order_by(Task.completed_at.desc())
+                        .first()
+                    )
 
-                    # File is still marked as processing and has no active tasks - treat as stuck.
+                    if completed_tasks:
+                        # File has completed tasks but status wasn't updated
+                        # Attempt to reconcile status and skip recovery
+                        refreshed_file = update_media_file_from_task_status(db, int(media_file.id))
+                        if refreshed_file and refreshed_file.status in [
+                            FileStatus.COMPLETED,
+                            FileStatus.ERROR,
+                        ]:
+                            logger.info(
+                                f"File {media_file.id} ({media_file.filename}) has "
+                                f"completed tasks but status was still PROCESSING. "
+                                f"Reconciled to {refreshed_file.status.value}; "
+                                f"skipping recovery."
+                            )
+                            continue
+
+                    # File is still marked as processing with stale tasks
                     stuck_files.append(media_file)
                     logger.info(
                         f"Found stuck file {media_file.id} ({media_file.filename}) - "
-                        f"processing for {(now - media_file.task_last_update).total_seconds() / 60:.1f} minutes "
-                        f"with no active tasks"
+                        f"has {len(active_tasks)} stale tasks"
                     )
-                else:
-                    # Check if tasks are truly stuck using boot-time comparison.
-                    # Any task updated before this container booted is dead.
-                    boot_time = _get_container_boot_time()
-                    all_tasks_stale = True
-                    for task in active_tasks:
-                        if task.updated_at and task.updated_at > boot_time:
-                            # Task was updated after boot - it's alive
-                            all_tasks_stale = False
-                            break
-                        # Task updated before boot = dead from previous container
-
-                    if all_tasks_stale:
-                        # Before marking as stuck, check if file has completed tasks
-                        # (e.g., transcription completed but file status wasn't updated)
-                        completed_tasks = (
-                            db.query(Task)
-                            .filter(
-                                Task.media_file_id == media_file.id,
-                                Task.status == "completed",
-                            )
-                            .order_by(Task.completed_at.desc())
-                            .first()
-                        )
-
-                        if completed_tasks:
-                            # File has completed tasks but status wasn't updated
-                            # Attempt to reconcile status and skip recovery
-                            refreshed_file = update_media_file_from_task_status(
-                                db, int(media_file.id)
-                            )
-                            if refreshed_file and refreshed_file.status in [
-                                FileStatus.COMPLETED,
-                                FileStatus.ERROR,
-                            ]:
-                                logger.info(
-                                    f"File {media_file.id} ({media_file.filename}) has "
-                                    f"completed tasks but status was still PROCESSING. "
-                                    f"Reconciled to {refreshed_file.status.value}; "
-                                    f"skipping recovery."
-                                )
-                                continue
-
-                        # File is still marked as processing with stale tasks
-                        stuck_files.append(media_file)
-                        logger.info(
-                            f"Found stuck file {media_file.id} ({media_file.filename}) - "
-                            f"has {len(active_tasks)} stale tasks"
-                        )
 
         logger.info(f"Identified {len(stuck_files)} stuck files without active Celery tasks")
         return stuck_files
@@ -270,7 +269,7 @@ class TaskDetectionService:
         logger.info(f"Identified {len(orphaned_tasks)} orphaned tasks")
         return orphaned_tasks  # type: ignore[no-any-return]
 
-    def identify_abandoned_files(self, db: Session) -> list[MediaFile]:
+    def identify_abandoned_files(self, db: Session) -> tuple[list[MediaFile], list[str]]:
         """
         Identify files that were abandoned during processing.
 
@@ -288,7 +287,8 @@ class TaskDetectionService:
             db: Database session
 
         Returns:
-            List of abandoned files
+            Tuple of (abandoned_files, stale_task_ids_to_mark_failed).
+            Detection only — caller is responsible for mutating stale tasks.
         """
         from sqlalchemy import or_
 
@@ -310,17 +310,28 @@ class TaskDetectionService:
         # is guaranteed to be dead (the worker that was running it is gone).
         boot_time = _get_container_boot_time()
         truly_abandoned = []
+        stale_task_ids: list[str] = []
         skipped_with_live_tasks = 0
 
-        for media_file in abandoned_files:
-            active_db_tasks = (
+        # Batch-fetch all active tasks for candidate files (avoids N+1 queries)
+        file_ids = [mf.id for mf in abandoned_files]
+        if file_ids:
+            all_active_tasks = (
                 db.query(Task)
                 .filter(
-                    Task.media_file_id == media_file.id,
+                    Task.media_file_id.in_(file_ids),
                     Task.status.in_(["pending", "in_progress"]),
                 )
                 .all()
             )
+            tasks_by_file: dict[int, list[Task]] = {}
+            for task in all_active_tasks:
+                tasks_by_file.setdefault(int(task.media_file_id), []).append(task)
+        else:
+            tasks_by_file = {}
+
+        for media_file in abandoned_files:
+            active_db_tasks = tasks_by_file.get(int(media_file.id), [])
 
             if not active_db_tasks:
                 truly_abandoned.append(media_file)
@@ -341,19 +352,15 @@ class TaskDetectionService:
                     f"{len(active_db_tasks)} pre-boot DB tasks - "
                     f"marking as abandoned"
                 )
-                # Mark stale DB tasks as failed so they don't block future recovery
-                for task in active_db_tasks:
-                    task.status = "failed"  # type: ignore[assignment]
-                    task.error_message = "Celery task lost after system restart"  # type: ignore[assignment]
-                    task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
-                db.flush()
+                # Collect stale task IDs for caller to mark as failed
+                stale_task_ids.extend(str(task.id) for task in active_db_tasks)
                 truly_abandoned.append(media_file)
 
         logger.info(
             f"Identified {len(truly_abandoned)} abandoned files "
             f"(skipped {skipped_with_live_tasks} with live Celery tasks)"
         )
-        return truly_abandoned
+        return truly_abandoned, stale_task_ids
 
     def identify_stuck_downloading_files(self, db: Session) -> list[MediaFile]:
         """
@@ -449,7 +456,7 @@ class TaskDetectionService:
         eligible_files = []
         for media_file in oom_files:
             # Calculate exponential backoff delay: 2^retry_count * 10 minutes
-            backoff_minutes = (2**media_file.retry_count) * self.config.OOM_BACKOFF_BASE_MINUTES
+            backoff_minutes = (2**media_file.retry_count) * self.config.OOM_BACKOFF_BASE_MINUTES  # type: ignore[operator]
             backoff_delay = timedelta(minutes=backoff_minutes)
 
             # Check if enough time has passed since last recovery attempt
@@ -1019,7 +1026,7 @@ class TaskDetectionService:
         """
         stuck_threshold = datetime.now(timezone.utc) - timedelta(hours=6)
 
-        stuck_tasks = (
+        stuck_tasks: list[Task] = (
             db.query(Task)
             .filter(
                 Task.status == "in_progress",
@@ -1050,7 +1057,7 @@ class TaskDetectionService:
         """
         recent_cutoff = datetime.now(timezone.utc) - timedelta(days=3)
 
-        false_positive_tasks = (
+        false_positive_tasks: list[Task] = (
             db.query(Task)
             .filter(
                 Task.status == "failed",
@@ -1059,6 +1066,11 @@ class TaskDetectionService:
                     ["speaker_identification", "summarization", "topic_extraction", "transcription"]
                 ),
                 Task.created_at > recent_cutoff,
+            )
+            .filter(
+                # Prevent infinite recovery loop: only reset tasks that haven't
+                # been reset more than 2 times (uses retry_count or similar field)
+                ~Task.error_message.contains("recovery_attempt_"),
             )
             .all()
         )

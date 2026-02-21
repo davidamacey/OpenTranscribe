@@ -45,7 +45,7 @@ def create_task_record(
     except IntegrityError:
         db.rollback()
         # Task already exists (race condition or retry), fetch and return it
-        task = db.query(Task).filter(Task.id == celery_task_id).first()
+        task = db.query(Task).filter(Task.id == celery_task_id).first()  # type: ignore[assignment]
         if not task:
             raise ValueError(f"Failed to create or find task: {celery_task_id}") from None
         logger.info(f"Task {celery_task_id} already exists, reusing existing record")
@@ -308,10 +308,10 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
         db.query(MediaFile)
         .options(
             load_only(
-                MediaFile.id,
-                MediaFile.status,
-                MediaFile.active_task_id,
-                MediaFile.retry_count,
+                MediaFile.id,  # type: ignore[arg-type]
+                MediaFile.status,  # type: ignore[arg-type]
+                MediaFile.active_task_id,  # type: ignore[arg-type]
+                MediaFile.retry_count,  # type: ignore[arg-type]
             )
         )
         .filter(

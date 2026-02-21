@@ -38,6 +38,22 @@ class ErrorCategory(Enum):
     UNKNOWN = "unknown"
 
 
+# Categories that are eligible for retry (all non-permanent categories).
+# This is the single source of truth for retry eligibility checks.
+RETRIABLE_CATEGORIES: frozenset[ErrorCategory] = frozenset(
+    {
+        ErrorCategory.AUTH_OR_RATE_LIMIT,
+        ErrorCategory.SYSTEM_ERROR,
+        ErrorCategory.WORKER_LOST,
+        ErrorCategory.DUPLICATE_KEY,
+        ErrorCategory.OOM_ERROR,
+        ErrorCategory.NETWORK_ERROR,
+        ErrorCategory.TEMPORARY_SERVICE_ERROR,
+        ErrorCategory.UNKNOWN,
+    }
+)
+
+
 def categorize_error(error_message: str) -> ErrorCategory:
     """Categorize error message to determine retry strategy.
 
@@ -83,7 +99,11 @@ def categorize_error(error_message: str) -> ErrorCategory:
         return ErrorCategory.WORKER_LOST
 
     # Resource errors
-    if "out of memory" in msg_lower or "oom" in msg_lower or "cuda" in msg_lower:
+    if (
+        "out of memory" in msg_lower
+        or "oom" in msg_lower
+        or ("cuda" in msg_lower and "out of memory" in msg_lower)
+    ):
         return ErrorCategory.OOM_ERROR
 
     # Temporary service errors (check before network to match HTTP status codes first)
@@ -94,7 +114,7 @@ def categorize_error(error_message: str) -> ErrorCategory:
     if any(x in msg_lower for x in ["timeout", "connection", "network", "rate limit"]):
         return ErrorCategory.NETWORK_ERROR
 
-    return ErrorCategory.SYSTEM_ERROR
+    return ErrorCategory.UNKNOWN
 
 
 def should_retry(error_category: ErrorCategory, retry_count: int, max_retries: int = 3) -> bool:
@@ -108,19 +128,15 @@ def should_retry(error_category: ErrorCategory, retry_count: int, max_retries: i
     Returns:
         True if the file should be retried, False otherwise.
     """
-    # Never retry permanent failures
-    if error_category in (
-        ErrorCategory.PRIVATE_OR_REMOVED,
-        ErrorCategory.USER_CANCELLED,
-        ErrorCategory.FILE_TOO_LARGE,
-    ):
+    # Only retry categories in RETRIABLE_CATEGORIES (the single source of truth)
+    if error_category not in RETRIABLE_CATEGORIES:
         return False
 
     # Auth/rate limit: retry up to 2 times (could be YouTube throttling)
     if error_category == ErrorCategory.AUTH_OR_RATE_LIMIT:
         return retry_count < 2
 
-    # All other errors: retry up to max_retries
+    # All other retriable errors: retry up to max_retries
     return retry_count < max_retries
 
 

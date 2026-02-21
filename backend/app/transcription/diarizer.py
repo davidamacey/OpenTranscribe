@@ -7,6 +7,7 @@ through WhisperX's diarization path.
 
 import logging
 import time
+from typing import NoReturn
 
 import numpy as np
 import pandas as pd
@@ -63,7 +64,8 @@ class SpeakerDiarizer:
 
         # Move to device
         device = torch.device(self.config.device)
-        self._pipeline = self._pipeline.to(device)
+        assert self._pipeline is not None, "Pipeline not initialized"
+        self._pipeline = self._pipeline.to(device)  # type: ignore[attr-defined]
 
         elapsed = time.perf_counter() - step_start
         logger.info(f"TIMING: diarizer model loaded in {elapsed:.3f}s on {device}")
@@ -106,7 +108,8 @@ class SpeakerDiarizer:
         logger.info(f"Running diarization with kwargs: {pipeline_kwargs}")
 
         try:
-            output = self._pipeline(audio_input, **pipeline_kwargs)
+            assert self._pipeline is not None, "Pipeline not initialized"
+            output = self._pipeline(audio_input, **pipeline_kwargs)  # type: ignore[misc]
         except Exception as e:
             self._handle_diarization_error(e)
 
@@ -183,7 +186,7 @@ class SpeakerDiarizer:
             logger.warning(f"Could not extract overlap regions: {e}")
         return overlaps
 
-    def _handle_diarization_error(self, e: Exception) -> None:
+    def _handle_diarization_error(self, e: Exception) -> NoReturn:
         """Convert diarization errors to user-friendly messages."""
         error_msg = str(e)
 

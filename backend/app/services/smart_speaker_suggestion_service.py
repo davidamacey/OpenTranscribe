@@ -446,7 +446,7 @@ class SmartSpeakerSuggestionService:
             and speaker.suggestion_source == "llm_analysis"
         ):
             llm_suggestion = ConsolidatedSuggestion(
-                name=speaker.suggested_name,
+                name=speaker.suggested_name,  # type: ignore[arg-type]
                 confidence=float(speaker.confidence),
                 suggestion_type="llm_analysis",
                 reason="AI identified from transcript context",
@@ -838,14 +838,14 @@ class SmartSpeakerSuggestionService:
             mf_map: dict[int, MediaFile] = {}
             if match_mf_ids:
                 for mf in db.query(MediaFile).filter(MediaFile.id.in_(match_mf_ids)).all():
-                    mf_map[mf.id] = mf
+                    mf_map[mf.id] = mf  # type: ignore[index]
 
             from app.models.media import Speaker
 
             spk_map: dict[int, Speaker] = {}
             if match_spk_ids:
                 for spk in db.query(Speaker).filter(Speaker.id.in_(match_spk_ids)).all():
-                    spk_map[spk.id] = spk
+                    spk_map[spk.id] = spk  # type: ignore[index]
 
             # Convert OpenSearch results to our format using pre-fetched data
             for match in opensearch_matches:

@@ -854,14 +854,13 @@ stop_all_containers() {
     -f docker-compose.nginx.yml -f docker-compose.pki.yml "$@" 2>/dev/null || true
 
   # Catch stragglers by container name pattern
-  for container in $(docker ps -a --format '{{.Names}}' | grep -E 'opentranscribe-|transcribe-app-'); do
+  for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E 'opentranscribe-|transcribe-app-'); do
     docker stop "$container" 2>/dev/null && docker rm "$container" 2>/dev/null || true
   done
 }
 
 # Function to remove containers and data volumes (but preserve images)
 remove_system() {
-  echo "🗑️ Removing OpenTranscribe containers and data volumes..."
   echo "🗑️ Stopping containers and removing data volumes..."
   stop_all_containers down -v
 

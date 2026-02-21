@@ -17,6 +17,28 @@ logger = logging.getLogger(__name__)
 _neural_pipeline_verified = False
 _neural_pipeline_available = False
 
+# Index version -- bump when mappings or analysis settings change.
+# Stored in index _meta so ensure_chunks_index_exists() can detect stale indices.
+_INDEX_VERSION = 3
+
+# Transient bulk error types that are safe to retry
+_RETRYABLE_ERROR_TYPES = frozenset(
+    {
+        "es_rejected_execution_exception",
+        "circuit_breaking_exception",
+        "cluster_block_exception",
+    }
+)
+
+# Permanent error types that should NOT be retried
+_PERMANENT_ERROR_TYPES = frozenset(
+    {
+        "mapper_parsing_exception",
+        "strict_dynamic_mapping_exception",
+        "illegal_argument_exception",
+    }
+)
+
 # Index config for transcript chunks
 TRANSCRIPT_CHUNKS_INDEX_BODY = {
     "settings": {
@@ -24,10 +46,12 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
             "knn": True,
             "number_of_shards": 1,
             "number_of_replicas": 0,
+            "sort.field": ["file_uuid", "chunk_index"],
+            "sort.order": ["asc", "asc"],
         },
         "analysis": {
             "analyzer": {
-                "english_transcript": {
+                "transcript": {
                     "type": "custom",
                     "tokenizer": "standard",
                     "filter": [
@@ -51,6 +75,9 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
         },
     },
     "mappings": {
+        "_meta": {
+            "version": _INDEX_VERSION,
+        },
         "properties": {
             # Identity
             "file_id": {"type": "integer"},
@@ -60,7 +87,7 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
             # Content (BM25 searchable)
             "content": {
                 "type": "text",
-                "analyzer": "english_transcript",
+                "analyzer": "transcript",
                 "fields": {"exact": {"type": "text", "analyzer": "standard"}},
             },
             "title": {
@@ -68,9 +95,13 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
                 "fields": {"keyword": {"type": "keyword"}},
             },
             # Metadata (filterable)
-            "speaker": {"type": "keyword"},
+            "speaker": {"type": "keyword", "eager_global_ordinals": True},
             "speakers": {"type": "keyword"},
-            "tags": {"type": "keyword"},
+            "tags": {"type": "keyword", "eager_global_ordinals": True},
+            "content_type": {"type": "keyword"},
+            "duration": {"type": "float"},
+            "file_size": {"type": "long"},
+            "collection_ids": {"type": "integer"},
             "upload_time": {"type": "date"},
             "language": {"type": "keyword"},
             # Timestamps (for video navigation)
@@ -93,7 +124,7 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
             # Tracking
             "embedding_model": {"type": "keyword"},
             "indexed_at": {"type": "date"},
-        }
+        },
     },
 }
 
@@ -133,6 +164,8 @@ def ensure_chunks_index_exists() -> bool:
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     try:
         if opensearch_client.indices.exists(index=index_name):
+            # Check index version from _meta
+            _check_index_version(index_name)
             return True
 
         # Get dimension from settings service (reads from DB with default fallback)
@@ -142,7 +175,7 @@ def ensure_chunks_index_exists() -> bool:
         index_body = _get_index_body_with_dimension(dimension)
 
         opensearch_client.indices.create(index=index_name, body=index_body)
-        logger.info(f"Created transcript chunks index: {index_name}")
+        logger.info(f"Created transcript chunks index: {index_name} (version={_INDEX_VERSION})")
 
         # Create alias
         alias_name = "transcript_search"
@@ -372,21 +405,41 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
             _neural_pipeline_available = True
             return True
 
-        # Create or update pipeline
-        pipeline_body = {
+        # Create or update pipeline (try with batch_size first, fall back without)
+        batch_size = settings.SEARCH_NEURAL_BATCH_SIZE
+        text_embedding_config: dict[str, Any] = {
+            "model_id": model_id,
+            "field_map": {"content": "embedding"},
+            "batch_size": batch_size,
+            "ignore_failure": False,
+        }
+        pipeline_body: dict[str, Any] = {
             "description": f"Neural embedding pipeline for transcript search (model: {model_id})",
             "processors": [
                 {
-                    "text_embedding": {
-                        "model_id": model_id,
-                        "field_map": {"content": "embedding"},
-                    }
+                    "text_embedding": text_embedding_config,
                 }
             ],
         }
 
-        opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
-        logger.info(f"Created/updated neural ingest pipeline: {pipeline_id} with model {model_id}")
+        try:
+            opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
+            logger.info(
+                f"Created/updated neural ingest pipeline: {pipeline_id} "
+                f"with model {model_id} (batch_size={batch_size})"
+            )
+        except Exception as batch_err:
+            logger.warning(
+                f"Neural pipeline creation with batch_size={batch_size} failed: {batch_err}. "
+                f"Retrying without batch_size."
+            )
+            # Fall back to pipeline without batch_size for older OpenSearch versions
+            text_embedding_config.pop("batch_size", None)
+            opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
+            logger.info(
+                f"Created/updated neural ingest pipeline: {pipeline_id} "
+                f"with model {model_id} (no batch_size)"
+            )
 
         _neural_pipeline_verified = True
         _neural_pipeline_available = True
@@ -434,6 +487,32 @@ def _get_index_body_with_dimension(dimension: int) -> dict[str, Any]:
     body: dict[str, Any] = copy.deepcopy(TRANSCRIPT_CHUNKS_INDEX_BODY)
     body["mappings"]["properties"]["embedding"]["dimension"] = dimension
     return body
+
+
+def _check_index_version(index_name: str) -> None:
+    """Check the index version stored in _meta and log a warning if outdated.
+
+    Args:
+        index_name: Name of the index to check.
+    """
+    if not opensearch_client:
+        return
+
+    try:
+        mapping = opensearch_client.indices.get_mapping(index=index_name)
+        meta = mapping.get(index_name, {}).get("mappings", {}).get("_meta", {})
+        stored_version = meta.get("version", 0)
+
+        if stored_version < _INDEX_VERSION:
+            logger.warning(
+                f"Index '{index_name}' is version {stored_version}, "
+                f"latest is {_INDEX_VERSION}. "
+                f"Run a full reindex to pick up mapping and analyzer changes."
+            )
+        elif stored_version == _INDEX_VERSION:
+            logger.debug(f"Index '{index_name}' is at current version {_INDEX_VERSION}")
+    except Exception as e:
+        logger.debug(f"Could not check index version for {index_name}: {e}")
 
 
 class TranscriptIndexingService:
@@ -500,7 +579,7 @@ class TranscriptIndexingService:
         ensure_search_pipeline_exists()
 
         if upload_time is None:
-            upload_time = datetime.datetime.now().isoformat()
+            upload_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         # 1. Chunk segments
         t_chunk_start = time.time()
@@ -542,7 +621,7 @@ class TranscriptIndexingService:
             )
 
         # 3. Add indexed_at timestamp
-        now = datetime.datetime.now().isoformat()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         for chunk in chunks:
             chunk["indexed_at"] = now
 
@@ -651,7 +730,11 @@ class TranscriptIndexingService:
     def _bulk_index_chunks(
         self, chunks: list[dict[str, Any]], use_neural_pipeline: bool = False
     ) -> int:
-        """Bulk index chunks to OpenSearch.
+        """Bulk index chunks to OpenSearch in batches.
+
+        Splits chunks into batches of SEARCH_BULK_BATCH_SIZE to avoid
+        timeouts on large files. Failed documents with transient errors
+        are retried with exponential backoff.
 
         Args:
             chunks: List of chunk documents to index.
@@ -660,40 +743,181 @@ class TranscriptIndexingService:
         Returns:
             Number of successfully indexed chunks.
         """
-        index_name = settings.OPENSEARCH_CHUNKS_INDEX
-        bulk_body = []
-
-        for _, chunk in enumerate(chunks):
-            doc_id = f"{chunk['file_uuid']}_{chunk['chunk_index']}"
-            index_action: dict[str, Any] = {
-                "index": {
-                    "_index": index_name,
-                    "_id": doc_id,
-                }
-            }
-
-            # Use neural ingest pipeline if enabled
-            if use_neural_pipeline:
-                index_action["index"]["pipeline"] = settings.OPENSEARCH_NEURAL_PIPELINE
-
-            bulk_body.append(index_action)
-            bulk_body.append(chunk)
-
         if not opensearch_client:
             raise RuntimeError("OpenSearch client not initialized")
 
-        response = opensearch_client.bulk(body=bulk_body, refresh=False)
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        batch_size = settings.SEARCH_BULK_BATCH_SIZE
+        total_indexed = 0
 
-        if response.get("errors"):
-            error_count = 0
-            for item in response.get("items", []):
-                if "error" in item.get("index", {}):
-                    error_count += 1
-                    error_info = item["index"]["error"]
-                    logger.error(
-                        f"Bulk index error: {error_info.get('type')}: {error_info.get('reason')}"
-                    )
-            logger.error(f"Bulk indexing had {error_count} errors out of {len(chunks)}")
-            return len(chunks) - error_count
+        for batch_start in range(0, len(chunks), batch_size):
+            batch = chunks[batch_start : batch_start + batch_size]
+            bulk_body: list[Any] = []
 
-        return len(chunks)
+            for chunk in batch:
+                doc_id = f"{chunk['file_uuid']}_{chunk['chunk_index']}"
+                index_action: dict[str, Any] = {
+                    "index": {
+                        "_index": index_name,
+                        "_id": doc_id,
+                    }
+                }
+
+                # Use neural ingest pipeline if enabled
+                if use_neural_pipeline:
+                    index_action["index"]["pipeline"] = settings.OPENSEARCH_NEURAL_PIPELINE
+
+                bulk_body.append(index_action)
+                bulk_body.append(chunk)
+
+            response = opensearch_client.bulk(body=bulk_body, refresh=False)
+
+            if response.get("errors"):
+                failed_docs = self._extract_failed_docs(response, batch)
+                succeeded = len(batch) - len(failed_docs)
+                total_indexed += succeeded
+
+                if failed_docs:
+                    retried = self._retry_failed_docs(failed_docs, index_name, use_neural_pipeline)
+                    total_indexed += retried
+            else:
+                total_indexed += len(batch)
+
+            if len(chunks) > batch_size:
+                logger.debug(
+                    f"Bulk batch {batch_start // batch_size + 1}: "
+                    f"indexed {len(batch)} chunks (offset {batch_start})"
+                )
+
+        return total_indexed
+
+    def _extract_failed_docs(
+        self, response: dict[str, Any], batch: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Extract documents that failed with transient errors from a bulk response.
+
+        Permanent errors (e.g. mapping exceptions) are logged and skipped.
+        Transient errors (e.g. circuit breaker, rejected execution) are returned
+        for retry.
+
+        Args:
+            response: OpenSearch bulk response.
+            batch: The original batch of chunk documents.
+
+        Returns:
+            List of chunk documents that should be retried.
+        """
+        failed_docs: list[dict[str, Any]] = []
+        permanent_count = 0
+
+        for i, item in enumerate(response.get("items", [])):
+            index_result = item.get("index", {})
+            error_info = index_result.get("error")
+            if not error_info:
+                continue
+
+            error_type = error_info.get("type", "")
+            error_reason = error_info.get("reason", "")
+
+            if error_type in _PERMANENT_ERROR_TYPES:
+                # Permanent error -- log and skip
+                permanent_count += 1
+                logger.error(f"Permanent bulk index error (skipping): {error_type}: {error_reason}")
+            elif error_type in _RETRYABLE_ERROR_TYPES:
+                # Known transient error -- eligible for retry
+                if i < len(batch):
+                    failed_docs.append(batch[i])
+                logger.warning(
+                    f"Transient bulk index error (will retry): {error_type}: {error_reason}"
+                )
+            else:
+                # Unknown error type -- log and skip (don't blindly retry)
+                permanent_count += 1
+                logger.error(f"Unknown bulk index error (skipping): {error_type}: {error_reason}")
+
+        if permanent_count:
+            logger.error(f"Bulk indexing had {permanent_count} permanent errors (not retried)")
+        if failed_docs:
+            logger.info(f"Bulk indexing has {len(failed_docs)} transient failures to retry")
+
+        return failed_docs
+
+    def _retry_failed_docs(
+        self,
+        failed_docs: list[dict[str, Any]],
+        index_name: str,
+        use_neural: bool,
+        max_retries: int = 2,
+    ) -> int:
+        """Retry failed documents with exponential backoff.
+
+        Args:
+            failed_docs: List of chunk documents to retry.
+            index_name: OpenSearch index name.
+            use_neural: Whether to use the neural ingest pipeline.
+            max_retries: Maximum number of retry attempts.
+
+        Returns:
+            Number of successfully indexed documents after retries.
+        """
+        if not opensearch_client or not failed_docs:
+            return 0
+
+        retried_count = 0
+        remaining = list(failed_docs)
+
+        for attempt in range(1, max_retries + 1):
+            if not remaining:
+                break
+
+            backoff = attempt  # 1s, 2s
+            logger.info(
+                f"Retrying {len(remaining)} failed docs (attempt {attempt}/{max_retries}, "
+                f"backoff {backoff}s)"
+            )
+            time.sleep(backoff)
+
+            bulk_body: list[Any] = []
+            for chunk in remaining:
+                doc_id = f"{chunk['file_uuid']}_{chunk['chunk_index']}"
+                index_action: dict[str, Any] = {
+                    "index": {
+                        "_index": index_name,
+                        "_id": doc_id,
+                    }
+                }
+                if use_neural:
+                    index_action["index"]["pipeline"] = settings.OPENSEARCH_NEURAL_PIPELINE
+                bulk_body.append(index_action)
+                bulk_body.append(chunk)
+
+            try:
+                response = opensearch_client.bulk(body=bulk_body, refresh=False)
+            except Exception as e:
+                logger.error(f"Retry attempt {attempt} bulk call failed: {e}")
+                continue
+
+            if not response.get("errors"):
+                retried_count += len(remaining)
+                remaining = []
+                break
+
+            # Check which ones still failed
+            still_failed: list[dict[str, Any]] = []
+            for i, item in enumerate(response.get("items", [])):
+                index_result = item.get("index", {})
+                if index_result.get("error"):
+                    if i < len(remaining):
+                        still_failed.append(remaining[i])
+                else:
+                    retried_count += 1
+
+            remaining = still_failed
+
+        if remaining:
+            logger.error(f"{len(remaining)} documents failed after {max_retries} retries")
+
+        if retried_count:
+            logger.info(f"Successfully retried {retried_count} documents")
+
+        return retried_count

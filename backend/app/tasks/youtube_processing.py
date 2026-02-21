@@ -12,8 +12,6 @@ import json
 import logging
 from typing import TypedDict
 
-import redis
-
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.db.session_utils import get_refreshed_object
@@ -26,10 +24,24 @@ from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import transcribe_audio_task
 from app.tasks.transcription.notifications import get_file_metadata
 from app.tasks.waveform import generate_waveform_task
+from app.utils.error_classification import RETRIABLE_CATEGORIES
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
 
 logger = logging.getLogger(__name__)
+
+
+_notification_redis_client = None
+
+
+def _get_notification_redis():
+    """Get or create a module-level Redis client for notifications."""
+    global _notification_redis_client
+    if _notification_redis_client is None:
+        import redis as sync_redis
+
+        _notification_redis_client = sync_redis.from_url(settings.REDIS_URL)
+    return _notification_redis_client
 
 
 def send_youtube_notification_via_redis(
@@ -49,8 +61,7 @@ def send_youtube_notification_via_redis(
         True if notification was sent successfully, False otherwise
     """
     try:
-        # Create Redis client
-        redis_client = redis.from_url(settings.REDIS_URL)
+        redis_client = _get_notification_redis()
 
         # Get file metadata
         file_metadata = get_file_metadata(file_id)
@@ -137,7 +148,7 @@ def process_youtube_url_task(
             import random
             import time
 
-            jitter_seconds = random.uniform(  # noqa: S311
+            jitter_seconds = random.uniform(  # noqa: S311  # nosec B311
                 settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS,
                 settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS,
             )
@@ -145,12 +156,15 @@ def process_youtube_url_task(
             logger.info(f"Applying pre-download jitter: {jitter_seconds:.1f}s")
             time.sleep(jitter_seconds)
 
-        # Get internal file ID for database operations
+        # Resolve UUID to internal integer ID in a short-lived session.
+        # A separate session is used intentionally: the notification below
+        # requires file_id, and the second session fetches fresh state
+        # (including any changes committed by other workers in between).
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             file_id = int(media_file.id)
 
-        # Send initial processing notification
+        # Send initial processing notification (needs file_id from above)
         send_youtube_notification_via_redis(
             user_id=user_id,
             file_id=file_id,
@@ -159,6 +173,7 @@ def process_youtube_url_task(
             progress=10,
         )
 
+        # Open a new session with fresh state for the main processing work
         with session_scope() as db:
             # Get the user and media file records
             user = db.query(User).filter(User.id == user_id).first()
@@ -275,8 +290,9 @@ def process_youtube_url_task(
                                 "message": "YouTube processing completed",
                             },
                         }
-                        redis_client = redis.from_url(settings.REDIS_URL)
-                        redis_client.publish("websocket_notifications", json.dumps(notification))
+                        _get_notification_redis().publish(
+                            "websocket_notifications", json.dumps(notification)
+                        )
                         logger.info(
                             f"Sent file_updated notification for YouTube completion: {file_id}"
                         )
@@ -309,13 +325,8 @@ def process_youtube_url_task(
                 error_msg = str(e)
                 error_category = categorize_error(error_msg)
 
-                # Check if this is a retriable error (rate limits, timeouts, auth errors)
-                retriable_categories = {
-                    "auth_or_rate_limit",
-                    "network",
-                    "temporary",
-                }
-                is_retriable = error_category.value in retriable_categories
+                # Check if this is a retriable error using the canonical set
+                is_retriable = error_category in RETRIABLE_CATEGORIES
 
                 if is_retriable and self.request.retries < self.max_retries:
                     # Calculate backoff: 30s, 120s, 480s
@@ -416,7 +427,6 @@ def _send_playlist_notification(
         extra_data: Optional additional data to include in notification.
     """
     try:
-        redis_client = redis.from_url(settings.REDIS_URL)
         data = {
             "status": status,
             "message": message,
@@ -429,7 +439,7 @@ def _send_playlist_notification(
             "type": "playlist_processing_status",
             "data": data,
         }
-        redis_client.publish("websocket_notifications", json.dumps(notification))
+        _get_notification_redis().publish("websocket_notifications", json.dumps(notification))
     except Exception as e:
         logger.error(f"Failed to send playlist notification: {e}")
 
@@ -483,8 +493,7 @@ def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None
                 "file": file_data,
             },
         }
-        redis_client = redis.from_url(settings.REDIS_URL)
-        redis_client.publish("websocket_notifications", json.dumps(notification))
+        _get_notification_redis().publish("websocket_notifications", json.dumps(notification))
     except Exception as e:
         logger.error(f"Failed to send file_created notification for video {media_file.id}: {e}")
 

@@ -96,8 +96,29 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "JOIN pg_type t ON e.enumtypid = t.oid "
         "WHERE t.typname = 'filestatus' AND e.enumlabel = 'queued')"
     )
+    # v073: filestatus native enum was converted to VARCHAR(50)
+    # If the status column is VARCHAR and no native enum exists, we're at v073+
+    has_varchar_status = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'status' "
+        "AND data_type = 'character varying')"
+    )
+    filestatus_enum_exists = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_type WHERE typname = 'filestatus')"
+    )
+    has_word_timestamps = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'transcript_segment' AND column_name = 'words')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v140: words column added to transcript_segment
+    if has_word_timestamps and has_varchar_status and not filestatus_enum_exists:
+        return "v140_add_word_timestamps"
+    # v073: status column is VARCHAR and no native enum exists
+    # (This also matches fresh installs from init_db.sql which use VARCHAR)
+    if has_varchar_status and not filestatus_enum_exists and has_segment_unique_constraint:
+        return "v073_convert_filestatus_enum_to_varchar"
     if has_queued_downloading_statuses:
         return "v072_add_queued_downloading_statuses"
     if has_segment_unique_constraint:
@@ -140,57 +161,75 @@ def run_migrations() -> None:
     1. Fresh install: Tables exist from init_db.sql, stamp current version
     2. Existing v0.1.0+: Stamp detected version, apply new migrations
     3. Already tracked: Apply any pending migrations
+
+    Uses a PostgreSQL advisory lock to prevent concurrent migration runs
+    when multiple backend instances start simultaneously.
     """
+    from sqlalchemy import text
+
     logger.info("Checking database migrations...")
 
     engine = create_engine(settings.DATABASE_URL)
 
-    # Ensure alembic_version column is wide enough for long revision IDs
+    # Acquire advisory lock to prevent concurrent migration runs
     with engine.connect() as conn:
-        from sqlalchemy import text
+        conn.execute(text("SELECT pg_advisory_lock(42)"))
+        conn.commit()
 
-        if "alembic_version" in inspect(engine).get_table_names():
-            conn.execute(
-                text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
-            )
-            conn.commit()
+    try:
+        # Ensure alembic_version column is wide enough for long revision IDs
+        with engine.connect() as conn:
+            if "alembic_version" in inspect(engine).get_table_names():
+                conn.execute(
+                    text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
+                )
+                conn.commit()
 
-    with engine.connect() as conn:
-        context = MigrationContext.configure(conn)
-        current_rev = context.get_current_revision()
-        inspector = inspect(engine)
-        tables = inspector.get_table_names()
-        detected_version = _detect_schema_version(conn, tables)
+        with engine.connect() as conn:
+            context = MigrationContext.configure(conn)
+            current_rev = context.get_current_revision()
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            detected_version = _detect_schema_version(conn, tables)
 
-    # Dispose the engine to release all pooled connections before Alembic opens its own
-    engine.dispose()
+        # Dispose the engine to release all pooled connections before Alembic opens its own
+        engine.dispose()
 
-    config = get_alembic_config()
+        config = get_alembic_config()
 
-    # Get the head revision from Alembic scripts
-    from alembic.script import ScriptDirectory
+        # Get the head revision from Alembic scripts
+        from alembic.script import ScriptDirectory
 
-    script_dir = ScriptDirectory.from_config(config)
-    head_rev = script_dir.get_current_head()
+        script_dir = ScriptDirectory.from_config(config)
+        head_rev = script_dir.get_current_head()
 
-    if current_rev:
-        logger.info(f"Current migration version: {current_rev}")
-        if current_rev == head_rev:
-            logger.info("Database is up to date, no migrations needed")
+        if current_rev:
+            logger.info(f"Current migration version: {current_rev}")
+            if current_rev == head_rev:
+                logger.info("Database is up to date, no migrations needed")
+            else:
+                logger.info(f"Upgrading from {current_rev} to {head_rev}...")
+                command.upgrade(config, "head")
+        elif detected_version:
+            logger.info(f"Existing database detected, stamping {detected_version}...")
+            command.stamp(config, detected_version)
+            if detected_version != head_rev:
+                logger.info("Applying migrations to upgrade to current version...")
+                command.upgrade(config, "head")
+        elif tables:
+            logger.info("Fresh database detected, stamping current version...")
+            command.stamp(config, "head")
         else:
-            logger.info(f"Upgrading from {current_rev} to {head_rev}...")
+            logger.info("Empty database detected, running full migration...")
             command.upgrade(config, "head")
-    elif detected_version:
-        logger.info(f"Existing database detected, stamping {detected_version}...")
-        command.stamp(config, detected_version)
-        if detected_version != head_rev:
-            logger.info("Applying migrations to upgrade to current version...")
-            command.upgrade(config, "head")
-    elif tables:
-        logger.info("Fresh database detected, stamping current version...")
-        command.stamp(config, "head")
-    else:
-        logger.info("Empty database detected, running full migration...")
-        command.upgrade(config, "head")
 
-    logger.info("Database migrations complete")
+        logger.info("Database migrations complete")
+    finally:
+        # Release advisory lock - use a fresh engine since the previous one may be disposed
+        unlock_engine = create_engine(settings.DATABASE_URL)
+        try:
+            with unlock_engine.connect() as conn:
+                conn.execute(text("SELECT pg_advisory_unlock(42)"))
+                conn.commit()
+        finally:
+            unlock_engine.dispose()

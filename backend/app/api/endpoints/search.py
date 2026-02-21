@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any
+from typing import cast
 
 from fastapi import APIRouter
 from fastapi import Body
@@ -257,7 +258,7 @@ def trigger_reindex(
         # Get all completed file UUIDs from PostgreSQL
         with session_scope() as db:
             completed_files = (
-                db.query(MediaFile.file_uuid)
+                db.query(MediaFile.uuid)
                 .filter(
                     MediaFile.user_id == int(current_user.id),
                     MediaFile.status == FileStatus.COMPLETED,
@@ -288,7 +289,7 @@ def trigger_reindex(
                                 "indexed_files": {
                                     "terms": {
                                         "field": "file_uuid",
-                                        "size": len(all_uuids) + 100,
+                                        "size": min(len(all_uuids) + 100, 65536),
                                     }
                                 }
                             },
@@ -341,8 +342,10 @@ def trigger_reindex(
 def _check_reindex_task_active(user_id: int) -> bool:
     """Check if a reindex task is currently active for this user.
 
-    Uses Celery's inspect API to check for active tasks. Returns False
-    on any error to avoid blocking the status endpoint.
+    Uses Celery's inspect API to check for active tasks, with a short
+    Redis cache (5-second TTL) to avoid blocking the event loop on
+    every call.  Returns False on any error to avoid blocking the
+    status endpoint.
 
     Args:
         user_id: The user ID to check for active reindex tasks.
@@ -351,23 +354,47 @@ def _check_reindex_task_active(user_id: int) -> bool:
         True if a reindex task is actively running for this user.
     """
     try:
+        import json
+
         from app.core.celery import celery_app
+
+        # Check Redis cache first (5-second TTL)
+        redis_client = None
+        cache_key = f"reindex_active:{user_id}"
+        try:
+            redis_client = celery_app.backend.client
+            cached = redis_client.get(cache_key)
+            if cached is not None:
+                return bool(json.loads(cached))
+        except Exception as cache_err:
+            logger.debug(f"Redis cache check failed, falling back to direct check: {cache_err}")
 
         # Inspect active tasks across all workers (with short timeout)
         inspector = celery_app.control.inspect(timeout=1.0)
         active_tasks = inspector.active()
 
-        if not active_tasks:
-            return False
+        is_active = False
+        if active_tasks:
+            # Check all workers for active reindex tasks for this user
+            for _worker, tasks in active_tasks.items():
+                for task in tasks:
+                    if task.get("name") == "reindex_transcripts":
+                        # Check if task args contain this user_id
+                        task_kwargs = task.get("kwargs", {})
+                        if task_kwargs.get("user_id") == user_id:
+                            is_active = True
+                            break
+                if is_active:
+                    break
 
-        # Check all workers for active reindex tasks for this user
-        for _worker, tasks in active_tasks.items():
-            for task in tasks:
-                if task.get("name") == "reindex_transcripts":
-                    # Check if task args contain this user_id
-                    task_kwargs = task.get("kwargs", {})
-                    if task_kwargs.get("user_id") == user_id:
-                        return True
+        # Cache the result with 5-second TTL
+        try:
+            if redis_client is not None:
+                redis_client.setex(cache_key, 5, json.dumps(is_active))
+        except Exception as cache_err:
+            logger.debug(f"Could not cache reindex status: {cache_err}")
+
+        return is_active
     except Exception as e:
         # Log but don't fail the status endpoint
         logger.debug(f"Could not check Celery task state: {e}")
@@ -495,7 +522,7 @@ def set_embedding_model(
     from app.services.search.settings_service import save_search_embedding_model
 
     model_info = OPENSEARCH_EMBEDDING_MODELS[model_id]
-    dimension: int = model_info["dimension"]  # type: ignore[assignment]
+    dimension = cast(int, model_info["dimension"])
 
     # Update setting
     save_search_embedding_model(model_id, dimension)
@@ -805,7 +832,7 @@ def set_active_neural_model(
 
     # Update dimension in settings
     model_info = OPENSEARCH_EMBEDDING_MODELS[model_name]
-    new_dimension: int = model_info["dimension"]  # type: ignore[assignment]
+    new_dimension = cast(int, model_info["dimension"])
 
     # Recreate index if dimension changed
     from app.services.search.indexing_service import recreate_index_for_dimension

@@ -37,6 +37,7 @@ from app.models.media import SpeakerCollectionMember
 from app.models.media import SpeakerProfile
 from app.models.media import Task as TaskModel
 from app.models.media import TranscriptSegment
+from app.models.prompt import SummaryPrompt
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.models.user_mfa import UserMFA
@@ -109,8 +110,8 @@ def get_cpu_usage():
     This avoids blocking the async event loop for 1+ second.
     """
     try:
-        cpu_percent = psutil.cpu_percent(interval=None)
         per_cpu = psutil.cpu_percent(interval=None, percpu=True)
+        cpu_percent = sum(per_cpu) / len(per_cpu) if per_cpu else 0.0
         cpu_count = psutil.cpu_count(logical=True)
         physical_cores = psutil.cpu_count(logical=False) or 1
 
@@ -164,8 +165,8 @@ def _query_gpu_via_smi() -> dict | None:
 
     try:
         device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
-        result = subprocess.run(  # noqa: S603
-            [  # noqa: S607
+        result = subprocess.run(  # noqa: S603  # nosec B603
+            [  # noqa: S607  # nosec B607
                 "nvidia-smi",
                 "--query-gpu=name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
                 "--format=csv,noheader,nounits",
@@ -319,6 +320,15 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     if tasks_deleted:
         logger.info(f"Deleted {tasks_deleted} task records for user {user_id}")
 
+    # Summary prompts
+    prompts_deleted = (
+        db.query(SummaryPrompt)
+        .filter(SummaryPrompt.user_id == user_id)
+        .delete(synchronize_session=False)
+    )
+    if prompts_deleted:
+        logger.info(f"Deleted {prompts_deleted} summary prompts for user {user_id}")
+
 
 def _delete_user_media_files(db: Session, user_id: int) -> None:
     """Delete all media files and related records for a user.
@@ -382,7 +392,7 @@ def _validate_user_deletion(user: User, current_user: User) -> None:
             detail="Cannot delete your own account",
         )
 
-    if user.is_superuser and current_user.id != 1:
+    if user.is_superuser and not current_user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot delete a superuser account",
@@ -604,49 +614,31 @@ def delete_admin_user(
         # Validate deletion is allowed
         _validate_user_deletion(user, current_user)
 
-        # Delete related data in dependency order (children before parents)
+        # Delete all user data atomically using a savepoint
+        savepoint = db.begin_nested()
         try:
             _delete_user_owned_records(db, int(user_id))
-        except Exception as owned_error:
-            logger.error(f"Error deleting user-owned records: {owned_error}")
-            raise
-
-        try:
             _delete_user_speakers(db, int(user_id))
-        except Exception as speaker_error:
-            logger.error(f"Error deleting speakers: {speaker_error}")
-            raise
-
-        try:
             _delete_user_media_files(db, int(user_id))
-        except Exception as media_error:
-            logger.error(f"Error deleting media files: {media_error}")
-            raise
-
-        # Delete the user
-        try:
-            logger.info(f"Final step: Deleting user with ID {user_id} and email {user.email}")
+            logger.info(f"Deleting user with ID {user_id} and email {user.email}")
             db.delete(user)
-            db.commit()
-            logger.info("User deleted from database")
-        except Exception as user_error:
-            logger.error(f"Error deleting user object: {user_error}")
-            db.rollback()
+            savepoint.commit()
+        except Exception:
+            savepoint.rollback()
             raise
+        db.commit()
 
-        logger.info(f"===== USER DELETION COMPLETED SUCCESSFULLY: {user_id} =====")
+        logger.info(f"User deletion completed successfully: {user_id}")
         return {"message": "User deleted successfully"}
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"===== ERROR IN DELETE_USER: {e} =====")
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Error details: {str(e)}")
+        logger.error(f"User deletion failed, all changes rolled back: {e}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error deleting user: {str(e)}",
+            detail="User deletion failed",
         ) from e
 
 
@@ -767,9 +759,9 @@ async def admin_reset_user_password(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.hashed_password = get_password_hash(request_body.new_password)
-    user.must_change_password = request_body.force_change
-    user.password_changed_at = datetime.now(timezone.utc)
+    user.hashed_password = get_password_hash(request_body.new_password)  # type: ignore[assignment]
+    user.must_change_password = request_body.force_change  # type: ignore[assignment]
+    user.password_changed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
     db.commit()
 
     audit_logger.log(
@@ -828,7 +820,7 @@ async def admin_lock_account(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.is_active = False
+    user.is_active = False  # type: ignore[assignment]
     db.commit()
 
     audit_logger.log(
@@ -870,7 +862,7 @@ async def admin_terminate_user_sessions(
 
     count = 0
     for token in tokens:
-        token.revoked_at = now
+        token.revoked_at = now  # type: ignore[assignment]
         count += 1
 
     db.commit()
@@ -944,7 +936,7 @@ async def admin_change_user_role(
         raise HTTPException(status_code=400, detail="Cannot change your own role")
 
     old_role = user.role
-    user.role = new_role
+    user.role = new_role  # type: ignore[assignment]
     db.commit()
 
     audit_logger.log(
@@ -978,9 +970,9 @@ async def admin_reset_user_mfa(
 
     mfa_settings = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
     if mfa_settings:
-        mfa_settings.totp_enabled = False
-        mfa_settings.totp_secret = None
-        mfa_settings.backup_codes = []
+        mfa_settings.totp_enabled = False  # type: ignore[assignment]
+        mfa_settings.totp_secret = None  # type: ignore[assignment]
+        mfa_settings.backup_codes = []  # type: ignore[assignment]
         db.commit()
 
     audit_logger.log(

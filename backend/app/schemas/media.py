@@ -15,6 +15,8 @@ from app.schemas.base import UUIDBaseSchema
 
 class FileStatus(str, Enum):
     PENDING = "pending"
+    QUEUED = "queued"
+    DOWNLOADING = "downloading"
     PROCESSING = "processing"
     COMPLETED = "completed"
     ERROR = "error"

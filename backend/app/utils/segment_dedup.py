@@ -239,7 +239,7 @@ def _compute_coverage(
     # Add last merged interval
     covered += merge_end - merge_start
 
-    return covered / target_dur
+    return covered / target_dur  # type: ignore[no-any-return]
 
 
 def _map_words_to_sentence(

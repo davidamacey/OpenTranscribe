@@ -1,17 +1,17 @@
 import enum
 import uuid as uuid_pkg
 
-from sqlalchemy import JSON
 from sqlalchemy import Boolean
 from sqlalchemy import Column
 from sqlalchemy import DateTime
-from sqlalchemy import Enum
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy import Float
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -49,8 +49,17 @@ class MediaFile(Base):
     content_type = Column(String, nullable=False)  # MIME type
     is_public = Column(Boolean, default=False)  # Whether file is publicly accessible
     language = Column(String, nullable=True)  # Detected language code
-    status: Column[FileStatus] = Column(Enum(FileStatus), default=FileStatus.PENDING)
-    summary_data = Column(JSON, nullable=True)  # Complete structured AI summary (flexible format)
+    status: Column[FileStatus] = Column(
+        SAEnum(
+            FileStatus,
+            native_enum=False,
+            create_constraint=False,
+            values_callable=lambda e: [s.value for s in e],
+        ),
+        default=FileStatus.PENDING,
+        index=True,
+    )
+    summary_data = Column(JSONB, nullable=True)  # Complete structured AI summary (flexible format)
     summary_opensearch_id = Column(String, nullable=True)  # OpenSearch document ID for summary
     summary_status = Column(
         String, default="pending", nullable=True
@@ -61,11 +70,11 @@ class MediaFile(Base):
     thumbnail_path = Column(String, nullable=True)  # Path to video thumbnail in storage
 
     # Detailed metadata fields
-    metadata_raw = Column(JSON, nullable=True)  # Complete raw metadata from extraction
-    metadata_important = Column(JSON, nullable=True)  # Important metadata for display
+    metadata_raw = Column(JSONB, nullable=True)  # Complete raw metadata from extraction
+    metadata_important = Column(JSONB, nullable=True)  # Important metadata for display
 
     # Waveform visualization data
-    waveform_data = Column(JSON, nullable=True)  # Cached waveform data for visualization
+    waveform_data = Column(JSONB, nullable=True)  # Cached waveform data for visualization
 
     # Media technical specs
     media_format = Column(String, nullable=True)  # Container format (MP4, MOV, etc.)
@@ -158,6 +167,9 @@ class TranscriptSegment(Base):
         UUID(as_uuid=True), nullable=True, index=True
     )  # Groups overlapping segments together
     overlap_confidence = Column(Float, nullable=True)  # Confidence of overlap detection
+    words = Column(
+        JSONB, nullable=True
+    )  # Word-level timestamps: [{"word": "...", "start": 0.1, "end": 0.25, "score": 0.95}]
 
     # Relationships
     media_file = relationship("MediaFile", back_populates="transcript_segments")
@@ -307,7 +319,7 @@ class Analytics(Base):
     media_file_id = Column(Integer, ForeignKey("media_file.id"), unique=True)
 
     # Overall analytics structure matching frontend expectations
-    overall_analytics = Column(JSON, nullable=True)  # Complete analytics structure
+    overall_analytics = Column(JSONB, nullable=True)  # Complete analytics structure
 
     # Computation metadata
     computed_at = Column(DateTime(timezone=True), nullable=True)

@@ -1,5 +1,6 @@
 """Celery task for re-indexing transcripts with chunk-level embeddings."""
 
+import functools
 import logging
 from typing import Any
 
@@ -9,6 +10,14 @@ from app.core.constants import NOTIFICATION_TYPE_REINDEX_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
 
 logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=1)
+def _get_notification_redis():
+    """Get or create a module-level Redis client for notifications."""
+    import redis as sync_redis
+
+    return sync_redis.from_url(settings.REDIS_URL)
 
 
 def _ensure_neural_pipeline_ready() -> bool:
@@ -98,28 +107,30 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     segment_dicts = []
     for seg in segments:
         speaker_name = speakers_map.get(seg.speaker_id, "Unknown") if seg.speaker_id else "Unknown"
-        segment_dicts.append(
-            {
-                "start": float(seg.start_time),
-                "end": float(seg.end_time),
-                "text": seg.text or "",
-                "speaker": speaker_name,
-            }
-        )
+        seg_dict = {
+            "start": float(seg.start_time),
+            "end": float(seg.end_time),
+            "text": seg.text or "",
+            "speaker": speaker_name,
+        }
+        if seg.words:
+            seg_dict["words"] = seg.words  # Already a list of dicts from JSONB
+        segment_dicts.append(seg_dict)
 
     # Get unique speaker names
     speaker_names: list[str] = list(
         set(str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown")
     )
 
-    # Get tags
+    # Get tags via FileTag -> Tag relationship
     tag_names = []
-    if hasattr(media_file, "tags") and media_file.tags:
-        tag_names = [t.name for t in media_file.tags]
+    if hasattr(media_file, "file_tags") and media_file.file_tags:
+        tag_names = [ft.tag.name for ft in media_file.file_tags if ft.tag]
 
+    # Get collection IDs via CollectionMember relationship
     collection_id_list = []
-    if hasattr(media_file, "collections") and media_file.collections:
-        collection_id_list = [c.id for c in media_file.collections]
+    if hasattr(media_file, "collection_memberships") and media_file.collection_memberships:
+        collection_id_list = [int(cm.collection_id) for cm in media_file.collection_memberships]
 
     return {
         "file_id": file_id,
@@ -156,6 +167,155 @@ def _refresh_index_and_clear_cache() -> None:
         logger.warning(f"Failed to clear search cache: {e}")
 
 
+def _set_bulk_indexing_mode() -> None:
+    """Temporarily disable refresh_interval for faster bulk ingestion.
+
+    During large reindex operations, the default 1-second refresh creates
+    unnecessary Lucene segments. Explicit _periodic_refresh() calls still
+    work independently of this setting.
+    """
+    try:
+        from app.services.opensearch_service import opensearch_client
+
+        if opensearch_client:
+            opensearch_client.indices.put_settings(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body={"index": {"refresh_interval": "-1"}},
+            )
+            logger.info("Set refresh_interval=-1 for bulk reindex")
+    except Exception as e:
+        logger.warning(f"Could not set bulk indexing mode: {e}")
+
+
+def _restore_normal_mode() -> None:
+    """Restore normal refresh_interval after bulk ingestion."""
+    try:
+        from app.services.opensearch_service import opensearch_client
+
+        if opensearch_client:
+            opensearch_client.indices.put_settings(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body={"index": {"refresh_interval": "1s"}},
+            )
+            logger.info("Restored refresh_interval=1s after reindex")
+    except Exception as e:
+        logger.warning(f"Could not restore normal mode: {e}")
+
+
+def _force_merge_after_reindex() -> None:
+    """Force merge to consolidate Lucene segments after a full reindex.
+
+    For HNSW kNN, each segment has its own graph — fewer segments means
+    better recall. This is only called after a full reindex, not per-file.
+    """
+    try:
+        from app.services.opensearch_service import opensearch_client
+
+        if opensearch_client:
+            opensearch_client.indices.forcemerge(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                max_num_segments=1,
+                params={"wait_for_completion": "false"},
+            )
+            logger.info("Force merge initiated (running in background)")
+    except Exception as e:
+        logger.warning(f"Force merge after reindex failed (non-fatal): {e}")
+
+
+def _periodic_refresh(files_since_refresh: int) -> int:
+    """Trigger a Lucene segment flush if enough files have been indexed.
+
+    Called periodically during large reindex operations to keep search
+    results fresh rather than waiting until the very end.
+
+    Args:
+        files_since_refresh: Number of files indexed since the last refresh.
+
+    Returns:
+        0 if refresh was triggered (counter reset), otherwise the unchanged count.
+    """
+    interval = settings.SEARCH_REINDEX_REFRESH_INTERVAL
+    if files_since_refresh < interval:
+        return files_since_refresh
+
+    try:
+        from app.services.opensearch_service import opensearch_client
+
+        if opensearch_client:
+            opensearch_client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
+            logger.info(f"Periodic index refresh after {files_since_refresh} files")
+    except Exception as e:
+        logger.warning(f"Periodic index refresh failed: {e}")
+
+    return 0
+
+
+def _check_and_recreate_stale_index() -> None:
+    """Check if the search index has a stale schema and recreate if needed.
+
+    When _INDEX_VERSION bumps (new analyzers, fields, etc.), the existing
+    index mapping is incompatible. A full reindex is the right time to
+    recreate the index with the latest mapping.
+    """
+    try:
+        from app.services.opensearch_service import opensearch_client
+        from app.services.search.indexing_service import _INDEX_VERSION
+        from app.services.search.indexing_service import _get_index_body_with_dimension
+
+        if not opensearch_client:
+            return
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        if not opensearch_client.indices.exists(index=index_name):
+            return
+
+        # Read stored version from index _meta
+        mapping = opensearch_client.indices.get_mapping(index=index_name)
+        meta = mapping.get(index_name, {}).get("mappings", {}).get("_meta", {})
+        stored_version = meta.get("version", 0)
+
+        if stored_version >= _INDEX_VERSION:
+            logger.debug(
+                f"Index '{index_name}' is at version {stored_version}, no recreation needed"
+            )
+            return
+
+        logger.warning(
+            f"Index '{index_name}' is version {stored_version}, "
+            f"latest is {_INDEX_VERSION}. Recreating index with updated mapping."
+        )
+
+        # Get current dimension before deleting
+        current_dim = (
+            mapping.get(index_name, {})
+            .get("mappings", {})
+            .get("properties", {})
+            .get("embedding", {})
+            .get("dimension", 384)
+        )
+
+        # Remove alias if it exists
+        alias_name = "transcript_search"
+        try:
+            if opensearch_client.indices.exists_alias(name=alias_name):
+                opensearch_client.indices.delete_alias(index=index_name, name=alias_name)
+        except Exception as e:
+            logger.debug(f"Could not remove alias '{alias_name}': {e}")
+
+        # Delete and recreate
+        opensearch_client.indices.delete(index=index_name)
+        index_body = _get_index_body_with_dimension(current_dim)
+        opensearch_client.indices.create(index=index_name, body=index_body)
+
+        # Recreate alias
+        opensearch_client.indices.put_alias(index=index_name, name=alias_name)
+
+        logger.info(f"Recreated index '{index_name}' with version {_INDEX_VERSION}")
+
+    except Exception as e:
+        logger.error(f"Failed to check/recreate stale index: {e}")
+
+
 @celery_app.task(bind=True, name="reindex_transcripts", queue="cpu")
 def reindex_transcripts_task(
     self,
@@ -166,16 +326,18 @@ def reindex_transcripts_task(
     """
     Re-index existing transcripts with chunk-level embeddings.
 
+    Uses keyset (cursor) pagination to avoid loading all MediaFile
+    ORM objects into memory at once. Each page gets its own DB session.
+
     Process:
     1. If model_id is provided, switch to that model and recreate the index
-    2. Query PostgreSQL for transcript segments (by file or all)
-    3. For each file:
-       a. Load segments from DB
-       b. Chunk using speaker-turn strategy
-       c. Batch embed chunks (GPU if available)
-       d. Bulk index to OpenSearch
-       e. Send progress via WebSocket
-    4. Refresh the index to make all chunks searchable
+    2. Count total files to re-index
+    3. Page through files in batches of 50:
+       a. Load one page of files from DB
+       b. For each file: extract metadata, chunk, embed, bulk index
+       c. Send progress via WebSocket
+       d. Periodically refresh the index for search freshness
+    4. Final refresh and cache clear
     5. Return summary stats
 
     Args:
@@ -186,6 +348,8 @@ def reindex_transcripts_task(
     Returns:
         Dict with indexing stats.
     """
+    from sqlalchemy import func
+
     from app.db.session_utils import session_scope
     from app.models.media import FileStatus
     from app.models.media import MediaFile
@@ -206,6 +370,9 @@ def reindex_transcripts_task(
     else:
         logger.warning("Neural embedding not available - reindex may not generate embeddings")
 
+    # Recreate stale index if schema version has changed
+    _check_and_recreate_stale_index()
+
     indexing_service = TranscriptIndexingService()
     stats: dict[str, Any] = {
         "total_files": 0,
@@ -215,69 +382,109 @@ def reindex_transcripts_task(
         "skipped_files": 0,
     }
 
+    page_size = 50
+    files_since_refresh = 0
+
     try:
+        # Step 1: Count total files in a lightweight query
         with session_scope() as db:
-            # Query files to re-index
-            query = db.query(MediaFile).filter(
+            count_query = db.query(func.count(MediaFile.id)).filter(
                 MediaFile.user_id == user_id,
                 MediaFile.status == FileStatus.COMPLETED,
             )
-
             if file_uuids:
-                query = query.filter(MediaFile.uuid.in_(file_uuids))
+                count_query = count_query.filter(MediaFile.uuid.in_(file_uuids))
+            total_files: int = count_query.scalar() or 0
 
-            files = query.all()
-            stats["total_files"] = len(files)
+        stats["total_files"] = total_files
 
-            if not files:
-                logger.info(f"No files to re-index for user {user_id}")
-                return stats
+        if total_files == 0:
+            logger.info(f"No files to re-index for user {user_id}")
+            return stats
 
-            logger.info(f"Re-indexing {len(files)} files for user {user_id}")
+        logger.info(f"Re-indexing {total_files} files for user {user_id}")
 
-            for i, media_file in enumerate(files):
-                file_uuid = str(media_file.uuid)
+        # Safety: restore normal refresh_interval in case a previous reindex was killed
+        _restore_normal_mode()
 
-                try:
-                    metadata = _extract_file_metadata(db, media_file)
-                    if metadata is None:
-                        stats["skipped_files"] += 1
-                        continue
+        # Step 2: Disable auto-refresh during bulk ingestion
+        _set_bulk_indexing_mode()
 
-                    chunk_count = indexing_service.reindex_transcript(
-                        file_id=metadata["file_id"],
-                        file_uuid=metadata["file_uuid"],
-                        user_id=user_id,
-                        segments=metadata["segments"],
-                        title=metadata["title"],
-                        speakers=metadata["speakers"],
-                        tags=metadata["tags"],
-                        upload_time=metadata["upload_time"],
-                        language=metadata["language"],
-                        content_type=metadata["content_type"],
-                        duration=metadata["duration"],
-                        file_size=metadata["file_size"],
-                        collection_ids=metadata["collection_ids"],
+        try:
+            # Step 3: Page through files with keyset (cursor) pagination
+            # Using id > last_id avoids data-shift issues with offset/limit
+            global_index = 0
+            last_id = 0
+
+            while True:
+                with session_scope() as db:
+                    page_query = db.query(MediaFile).filter(
+                        MediaFile.user_id == user_id,
+                        MediaFile.status == FileStatus.COMPLETED,
+                        MediaFile.id > last_id,
                     )
+                    if file_uuids:
+                        page_query = page_query.filter(MediaFile.uuid.in_(file_uuids))
 
-                    stats["indexed_files"] += 1
-                    stats["total_chunks"] += chunk_count
+                    page_files = page_query.order_by(MediaFile.id).limit(page_size).all()
 
-                    # Send progress notification
-                    progress = (i + 1) / len(files)
-                    _send_reindex_progress(
-                        user_id, progress, stats["indexed_files"], stats["total_files"]
-                    )
+                    if not page_files:
+                        break
 
-                    logger.info(
-                        f"Re-indexed file {file_uuid}: {chunk_count} chunks ({i + 1}/{len(files)})"
-                    )
+                    last_id = int(page_files[-1].id)
 
-                except Exception as e:
-                    logger.error(f"Error re-indexing file {file_uuid}: {e}")
-                    stats["failed_files"] += 1
+                    for media_file in page_files:
+                        file_uuid = str(media_file.uuid)
+                        global_index += 1
+
+                        try:
+                            metadata = _extract_file_metadata(db, media_file)
+                            if metadata is None:
+                                stats["skipped_files"] += 1
+                                continue
+
+                            chunk_count = indexing_service.reindex_transcript(
+                                file_id=metadata["file_id"],
+                                file_uuid=metadata["file_uuid"],
+                                user_id=user_id,
+                                segments=metadata["segments"],
+                                title=metadata["title"],
+                                speakers=metadata["speakers"],
+                                tags=metadata["tags"],
+                                upload_time=metadata["upload_time"],
+                                language=metadata["language"],
+                                content_type=metadata["content_type"],
+                                duration=metadata["duration"],
+                                file_size=metadata["file_size"],
+                                collection_ids=metadata["collection_ids"],
+                            )
+
+                            stats["indexed_files"] += 1
+                            stats["total_chunks"] += chunk_count
+                            files_since_refresh += 1
+
+                            # Send progress notification
+                            progress = global_index / total_files
+                            _send_reindex_progress(
+                                user_id, progress, stats["indexed_files"], total_files
+                            )
+
+                            logger.debug(
+                                f"Re-indexed file {file_uuid}: "
+                                f"{chunk_count} chunks ({global_index}/{total_files})"
+                            )
+
+                            # Periodic refresh to keep search results fresh
+                            files_since_refresh = _periodic_refresh(files_since_refresh)
+
+                        except Exception as e:
+                            logger.error(f"Error re-indexing file {file_uuid}: {e}")
+                            stats["failed_files"] += 1
+        finally:
+            _restore_normal_mode()
 
         _refresh_index_and_clear_cache()
+        _force_merge_after_reindex()
 
         # Send completion notification
         _send_reindex_complete(user_id, stats)
@@ -301,10 +508,7 @@ def _send_reindex_progress(user_id: int, progress: float, indexed: int, total: i
     try:
         import json
 
-        import redis
-
-        # Use same pattern as transcription notifications
-        redis_client = redis.from_url(settings.REDIS_URL)
+        redis_client = _get_notification_redis()
 
         notification = {
             "user_id": user_id,
@@ -317,7 +521,7 @@ def _send_reindex_progress(user_id: int, progress: float, indexed: int, total: i
         }
 
         redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(f"Published reindex progress via Redis: {indexed}/{total}")
+        logger.debug(f"Published reindex progress via Redis: {indexed}/{total}")
 
     except Exception as e:
         logger.error(f"Failed to send reindex progress notification: {e}")
@@ -328,10 +532,7 @@ def _send_reindex_complete(user_id: int, stats: dict[str, Any]) -> None:
     try:
         import json
 
-        import redis
-
-        # Use same pattern as transcription notifications
-        redis_client = redis.from_url(settings.REDIS_URL)
+        redis_client = _get_notification_redis()
 
         notification = {
             "user_id": user_id,

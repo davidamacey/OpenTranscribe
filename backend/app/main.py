@@ -352,7 +352,7 @@ app.include_router(api_router, prefix=settings.API_PREFIX)
 
 # Set up rate limiting
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
 # Health check endpoint

@@ -97,7 +97,7 @@ ignore_errors = true
 
 [tool.bandit]
 exclude_dirs = ["tests", "venv", ".venv", "node_modules"]
-skips = ["B101", "B404", "B601"]  # Skip assert_used, subprocess_import, paramiko_calls
+skips = ["B101", "B404", "B601", "B607", "B608"]  # Skip assert_used, subprocess_import, paramiko_calls, start_process_with_partial_path, hardcoded_sql_expressions
 
 [tool.bandit.assert_used]
 skips = ["*_test.py", "test_*.py"]

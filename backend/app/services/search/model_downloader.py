@@ -90,8 +90,8 @@ def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> P
         return None
 
     model_info = _OPENSEARCH_MODEL_REGISTRY[model_name]
-    short_name = model_info["short_name"]
-    filename = model_info["filename"]
+    short_name = str(model_info["short_name"])
+    filename = str(model_info["filename"])
     version = model_info["version"]
 
     # Create model directory
@@ -125,7 +125,7 @@ def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> P
                 percent = (downloaded / total_size) * 100
                 logger.info(f"  Downloading: {percent:.1f}% ({downloaded / (1024 * 1024):.1f} MB)")
 
-        urllib.request.urlretrieve(url, model_path, reporthook=progress_hook)  # noqa: S310
+        urllib.request.urlretrieve(url, model_path, reporthook=progress_hook)  # noqa: S310  # nosec B310
 
         # Verify download
         if model_path.exists() and model_path.stat().st_size > 0:
@@ -212,8 +212,8 @@ def check_internet_connectivity(timeout: float = 5.0) -> bool:
     """
     test_url = "https://artifacts.opensearch.org"
     try:
-        req = urllib.request.Request(test_url, method="HEAD")  # noqa: S310
-        urllib.request.urlopen(req, timeout=timeout)  # noqa: S310
+        req = urllib.request.Request(test_url, method="HEAD")  # noqa: S310  # nosec B310
+        urllib.request.urlopen(req, timeout=timeout)  # noqa: S310  # nosec B310
         return True
     except Exception:
         return False

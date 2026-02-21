@@ -178,7 +178,7 @@ def _store_speaker_predictions(db: Session, file_id: int, predictions: dict[str,
         if speaker:
             speaker.suggested_name = predicted_name
             speaker.confidence = confidence
-            speaker.suggestion_source = "llm_analysis"  # Mark as LLM-generated suggestion
+            speaker.suggestion_source = "llm_analysis"  # type: ignore[assignment]
 
     db.commit()
 

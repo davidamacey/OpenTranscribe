@@ -837,40 +837,58 @@ class MediaDownloadService:
             logger.info(f"Using cookies from browser: {settings.YOUTUBE_COOKIE_BROWSER}")
 
         try:
+            # First context: extract info only (before download)
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # Extract info first
                 info = ydl.extract_info(url, download=False)
 
-                # Check duration - for very long videos (>4hr), download audio only
-                duration = info.get("duration")
-                if duration and duration > 14400:  # 4 hours limit
-                    logger.warning(
-                        f"Video duration {duration:.0f}s exceeds 4hr limit, "
-                        f"downloading audio-only for {url}"
-                    )
-                    ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio"
-                    ydl_opts["merge_output_format"] = "m4a"
-                    ydl_opts["postprocessors"] = [
-                        {
-                            "key": "FFmpegExtractAudio",
-                            "preferredcodec": "m4a",
-                        }
-                    ]
+            # Check duration - for very long videos (>4hr), switch to audio-only
+            duration = info.get("duration")
+            if duration and duration > 14400:  # 4 hours limit
+                logger.warning(
+                    f"Video duration {duration:.0f}s exceeds 4hr limit, "
+                    f"downloading audio-only for {url}"
+                )
+                ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio"
+                ydl_opts["merge_output_format"] = "m4a"
+                ydl_opts["postprocessors"] = [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "m4a",
+                    }
+                ]
 
-                # Download the video
+            # Second context: download with (possibly updated) opts
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
 
-                # Find the downloaded file
-                title = info.get("title", "video")
-                ext = info.get("ext", "mp4")
-                clean_title = re.sub(r"[^\w\-_\.]", "_", title)[:100]
-                downloaded_file = _find_downloaded_file(output_path, clean_title, ext)
+            # Find the downloaded file
+            title = info.get("title", "video")
+            ext = info.get("ext", "mp4")
+            clean_title = re.sub(r"[^\w\-_\.]", "_", title)[:100]
+            downloaded_file = _find_downloaded_file(output_path, clean_title, ext)
 
-                return {
-                    "file_path": downloaded_file,
-                    "filename": os.path.basename(downloaded_file),
-                    "info": info,
-                }
+            # Detect actual file extension and content type
+            from pathlib import Path
+
+            actual_ext = Path(downloaded_file).suffix.lstrip(".")
+            content_type_map = {
+                "mp4": "video/mp4",
+                "webm": "video/webm",
+                "mkv": "video/x-matroska",
+                "m4a": "audio/mp4",
+                "mp3": "audio/mpeg",
+                "ogg": "audio/ogg",
+                "wav": "audio/wav",
+                "flac": "audio/flac",
+            }
+            actual_content_type = content_type_map.get(actual_ext, f"application/{actual_ext}")
+
+            return {
+                "file_path": downloaded_file,
+                "filename": os.path.basename(downloaded_file),
+                "content_type": actual_content_type,
+                "info": info,
+            }
 
         except yt_dlp.DownloadError as e:
             error_msg = str(e)

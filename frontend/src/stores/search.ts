@@ -3,7 +3,7 @@ import { writable, derived } from 'svelte/store';
 export interface SearchOccurrence {
   snippet: string;
   speaker: string;
-  speaker_highlighted: string;
+  speaker_highlighted?: string;
   start_time: number;
   end_time: number;
   chunk_index: number;
@@ -124,7 +124,7 @@ function createSearchStore() {
   return {
     subscribe,
     setQuery: (query: string) => update((s) => ({ ...s, query })),
-    setPage: (page: number) => update((s) => ({ ...s, page })),
+    setPage: (page: number) => update((s) => ({ ...s, page: Math.max(1, page) })),
     setSortBy: (sortBy: string) => update((s) => ({ ...s, sortBy, page: 1 })),
     setSortOrder: (sortOrder: 'asc' | 'desc') => update((s) => ({ ...s, sortOrder, page: 1 })),
     setSort: (sortBy: string, sortOrder: 'asc' | 'desc') =>
@@ -148,6 +148,7 @@ function createSearchStore() {
     setStatuses: (selectedStatuses: string[]) =>
       update((s) => ({ ...s, selectedStatuses, page: 1 })),
     setTitleFilter: (titleFilter: string) => update((s) => ({ ...s, titleFilter, page: 1 })),
+    setFilters: (filters: Partial<SearchState>) => update((s) => ({ ...s, ...filters, page: 1 })),
     setLastSearchParams: (lastSearchParams: string) => update((s) => ({ ...s, lastSearchParams })),
     setActivePreview: (activePreview: ActivePreviewState | null) =>
       update((s) => ({ ...s, activePreview })),

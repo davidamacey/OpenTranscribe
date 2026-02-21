@@ -491,7 +491,7 @@ def _process_transcription_result(
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 
-        embedding_mode = EmbeddingModeService.get_mode()
+        embedding_mode = EmbeddingModeService.get_current_mode()
     except Exception:
         embedding_mode = None
 

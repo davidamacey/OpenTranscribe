@@ -1622,6 +1622,7 @@
   "reprocess.start": "Start",
   "reprocess.customize": "Customize",
   "reprocess.startedSuccess": "Reprocessing started successfully",
+  "reprocess.speakerWarning": "Re-transcribing replaces all transcript data. Speaker names linked to Speaker Profiles will be automatically re-matched. Manually-set names not linked to a profile will be lost.",
   "reprocess.startFailed": "Failed to start reprocessing. Please try again.",
   "speakerValidation.nameRequired": "Speaker name is required",
   "speakerValidation.nameEmpty": "Speaker name cannot be empty",

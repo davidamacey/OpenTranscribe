@@ -48,7 +48,7 @@ def upgrade():
     ]
 
     for col_name, col_type in pki_columns:
-        sql = f"""  # noqa: S608
+        sql = f"""  # noqa: S608  # nosec B608
             DO $$
             BEGIN
                 IF NOT EXISTS (

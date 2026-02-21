@@ -129,7 +129,7 @@ class SubtitleService:
         lines = []
         for segment in sorted(segments, key=lambda s: float(s.start_time)):
             speaker_name = (
-                speaker_map.get(segment.speaker_id, "Unknown") if segment.speaker_id else "Unknown"
+                speaker_map.get(segment.speaker_id, "Unknown") if segment.speaker_id else "Unknown"  # type: ignore[call-overload]
             )
             text = str(segment.text).strip()
             lines.append(f"[{speaker_name}] {text}")
@@ -312,7 +312,7 @@ class SubtitleService:
             speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
             speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
             for speaker in speakers:
-                speaker_map[speaker.id] = (
+                speaker_map[speaker.id] = (  # type: ignore[index]
                     str(speaker.display_name) if speaker.display_name else str(speaker.name)
                 )
 
@@ -335,7 +335,7 @@ class SubtitleService:
             else:
                 # Single segment - process normally
                 segment = group[0]
-                speaker_name = speaker_map.get(segment.speaker_id) if segment.speaker_id else None
+                speaker_name = speaker_map.get(segment.speaker_id) if segment.speaker_id else None  # type: ignore[call-overload]
 
                 # Split long segments into properly formatted subtitles for WebVTT
                 subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "webvtt")
@@ -379,7 +379,7 @@ class SubtitleService:
             speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
             speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
             for speaker in speakers:
-                speaker_map[speaker.id] = (
+                speaker_map[speaker.id] = (  # type: ignore[index]
                     str(speaker.display_name) if speaker.display_name else str(speaker.name)
                 )
 
@@ -404,7 +404,7 @@ class SubtitleService:
             else:
                 # Single segment - process normally
                 segment = group[0]
-                speaker_name = speaker_map.get(segment.speaker_id) if segment.speaker_id else None
+                speaker_name = speaker_map.get(segment.speaker_id) if segment.speaker_id else None  # type: ignore[call-overload]
 
                 # Split long segments into properly formatted subtitles
                 subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "srt")
@@ -477,7 +477,7 @@ class SubtitleService:
             speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
             speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
             for speaker in speakers:
-                speaker_map[speaker.id] = (
+                speaker_map[speaker.id] = (  # type: ignore[index]
                     str(speaker.display_name) if speaker.display_name else str(speaker.name)
                 )
 
@@ -499,7 +499,7 @@ class SubtitleService:
 
                 for segment in sorted(group, key=lambda s: float(s.start_time)):
                     speaker_name = (
-                        speaker_map.get(segment.speaker_id, "Unknown")
+                        speaker_map.get(segment.speaker_id, "Unknown")  # type: ignore[call-overload]
                         if segment.speaker_id
                         else "Unknown"
                     )
@@ -517,7 +517,7 @@ class SubtitleService:
                 # Single segment
                 segment = group[0]
                 speaker_name = (
-                    speaker_map.get(segment.speaker_id, "Unknown")
+                    speaker_map.get(segment.speaker_id, "Unknown")  # type: ignore[call-overload]
                     if segment.speaker_id
                     else "Unknown"
                 )

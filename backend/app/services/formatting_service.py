@@ -121,6 +121,8 @@ class FormattingService:
         """
         status_map = {
             FileStatus.PENDING: "Pending",
+            FileStatus.QUEUED: "Queued",
+            FileStatus.DOWNLOADING: "Downloading",
             FileStatus.PROCESSING: "Processing",
             FileStatus.COMPLETED: "Completed",
             FileStatus.ERROR: "Error",
@@ -438,6 +440,8 @@ class FormattingService:
             "completed": "status-completed",
             "processing": "status-processing",
             "pending": "status-pending",
+            "queued": "status-pending",
+            "downloading": "status-processing",
             "error": "status-error",
             "cancelling": "status-cancelling",
             "cancelled": "status-cancelled",

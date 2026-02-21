@@ -14,6 +14,21 @@ from app.core.celery import celery_app
 logger = logging.getLogger(__name__)
 
 
+_broadcast_redis_client = None
+
+
+def _get_broadcast_redis():
+    """Get or create a module-level Redis client for WebSocket broadcasts."""
+    global _broadcast_redis_client
+    if _broadcast_redis_client is None:
+        import redis as sync_redis
+
+        from app.core.config import settings
+
+        _broadcast_redis_client = sync_redis.from_url(settings.REDIS_URL)
+    return _broadcast_redis_client
+
+
 @celery_app.task(name="update_gpu_stats", bind=True)
 def update_gpu_stats(self):
     """
@@ -100,12 +115,7 @@ def update_gpu_stats(self):
 
         # Broadcast to all connected WebSocket clients
         try:
-            import redis as sync_redis
-
-            from app.core.config import settings
-
-            broadcast_client = sync_redis.from_url(settings.REDIS_URL)
-            broadcast_client.publish(
+            _get_broadcast_redis().publish(
                 "websocket_notifications",
                 json.dumps(
                     {

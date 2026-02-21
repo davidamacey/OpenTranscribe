@@ -201,7 +201,7 @@ async def add_media_to_collection(
 
     import uuid as uuid_mod
 
-    parsed_uuids = [uuid_mod.UUID(u) for u in media_file_uuids]
+    parsed_uuids = [uuid_mod.UUID(u) for u in media_file_uuids]  # type: ignore[arg-type]
     media_files = (
         db.query(MediaFile)
         .filter(
@@ -268,7 +268,7 @@ async def remove_media_from_collection(
 
     import uuid as uuid_mod
 
-    parsed_uuids = [uuid_mod.UUID(u) for u in media_file_uuids]
+    parsed_uuids = [uuid_mod.UUID(u) for u in media_file_uuids]  # type: ignore[arg-type]
     media_files = db.query(MediaFile).filter(MediaFile.uuid.in_(parsed_uuids)).all()
     media_file_ids = [f.id for f in media_files]
 

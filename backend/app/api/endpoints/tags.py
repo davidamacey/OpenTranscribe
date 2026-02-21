@@ -31,18 +31,18 @@ def _get_or_create_tag(db: Session, name: str) -> Tag:
     """
     tag = db.query(Tag).filter(Tag.name == name).first()
     if tag:
-        return tag
+        return tag  # type: ignore[no-any-return]
 
     try:
         tag = Tag(name=name)
         db.add(tag)
         db.flush()  # Flush to trigger unique constraint check within the transaction
-        return tag
+        return tag  # type: ignore[no-any-return]
     except IntegrityError:
         db.rollback()
         tag = db.query(Tag).filter(Tag.name == name).first()
         if tag:
-            return tag
+            return tag  # type: ignore[no-any-return]
         raise  # Re-raise if somehow still not found
 
 

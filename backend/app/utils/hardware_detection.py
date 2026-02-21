@@ -281,7 +281,7 @@ class HardwareConfig:
         import torch
 
         if self.device == "cuda" and torch.cuda.is_available():
-            return torch.cuda.max_memory_allocated(0) / (1024**2)
+            return float(torch.cuda.max_memory_allocated(0)) / (1024**2)
         return 0.0
 
     def optimize_memory_usage(self, aggressive: bool = True):

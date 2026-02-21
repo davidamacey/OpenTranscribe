@@ -78,10 +78,10 @@ def get_user_file_status(
         problem_query = (
             db.query(MediaFile)
             .options(
-                defer(MediaFile.metadata_raw),
-                defer(MediaFile.waveform_data),
-                defer(MediaFile.metadata_important),
-                defer(MediaFile.summary_data),
+                defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
+                defer(MediaFile.waveform_data),  # type: ignore[arg-type]
+                defer(MediaFile.metadata_important),  # type: ignore[arg-type]
+                defer(MediaFile.summary_data),  # type: ignore[arg-type]
             )
             .filter(
                 MediaFile.user_id == user_id,
@@ -112,7 +112,7 @@ def get_user_file_status(
                     "formatted_duration": FormattingService.format_duration(
                         float(file.duration) if file.duration is not None else None
                     ),
-                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),
+                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),  # type: ignore[arg-type]
                     "formatted_file_size": FormattingService.format_bytes_detailed(
                         int(file.file_size) if file.file_size is not None else None
                     ),
@@ -130,10 +130,10 @@ def get_user_file_status(
         recent_query = (
             db.query(MediaFile)
             .options(
-                defer(MediaFile.metadata_raw),
-                defer(MediaFile.waveform_data),
-                defer(MediaFile.metadata_important),
-                defer(MediaFile.summary_data),
+                defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
+                defer(MediaFile.waveform_data),  # type: ignore[arg-type]
+                defer(MediaFile.metadata_important),  # type: ignore[arg-type]
+                defer(MediaFile.summary_data),  # type: ignore[arg-type]
             )
             .filter(
                 MediaFile.user_id == user_id,
@@ -157,7 +157,7 @@ def get_user_file_status(
                     "formatted_duration": FormattingService.format_duration(
                         float(file.duration) if file.duration is not None else None
                     ),
-                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),
+                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),  # type: ignore[arg-type]
                     "formatted_file_size": FormattingService.format_bytes_detailed(
                         int(file.file_size) if file.file_size is not None else None
                     ),

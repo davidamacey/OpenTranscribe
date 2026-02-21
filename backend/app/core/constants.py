@@ -148,7 +148,7 @@ OPENSEARCH_MAX_RESULT_WINDOW = 50000
 # Search & RAG constants
 SEARCH_DEFAULT_PAGE_SIZE = 20
 SEARCH_MAX_PAGE_SIZE = 100
-SEARCH_MAX_SNIPPETS_PER_FILE = 100  # Return all occurrences for frontend navigation
+SEARCH_MAX_SNIPPETS_PER_FILE = 10  # Top occurrences per file (reduces memory/latency)
 SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprecated)
 SEARCH_HYBRID_MIN_SCORE = 0.01
 SEARCH_CACHE_TTL_SECONDS = 300

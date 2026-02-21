@@ -60,7 +60,7 @@ def get_user_stats(db: Session, *, include_breakdown: bool = False) -> dict[str,
             "new": row.new,
         }
     else:
-        row = db.query(
+        row = db.query(  # type: ignore[assignment]
             func.count().label("total"),
             func.count().filter(User.created_at >= seven_days_ago).label("new"),
         ).first()
@@ -102,7 +102,7 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
             ]
         )
 
-    row = db.query(*columns).first()
+    row = db.query(*columns).first()  # type: ignore[call-overload]
 
     # Separate queries for related table counts (cheap — indexes exist)
     total_segments = db.query(func.count(TranscriptSegment.id)).scalar() or 0
@@ -195,11 +195,11 @@ def get_recent_tasks(db: Session, limit: int = 10) -> list[dict[str, Any]]:
         db.query(Task)
         .options(
             load_only(
-                Task.id,
-                Task.task_type,
-                Task.status,
-                Task.created_at,
-                Task.completed_at,
+                Task.id,  # type: ignore[arg-type]
+                Task.task_type,  # type: ignore[arg-type]
+                Task.status,  # type: ignore[arg-type]
+                Task.created_at,  # type: ignore[arg-type]
+                Task.completed_at,  # type: ignore[arg-type]
             )
         )
         .order_by(Task.created_at.desc())

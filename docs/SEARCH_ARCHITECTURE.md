@@ -68,9 +68,11 @@ Not all fields are weighted equally. When searching:
 Transcripts are broken into searchable chunks using a speaker-turn-based strategy:
 
 1. **Group by speaker turn** — Consecutive segments from the same speaker are merged into a single turn
-2. **Split long turns** — Turns exceeding ~200 words are split with a 40-word overlap between chunks to preserve context
-3. **Merge short turns** — Very short turns (< 20 words) from the same speaker are merged with the previous chunk
-4. **One chunk = one OpenSearch document** — Each chunk is indexed separately with the file's metadata
+2. **Split long turns at sentence boundaries** — Turns exceeding ~200 words are split using NLTK punkt sentence tokenizer (supports 18 languages) with sentence-level overlap between chunks to preserve context. Falls back to word-count splitting for single-sentence turns or when NLTK is unavailable
+3. **Sentence-aligned overlap** — Instead of raw word-count overlap, trailing sentences from the previous chunk are carried forward as overlap. The overlap target is ~40 words, selecting whole sentences that fit within that budget
+4. **Merge short turns** — Very short turns (< 20 words) from the same speaker are merged with the previous chunk
+5. **Word-level timestamp boundaries** — When word-level timestamps are available (from faster-whisper), chunk start/end times are computed from actual word boundaries rather than linear interpolation. This provides accurate jump-to-position for search results
+6. **One chunk = one OpenSearch document** — Each chunk is indexed separately with the file's metadata
 
 **Typical results:**
 - 30-minute meeting: ~10-15 chunks
@@ -126,6 +128,7 @@ These settings can be tuned via environment variables:
 | `SEARCH_CHUNK_OVERLAP_WORDS` | 40 | Word overlap between split chunks for context preservation |
 | `SEARCH_HYBRID_MIN_SCORE` | 0.01 | Minimum score threshold for semantic-only results |
 | `SEARCH_SEMANTIC_SUPPRESS_RATIO` | 0.35 | Ratio of weakest semantic-only results to suppress |
+| `SEARCH_COLLAPSE_MAX_CONCURRENT` | 20 | Max concurrent group searches for collapse inner_hits |
 | `OPENSEARCH_NEURAL_SEARCH_ENABLED` | true | Enable/disable semantic search (falls back to keyword-only) |
 | `OPENSEARCH_NEURAL_MODEL` | `huggingface/sentence-transformers/all-MiniLM-L6-v2` | Embedding model for semantic search |
 
@@ -153,24 +156,21 @@ User Query
 Parse query operators (e.g., speaker:"Jane")
   |
   v
-Build hybrid query
-  |-- BM25 leg: multi_match on boosted fields (up to 500 results)
-  |-- Neural leg: vector similarity via OpenSearch ML (up to 500 results)
+Build hybrid query with collapse + inner_hits
+  |-- BM25 leg: multi_match on boosted fields
+  |-- Neural leg: vector similarity via OpenSearch ML
   |
   v
 OpenSearch RRF pipeline combines both rank lists
   |
   v
-Retrieve ~2000 chunks (over-fetch for file grouping)
+Collapse by file_uuid — returns top groups with inner segments
   |
   v
 Filter semantic-only results below thresholds
   |
   v
-Group chunks by file (max score per file = file relevance)
-  |
-  v
-Sort and paginate (20 results per page)
+Sort and paginate (native for non-relevance, Python for relevance)
   |
   v
 Apply semantic highlighting to page results
@@ -183,8 +183,28 @@ Normalize scores to 20-99% display range
 
 - **Index name**: `transcript_chunks` (aliased as `transcript_search`)
 - **One document per chunk** with denormalized file metadata
-- **Custom analyzer**: English snowball stemmer with stop words and shingle filter for the `content` field
+- **Custom `transcript` analyzer**: English snowball stemmer, stop words, and shingle filter (bigram/trigram) for the `content` field
+- **Index sorting by `file_uuid` + `chunk_index`** for optimized collapse grouping
+- **`eager_global_ordinals`** on `speaker` and `tags` fields for faster filter aggregations
 - **HNSW vector index**: Cosine similarity, ef_construction=256, m=16 for the embedding field
+
+### Word-Level Timestamp Storage
+
+Transcript segments can optionally store word-level timestamps from faster-whisper as a JSONB column (`words`) on the `TranscriptSegment` model. Each entry contains:
+
+```json
+[{"word": "hello", "start": 0.1, "end": 0.25, "score": 0.95}, ...]
+```
+
+**How it improves search:**
+- When chunking a long speaker turn, chunk boundaries are computed from actual word timestamps instead of uniform interpolation (`time_per_word = duration / word_count`)
+- This eliminates 5-15 second timestamp errors common in long monologue segments where speech pace varies
+- Search results link to precise positions in the audio/video
+
+**Backwards compatibility:**
+- The `words` column is nullable — existing segments without word data continue to work
+- Chunking falls back to linear interpolation when `words` is NULL
+- No re-transcription is required for existing files (word timestamps are populated on new transcriptions)
 
 ### Key Implementation Files
 

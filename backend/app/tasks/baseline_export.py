@@ -10,7 +10,7 @@ from app.utils.uuid_helpers import get_file_by_uuid
 
 logger = logging.getLogger(__name__)
 
-BENCHMARKS_DIR = os.environ.get("BENCHMARKS_DIR", "/tmp/benchmarks")  # noqa: S108
+BENCHMARKS_DIR = os.environ.get("BENCHMARKS_DIR", "/tmp/benchmarks")  # noqa: S108  # nosec B108
 
 
 @celery_app.task(name="export_transcript_baseline")

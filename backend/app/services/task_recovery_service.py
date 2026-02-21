@@ -7,6 +7,7 @@ by separating recovery actions from detection.
 """
 
 import logging
+from contextlib import contextmanager
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -51,7 +52,7 @@ class TaskRecoveryService:
         """
         from app.models.media import TranscriptSegment
 
-        segment_count = (
+        segment_count: int = (
             db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).count()
         )
 
@@ -62,7 +63,7 @@ class TaskRecoveryService:
             logger.info(
                 f"Deleted {segment_count} existing segments for file {file_id} before retry"
             )
-            db.commit()
+            db.flush()
 
         return segment_count
 
@@ -219,6 +220,22 @@ class TaskRecoveryService:
 
         return stats
 
+    @staticmethod
+    @contextmanager
+    def _session_scope():
+        """Provide a transactional scope around a series of operations."""
+        from app.db.base import SessionLocal
+
+        db = SessionLocal()
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
     def schedule_file_retry(self, media_file_id: int) -> bool:
         """
         Schedule a retry for a file, dispatching the appropriate task type.
@@ -234,11 +251,9 @@ class TaskRecoveryService:
             bool: True if retry was scheduled successfully
         """
         try:
-            from app.db.base import SessionLocal
             from app.models.media import MediaFile
 
-            db = SessionLocal()
-            try:
+            with self._session_scope() as db:
                 media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
                 if not media_file:
                     logger.error(f"File {media_file_id} not found for retry")
@@ -248,30 +263,27 @@ class TaskRecoveryService:
                 source_url = str(media_file.source_url) if media_file.source_url else None
                 storage_path = str(media_file.storage_path) if media_file.storage_path else None
                 user_id = int(media_file.user_id)
-            finally:
-                db.close()
 
-            # If file has a source URL but no storage path, it failed during download
-            if source_url and not storage_path:
-                from app.tasks.youtube_processing import process_youtube_url_task
+                # Dispatch task before closing session to prevent stale data
+                if source_url and not storage_path:
+                    from app.tasks.youtube_processing import process_youtube_url_task
 
-                result = process_youtube_url_task.delay(
-                    url=source_url,
-                    user_id=user_id,
-                    file_uuid=file_uuid,
-                )
-                logger.info(
-                    f"Scheduled YouTube download retry for file {media_file_id}, "
-                    f"task ID: {result.id}"
-                )
-            else:
-                from app.tasks.transcription import transcribe_audio_task
+                    result = process_youtube_url_task.delay(
+                        url=source_url,
+                        user_id=user_id,
+                        file_uuid=file_uuid,
+                    )
+                else:
+                    from app.tasks.transcription import transcribe_audio_task
 
-                result = transcribe_audio_task.delay(file_uuid)
-                logger.info(
-                    f"Scheduled transcription retry for file {media_file_id}, task ID: {result.id}"
-                )
+                    result = transcribe_audio_task.delay(file_uuid)
 
+            # Validate dispatch succeeded
+            if not result or not result.id:
+                logger.error(f"Celery dispatch returned no task ID for file {media_file_id}")
+                return False
+
+            logger.info(f"Scheduled retry for file {media_file_id}, task ID: {result.id}")
             return True
 
         except Exception as e:
@@ -296,7 +308,7 @@ class TaskRecoveryService:
         for media_file in stuck_files:
             try:
                 # Classify the error
-                error_category = categorize_error(media_file.last_error_message or "")
+                error_category = categorize_error(media_file.last_error_message or "")  # type: ignore[arg-type]
                 media_file.error_category = error_category.value  # type: ignore[assignment]
 
                 # Enforce retry delay based on error category
@@ -597,7 +609,7 @@ class TaskRecoveryService:
 
                     logger.info(
                         f"Successfully scheduled OOM retry for file {media_file.id} - "
-                        f"next backoff delay: {2**media_file.retry_count * 10} minutes"
+                        f"next backoff delay: {2**media_file.retry_count * 10} minutes"  # type: ignore[operator]
                     )
                 else:
                     logger.error(f"Failed to schedule OOM retry for file {media_file.id}")
@@ -827,7 +839,7 @@ class TaskRecoveryService:
 
         if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
             # Classify the error and decide whether to retry
-            error_category = categorize_error(media_file.last_error_message or "")
+            error_category = categorize_error(media_file.last_error_message or "")  # type: ignore[arg-type]
             media_file.error_category = error_category.value  # type: ignore[assignment]
 
             if should_retry(error_category, int(media_file.retry_count)):
@@ -837,7 +849,15 @@ class TaskRecoveryService:
                 )
                 media_file.retry_count += 1  # type: ignore[assignment]
                 update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
-                self.schedule_file_retry(int(media_file.id))
+                if not self.schedule_file_retry(int(media_file.id)):
+                    logger.warning(
+                        f"Retry dispatch failed for file {media_file.id}, reverting to ERROR"
+                    )
+                    update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
+                    media_file.last_error_message = (
+                        "Retry dispatch failed - Celery may be unavailable"  # type: ignore[assignment]
+                    )
+                    db.commit()
             else:
                 update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
                 db.commit()
@@ -967,9 +987,7 @@ class TaskRecoveryService:
                 )
 
                 task.status = "failed"  # type: ignore[assignment]
-                task.error_message = (  # type: ignore[assignment]
-                    "Task timeout - stuck in progress for > 6 hours"
-                )
+                task.error_message = "Task timeout - stuck in progress for > 6 hours"  # type: ignore[assignment]
                 task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 stats["tasks_marked_failed"] += 1
@@ -1013,8 +1031,28 @@ class TaskRecoveryService:
                     f"Resetting false-positive failed task {task.id} ({task.task_type}) to pending"
                 )
 
+                # Track recovery attempts to prevent infinite loop
+                current_attempts = 0
+                if task.error_message and "recovery_attempt_" in task.error_message:
+                    try:
+                        current_attempts = int(
+                            task.error_message.split("recovery_attempt_")[1].split("_")[0]
+                        )
+                    except (ValueError, IndexError):
+                        current_attempts = 0
+
+                if current_attempts >= 2:
+                    logger.warning(
+                        f"Task {task.id} has been reset {current_attempts} times, "
+                        f"marking as permanently failed"
+                    )
+                    task.error_message = (
+                        f"Permanently failed after {current_attempts} recovery attempts"  # type: ignore[assignment]
+                    )
+                    continue
+
                 task.status = "pending"  # type: ignore[assignment]
-                task.error_message = None  # type: ignore[assignment]
+                task.error_message = f"recovery_attempt_{current_attempts + 1}_reset"  # type: ignore[assignment]
                 task.completed_at = None  # type: ignore[assignment]
                 task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 stats["tasks_reset"] += 1

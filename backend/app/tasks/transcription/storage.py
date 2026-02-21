@@ -65,9 +65,23 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
         if overlap_group_id and isinstance(overlap_group_id, str):
             overlap_group_id = uuid_module.UUID(overlap_group_id)
 
+        # Extract word-level timestamps if available
+        words_data = segment.get("words")
+        if words_data:
+            words_data = [
+                {
+                    "word": w["word"],
+                    "start": w["start"],
+                    "end": w["end"],
+                    "score": w.get("score", w.get("probability", 1.0)),
+                }
+                for w in words_data
+                if "start" in w and "end" in w
+            ]
+
         records.append(
             {
-                "uuid": uuid_module.uuid4(),  # Generate UUID for each segment
+                "uuid": uuid_module.uuid4(),
                 "media_file_id": file_id,
                 "start_time": segment["start"],
                 "end_time": segment["end"],
@@ -76,6 +90,7 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
                 "is_overlap": is_overlap,
                 "overlap_group_id": overlap_group_id,
                 "overlap_confidence": segment.get("overlap_confidence"),
+                "words": words_data if words_data else None,
             }
         )
 

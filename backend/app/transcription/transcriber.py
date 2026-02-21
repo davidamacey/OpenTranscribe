@@ -76,6 +76,7 @@ class Transcriber:
             f"batch_size={self.config.batch_size}, beam_size={self.config.beam_size}"
         )
 
+        assert self._pipeline is not None, "Pipeline not initialized"
         segments_gen, info = self._pipeline.transcribe(
             audio,
             batch_size=self.config.batch_size,

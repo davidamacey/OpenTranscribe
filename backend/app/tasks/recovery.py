@@ -6,11 +6,14 @@ separated from other utility tasks for better organization.
 """
 
 import logging
+from datetime import datetime
+from datetime import timezone
 
 from app.core.celery import celery_app
 from app.core.task_config import task_recovery_config
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
+from app.models.media import Task
 from app.services.task_detection_service import task_detection_service
 from app.services.task_recovery_service import task_recovery_service
 from app.utils.task_lock import with_task_lock
@@ -44,8 +47,18 @@ def startup_recovery_task(self):
     try:
         with session_scope() as db:
             # Step 1: Handle abandoned files
-            abandoned_files = task_detection_service.identify_abandoned_files(db)
+            abandoned_files, stale_task_ids = task_detection_service.identify_abandoned_files(db)
             summary["abandoned_files_found"] = len(abandoned_files)
+
+            # Mark stale tasks as failed (mutations separated from detection)
+            for task_id in stale_task_ids:
+                task = db.query(Task).get(task_id)
+                if task:
+                    task.status = "failed"  # type: ignore[assignment]
+                    task.error_message = "Celery task lost after system restart"  # type: ignore[assignment]
+                    task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            if stale_task_ids:
+                db.flush()
 
             reset_stats = task_recovery_service.reset_abandoned_files(db, abandoned_files)
             summary["abandoned_files_reset"] = reset_stats["files_reset"]

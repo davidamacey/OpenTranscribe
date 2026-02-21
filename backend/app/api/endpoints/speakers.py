@@ -6,12 +6,14 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.auth import get_current_admin_user
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -25,6 +27,13 @@ from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.uuid_helpers import get_speaker_by_uuid
 
 logger = logging.getLogger(__name__)
+
+# Whitelist of fields that can be updated via the speaker update endpoint
+SPEAKER_UPDATABLE_FIELDS = {"name", "display_name", "suggested_name", "verified"}
+
+# Speaker suggestion constants
+SPEAKER_SUGGESTION_MIN_CONFIDENCE = 0.5
+SPEAKER_SUGGESTION_MAX_COUNT = 5
 
 router = APIRouter()
 
@@ -115,20 +124,33 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
     """
     Get unique speakers by display name for filter use with media file counts.
 
-    Uses a single GROUP BY query with min() aggregates to pick a representative
-    UUID per display name — eliminates the N+1 per-name lookup.
+    Uses DISTINCT ON to pick a deterministic representative speaker per display
+    name (the one with the lowest id), then counts media files per display name.
 
     Returns list of dicts with uuid, name, display_name, and media_count.
     """
-    from sqlalchemy import String
     from sqlalchemy import func
 
-    rows = (
+    # Step 1: Get one representative speaker per display_name using DISTINCT ON
+    # This gives deterministic UUID selection (lowest id wins)
+    representative_speakers = (
+        db.query(Speaker)
+        .filter(
+            Speaker.user_id == current_user.id,
+            Speaker.display_name.isnot(None),
+            Speaker.display_name != "",
+            ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
+        )
+        .distinct(Speaker.display_name)
+        .order_by(Speaker.display_name, Speaker.id)
+        .all()
+    )
+
+    # Step 2: Get media file counts per display_name in a single query
+    count_rows = (
         db.query(
             Speaker.display_name,
             func.count(func.distinct(Speaker.media_file_id)).label("media_count"),
-            func.min(Speaker.uuid.cast(String)).label("rep_uuid"),
-            func.min(Speaker.name).label("rep_name"),
         )
         .filter(
             Speaker.user_id == current_user.id,
@@ -137,19 +159,23 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
             ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
         )
         .group_by(Speaker.display_name)
-        .order_by(func.count(func.distinct(Speaker.media_file_id)).desc(), Speaker.display_name)
         .all()
     )
+    media_counts = {row.display_name: row.media_count for row in count_rows}
 
-    return [
+    # Step 3: Combine and sort by media_count descending, then display_name
+    results = [
         {
-            "uuid": str(row.rep_uuid),
-            "name": row.rep_name,
-            "display_name": row.display_name,
-            "media_count": row.media_count,
+            "uuid": str(speaker.uuid),
+            "name": speaker.name,
+            "display_name": speaker.display_name,
+            "media_count": media_counts.get(speaker.display_name, 0),
         }
-        for row in rows
+        for speaker in representative_speakers
     ]
+    results.sort(key=lambda r: (-r["media_count"], r["display_name"] or ""))
+
+    return results
 
 
 def _resolve_file_uuid_to_id(file_uuid: str | None, current_user: User, db: Session) -> int | None:
@@ -403,8 +429,8 @@ def _process_single_speaker(
         speaker_id=int(speaker.id),
         user_id=int(current_user.id),
         db=db,
-        confidence_threshold=0.5,
-        max_suggestions=5,
+        confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
+        max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
     )
 
     # Format suggestions for API response
@@ -518,8 +544,11 @@ def list_speakers(
         return _create_no_cache_response(result)
 
     except Exception as e:
-        logger.error(f"Error in list_speakers: {e}")
-        return _create_no_cache_response([])
+        logger.error(f"Error in list_speakers: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error while loading speakers",
+        ) from e
 
 
 @router.post("/cleanup-orphaned-embeddings", response_model=dict[str, Any])
@@ -548,7 +577,7 @@ def cleanup_orphaned_embeddings(
 @router.get("/debug/cross-media-data", response_model=dict[str, Any])
 def debug_cross_media_data(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """
     Debug endpoint to examine cross-media matching data in PostgreSQL and OpenSearch.
@@ -575,7 +604,7 @@ def debug_cross_media_data(
                 }
             )
 
-        # Get all speakers for this user, especially Joe Rogan ones
+        # Get all speakers for this user
         speakers = (
             db.query(Speaker)
             .filter(Speaker.user_id == current_user.id)
@@ -583,7 +612,6 @@ def debug_cross_media_data(
             .all()
         )
 
-        joe_rogan_speakers: list[dict[str, Any]] = []
         for speaker in speakers:
             speaker_data: dict[str, Any] = {
                 "id": speaker.id,
@@ -595,10 +623,6 @@ def debug_cross_media_data(
                 "confidence": speaker.confidence,
             }
             debug_info["speakers"].append(speaker_data)
-
-            # Track Joe Rogan speakers specifically
-            if speaker.display_name == "Joe Rogan":
-                joe_rogan_speakers.append(speaker_data)
 
         # Get all speaker profiles
         profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id).all()
@@ -682,8 +706,6 @@ def debug_cross_media_data(
         debug_info["analysis"] = {
             "total_media_files": len(debug_info["media_files"]),
             "total_speakers": len(debug_info["speakers"]),
-            "joe_rogan_speakers": joe_rogan_speakers,
-            "joe_rogan_count": len(joe_rogan_speakers),
             "total_profiles": len(debug_info["profiles"]),
             "opensearch_speaker_count": len(debug_info["opensearch_speakers"]),
             "opensearch_profile_count": len(debug_info["opensearch_profiles"]),
@@ -696,28 +718,29 @@ def debug_cross_media_data(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-@router.get("/debug/joe-rogan-cross-media", response_model=dict[str, Any])
-def debug_joe_rogan_cross_media(
+@router.get("/debug/cross-media-by-name", response_model=dict[str, Any])
+def debug_cross_media_by_name(
+    speaker_name: str = Query(..., description="Speaker display name to search for"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """
-    Debug endpoint to test cross-media logic specifically for Joe Rogan speakers.
+    Debug endpoint to test cross-media logic for a specific speaker name.
     """
     try:
-        # Find all Joe Rogan speakers
-        joe_rogan_speakers = (
+        # Find all matching speakers
+        matching_speakers = (
             db.query(Speaker)
-            .filter(Speaker.user_id == current_user.id, Speaker.display_name == "Joe Rogan")
+            .filter(Speaker.user_id == current_user.id, Speaker.display_name == speaker_name)
             .all()
         )
 
         results: dict[str, Any] = {
-            "joe_rogan_speakers_found": len(joe_rogan_speakers),
+            "speakers_found": len(matching_speakers),
             "cross_media_results": [],
         }
 
-        for speaker in joe_rogan_speakers:
+        for speaker in matching_speakers:
             # Test the cross-media logic for this speaker
             cross_media_result: dict[str, Any] = {
                 "speaker_id": speaker.id,
@@ -801,7 +824,7 @@ def debug_joe_rogan_cross_media(
         return results
 
     except Exception as e:
-        logger.error(f"Error in Joe Rogan debug endpoint: {e}")
+        logger.error(f"Error in cross-media-by-name debug endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
@@ -1304,6 +1327,9 @@ def update_speaker(
     profile_action = update_data.pop("profile_action", None)
 
     for field, value in update_data.items():
+        if field not in SPEAKER_UPDATABLE_FIELDS:
+            logger.warning(f"Ignoring non-updatable field in speaker update: {field}")
+            continue
         setattr(speaker, field, value)
 
     # Handle profile actions (synchronous - needed for immediate response)

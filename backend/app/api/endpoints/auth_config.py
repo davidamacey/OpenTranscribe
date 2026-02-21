@@ -107,7 +107,7 @@ async def get_all_configs(
                 "created_at": config.created_at,
                 "updated_at": config.updated_at,
             }
-            result[category].append(AuthConfigResponse(**config_dict))
+            result[category].append(AuthConfigResponse(**config_dict))  # type: ignore[arg-type]
 
     return result
 
@@ -310,14 +310,14 @@ async def get_audit_log(
 
     return [
         AuthConfigAuditResponse(
-            id=audit.id,
+            id=audit.id,  # type: ignore[arg-type]
             uuid=str(audit.uuid),
-            config_key=audit.config_key,
-            old_value=audit.old_value,
-            new_value=audit.new_value,
-            change_type=audit.change_type,
-            ip_address=audit.ip_address,
-            created_at=audit.created_at,
+            config_key=audit.config_key,  # type: ignore[arg-type]
+            old_value=audit.old_value,  # type: ignore[arg-type]
+            new_value=audit.new_value,  # type: ignore[arg-type]
+            change_type=audit.change_type,  # type: ignore[arg-type]
+            ip_address=audit.ip_address,  # type: ignore[arg-type]
+            created_at=audit.created_at,  # type: ignore[arg-type]
         )
         for audit in audits
     ]

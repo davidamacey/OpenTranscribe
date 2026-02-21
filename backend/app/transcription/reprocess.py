@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import time
+from typing import Any
 
 import pandas as pd
 
@@ -60,7 +61,10 @@ def reprocess(
     from app.utils.fast_speaker_assignment import assign_word_speakers_fast
     from app.utils.segment_dedup import clean_segments
 
-    result = {"segments": list(transcript["segments"]), "language": transcript.get("language")}
+    result: dict[str, Any] = {
+        "segments": list(transcript["segments"]),
+        "language": transcript.get("language"),
+    }
 
     # Step 1: Sentence split + dedup
     if enable_dedup:
@@ -102,7 +106,7 @@ def print_summary(result: dict, num_lines: int = 20) -> None:
         logger.info(f"  [{speaker:>12}] {start:7.1f}-{end:7.1f}s ({word_count:3d}w) {text}")
 
     # Speaker stats
-    speakers = {}
+    speakers: dict[str, int] = {}
     unassigned = 0
     for seg in segments:
         sp = seg.get("speaker")

@@ -823,7 +823,7 @@ def login_for_access_token(
                     # Terminate oldest session - rows are already locked from the query above
                     # Sort by created_at to find the oldest
                     oldest_token = min(active_session_rows, key=lambda t: t.created_at)
-                    oldest_token.revoked_at = datetime.now(timezone.utc)
+                    oldest_token.revoked_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                     db.commit()
 
                     audit_logger.log(
@@ -1363,7 +1363,7 @@ async def acknowledge_banner(
     from datetime import datetime
     from datetime import timezone
 
-    current_user.banner_acknowledged_at = datetime.now(timezone.utc)
+    current_user.banner_acknowledged_at = datetime.now(timezone.utc)  # type: ignore[assignment]
     db.commit()
 
     # Audit log

@@ -225,6 +225,14 @@
               </svg>
               <span class="confirmation-message">{getConfirmationMessage()}</span>
             </div>
+            <div class="speaker-warning">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <span>{$t('reprocess.speakerWarning')}</span>
+            </div>
             <div class="confirmation-actions">
               <button class="btn-customize" on:click={handleCustomize}>{$t('reprocess.customize')}</button>
               <button class="btn-start" on:click={executeReprocess}>{$t('reprocess.start')}</button>
@@ -235,6 +243,15 @@
           <div class="settings-header">
             <h4>{$t('reprocess.settingsTitle')}</h4>
             <p>{$t('reprocess.settingsHint')}</p>
+          </div>
+
+          <div class="speaker-warning">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span>{$t('reprocess.speakerWarning')}</span>
           </div>
 
           <div class="settings-row">
@@ -377,6 +394,25 @@
   .confirmation-message {
     font-size: 0.85rem;
     color: var(--text-primary);
+  }
+
+  .speaker-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background-color: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 6px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .speaker-warning svg {
+    color: #f59e0b;
+    flex-shrink: 0;
+    margin-top: 1px;
   }
 
   .confirmation-actions {

@@ -214,10 +214,12 @@ def list_media_files(
     list_options = [
         joinedload(MediaFile.user),
         selectinload(MediaFile.speakers).load_only(
-            Speaker.uuid, Speaker.name, Speaker.display_name
+            Speaker.uuid,  # type: ignore[arg-type]
+            Speaker.name,  # type: ignore[arg-type]
+            Speaker.display_name,  # type: ignore[arg-type]
         ),
-        defer(MediaFile.metadata_raw),
-        defer(MediaFile.waveform_data),
+        defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
+        defer(MediaFile.waveform_data),  # type: ignore[arg-type]
     ]
 
     # Admin users can see all files, regular users only see their own files
@@ -269,9 +271,9 @@ def list_media_files(
 
     # Apply sort order (only for the data query, not the count)
     if sort_order.lower() == "asc":
-        filtered_query = filtered_query.order_by(sort_field.asc())
+        filtered_query = filtered_query.order_by(sort_field.asc())  # type: ignore[attr-defined]
     else:
-        filtered_query = filtered_query.order_by(sort_field.desc())
+        filtered_query = filtered_query.order_by(sort_field.desc())  # type: ignore[attr-defined]
 
     # Apply pagination
     offset = (page - 1) * page_size

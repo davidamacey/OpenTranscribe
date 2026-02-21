@@ -147,7 +147,7 @@ def _migrate_single_thumbnail(db, media_file: MediaFile) -> str:
         )
 
         # Update database with new path
-        media_file.thumbnail_path = new_thumbnail_path
+        media_file.thumbnail_path = new_thumbnail_path  # type: ignore[assignment]
 
         # Delete old JPEG thumbnail
         try:

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { SearchHit } from '$stores/search';
+  import type { SearchHit, SearchOccurrence as SearchOccurrenceType } from '$stores/search';
   import { t } from '$stores/locale';
   import SearchOccurrence from './SearchOccurrence.svelte';
 
@@ -29,7 +29,7 @@
     }
   }
 
-  function handlePreviewClick(occurrence: any) {
+  function handlePreviewClick(occurrence: SearchOccurrenceType) {
     const isActive = activePreview
       && activePreview.fileUuid === hit.file_uuid
       && activePreview.startTime === occurrence.start_time;
@@ -47,7 +47,7 @@
     }
   }
 
-  function isOccurrenceActive(occurrence: any): boolean {
+  function isOccurrenceActive(occurrence: SearchOccurrenceType): boolean {
     return !!(activePreview
       && activePreview.fileUuid === hit.file_uuid
       && activePreview.startTime === occurrence.start_time);
@@ -59,12 +59,12 @@
     <div class="result-header-top">
       <a href="/files/{hit.file_uuid}" class="result-title">
         {#if hit.content_type?.startsWith('video/')}
-          <svg class="media-type-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg class="media-type-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="23 7 16 12 23 17 23 7"></polygon>
             <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
           </svg>
         {:else}
-          <svg class="media-type-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg class="media-type-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
             <line x1="12" y1="19" x2="12" y2="23"></line>
@@ -153,7 +153,7 @@
   </div>
 
   <div class="result-body">
-    {#each visibleOccurrences as occurrence}
+    {#each visibleOccurrences as occurrence (occurrence.chunk_index)}
       <div class="occurrence-row">
         {#if hit.has_both_match_types}
           <span class="occurrence-type-label" class:exact={occurrence.has_keyword_match} class:related={!occurrence.has_keyword_match}>

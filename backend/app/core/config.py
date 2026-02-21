@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -6,6 +7,26 @@ from typing import Union
 from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+_config_logger = logging.getLogger(__name__)
+
+
+def _int_env(key: str, default: int) -> int:
+    """Read an environment variable and convert to int with validation.
+
+    Args:
+        key: Environment variable name.
+        default: Default value if the variable is not set or is invalid.
+
+    Returns:
+        The integer value, or the default if conversion fails.
+    """
+    val = os.getenv(key, str(default))
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        _config_logger.warning(f"Invalid integer for {key}='{val}', using default {default}")
+        return default
 
 
 def _validate_ldap_settings(settings: "Settings") -> None:
@@ -33,6 +54,11 @@ def _validate_ldap_settings(settings: "Settings") -> None:
         raise ValueError(
             f"LDAP_ENABLED=true but the following required settings are missing: "
             f"{', '.join(missing_ldap)}"
+        )
+
+    if settings.LDAP_USE_SSL and settings.LDAP_USE_TLS:
+        _config_logger.warning(
+            "LDAP_USE_SSL and LDAP_USE_TLS are mutually exclusive. Preferring TLS (StartTLS)."
         )
 
 
@@ -92,29 +118,23 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     # Access token expiration: 60 minutes (NIST recommended for moderate assurance)
     # Can be reduced to 15-30 minutes for high-security environments
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = _int_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 60)
     # Refresh token expiration: 7 days (for token refresh flow, future implementation)
-    JWT_REFRESH_TOKEN_EXPIRE_MINUTES: int = int(
-        os.getenv("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", "10080")
-    )
+    JWT_REFRESH_TOKEN_EXPIRE_MINUTES: int = _int_env("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", 10080)
     # Session idle timeout: 15 minutes (NIST moderate assurance, DoD STIG compliant)
-    SESSION_IDLE_TIMEOUT_MINUTES: int = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "15"))
+    SESSION_IDLE_TIMEOUT_MINUTES: int = _int_env("SESSION_IDLE_TIMEOUT_MINUTES", 15)
     # Session absolute timeout: 8 hours (force re-authentication)
-    SESSION_ABSOLUTE_TIMEOUT_MINUTES: int = int(
-        os.getenv("SESSION_ABSOLUTE_TIMEOUT_MINUTES", "480")
-    )
+    SESSION_ABSOLUTE_TIMEOUT_MINUTES: int = _int_env("SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
 
     # ===== FIPS 140-2 Password Hashing =====
     # Enable FIPS mode to use only FIPS-approved algorithms (PBKDF2-SHA256)
     FIPS_MODE: bool = os.getenv("FIPS_MODE", "false").lower() == "true"
     # PBKDF2 iterations (OWASP 2023 recommendation: 210,000 for SHA-256)
-    PBKDF2_ITERATIONS: int = int(os.getenv("PBKDF2_ITERATIONS", "210000"))
+    PBKDF2_ITERATIONS: int = _int_env("PBKDF2_ITERATIONS", 210000)
 
     # ===== FIPS 140-3 Configuration (upgraded from FIPS 140-2) =====
     FIPS_VERSION: str = os.getenv("FIPS_VERSION", "140-3")  # "140-2" or "140-3"
-    PBKDF2_ITERATIONS_V3: int = int(
-        os.getenv("PBKDF2_ITERATIONS_V3", "600000")
-    )  # NIST SP 800-132 2024
+    PBKDF2_ITERATIONS_V3: int = _int_env("PBKDF2_ITERATIONS_V3", 600000)  # NIST SP 800-132 2024
     JWT_ALGORITHM_V3: str = os.getenv("JWT_ALGORITHM_V3", "HS512")
     ENCRYPTION_ALGORITHM_V3: str = os.getenv("ENCRYPTION_ALGORITHM_V3", "AES-256-GCM")
     FIPS_MIGRATION_MODE: str = os.getenv(
@@ -129,7 +149,7 @@ class Settings(BaseSettings):
     # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
     PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
     # Minimum password length (NIST SP 800-63B recommends 8+, FedRAMP typically requires 12+)
-    PASSWORD_MIN_LENGTH: int = int(os.getenv("PASSWORD_MIN_LENGTH", "12"))
+    PASSWORD_MIN_LENGTH: int = _int_env("PASSWORD_MIN_LENGTH", 12)
     # Require at least one uppercase letter
     PASSWORD_REQUIRE_UPPERCASE: bool = (
         os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"
@@ -143,15 +163,15 @@ class Settings(BaseSettings):
     # Require at least one special character
     PASSWORD_REQUIRE_SPECIAL: bool = os.getenv("PASSWORD_REQUIRE_SPECIAL", "true").lower() == "true"
     # Number of previous passwords to prevent reuse (FedRAMP requires 24)
-    PASSWORD_HISTORY_COUNT: int = int(os.getenv("PASSWORD_HISTORY_COUNT", "24"))
+    PASSWORD_HISTORY_COUNT: int = _int_env("PASSWORD_HISTORY_COUNT", 24)
     # Maximum password age in days before forced reset (FedRAMP requires 60)
-    PASSWORD_MAX_AGE_DAYS: int = int(os.getenv("PASSWORD_MAX_AGE_DAYS", "60"))
+    PASSWORD_MAX_AGE_DAYS: int = _int_env("PASSWORD_MAX_AGE_DAYS", 60)
 
     # ===== Rate Limiting Settings (OWASP recommended) =====
     # Rate limit authentication endpoints per IP address
-    RATE_LIMIT_AUTH_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_AUTH_PER_MINUTE", "10"))
+    RATE_LIMIT_AUTH_PER_MINUTE: int = _int_env("RATE_LIMIT_AUTH_PER_MINUTE", 10)
     # Rate limit for general API endpoints
-    RATE_LIMIT_API_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_API_PER_MINUTE", "100"))
+    RATE_LIMIT_API_PER_MINUTE: int = _int_env("RATE_LIMIT_API_PER_MINUTE", 100)
     # Enable rate limiting (disable for testing)
     RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
     # Trusted proxy IPs for rate limiting (comma-separated)
@@ -161,22 +181,22 @@ class Settings(BaseSettings):
 
     # ===== Token Management (FedRAMP AC-12) =====
     # Refresh token expiration in days (7 days default for refresh token flow)
-    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = _int_env("JWT_REFRESH_TOKEN_EXPIRE_DAYS", 7)
     # Enable token revocation checking via Redis blacklist
     TOKEN_REVOCATION_ENABLED: bool = os.getenv("TOKEN_REVOCATION_ENABLED", "true").lower() == "true"
 
     # ===== Account Lockout Settings (NIST AC-7 compliant) =====
     # Number of failed login attempts before lockout
-    ACCOUNT_LOCKOUT_THRESHOLD: int = int(os.getenv("ACCOUNT_LOCKOUT_THRESHOLD", "5"))
+    ACCOUNT_LOCKOUT_THRESHOLD: int = _int_env("ACCOUNT_LOCKOUT_THRESHOLD", 5)
     # Initial lockout duration in minutes (progressive: 15 -> 30 -> 60 -> 1440)
-    ACCOUNT_LOCKOUT_DURATION_MINUTES: int = int(os.getenv("ACCOUNT_LOCKOUT_DURATION_MINUTES", "15"))
+    ACCOUNT_LOCKOUT_DURATION_MINUTES: int = _int_env("ACCOUNT_LOCKOUT_DURATION_MINUTES", 15)
     # Enable progressive lockout (doubles duration for each subsequent lockout)
     ACCOUNT_LOCKOUT_PROGRESSIVE: bool = (
         os.getenv("ACCOUNT_LOCKOUT_PROGRESSIVE", "true").lower() == "true"
     )
     # Maximum lockout duration in minutes (24 hours)
-    ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES: int = int(
-        os.getenv("ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", "1440")
+    ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES: int = _int_env(
+        "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", 1440
     )
     # Enable account lockout (disable for testing)
     ACCOUNT_LOCKOUT_ENABLED: bool = os.getenv("ACCOUNT_LOCKOUT_ENABLED", "true").lower() == "true"
@@ -185,7 +205,7 @@ class Settings(BaseSettings):
     AUDIT_LOG_ENABLED: bool = os.getenv("AUDIT_LOG_ENABLED", "true").lower() == "true"
     AUDIT_LOG_FORMAT: str = os.getenv("AUDIT_LOG_FORMAT", "json")  # json or cef
     AUDIT_LOG_TO_OPENSEARCH: bool = os.getenv("AUDIT_LOG_TO_OPENSEARCH", "true").lower() == "true"
-    AUDIT_LOG_RETENTION_DAYS: int = int(os.getenv("AUDIT_LOG_RETENTION_DAYS", "365"))
+    AUDIT_LOG_RETENTION_DAYS: int = _int_env("AUDIT_LOG_RETENTION_DAYS", 365)
     # Fallback to file-based logging when OpenSearch is unavailable (FedRAMP AU-9)
     AUDIT_LOG_FALLBACK_ENABLED: bool = (
         os.getenv("AUDIT_LOG_FALLBACK_ENABLED", "true").lower() == "true"
@@ -200,13 +220,13 @@ class Settings(BaseSettings):
     LOGIN_BANNER_CLASSIFICATION: str = os.getenv("LOGIN_BANNER_CLASSIFICATION", "UNCLASSIFIED")
 
     # ===== Account Expiration (FedRAMP AC-2) =====
-    ACCOUNT_INACTIVE_DAYS: int = int(os.getenv("ACCOUNT_INACTIVE_DAYS", "90"))
+    ACCOUNT_INACTIVE_DAYS: int = _int_env("ACCOUNT_INACTIVE_DAYS", 90)
     ACCOUNT_EXPIRATION_ENABLED: bool = (
         os.getenv("ACCOUNT_EXPIRATION_ENABLED", "false").lower() == "true"
     )
 
     # ===== Concurrent Session Limits (FedRAMP AC-10) =====
-    MAX_CONCURRENT_SESSIONS: int = int(os.getenv("MAX_CONCURRENT_SESSIONS", "5"))  # 0 = unlimited
+    MAX_CONCURRENT_SESSIONS: int = _int_env("MAX_CONCURRENT_SESSIONS", 5)  # 0 = unlimited
     CONCURRENT_SESSION_POLICY: str = os.getenv(
         "CONCURRENT_SESSION_POLICY", "terminate_oldest"
     )  # or "reject"
@@ -240,9 +260,9 @@ class Settings(BaseSettings):
 
     # Presigned URL expiration settings (AWS/GCS best practices: shortest practical time)
     # Video URLs: 5 minutes default - refreshed automatically for long playback
-    MEDIA_URL_EXPIRE_SECONDS: int = int(os.getenv("MEDIA_URL_EXPIRE_SECONDS", "300"))
+    MEDIA_URL_EXPIRE_SECONDS: int = _int_env("MEDIA_URL_EXPIRE_SECONDS", 300)
     # Thumbnail URLs: 15 minutes default - longer since they're static images
-    THUMBNAIL_URL_EXPIRE_SECONDS: int = int(os.getenv("THUMBNAIL_URL_EXPIRE_SECONDS", "900"))
+    THUMBNAIL_URL_EXPIRE_SECONDS: int = _int_env("THUMBNAIL_URL_EXPIRE_SECONDS", 900)
     # Public URL for presigned URLs (how browsers access MinIO)
     # Dev: http://localhost:5178 | Prod/nginx: https://yourdomain.com/minio or https://minio.yourdomain.com
     MINIO_PUBLIC_URL: str = os.getenv("MINIO_PUBLIC_URL", "")
@@ -271,10 +291,13 @@ class Settings(BaseSettings):
     # Search & RAG settings
     OPENSEARCH_CHUNKS_INDEX: str = "transcript_chunks"
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
-    SEARCH_CHUNK_TARGET_WORDS: int = int(os.getenv("SEARCH_CHUNK_TARGET_WORDS", "200"))
-    SEARCH_CHUNK_OVERLAP_WORDS: int = int(os.getenv("SEARCH_CHUNK_OVERLAP_WORDS", "40"))
-    SEARCH_RRF_RANK_CONSTANT: int = int(os.getenv("SEARCH_RRF_RANK_CONSTANT", "40"))
-    SEARCH_RRF_WINDOW_SIZE: int = int(os.getenv("SEARCH_RRF_WINDOW_SIZE", "500"))
+    SEARCH_CHUNK_TARGET_WORDS: int = _int_env("SEARCH_CHUNK_TARGET_WORDS", 200)
+    SEARCH_CHUNK_OVERLAP_WORDS: int = _int_env("SEARCH_CHUNK_OVERLAP_WORDS", 40)
+    SEARCH_RRF_RANK_CONSTANT: int = _int_env("SEARCH_RRF_RANK_CONSTANT", 40)
+    SEARCH_RRF_WINDOW_SIZE: int = _int_env("SEARCH_RRF_WINDOW_SIZE", 500)
+    SEARCH_BULK_BATCH_SIZE: int = max(_int_env("SEARCH_BULK_BATCH_SIZE", 100), 1)
+    SEARCH_NEURAL_BATCH_SIZE: int = _int_env("SEARCH_NEURAL_BATCH_SIZE", 5)
+    SEARCH_REINDEX_REFRESH_INTERVAL: int = _int_env("SEARCH_REINDEX_REFRESH_INTERVAL", 100)
     SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.01"))
     SEARCH_SEMANTIC_HIGH_CONFIDENCE: float = float(
         os.getenv("SEARCH_SEMANTIC_HIGH_CONFIDENCE", "0.015")
@@ -284,6 +307,9 @@ class Settings(BaseSettings):
     SEARCH_SEMANTIC_SUPPRESS_RATIO: float = float(
         os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.35")
     )
+
+    # Max concurrent group searches for collapse inner_hits (OpenSearch default: 0 = sequential)
+    SEARCH_COLLAPSE_MAX_CONCURRENT: int = _int_env("SEARCH_COLLAPSE_MAX_CONCURRENT", 20)
 
     # OpenSearch Neural Search settings (ML Commons-based)
     # When enabled, embeddings are generated server-side by OpenSearch instead of Python
@@ -351,9 +377,7 @@ class Settings(BaseSettings):
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
-    GPU_DEVICE_ID: int = int(
-        os.getenv("GPU_DEVICE_ID", "0")
-    )  # Host GPU index (Docker maps to device 0)
+    GPU_DEVICE_ID: int = _int_env("GPU_DEVICE_ID", 0)  # Host GPU index (Docker maps to device 0)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
 
     # AI Models settings
@@ -366,8 +390,8 @@ class Settings(BaseSettings):
     HUGGINGFACE_TOKEN: Optional[str] = os.getenv("HUGGINGFACE_TOKEN", None)
 
     # Speaker diarization settings
-    MIN_SPEAKERS: int = int(os.getenv("MIN_SPEAKERS", "1"))
-    MAX_SPEAKERS: int = int(os.getenv("MAX_SPEAKERS", "20"))
+    MIN_SPEAKERS: int = _int_env("MIN_SPEAKERS", 1)
+    MAX_SPEAKERS: int = _int_env("MAX_SPEAKERS", 20)
     # NUM_SPEAKERS forces exact speaker count (overrides min/max if set)
     _NUM_SPEAKERS_STR: Optional[str] = os.getenv("NUM_SPEAKERS")
     NUM_SPEAKERS: Optional[int] = int(_NUM_SPEAKERS_STR) if _NUM_SPEAKERS_STR else None
@@ -379,7 +403,7 @@ class Settings(BaseSettings):
     # LDAP/Active Directory Configuration
     LDAP_ENABLED: bool = os.getenv("LDAP_ENABLED", "false").lower() == "true"
     LDAP_SERVER: str = os.getenv("LDAP_SERVER", "")
-    LDAP_PORT: int = int(os.getenv("LDAP_PORT", "636"))
+    LDAP_PORT: int = _int_env("LDAP_PORT", 636)
     LDAP_USE_SSL: bool = os.getenv("LDAP_USE_SSL", "true").lower() == "true"
     # LDAP_USE_TLS enables StartTLS on non-SSL connections (port 389)
     # Use LDAP_USE_SSL=true for LDAPS (port 636) - they are mutually exclusive
@@ -393,7 +417,7 @@ class Settings(BaseSettings):
     ).replace("{username_attr}", os.getenv("LDAP_USERNAME_ATTR", "sAMAccountName"))
     LDAP_EMAIL_ATTR: str = os.getenv("LDAP_EMAIL_ATTR", "mail")
     LDAP_NAME_ATTR: str = os.getenv("LDAP_NAME_ATTR", "cn")
-    LDAP_TIMEOUT: int = int(os.getenv("LDAP_TIMEOUT", "10"))
+    LDAP_TIMEOUT: int = _int_env("LDAP_TIMEOUT", 10)
     LDAP_ADMIN_USERS: str = os.getenv("LDAP_ADMIN_USERS", "")
     # LDAP Group-based RBAC (alternative to LDAP_ADMIN_USERS)
     # Comma-separated list of group DNs that grant admin role
@@ -420,7 +444,7 @@ class Settings(BaseSettings):
     KEYCLOAK_ADMIN_ROLE: str = os.getenv(
         "KEYCLOAK_ADMIN_ROLE", "admin"
     )  # Keycloak role that grants admin access
-    KEYCLOAK_TIMEOUT: int = int(os.getenv("KEYCLOAK_TIMEOUT", "30"))
+    KEYCLOAK_TIMEOUT: int = _int_env("KEYCLOAK_TIMEOUT", 30)
     # OIDC Security: Enable audience (aud) claim validation (OWASP recommended)
     # Default to True for security - validates tokens are intended for this client
     KEYCLOAK_VERIFY_AUDIENCE: bool = os.getenv("KEYCLOAK_VERIFY_AUDIENCE", "true").lower() == "true"
@@ -440,12 +464,12 @@ class Settings(BaseSettings):
     # Issuer name shown in authenticator apps
     MFA_ISSUER_NAME: str = os.getenv("MFA_ISSUER_NAME", "OpenTranscribe")
     # Number of backup codes to generate (one-time use)
-    MFA_BACKUP_CODE_COUNT: int = int(os.getenv("MFA_BACKUP_CODE_COUNT", "10"))
+    MFA_BACKUP_CODE_COUNT: int = _int_env("MFA_BACKUP_CODE_COUNT", 10)
     # MFA token expiry in minutes (short-lived token for MFA verification step)
-    MFA_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("MFA_TOKEN_EXPIRE_MINUTES", "5"))
+    MFA_TOKEN_EXPIRE_MINUTES: int = _int_env("MFA_TOKEN_EXPIRE_MINUTES", 5)
     # TOTP verification window (number of time steps before/after to accept)
     # 1 = allow 1 step before/after for clock drift (±30 seconds)
-    TOTP_VALID_WINDOW: int = int(os.getenv("TOTP_VALID_WINDOW", "1"))
+    TOTP_VALID_WINDOW: int = _int_env("TOTP_VALID_WINDOW", 1)
     # Require Redis for MFA token blacklist (fail-secure mode)
     # When true, MFA verification fails if Redis is unavailable
     # When false, logs warning but allows MFA (reduced replay protection)
@@ -469,16 +493,14 @@ class Settings(BaseSettings):
         "PKI_ADMIN_DNS", ""
     )  # Comma-separated list of admin certificate DNs
     # OCSP/CRL revocation checking settings
-    PKI_OCSP_TIMEOUT_SECONDS: int = int(os.getenv("PKI_OCSP_TIMEOUT_SECONDS", "5"))
-    PKI_CRL_CACHE_SECONDS: int = int(
-        os.getenv("PKI_CRL_CACHE_SECONDS", "3600")
-    )  # Cache CRL for 1 hour
+    PKI_OCSP_TIMEOUT_SECONDS: int = _int_env("PKI_OCSP_TIMEOUT_SECONDS", 5)
+    PKI_CRL_CACHE_SECONDS: int = _int_env("PKI_CRL_CACHE_SECONDS", 3600)  # Cache CRL for 1 hour
     # Soft-fail allows authentication if revocation check fails (network issues)
     PKI_REVOCATION_SOFT_FAIL: bool = os.getenv("PKI_REVOCATION_SOFT_FAIL", "true").lower() == "true"
     # Maximum cache size for OCSP responses (LRU eviction when exceeded)
-    PKI_OCSP_CACHE_MAX_SIZE: int = int(os.getenv("PKI_OCSP_CACHE_MAX_SIZE", "1000"))
+    PKI_OCSP_CACHE_MAX_SIZE: int = _int_env("PKI_OCSP_CACHE_MAX_SIZE", 1000)
     # Maximum cache size for CRLs (LRU eviction when exceeded)
-    PKI_CRL_CACHE_MAX_SIZE: int = int(os.getenv("PKI_CRL_CACHE_MAX_SIZE", "1000"))
+    PKI_CRL_CACHE_MAX_SIZE: int = _int_env("PKI_CRL_CACHE_MAX_SIZE", 1000)
     # Trusted proxy IPs for PKI certificate headers (comma-separated)
     # Only accept PKI certificate headers from these IPs
     # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
@@ -517,38 +539,32 @@ class Settings(BaseSettings):
     YOUTUBE_PLAYLIST_STAGGER_ENABLED: bool = (
         os.getenv("YOUTUBE_PLAYLIST_STAGGER_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS: int = int(
-        os.getenv("YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", "5")
-    )
-    YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS: int = int(
-        os.getenv("YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", "30")
-    )
-    YOUTUBE_PLAYLIST_STAGGER_INCREMENT: int = int(
-        os.getenv("YOUTUBE_PLAYLIST_STAGGER_INCREMENT", "5")
-    )
+    YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
+    YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 30)
+    YOUTUBE_PLAYLIST_STAGGER_INCREMENT: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
 
     # Pre-Download Jitter (random delay before each download starts)
     YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED: bool = (
         os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: int = int(
-        os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS", "2")
+    YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: int = _int_env(
+        "YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS", 2
     )
-    YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: int = int(
-        os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS", "15")
+    YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: int = _int_env(
+        "YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS", 15
     )
 
     # User Rate Limiting (per-user quotas to prevent abuse)
     YOUTUBE_USER_RATE_LIMIT_ENABLED: bool = (
         os.getenv("YOUTUBE_USER_RATE_LIMIT_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_USER_RATE_LIMIT_PER_HOUR: int = int(os.getenv("YOUTUBE_USER_RATE_LIMIT_PER_HOUR", "50"))
-    YOUTUBE_USER_RATE_LIMIT_PER_DAY: int = int(os.getenv("YOUTUBE_USER_RATE_LIMIT_PER_DAY", "500"))
+    YOUTUBE_USER_RATE_LIMIT_PER_HOUR: int = _int_env("YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 50)
+    YOUTUBE_USER_RATE_LIMIT_PER_DAY: int = _int_env("YOUTUBE_USER_RATE_LIMIT_PER_DAY", 500)
 
     # Recovery throttle: max YouTube downloads re-queued per health-check cycle
     # (every 10 min).  Keep this well below YOUTUBE_USER_RATE_LIMIT_PER_HOUR / 6
     # to leave headroom for user-initiated downloads.
-    YOUTUBE_RECOVERY_BATCH_SIZE: int = int(os.getenv("YOUTUBE_RECOVERY_BATCH_SIZE", "3"))
+    YOUTUBE_RECOVERY_BATCH_SIZE: int = _int_env("YOUTUBE_RECOVERY_BATCH_SIZE", 3)
 
     # Celery task-level rate limit for YouTube downloads.
     # Format: "N/h" (per hour), "N/m" (per minute), "N/s" (per second).

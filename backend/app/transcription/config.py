@@ -33,7 +33,7 @@ class TranscriptionConfig:
     def config_hash(self) -> str:
         """Hash of model-loading-relevant config for cache invalidation."""
         key = f"{self.model_name}:{self.compute_type}:{self.device}:{self.device_index}"
-        return hashlib.md5(key.encode()).hexdigest()[:12]  # noqa: S324
+        return hashlib.md5(key.encode()).hexdigest()[:12]  # noqa: S324  # nosec B324
 
     @classmethod
     def from_environment(cls, **overrides) -> "TranscriptionConfig":

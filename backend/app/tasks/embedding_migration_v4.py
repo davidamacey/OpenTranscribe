@@ -323,7 +323,7 @@ def extract_v4_embeddings_task(
             return {"status": "skipped", "message": "No speakers to migrate"}
 
         try:
-            file_data, _, _ = download_file(media_file.storage_path)
+            file_data, _, _ = download_file(media_file.storage_path)  # type: ignore[arg-type]
         except Exception as e:
             logger.error(f"Failed to download file {file_uuid}: {e}")
             migration_progress.increment_processed(success=False, file_uuid=file_uuid)
@@ -341,7 +341,7 @@ def extract_v4_embeddings_task(
 
         try:
             with session_scope() as db:
-                speaker_segments = _build_speaker_segments(db, media_file.id)
+                speaker_segments = _build_speaker_segments(db, media_file.id)  # type: ignore[arg-type]
 
                 for speaker in speakers:
                     if _extract_and_store_speaker_embedding(

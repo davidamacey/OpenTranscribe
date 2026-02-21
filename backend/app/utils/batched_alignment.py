@@ -15,6 +15,7 @@ programming) but is a smaller fraction of total time.
 
 import logging
 import time
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_BATCH_SIZE = 16
 
 
-def align_batched(  # noqa: C901  # type: ignore
+def align_batched(  # noqa: C901
     transcript: list[dict],
     align_model,
     align_model_metadata: dict,
@@ -310,16 +311,16 @@ def align_batched(  # noqa: C901  # type: ignore
             ):
                 word_idx += 1
 
-        char_segments_arr = pd.DataFrame(char_segments_arr)
+        char_segments_arr = pd.DataFrame(char_segments_arr)  # type: ignore[assignment]
 
         # Build aligned subsegments (sentences within segment)
-        aligned_subsegments = []
-        char_segments_arr["sentence-idx"] = None
+        aligned_subsegments: list[dict[str, Any]] = []
+        char_segments_arr["sentence-idx"] = None  # type: ignore[call-overload]
         for sdx2, (sstart, send) in enumerate(segment_data[sdx]["sentence_spans"]):
-            curr_chars = char_segments_arr.loc[
+            curr_chars = char_segments_arr.loc[  # type: ignore[attr-defined]
                 (char_segments_arr.index >= sstart) & (char_segments_arr.index <= send)
             ]
-            char_segments_arr.loc[
+            char_segments_arr.loc[  # type: ignore[attr-defined]
                 (char_segments_arr.index >= sstart) & (char_segments_arr.index <= send),
                 "sentence-idx",
             ] = sdx2
@@ -369,12 +370,12 @@ def align_batched(  # noqa: C901  # type: ignore
                 ]
                 aligned_subsegments[-1]["chars"] = curr_chars_out
 
-        aligned_subsegments = pd.DataFrame(aligned_subsegments)
-        aligned_subsegments["start"] = interpolate_nans(
-            aligned_subsegments["start"], method=interpolate_method
+        aligned_subsegments_df: Any = pd.DataFrame(aligned_subsegments)
+        aligned_subsegments_df["start"] = interpolate_nans(
+            aligned_subsegments_df["start"], method=interpolate_method
         )
-        aligned_subsegments["end"] = interpolate_nans(
-            aligned_subsegments["end"], method=interpolate_method
+        aligned_subsegments_df["end"] = interpolate_nans(
+            aligned_subsegments_df["end"], method=interpolate_method
         )
 
         # Concatenate sentences with same timestamps
@@ -383,10 +384,10 @@ def align_batched(  # noqa: C901  # type: ignore
             agg_dict["text"] = "".join
         if return_char_alignments:
             agg_dict["chars"] = "sum"
-        aligned_subsegments = aligned_subsegments.groupby(["start", "end"], as_index=False).agg(
-            agg_dict
-        )
-        aligned_subsegments = aligned_subsegments.to_dict("records")
+        aligned_subsegments_df = aligned_subsegments_df.groupby(
+            ["start", "end"], as_index=False
+        ).agg(agg_dict)
+        aligned_subsegments = aligned_subsegments_df.to_dict("records")
         aligned_segments += aligned_subsegments
 
     phase3_time = time.perf_counter() - phase3_start

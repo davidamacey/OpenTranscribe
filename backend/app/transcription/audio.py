@@ -44,4 +44,4 @@ def load_audio(file_path: str) -> np.ndarray:
         raise ValueError("Audio file is too short to contain meaningful content")
 
     logger.info(f"Audio loaded: {duration:.1f}s ({len(audio)} samples)")
-    return audio
+    return audio  # type: ignore[no-any-return]
