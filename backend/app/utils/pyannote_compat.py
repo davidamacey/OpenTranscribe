@@ -20,6 +20,7 @@ Usage:
     diarize_model = whisperx.DiarizationPipeline(...)
 """
 
+import functools
 import logging
 from typing import TYPE_CHECKING
 from typing import Optional
@@ -373,6 +374,38 @@ def _patch_whisperx_vad() -> bool:
         return False
 
 
+def _patch_hf_hub_download() -> bool:
+    """
+    Patch huggingface_hub.hf_hub_download to accept use_auth_token as alias for token.
+
+    WhisperX 3.7.0 passes the removed `use_auth_token` parameter to newer
+    versions of huggingface_hub which only accept `token`.
+    """
+    try:
+        import huggingface_hub
+
+        if hasattr(huggingface_hub, "_hf_hub_download_patched"):
+            logger.debug("hf_hub_download already patched")
+            return True
+
+        original_fn = huggingface_hub.hf_hub_download
+
+        @functools.wraps(original_fn)
+        def patched_hf_hub_download(*args, use_auth_token=None, **kwargs):
+            if use_auth_token is not None and "token" not in kwargs:
+                kwargs["token"] = use_auth_token
+            return original_fn(*args, **kwargs)
+
+        huggingface_hub.hf_hub_download = patched_hf_hub_download
+        huggingface_hub._hf_hub_download_patched = True
+
+        logger.info("Patched hf_hub_download to accept use_auth_token parameter")
+        return True
+    except Exception as e:
+        logger.warning(f"Could not patch hf_hub_download: {e}")
+        return False
+
+
 def apply_pyannote_v4_patch() -> bool:
     """
     Apply the PyAnnote v4 compatibility patch to WhisperX.
@@ -407,6 +440,9 @@ def apply_pyannote_v4_patch() -> bool:
 
         # Patch the VAD module for PyAnnote v4 compatibility
         _patch_whisperx_vad()
+
+        # Patch hf_hub_download for use_auth_token compatibility
+        _patch_hf_hub_download()
 
         _patch_applied = True
         logger.info(

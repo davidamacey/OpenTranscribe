@@ -2,6 +2,8 @@
 import logging
 import os
 
+logger = logging.getLogger(__name__)
+
 _SKIP_CELERY = os.environ.get("SKIP_CELERY", "").lower() == "true"
 
 if not _SKIP_CELERY:
@@ -152,7 +154,21 @@ celery_app.conf.update(
 # Signal handlers for proper database connection management
 @worker_process_init.connect
 def init_worker_process(**kwargs):
-    """Initialize worker process - dispose of any existing connections."""
+    """Initialize worker process - register HF token and dispose connections."""
+    import os
+
+    # Register HuggingFace token for gated model access (e.g., pyannote)
+    # Skip in offline mode — models are pre-downloaded and no network is available
+    hf_token = os.getenv("HUGGINGFACE_TOKEN")
+    if hf_token and os.getenv("HF_HUB_OFFLINE") != "1":
+        try:
+            from huggingface_hub import login
+
+            login(token=hf_token, add_to_git_credential=False)
+            logger.info("HuggingFace token registered for gated model access")
+        except Exception as e:
+            logger.warning(f"Failed to register HuggingFace token: {e}")
+
     from app.db.base import engine
 
     engine.dispose()

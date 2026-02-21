@@ -74,6 +74,20 @@ class SpeakerEmbeddingService:
             # Load the model first with authentication token
             logger.info(f"Loading pyannote embedding model: {self.model_name}")
             model = Model.from_pretrained(self.model_name, token=hf_token)
+            if model is None:
+                if os.getenv("HF_HUB_OFFLINE") == "1":
+                    msg = (
+                        f"PyAnnote model '{self.model_name}' returned None. "
+                        "In offline mode, models must be pre-downloaded. "
+                        "Ensure the model cache directory contains the PyAnnote models."
+                    )
+                else:
+                    msg = (
+                        f"PyAnnote model '{self.model_name}' returned None. "
+                        "This usually means your HuggingFace token lacks access to this gated model. "
+                        "Please verify your HUGGINGFACE_TOKEN and accept the model agreement on HuggingFace."
+                    )
+                raise PermissionError(msg)
 
             # Initialize inference with the loaded model
             logger.info("Initializing pyannote Inference for embeddings")

@@ -43,6 +43,24 @@ class SpeakerDiarizer:
 
         try:
             self._pipeline = Pipeline.from_pretrained(PYANNOTE_V4_MODEL, token=self.config.hf_token)
+            if self._pipeline is None:
+                import os
+
+                if os.getenv("HF_HUB_OFFLINE") == "1":
+                    msg = (
+                        f"PyAnnote model '{PYANNOTE_V4_MODEL}' returned None. "
+                        "In offline mode, models must be pre-downloaded. "
+                        "Ensure the model cache directory contains the PyAnnote models."
+                    )
+                else:
+                    msg = (
+                        f"PyAnnote model '{PYANNOTE_V4_MODEL}' returned None. "
+                        "This usually means your HuggingFace token lacks access to this gated model. "
+                        "Please: 1) Create a token at https://huggingface.co/settings/tokens with Read permissions, "
+                        "2) Accept the model agreement at https://huggingface.co/pyannote/speaker-diarization-3.1, "
+                        "3) Set HUGGINGFACE_TOKEN in your .env file, and 4) Restart the containers."
+                    )
+                raise PermissionError(msg)
             self._model_name = PYANNOTE_V4_MODEL
             logger.info(f"Loaded PyAnnote v4 model: {PYANNOTE_V4_MODEL}")
         except Exception as e:
@@ -54,6 +72,22 @@ class SpeakerDiarizer:
                 self._pipeline = Pipeline.from_pretrained(
                     PYANNOTE_V3_FALLBACK, token=self.config.hf_token
                 )
+                if self._pipeline is None:
+                    import os
+
+                    if os.getenv("HF_HUB_OFFLINE") == "1":
+                        msg = (
+                            f"PyAnnote fallback model '{PYANNOTE_V3_FALLBACK}' returned None. "
+                            "In offline mode, models must be pre-downloaded. "
+                            "Ensure the model cache directory contains the PyAnnote models."
+                        )
+                    else:
+                        msg = (
+                            f"PyAnnote fallback model '{PYANNOTE_V3_FALLBACK}' returned None. "
+                            "This usually means your HuggingFace token lacks access to this gated model. "
+                            "Please verify your HUGGINGFACE_TOKEN and accept the model agreement on HuggingFace."
+                        )
+                    raise PermissionError(msg)
                 self._model_name = PYANNOTE_V3_FALLBACK
                 logger.info(f"Loaded fallback model: {PYANNOTE_V3_FALLBACK}")
             except Exception as fallback_e:
@@ -64,7 +98,6 @@ class SpeakerDiarizer:
 
         # Move to device
         device = torch.device(self.config.device)
-        assert self._pipeline is not None, "Pipeline not initialized"
         self._pipeline = self._pipeline.to(device)  # type: ignore[attr-defined]
 
         elapsed = time.perf_counter() - step_start
