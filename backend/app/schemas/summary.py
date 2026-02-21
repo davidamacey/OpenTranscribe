@@ -106,6 +106,7 @@ class SummaryResponse(BaseModel):
     """Response containing flexible summary data"""
 
     file_id: UUID
+    filename: Optional[str] = None
     summary_data: dict[str, Any]  # Flexible structure - accepts any JSON
     source: Literal["opensearch", "postgresql"]
     document_id: Optional[str] = None

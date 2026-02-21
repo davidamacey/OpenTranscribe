@@ -35,6 +35,7 @@ from app.models.media import Speaker
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import MediaFileDetail
+from app.schemas.media import MediaFilePublicInfo
 from app.schemas.media import MediaFileUpdate
 from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.media import ReprocessRequest
@@ -348,6 +349,36 @@ def get_media_file(
     # segment_limit=0 means get all segments
     effective_limit = None if segment_limit == 0 else segment_limit
     return get_media_file_detail(db, str(file_uuid), current_user, effective_limit, segment_offset)
+
+
+@router.get("/{file_uuid}/info", response_model=MediaFilePublicInfo)
+def get_media_file_info(
+    file_uuid: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get lightweight file metadata without transcript or summary data.
+
+    Returns core identity, status, and technical metadata fields only.
+    Useful for integrations that need file context without heavy payloads.
+    """
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
+    media_file = get_file_by_uuid_with_permission(db, str(file_uuid), int(current_user.id))
+
+    return MediaFilePublicInfo(
+        uuid=media_file.uuid,
+        filename=media_file.filename,
+        title=media_file.title,
+        user_id=media_file.user.uuid,
+        storage_path=media_file.storage_path,
+        upload_time=media_file.upload_time,
+        file_size=media_file.file_size,
+        content_type=media_file.content_type,
+        duration=media_file.duration,
+        language=media_file.language,
+        status=media_file.status,
+    )
 
 
 @router.put("/{file_uuid}", response_model=MediaFileSchema)

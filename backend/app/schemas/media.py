@@ -431,6 +431,28 @@ class MediaFileInfo(BaseModel):
     upload_time: Optional[datetime] = None
 
 
+class MediaFilePublicInfo(BaseModel):
+    """
+    Lightweight file metadata for the /info endpoint.
+
+    Returns core identity and status fields without transcript or summary data.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid: UUID
+    filename: str
+    title: Optional[str] = None
+    user_id: UUID
+    storage_path: str
+    upload_time: Optional[datetime] = None
+    file_size: Optional[int] = None
+    content_type: Optional[str] = None
+    duration: Optional[float] = None
+    language: Optional[str] = None
+    status: FileStatus
+
+
 class TaskBase(BaseModel):
     task_type: str
     status: str

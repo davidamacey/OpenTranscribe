@@ -174,6 +174,7 @@ async def get_file_summary(
 
             return SummaryResponse(
                 file_id=UUID(str(media_file.uuid)),
+                filename=media_file.title or media_file.filename,
                 summary_data=summary_data,
                 source="opensearch",
                 document_id=opensearch_result.get("document_id"),
@@ -186,6 +187,7 @@ async def get_file_summary(
             logger.info(f"Returning summary from PostgreSQL for file {file_id}")
             return SummaryResponse(
                 file_id=UUID(str(media_file.uuid)),
+                filename=media_file.title or media_file.filename,
                 summary_data=dict(media_file.summary_data),
                 source="postgresql",
             )
