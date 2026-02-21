@@ -312,9 +312,23 @@ check_dependencies() {
     fi
 
     # Check if Docker daemon is running
-    if ! docker info &> /dev/null; then
-        echo -e "${RED}❌ Docker daemon is not running${NC}"
-        echo "Please start Docker and try again."
+    local docker_check_output
+    docker_check_output=$(docker info 2>&1)
+    if [ $? -ne 0 ]; then
+        if echo "$docker_check_output" | grep -qi "permission denied"; then
+            echo -e "${RED}❌ Permission denied accessing Docker.${NC}"
+            echo ""
+            echo "Your user ($USER) is not in the 'docker' group."
+            echo "Run:  sudo usermod -aG docker \$USER  then log out and back in."
+            echo "Or re-run this script with sudo."
+        elif echo "$docker_check_output" | grep -qi "cannot connect\|is the docker daemon running\|no such file"; then
+            echo -e "${RED}❌ Docker daemon is not running.${NC}"
+            echo "Run:  sudo systemctl start docker"
+            echo "To start on boot:  sudo systemctl enable docker"
+        else
+            echo -e "${RED}❌ Failed to connect to Docker.${NC}"
+            echo "$docker_check_output"
+        fi
         exit 1
     else
         echo "✓ Docker daemon is running"

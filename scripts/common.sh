@@ -11,10 +11,37 @@
 
 # Check if Docker is running and exit if not
 check_docker() {
-  if ! docker info > /dev/null 2>&1; then
-    echo "❌ Error: Docker is not running. Please start Docker and try again."
-    exit 1
+  local docker_output
+  docker_output=$(docker info 2>&1)
+  if [ $? -eq 0 ]; then
+    return 0
   fi
+
+  if echo "$docker_output" | grep -qi "permission denied"; then
+    echo ""
+    echo "❌ Error: Permission denied accessing Docker."
+    echo ""
+    echo "Your user ($USER) is not in the 'docker' group."
+    echo "Run the following commands, then log out and back in:"
+    echo ""
+    echo "  sudo usermod -aG docker \$USER"
+    echo "  newgrp docker"
+    echo ""
+    echo "Or re-run this script with sudo."
+  elif echo "$docker_output" | grep -qi "cannot connect\|is the docker daemon running\|no such file"; then
+    echo ""
+    echo "❌ Error: Docker daemon is not running."
+    echo ""
+    echo "Start it with:"
+    echo "  sudo systemctl start docker"
+    echo ""
+    echo "To start on boot:  sudo systemctl enable docker"
+  else
+    echo ""
+    echo "❌ Error: Failed to connect to Docker."
+    echo "Details: $docker_output"
+  fi
+  exit 1
 }
 
 # Create required directories
