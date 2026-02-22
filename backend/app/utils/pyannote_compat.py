@@ -41,6 +41,111 @@ _patch_applied = False
 PYANNOTE_V4_MODEL = "pyannote/speaker-diarization-community-1"
 
 
+def build_native_embeddings(
+    diarization,
+    centroids: np.ndarray | None,
+) -> dict[str, np.ndarray]:
+    """Build speaker label -> L2-normalized centroid mapping from PyAnnote output.
+
+    Shared between the native engine (Diarizer) and WhisperX engine
+    (DiarizationPipelineV4) to avoid code duplication.
+
+    Uses vectorized numpy L2-normalization for efficiency.
+
+    Args:
+        diarization: PyAnnote Annotation (exclusive diarization).
+        centroids: ndarray of shape (num_speakers, embedding_dim) from PyAnnote,
+            or None if OracleClustering was used.
+
+    Returns:
+        Dict mapping speaker labels to L2-normalized centroid vectors.
+        Empty dict on any failure.
+    """
+    if centroids is None:
+        logger.debug("No centroids returned by pipeline (OracleClustering?)")
+        return {}
+
+    try:
+        labels = diarization.labels()
+        if not labels:
+            logger.warning("Diarization produced no speaker labels for centroid mapping")
+            return {}
+
+        # Truncate to available rows if labels exceed centroid rows
+        n_usable = min(len(labels), centroids.shape[0])
+        if n_usable < len(labels):
+            dropped_labels = labels[n_usable:]
+            logger.warning(
+                f"Only {n_usable} centroid rows for {len(labels)} labels, "
+                f"dropping speakers without centroids: {dropped_labels}"
+            )
+
+        # Vectorized L2-normalization of all centroids at once
+        usable = centroids[:n_usable]
+        norms = np.linalg.norm(usable, axis=1, keepdims=True)
+        # Mask out near-zero vectors to avoid division by zero
+        # Use [:, 0] instead of squeeze() to always produce 1-d array
+        # (squeeze() on shape (1,1) gives 0-dim scalar, breaking indexing)
+        valid_mask = norms[:, 0] > 1e-8
+        normalized = np.where(norms > 1e-8, usable / norms, 0.0)
+
+        embeddings = {labels[i]: normalized[i] for i in range(n_usable) if valid_mask[i]}
+
+        skipped_labels = [labels[i] for i in range(n_usable) if not valid_mask[i]]
+        if skipped_labels:
+            logger.warning(
+                f"Skipped {len(skipped_labels)} speakers with zero-norm centroids: {skipped_labels}"
+            )
+
+        logger.info(
+            f"Built {len(embeddings)} native speaker embeddings "
+            f"(dim={centroids.shape[1]}) from {len(labels)} labels"
+        )
+        return embeddings
+
+    except Exception as e:
+        logger.warning(f"Failed to build native embeddings: {e}")
+        return {}
+
+
+def extract_overlap_regions(
+    diarization,
+    min_duration: float = 0.25,
+) -> list[dict[str, float]]:
+    """Extract overlapping speech regions from a PyAnnote diarization annotation.
+
+    Shared between the native engine (Diarizer) and WhisperX engine
+    (DiarizationPipelineV4) to avoid code duplication.
+
+    Args:
+        diarization: PyAnnote Annotation object with full diarization.
+        min_duration: Minimum overlap region duration in seconds.
+            Regions shorter than this are filtered as noise.
+
+    Returns:
+        List of overlap regions as dicts with 'start' and 'end' keys.
+    """
+    if not hasattr(diarization, "get_overlap"):
+        return []
+
+    try:
+        # Build regions via list comprehension
+        all_regions = [{"start": seg.start, "end": seg.end} for seg in diarization.get_overlap()]
+
+        # Filter by minimum duration in a single pass
+        if min_duration > 0:
+            overlaps = [o for o in all_regions if (o["end"] - o["start"]) >= min_duration]
+            filtered = len(all_regions) - len(overlaps)
+            if filtered > 0:
+                logger.debug(f"Filtered {filtered} overlap regions below {min_duration}s threshold")
+            return overlaps
+
+        return all_regions
+    except Exception as e:
+        logger.warning(f"Could not extract overlap regions: {e}")
+        return []
+
+
 class DiarizationPipelineV4:
     """
     PyAnnote v4 compatible diarization pipeline for WhisperX.
@@ -60,6 +165,8 @@ class DiarizationPipelineV4:
         use_auth_token: Optional[str] = None,
         token: Optional[str] = None,
         device: Optional[Union[str, torch.device]] = None,
+        enable_overlap_detection: bool = True,
+        overlap_min_duration: float = 0.25,
     ):
         """
         Initialize the PyAnnote v4 diarization pipeline.
@@ -69,11 +176,15 @@ class DiarizationPipelineV4:
             use_auth_token: HuggingFace authentication token (legacy parameter).
             token: HuggingFace authentication token (PyAnnote v4 parameter).
             device: The device to run inference on (cpu, cuda, etc.)
+            enable_overlap_detection: Whether to extract overlap regions.
+            overlap_min_duration: Minimum duration (seconds) for overlap regions.
         """
         from pyannote.audio import Pipeline
 
         self.model_name = model_name
         self.device = device
+        self.enable_overlap_detection = enable_overlap_detection
+        self.overlap_min_duration = overlap_min_duration
 
         # Accept both token and use_auth_token for compatibility
         # Prefer token if both are provided
@@ -163,7 +274,13 @@ class DiarizationPipelineV4:
 
         # Run diarization
         logger.debug(f"Running diarization with kwargs: {pipeline_kwargs}")
-        output = self.model(audio_input, **pipeline_kwargs)
+
+        raw_output = self.model(audio_input, **pipeline_kwargs)
+
+        # PyAnnote v4 returns DiarizeOutput dataclass with speaker_embeddings attribute
+        # (centroids are always computed internally, no need for return_embeddings kwarg)
+        centroids = getattr(raw_output, "speaker_embeddings", None)
+        output = raw_output
 
         # Handle v4 output format
         # In v4, output may have .speaker_diarization and .exclusive_speaker_diarization
@@ -181,8 +298,15 @@ class DiarizationPipelineV4:
         diarize_df["start"] = diarize_df["segment"].apply(lambda x: x.start)
         diarize_df["end"] = diarize_df["segment"].apply(lambda x: x.end)
 
-        # Extract overlap information from full diarization
-        overlaps = self._extract_overlaps(full_diarization)
+        # Build native speaker embeddings from PyAnnote centroids (shared utility)
+        native_embeddings = build_native_embeddings(exclusive_diarization, centroids)
+
+        # Extract overlap information from full diarization (gated by config)
+        overlaps = (
+            extract_overlap_regions(full_diarization, self.overlap_min_duration)
+            if self.enable_overlap_detection
+            else []
+        )
 
         # Store overlap info as DataFrame attributes for compatibility
         if overlaps:
@@ -196,6 +320,10 @@ class DiarizationPipelineV4:
             diarize_df.attrs["overlap_count"] = len(overlaps)
             diarize_df.attrs["overlap_duration"] = total_overlap_duration
             diarize_df.attrs["_raw_diarization"] = full_diarization
+
+        # Store native embeddings for upstream extraction
+        if native_embeddings:
+            diarize_df.attrs["native_embeddings"] = native_embeddings
 
         return diarize_df
 
@@ -229,34 +357,6 @@ class DiarizationPipelineV4:
             # v3 style - output is the annotation directly
             logger.debug("Using direct annotation output (v3 style)")
             return output
-
-    def _extract_overlaps(self, diarization) -> list[dict[str, float]]:
-        """
-        Extract overlapping speech regions from diarization.
-
-        Args:
-            diarization: PyAnnote Annotation object with full diarization
-
-        Returns:
-            List of overlap regions as dicts with 'start' and 'end' keys
-        """
-        overlaps: list[dict[str, float]] = []
-
-        try:
-            # PyAnnote Annotation has get_overlap() method
-            if hasattr(diarization, "get_overlap"):
-                overlap_timeline = diarization.get_overlap()
-                for segment in overlap_timeline:
-                    overlaps.append(
-                        {
-                            "start": segment.start,
-                            "end": segment.end,
-                        }
-                    )
-        except Exception as e:
-            logger.warning(f"Could not extract overlap regions: {e}")
-
-        return overlaps
 
 
 def _patch_pyannote_inference() -> bool:

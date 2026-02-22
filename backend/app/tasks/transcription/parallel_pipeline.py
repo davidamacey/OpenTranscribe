@@ -102,6 +102,8 @@ def run_parallel_pipeline(
     max_speakers: int = 20,
     num_speakers: Optional[int] = None,
     progress: Optional[ThreadSafeProgress] = None,
+    enable_overlap_detection: bool = True,
+    overlap_min_duration: float = 0.25,
 ) -> tuple[dict[str, Any], Any]:
     """Run alignment/skip and diarization in parallel threads.
 
@@ -180,6 +182,14 @@ def run_parallel_pipeline(
             if progress:
                 progress.report(0.55, "Analyzing speaker patterns")
 
+            diarize_kwargs = dict(
+                max_speakers=max_speakers,
+                min_speakers=min_speakers,
+                num_speakers=num_speakers,
+                enable_overlap_detection=enable_overlap_detection,
+                overlap_min_duration=overlap_min_duration,
+            )
+
             # Use separate CUDA stream for this thread
             try:
                 import torch
@@ -188,28 +198,16 @@ def run_parallel_pipeline(
                     stream = torch.cuda.Stream()
                     with torch.cuda.stream(stream):
                         diarize_step.result = whisperx_service.perform_speaker_diarization(
-                            audio,
-                            hf_token,
-                            max_speakers=max_speakers,
-                            min_speakers=min_speakers,
-                            num_speakers=num_speakers,
+                            audio, hf_token, **diarize_kwargs
                         )
                     stream.synchronize()
                 else:
                     diarize_step.result = whisperx_service.perform_speaker_diarization(
-                        audio,
-                        hf_token,
-                        max_speakers=max_speakers,
-                        min_speakers=min_speakers,
-                        num_speakers=num_speakers,
+                        audio, hf_token, **diarize_kwargs
                     )
             except ImportError:
                 diarize_step.result = whisperx_service.perform_speaker_diarization(
-                    audio,
-                    hf_token,
-                    max_speakers=max_speakers,
-                    min_speakers=min_speakers,
-                    num_speakers=num_speakers,
+                    audio, hf_token, **diarize_kwargs
                 )
 
             diarize_step.duration_s = time.perf_counter() - step_start

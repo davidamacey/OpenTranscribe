@@ -14,6 +14,8 @@ import pandas as pd
 import torch
 
 from app.transcription.config import TranscriptionConfig
+from app.utils.pyannote_compat import build_native_embeddings
+from app.utils.pyannote_compat import extract_overlap_regions
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +105,7 @@ class SpeakerDiarizer:
         elapsed = time.perf_counter() - step_start
         logger.info(f"TIMING: diarizer model loaded in {elapsed:.3f}s on {device}")
 
-    def diarize(self, audio: np.ndarray) -> tuple[pd.DataFrame, dict]:
+    def diarize(self, audio: np.ndarray) -> tuple[pd.DataFrame, dict, dict[str, np.ndarray] | None]:
         """Run speaker diarization on audio.
 
         Args:
@@ -114,6 +116,8 @@ class SpeakerDiarizer:
                 diarize_df: DataFrame with columns [segment, label, speaker, start, end]
                     Has attrs: overlaps, overlap_count, overlap_duration
                 overlap_info: Dict with count, duration, regions keys.
+                native_embeddings: Dict mapping speaker labels to L2-normalized
+                    centroid vectors, or None if disabled/unavailable.
 
         Raises:
             RuntimeError: If model not loaded or diarization fails.
@@ -142,7 +146,12 @@ class SpeakerDiarizer:
 
         try:
             assert self._pipeline is not None, "Pipeline not initialized"
-            output = self._pipeline(audio_input, **pipeline_kwargs)  # type: ignore[misc]
+            raw_output = self._pipeline(audio_input, **pipeline_kwargs)  # type: ignore[misc]
+
+            # PyAnnote v4 returns DiarizeOutput dataclass with speaker_embeddings attribute
+            # (centroids are always computed internally, no need for return_embeddings kwarg)
+            centroids = getattr(raw_output, "speaker_embeddings", None)
+            output = raw_output
         except Exception as e:
             self._handle_diarization_error(e)
 
@@ -158,8 +167,12 @@ class SpeakerDiarizer:
         diarize_df["start"] = diarize_df["segment"].apply(lambda x: x.start)
         diarize_df["end"] = diarize_df["segment"].apply(lambda x: x.end)
 
-        # Extract overlap info
-        overlaps = self._extract_overlaps(full)
+        # Extract overlap info (gated by config, shared utility)
+        overlaps = (
+            extract_overlap_regions(full, self.config.overlap_min_duration)
+            if self.config.enable_overlap_detection
+            else []
+        )
         overlap_info = {"count": 0, "duration": 0.0, "regions": []}
 
         if overlaps:
@@ -176,6 +189,13 @@ class SpeakerDiarizer:
                 f"Detected {len(overlaps)} overlapping regions (total: {total_duration:.2f}s)"
             )
 
+        # Build native embeddings from PyAnnote centroids (shared utility)
+        native_embeddings = (
+            build_native_embeddings(exclusive, centroids)
+            if self.config.enable_native_embeddings
+            else {}
+        )
+
         elapsed = time.perf_counter() - step_start
         num_speakers = diarize_df["speaker"].nunique()
         logger.info(
@@ -183,7 +203,7 @@ class SpeakerDiarizer:
             f"{num_speakers} speakers, {len(diarize_df)} segments"
         )
 
-        return diarize_df, overlap_info
+        return diarize_df, overlap_info, native_embeddings
 
     def unload_model(self) -> None:
         """Release model memory."""
@@ -202,22 +222,6 @@ class SpeakerDiarizer:
             return output.exclusive_speaker_diarization
         else:
             return output
-
-    def _extract_overlaps(self, diarization) -> list[dict[str, float]]:
-        """Extract overlapping speech regions from diarization."""
-        overlaps: list[dict[str, float]] = []
-        try:
-            if hasattr(diarization, "get_overlap"):
-                for segment in diarization.get_overlap():
-                    overlaps.append(
-                        {
-                            "start": segment.start,
-                            "end": segment.end,
-                        }
-                    )
-        except Exception as e:
-            logger.warning(f"Could not extract overlap regions: {e}")
-        return overlaps
 
     def _handle_diarization_error(self, e: Exception) -> NoReturn:
         """Convert diarization errors to user-friendly messages."""

@@ -70,10 +70,19 @@ def _collect_speaker_embeddings(speakers: list[Speaker]) -> dict[int, list[float
 
 
 def _calculate_average_embedding(embeddings: list[list[float]]) -> list[float]:
-    """Calculate the average of multiple embeddings."""
+    """Calculate the L2-normalized average of multiple embeddings.
+
+    Averaging L2-normalized vectors produces a non-unit vector. Re-normalizing
+    ensures consistent cosine similarity when stored alongside per-speaker
+    embeddings that are always L2-normalized.
+    """
     embeddings_array = np.array(embeddings)
-    avg_array: Any = np.mean(embeddings_array, axis=0)
-    return list(avg_array.tolist())
+    avg_array = np.mean(embeddings_array, axis=0)
+    norm = np.linalg.norm(avg_array)
+    if norm > 1e-8:
+        avg_array = avg_array / norm
+    result: list[float] = avg_array.tolist()
+    return result
 
 
 def _process_profile_with_no_speakers(
@@ -288,9 +297,12 @@ class ProfileEmbeddingService:
                 logger.warning(f"No valid embeddings found for profile {profile_id}")
                 return False
 
-            # Calculate the average embedding using numpy
+            # Calculate the L2-normalized average embedding
             embeddings_array = np.array(embeddings)
             averaged_embedding = np.mean(embeddings_array, axis=0)
+            norm = np.linalg.norm(averaged_embedding)
+            if norm > 1e-8:
+                averaged_embedding = averaged_embedding / norm
 
             # Update the profile metadata
             profile.embedding_count = len(embeddings)  # type: ignore[assignment]

@@ -285,8 +285,10 @@ async def lifespan(app: FastAPI):
     try:
         from app.services.opensearch_service import check_and_repair_indices
         from app.services.opensearch_service import ensure_indices_exist
+        from app.services.opensearch_service import ensure_v4_index_exists
 
         ensure_indices_exist()
+        ensure_v4_index_exists()
         check_and_repair_indices()
     except Exception as e:
         logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")

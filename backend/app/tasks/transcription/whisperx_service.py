@@ -463,6 +463,8 @@ class WhisperXService:
         max_speakers: int = 20,
         min_speakers: int = 1,
         num_speakers: int | None = None,
+        enable_overlap_detection: bool = True,
+        overlap_min_duration: float = 0.25,
     ) -> Any:
         """
         Perform speaker diarization on audio.
@@ -502,7 +504,10 @@ class WhisperXService:
             pyannote_config = self.hardware_config.get_pyannote_config()
 
             diarize_model = whisperx.diarize.DiarizationPipeline(
-                token=hf_token, device=pyannote_config["device"]
+                token=hf_token,
+                device=pyannote_config["device"],
+                enable_overlap_detection=enable_overlap_detection,
+                overlap_min_duration=overlap_min_duration,
             )
 
             diarize_segments = diarize_model(audio, **diarize_params)
@@ -701,6 +706,8 @@ class WhisperXService:
         import os
 
         use_native_word_ts = os.getenv("USE_NATIVE_WORD_TIMESTAMPS", "false").lower() == "true"
+        enable_overlap_detection = os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower() == "true"
+        overlap_min_duration = float(os.getenv("OVERLAP_MIN_DURATION", "0.25"))
 
         self._report_progress(progress_callback, 0.42, "Running initial transcription")
         step_start = time.perf_counter()
@@ -739,6 +746,8 @@ class WhisperXService:
                     max_speakers=max_speakers,
                     num_speakers=num_speakers,
                     progress=progress_wrapper,
+                    enable_overlap_detection=enable_overlap_detection,
+                    overlap_min_duration=overlap_min_duration,
                 )
             logger.info(
                 f"TIMING: parallel align+diarize completed in {time.perf_counter() - step_start:.3f}s"
@@ -781,15 +790,24 @@ class WhisperXService:
                     max_speakers=max_speakers,
                     min_speakers=min_speakers,
                     num_speakers=num_speakers,
+                    enable_overlap_detection=enable_overlap_detection,
+                    overlap_min_duration=overlap_min_duration,
                 )
             logger.info(
                 f"TIMING: perform_speaker_diarization completed in {time.perf_counter() - step_start:.3f}s"
             )
 
+        # Extract native speaker embeddings from diarization attrs (if available)
+        native_embeddings = diarize_segments.attrs.get("native_embeddings", {})
+
         # Extract overlap info from PyAnnote v4 diarization before speaker assignment
         # diarize_segments is a DataFrame with attrs for overlap info
-        overlaps = diarize_segments.attrs.get("overlaps", [])
-        overlap_count = diarize_segments.attrs.get("overlap_count", 0)
+        if enable_overlap_detection:
+            overlaps = diarize_segments.attrs.get("overlaps", [])
+            overlap_count = diarize_segments.attrs.get("overlap_count", 0)
+        else:
+            overlaps = []
+            overlap_count = 0
 
         # Step 4: Assign speakers (65% -> 70%)
         self._report_progress(progress_callback, 0.65, "Assigning speakers to transcript")
@@ -832,6 +850,10 @@ class WhisperXService:
         self._add_overlap_metadata(
             final_result, overlap_count, diarize_segments.attrs.get("overlap_duration", 0), overlaps
         )
+
+        # Pass native speaker embeddings to downstream processing
+        if native_embeddings:
+            final_result["native_speaker_embeddings"] = native_embeddings
 
         # CRITICAL: Force cleanup of diarize_segments and audio to free all VRAM
         self.hardware_config.log_vram_usage("before final WhisperX cleanup")

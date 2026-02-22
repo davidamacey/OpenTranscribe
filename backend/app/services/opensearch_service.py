@@ -239,15 +239,19 @@ def create_speaker_index_v4(index_name: str | None = None) -> bool:
             },
             "mappings": {
                 "properties": {
+                    "document_type": {"type": "keyword"},
                     "speaker_id": {"type": "integer"},
                     "speaker_uuid": {"type": "keyword"},
                     "profile_id": {"type": "integer"},
                     "profile_uuid": {"type": "keyword"},
+                    "profile_name": {"type": "keyword"},
                     "user_id": {"type": "integer"},
                     "name": {"type": "keyword"},
+                    "display_name": {"type": "keyword"},
                     "collection_ids": {"type": "integer"},
                     "media_file_id": {"type": "integer"},
                     "segment_count": {"type": "integer"},
+                    "speaker_count": {"type": "integer"},
                     "created_at": {"type": "date"},
                     "updated_at": {"type": "date"},
                     "embedding": {
@@ -274,6 +278,22 @@ def create_speaker_index_v4(index_name: str | None = None) -> bool:
     except Exception as e:
         logger.error(f"Error creating v4 speaker index: {e}")
         return False
+
+
+def ensure_v4_index_exists() -> bool:
+    """Ensure speakers_v4 index exists, creating if needed. Idempotent."""
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    try:
+        if opensearch_client.indices.exists(index=v4_index):
+            return True
+    except Exception as e:
+        logger.warning(f"Error checking v4 index existence: {e}")
+
+    return create_speaker_index_v4()
 
 
 def add_speaker_embedding_v4(
@@ -361,6 +381,66 @@ def add_speaker_embedding_v4(
         logger.error(
             f"Error indexing speaker embedding to v4 for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
         )
+
+
+def store_profile_embedding_v4(
+    profile_id: int,
+    profile_uuid: str,
+    profile_name: str,
+    embedding: list[float],
+    speaker_count: int,
+    user_id: int,
+) -> bool:
+    """Store consolidated profile embedding in the v4 staging index.
+
+    Same document structure as store_profile_embedding() but targets
+    speakers_v4 index for migration pre-population.
+
+    Args:
+        profile_id: ID of the speaker profile.
+        profile_uuid: UUID of the speaker profile (used as document ID).
+        profile_name: Name of the speaker profile.
+        embedding: Averaged 256-dim embedding vector.
+        speaker_count: Number of speakers contributing to this embedding.
+        user_id: ID of the user who owns the profile.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+
+    try:
+        doc = {
+            "document_type": "profile",
+            "profile_id": profile_id,
+            "profile_uuid": str(profile_uuid),
+            "profile_name": profile_name,
+            "user_id": user_id,
+            "embedding": embedding,
+            "speaker_count": speaker_count,
+            "updated_at": datetime.datetime.now().isoformat(),
+        }
+
+        opensearch_client.index(
+            index=v4_index,
+            body=doc,
+            id=f"profile_{profile_uuid}",
+            refresh="wait_for",
+        )
+
+        logger.info(
+            f"Stored v4 profile {profile_uuid} ({profile_name}) embedding "
+            f"with {speaker_count} speakers"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"Error storing v4 profile embedding for {profile_uuid}: {e}")
+        return False
 
 
 def index_transcript(

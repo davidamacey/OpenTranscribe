@@ -241,6 +241,339 @@ def _process_speaker_embeddings(
     # Note: We do NOT cleanup the embedding service here - keep it warm for next transcription
 
 
+def _process_speaker_embeddings_native(
+    ctx: TranscriptionContext,
+    native_embeddings: dict,
+    processed_segments: list,
+    speaker_mapping: dict,
+) -> None:
+    """Process speaker embeddings using pre-computed PyAnnote centroids (native path).
+
+    Uses 256-dim WeSpeaker centroids from diarization instead of loading a separate
+    embedding model. Saves 5-80s GPU time and ~500MB VRAM per file.
+
+    Args:
+        ctx: Transcription context.
+        native_embeddings: Dict mapping speaker labels (e.g. "SPEAKER_00") to
+            L2-normalized centroid vectors from PyAnnote.
+        processed_segments: Processed transcript segments.
+        speaker_mapping: Mapping of speaker labels to database IDs.
+    """
+    import time
+
+    import numpy as np
+
+    total_start = time.perf_counter()
+
+    # Map speaker labels -> DB IDs using speaker_mapping
+    db_embeddings: dict[int, np.ndarray] = {}
+    for label, embedding in native_embeddings.items():
+        db_id = speaker_mapping.get(label)
+        if db_id is not None:
+            db_embeddings[db_id] = embedding
+        else:
+            logger.debug(f"No DB mapping for speaker label '{label}', skipping embedding")
+
+    if not db_embeddings:
+        logger.warning("No speaker embeddings could be mapped to DB IDs")
+        return
+
+    matching_start = time.perf_counter()
+    with session_scope() as db:
+        matching_service = SpeakerMatchingService(db, embedding_service=None)
+        logger.info(
+            f"Starting native speaker matching for {len(db_embeddings)} speakers "
+            f"(dim={next(iter(db_embeddings.values())).shape[0]})"
+        )
+        speaker_results = matching_service.process_speaker_embeddings_native(
+            media_file_id=ctx.file_id,
+            user_id=ctx.user_id,
+            native_embeddings=db_embeddings,
+        )
+        matching_elapsed = time.perf_counter() - matching_start
+        logger.info(
+            f"TIMING: process_speaker_embeddings_native completed in {matching_elapsed:.3f}s - "
+            f"got {len(speaker_results) if speaker_results else 0} results"
+        )
+        update_task_status(db, ctx.task_id, "in_progress", progress=0.82)
+
+    total_elapsed = time.perf_counter() - total_start
+    logger.info(
+        f"TIMING: _process_speaker_embeddings_native TOTAL completed in {total_elapsed:.3f}s - "
+        f"{len(speaker_results) if speaker_results else 0} speakers processed"
+    )
+
+
+def _collect_v4_profile_embeddings(
+    profile_id: int,
+    native_embeddings: dict,
+    speaker_mapping: dict[str, int],
+    current_file_speaker_uuids: set[str],
+    db,
+) -> list:
+    """Collect 256-dim embeddings for a profile from current file and existing v4 docs.
+
+    Args:
+        profile_id: Profile to collect embeddings for.
+        native_embeddings: Current file's native centroid dict.
+        speaker_mapping: Speaker label -> DB ID mapping.
+        current_file_speaker_uuids: UUIDs of speakers from the current file (to avoid double-counting).
+        db: Active database session.
+
+    Returns:
+        List of numpy arrays (256-dim embeddings).
+    """
+    import numpy as np
+
+    from app.models.media import Speaker
+
+    v4_embeddings = []
+
+    # Embeddings from current file's speakers assigned to this profile
+    profile_speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
+    for ps in profile_speakers:
+        for label, db_id in speaker_mapping.items():
+            if db_id == ps.id and label in native_embeddings:
+                emb = native_embeddings[label]
+                v4_embeddings.append(np.array(emb) if not isinstance(emb, np.ndarray) else emb)
+                break
+
+    # Existing v4 speaker docs for this profile from other files
+    try:
+        from app.services.opensearch_service import get_opensearch_client
+
+        client = get_opensearch_client()
+        if not client:
+            raise RuntimeError("OpenSearch client unavailable")
+        v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+        resp = client.search(
+            index=v4_index,
+            body={
+                "query": {
+                    "bool": {
+                        "must": [{"term": {"profile_id": profile_id}}],
+                        "must_not": [{"term": {"document_type": "profile"}}],
+                    }
+                },
+                "size": 500,
+                "_source": ["embedding"],
+            },
+        )
+        for hit in resp.get("hits", {}).get("hits", []):
+            existing_emb = hit["_source"].get("embedding")
+            if existing_emb and hit["_id"] not in current_file_speaker_uuids:
+                v4_embeddings.append(np.array(existing_emb))
+    except Exception as e:
+        logger.debug(f"v4 staging: Could not fetch existing v4 docs for profile {profile_id}: {e}")
+
+    return v4_embeddings
+
+
+def _update_v4_profile_embeddings(
+    touched_profile_ids: set[int],
+    native_embeddings: dict,
+    speaker_mapping: dict[str, int],
+    current_file_speaker_uuids: set[str],
+) -> int:
+    """Update consolidated profile embeddings in v4 for touched profiles.
+
+    Returns:
+        Number of profiles successfully updated.
+    """
+    import numpy as np
+
+    from app.models.media import SpeakerProfile
+    from app.services.opensearch_service import store_profile_embedding_v4
+
+    update_count = 0
+    with session_scope() as db:
+        for profile_id in touched_profile_ids:
+            try:
+                profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
+                if not profile:
+                    logger.warning(f"v4 staging: Profile {profile_id} not found")
+                    continue
+
+                v4_embeddings = _collect_v4_profile_embeddings(
+                    profile_id,
+                    native_embeddings,
+                    speaker_mapping,
+                    current_file_speaker_uuids,
+                    db,
+                )
+                if not v4_embeddings:
+                    logger.debug(f"v4 staging: No v4 embeddings for profile {profile_id}")
+                    continue
+
+                # Average and L2-normalize for consistent cosine similarity
+                avg_vec = np.mean(v4_embeddings, axis=0)
+                norm = np.linalg.norm(avg_vec)
+                if norm < 1e-8:
+                    logger.warning(f"v4 staging: Zero-norm profile embedding for {profile_id}")
+                    continue
+                avg_embedding = (avg_vec / norm).tolist()
+                store_profile_embedding_v4(
+                    profile_id=profile_id,
+                    profile_uuid=str(profile.uuid),
+                    profile_name=str(profile.name),
+                    embedding=avg_embedding,
+                    speaker_count=len(v4_embeddings),
+                    user_id=int(profile.user_id),
+                )
+                update_count += 1
+
+            except Exception as e:
+                logger.warning(f"v4 staging: Error updating profile {profile_id}: {e}")
+
+    return update_count
+
+
+def _store_native_centroids_in_v4_staging(
+    ctx: TranscriptionContext,
+    native_embeddings: dict,
+    speaker_mapping: dict[str, int],
+) -> None:
+    """Store 256-dim native centroids in speakers_v4 staging index.
+
+    Phase 1: Store per-speaker centroids (inheriting labels from DB).
+    Phase 2: Update consolidated profile embeddings in v4 for any
+             profiles touched by this file's speakers.
+
+    Fire-and-forget: failures logged but don't affect main pipeline.
+    """
+    from app.models.media import Speaker
+    from app.services.opensearch_service import add_speaker_embedding_v4
+    from app.services.opensearch_service import ensure_v4_index_exists
+
+    if not ensure_v4_index_exists():
+        logger.warning("v4 staging: Could not create/verify speakers_v4 index, skipping")
+        return
+
+    stored_count = 0
+    touched_profile_ids: set[int] = set()
+    current_file_speaker_uuids: set[str] = set()
+
+    # Phase 1: Store per-speaker centroids
+    with session_scope() as db:
+        for label, embedding in native_embeddings.items():
+            db_id = speaker_mapping.get(label)
+            if db_id is None:
+                continue
+
+            try:
+                speaker = db.query(Speaker).filter(Speaker.id == db_id).first()
+                if not speaker:
+                    logger.warning(f"v4 staging: Speaker ID {db_id} not found in DB")
+                    continue
+
+                emb_list = embedding.tolist() if hasattr(embedding, "tolist") else list(embedding)
+                speaker_uuid = str(speaker.uuid)
+                current_file_speaker_uuids.add(speaker_uuid)
+
+                profile_uuid = None
+                if speaker.profile_id and speaker.profile:
+                    profile_uuid = str(speaker.profile.uuid)
+                    touched_profile_ids.add(speaker.profile_id)
+
+                add_speaker_embedding_v4(
+                    speaker_id=int(speaker.id),
+                    speaker_uuid=speaker_uuid,
+                    user_id=ctx.user_id,
+                    name=speaker.display_name or speaker.name,
+                    embedding=emb_list,
+                    profile_id=speaker.profile_id,
+                    profile_uuid=profile_uuid,
+                    media_file_id=ctx.file_id,
+                    segment_count=1,
+                    display_name=speaker.display_name,
+                )
+                stored_count += 1
+
+            except Exception as e:
+                logger.warning(f"v4 staging: Error storing speaker {db_id}: {e}")
+
+    # Phase 2: Update consolidated profile embeddings in v4
+    profile_update_count = 0
+    if touched_profile_ids:
+        profile_update_count = _update_v4_profile_embeddings(
+            touched_profile_ids,
+            native_embeddings,
+            speaker_mapping,
+            current_file_speaker_uuids,
+        )
+
+    logger.info(
+        f"v4 staging: stored {stored_count} speakers + "
+        f"{profile_update_count} profile updates (256-dim) "
+        f"for file {ctx.file_id}"
+    )
+
+
+def _should_use_native_embeddings(result: dict) -> bool:
+    """Determine whether to use native PyAnnote centroids or traditional embedding model.
+
+    Decision logic:
+    1. Check USE_NATIVE_SPEAKER_EMBEDDINGS env var (default true)
+    2. Check native_speaker_embeddings exist in result
+    3. Auto-detect index dimension compatibility:
+       - Fresh install (no index): use native (creates 256-dim index)
+       - v4 index (256-dim): compatible with native centroids
+       - v3 index (512-dim): incompatible, fall back to traditional
+
+    Returns:
+        True if native embeddings should be used.
+    """
+    use_native = os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower() == "true"
+    if not use_native:
+        logger.info("Native speaker embeddings disabled by USE_NATIVE_SPEAKER_EMBEDDINGS=false")
+        return False
+
+    native_embeddings = result.get("native_speaker_embeddings", {})
+    if not native_embeddings:
+        logger.info("No native speaker embeddings in result, falling back to traditional path")
+        return False
+
+    # Auto-detect index dimension compatibility
+    try:
+        from app.services.embedding_mode_service import EmbeddingModeService
+
+        index_dim = EmbeddingModeService.get_embedding_dimension()
+
+        # Get centroid dimension from first embedding
+        first_emb = next(iter(native_embeddings.values()))
+        centroid_dim = first_emb.shape[-1] if hasattr(first_emb, "shape") else len(first_emb)
+
+        if index_dim == centroid_dim:
+            logger.info(
+                f"Using native speaker embeddings: index dim ({index_dim}) matches "
+                f"centroid dim ({centroid_dim})"
+            )
+            return True
+
+        # Check if this is a fresh install (v4 mode = 256-dim, matching centroids)
+        mode = EmbeddingModeService.detect_mode()
+        if mode == "v4" and centroid_dim == 256:
+            logger.info(
+                "Using native speaker embeddings: v4 mode detected, "
+                f"centroid dim={centroid_dim} compatible"
+            )
+            return True
+
+        logger.warning(
+            f"Index dimension ({index_dim}) does not match centroid dimension "
+            f"({centroid_dim}). Falling back to traditional SpeakerEmbeddingService "
+            f"for backward compatibility with existing v3 embeddings."
+        )
+        return False
+
+    except Exception as e:
+        logger.warning(
+            f"Error checking embedding dimension compatibility: {e}. "
+            "Falling back to traditional path."
+        )
+        return False
+
+
 def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: list) -> None:
     """Index transcript in OpenSearch with chunk-level embeddings and legacy whole-doc."""
     full_transcript = generate_full_transcript(processed_segments)
@@ -448,14 +781,17 @@ def _process_transcription_result(
         f"TIMING: process_segments_with_speakers completed in {time.perf_counter() - step_start:.3f}s - {len(processed_segments)} segments"
     )
 
-    # Mark overlapping segments if overlap info is available
+    # Mark overlapping segments if overlap info is available and detection is enabled
+    enable_overlap = os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower() == "true"
     overlap_info = result.get("overlap_info", {})
     overlap_regions = overlap_info.get("regions", [])
-    if overlap_regions:
+    if enable_overlap and overlap_regions:
         step_start = time.perf_counter()
         logger.info(f"Marking {len(overlap_regions)} overlap regions for file {ctx.file_id}")
         processed_segments = mark_overlapping_segments(processed_segments, overlap_regions)
         # Note: mark_overlapping_segments has its own internal timing log
+    elif not enable_overlap and overlap_regions:
+        logger.info("Overlap marking disabled by ENABLE_OVERLAP_DETECTION=false")
 
     # Clean garbage words
     step_start = time.perf_counter()
@@ -509,14 +845,35 @@ def _process_transcription_result(
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
     # Note: save_transcript_segments has its own internal timing log
 
-    # Speaker embeddings - inline processing with warm model cache
+    # Speaker embeddings - choose native (PyAnnote centroids) or traditional path
     send_progress_notification(ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification")
     step_start = time.perf_counter()
+    use_native = _should_use_native_embeddings(result)
     try:
-        _process_speaker_embeddings(ctx, audio_file_path, processed_segments, speaker_mapping)
+        if use_native:
+            logger.info("Using native speaker embeddings (PyAnnote centroids, no separate model)")
+            _process_speaker_embeddings_native(
+                ctx,
+                result["native_speaker_embeddings"],
+                processed_segments,
+                speaker_mapping,
+            )
+        else:
+            logger.info("Using traditional SpeakerEmbeddingService for speaker embeddings")
+            _process_speaker_embeddings(ctx, audio_file_path, processed_segments, speaker_mapping)
     except Exception as e:
         logger.warning(f"Error in speaker identification: {e}")
-    # Note: _process_speaker_embeddings has its own internal timing log
+    # Note: embedding processing functions have their own internal timing logs
+
+    # Store native centroids in v4 staging index (fire-and-forget).
+    # Only when the traditional v3 path was used but native centroids exist —
+    # this pre-populates the v4 index for future migration.
+    native_embeddings_for_v4 = result.get("native_speaker_embeddings")
+    if native_embeddings_for_v4 and not use_native:
+        try:
+            _store_native_centroids_in_v4_staging(ctx, native_embeddings_for_v4, speaker_mapping)
+        except Exception as e:
+            logger.warning(f"v4 staging: Error (non-fatal): {e}")
 
     # Force GPU memory cleanup before OpenSearch indexing
     hardware_config = detect_hardware()

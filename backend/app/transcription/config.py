@@ -29,6 +29,9 @@ class TranscriptionConfig:
     max_speakers: int = 20
     num_speakers: int | None = None
     hf_token: str | None = None
+    enable_native_embeddings: bool = True
+    enable_overlap_detection: bool = True
+    overlap_min_duration: float = 0.25
 
     def config_hash(self) -> str:
         """Hash of model-loading-relevant config for cache invalidation."""
@@ -65,6 +68,11 @@ class TranscriptionConfig:
             max_speakers=int(os.getenv("MAX_SPEAKERS", "20")),
             num_speakers=None,
             hf_token=os.getenv("HUGGINGFACE_TOKEN"),
+            enable_native_embeddings=os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower()
+            == "true",
+            enable_overlap_detection=os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower()
+            == "true",
+            overlap_min_duration=float(os.getenv("OVERLAP_MIN_DURATION", "0.25")),
         )
 
         # Apply task-level overrides

@@ -85,13 +85,13 @@ class TranscriptionPipeline:
         step_start = time.perf_counter()
         with profiler.step("diarization"):
             diarizer = self.manager.get_diarizer(self.config)
-            diarize_df, overlap_info = diarizer.diarize(audio)
+            diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
         logger.info(
             f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
         )
 
         # Save raw GPU outputs for offline post-processing iteration
-        self._save_intermediate(transcript, diarize_df, overlap_info)
+        self._save_intermediate(transcript, diarize_df, overlap_info, native_embeddings)
 
         # Step 5: Segment dedup BEFORE speaker assignment
         # Splits coarse VAD chunks (20-30s) into sentence-level segments (~3-5s)
@@ -123,6 +123,10 @@ class TranscriptionPipeline:
         if overlap_info.get("count", 0) > 0:
             result["overlap_info"] = overlap_info
 
+        # Pass native speaker embeddings to downstream processing
+        if native_embeddings:
+            result["native_speaker_embeddings"] = native_embeddings
+
         # Save final result for comparison
         self._save_intermediate_result(result, "final_result")
 
@@ -148,6 +152,7 @@ class TranscriptionPipeline:
         transcript: dict,
         diarize_df: Any,
         overlap_info: dict,
+        native_embeddings: dict | None = None,
     ) -> None:
         """Save raw GPU outputs so post-processing can be iterated offline."""
         import json
@@ -172,6 +177,12 @@ class TranscriptionPipeline:
         # Overlap info
         with open(os.path.join(out_dir, "overlap_info.json"), "w") as f:
             json.dump(overlap_info, f, indent=2, default=str)
+
+        # Native embeddings info
+        if native_embeddings:
+            emb_info = {label: {"dim": vec.shape[0]} for label, vec in native_embeddings.items()}
+            with open(os.path.join(out_dir, "native_embeddings_info.json"), "w") as f:
+                json.dump(emb_info, f, indent=2)
 
         logger.info(
             f"Saved: raw_transcript.json ({len(transcript.get('segments', []))} segments), "
