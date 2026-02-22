@@ -73,19 +73,79 @@ def get_speaker_embedding_dimension() -> int:
     return EmbeddingModeService.get_embedding_dimension()
 
 
-def check_and_repair_indices():
+def _repair_index(index_name: str) -> bool:
+    """Attempt to repair a corrupted OpenSearch index.
+
+    Tries close/reopen first (fixes stale file handles on HNSW vector segments),
+    then falls back to force merge if close/reopen is insufficient.
+
+    Args:
+        index_name: Name of the index to repair.
+
+    Returns:
+        True if the index was successfully repaired.
+    """
+    if not opensearch_client:
+        return False
+
+    # Strategy 1: Close and reopen to force re-acquisition of file handles
+    try:
+        opensearch_client.indices.close(index=index_name)
+        opensearch_client.indices.open(index=index_name)
+        opensearch_client.search(index=index_name, body={"query": {"match_all": {}}, "size": 0})
+        logger.info(f"Index {index_name} repaired via close/reopen")
+        return True
+    except Exception as e:
+        logger.warning(f"Close/reopen failed for {index_name}: {e}")
+
+    # Strategy 2: Force merge to compact corrupted segments
+    try:
+        opensearch_client.indices.forcemerge(index=index_name, max_num_segments=1)
+        opensearch_client.search(index=index_name, body={"query": {"match_all": {}}, "size": 0})
+        logger.info(f"Index {index_name} repaired via force merge")
+        return True
+    except Exception as e:
+        logger.error(f"All repair strategies failed for {index_name}: {e}")
+        return False
+
+
+def _is_index_corruption_error(error: Exception) -> bool:
+    """Check if an exception indicates OpenSearch index corruption."""
+    error_str = str(error).lower()
+    return any(
+        indicator in error_str
+        for indicator in [
+            "503",
+            "search_phase_execution_exception",
+            "already_closed",
+            "no_shard_available",
+        ]
+    )
+
+
+def check_and_repair_indices() -> list[str]:
     """Check OpenSearch indices health and auto-repair corrupted shards.
 
     Runs a simple match_all query (size=0) against each index. If a 503 or
     search_phase_execution_exception is returned (typically caused by corrupted
     Lucene HNSW vector segment files after unclean shutdowns), the index is
     closed and reopened to force OpenSearch to re-open all segment file handles.
+
+    Returns:
+        List of index names that were repaired (empty if all healthy).
     """
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping health check")
-        return
+        return []
 
-    indices = [settings.OPENSEARCH_SPEAKER_INDEX, settings.OPENSEARCH_TRANSCRIPT_INDEX]
+    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    indices = [
+        settings.OPENSEARCH_SPEAKER_INDEX,
+        settings.OPENSEARCH_TRANSCRIPT_INDEX,
+        v4_index,
+    ]
+    repaired: list[str] = []
+
     for index_name in indices:
         if not opensearch_client.indices.exists(index=index_name):
             continue
@@ -93,23 +153,16 @@ def check_and_repair_indices():
             opensearch_client.search(index=index_name, body={"query": {"match_all": {}}, "size": 0})
             logger.info(f"Index health check passed: {index_name}")
         except Exception as e:
-            error_str = str(e)
-            if "503" in error_str or "search_phase_execution_exception" in error_str:
-                logger.warning(
-                    f"Index {index_name} unhealthy, attempting close/reopen recovery: {e}"
-                )
-                try:
-                    opensearch_client.indices.close(index=index_name)
-                    opensearch_client.indices.open(index=index_name)
-                    # Verify recovery
-                    opensearch_client.search(
-                        index=index_name, body={"query": {"match_all": {}}, "size": 0}
-                    )
-                    logger.info(f"Index {index_name} recovered successfully after close/reopen")
-                except Exception as repair_err:
-                    logger.error(f"Failed to repair index {index_name}: {repair_err}")
+            if _is_index_corruption_error(e):
+                logger.warning(f"Index {index_name} unhealthy, attempting repair: {e}")
+                if _repair_index(index_name):
+                    repaired.append(index_name)
+                else:
+                    logger.error(f"Index {index_name} could not be repaired automatically")
             else:
                 logger.error(f"Index health check failed for {index_name}: {e}")
+
+    return repaired
 
 
 def ensure_indices_exist():
@@ -624,9 +677,42 @@ def add_speaker_embedding(
         return response
 
     except Exception as e:
-        logger.error(
-            f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
-        )
+        if _is_index_corruption_error(e):
+            logger.warning(
+                f"Index corruption detected indexing speaker {speaker_uuid}, attempting repair..."
+            )
+            if _repair_index(settings.OPENSEARCH_SPEAKER_INDEX):
+                try:
+                    doc = {
+                        "speaker_id": speaker_id,
+                        "speaker_uuid": str(speaker_uuid),
+                        "profile_id": profile_id,
+                        "profile_uuid": str(profile_uuid) if profile_uuid else None,
+                        "user_id": user_id,
+                        "name": name,
+                        "display_name": display_name,
+                        "collection_ids": collection_ids or [],
+                        "media_file_id": media_file_id,
+                        "segment_count": segment_count,
+                        "created_at": datetime.datetime.now().isoformat(),
+                        "updated_at": datetime.datetime.now().isoformat(),
+                        "embedding": embedding,
+                    }
+                    response = opensearch_client.index(
+                        index=settings.OPENSEARCH_SPEAKER_INDEX,
+                        body=doc,
+                        id=str(speaker_uuid),
+                    )
+                    logger.info(f"Retry succeeded: indexed speaker {speaker_uuid} after repair")
+                    return response
+                except Exception as retry_err:
+                    logger.error(
+                        f"Retry after repair failed for speaker {speaker_uuid}: {retry_err}"
+                    )
+        else:
+            logger.error(
+                f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
+            )
 
 
 def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
@@ -925,6 +1011,36 @@ def find_matching_speaker(
         return None
 
     except Exception as e:
+        if _is_index_corruption_error(e):
+            logger.warning(
+                "Index corruption detected during speaker matching, attempting repair..."
+            )
+            if _repair_index(settings.OPENSEARCH_SPEAKER_INDEX):
+                try:
+                    response = opensearch_client.search(
+                        index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
+                    )
+                    if len(response["hits"]["hits"]) > 0:
+                        hit = response["hits"]["hits"][0]
+                        score = hit["_score"]
+                        if score >= threshold:
+                            source = hit["_source"]
+                            if "speaker_id" not in source:
+                                return None
+                            return {
+                                "speaker_id": source["speaker_id"],
+                                "speaker_uuid": source.get("speaker_uuid"),
+                                "profile_id": source.get("profile_id"),
+                                "profile_uuid": source.get("profile_uuid"),
+                                "name": source["name"],
+                                "confidence": score,
+                                "media_file_id": source.get("media_file_id"),
+                                "collection_ids": source.get("collection_ids", []),
+                            }
+                    return None
+                except Exception as retry_err:
+                    logger.error(f"Retry after repair failed for speaker matching: {retry_err}")
+                    return None
         logger.error(f"Error finding matching speaker: {e}")
         return None
 
@@ -1434,6 +1550,26 @@ def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
         return None
 
     except Exception as e:
+        if _is_index_corruption_error(e):
+            logger.warning(
+                f"Index corruption detected getting speaker {speaker_uuid}, attempting repair..."
+            )
+            if _repair_index(settings.OPENSEARCH_SPEAKER_INDEX):
+                try:
+                    response = opensearch_client.get(
+                        index=settings.OPENSEARCH_SPEAKER_INDEX,
+                        id=str(speaker_uuid),
+                    )
+                    if response and "_source" in response:
+                        embedding = response["_source"].get("embedding")
+                        if embedding is not None:
+                            return list(embedding)
+                    return None
+                except Exception as retry_err:
+                    logger.error(
+                        f"Retry after repair failed for speaker {speaker_uuid}: {retry_err}"
+                    )
+                    return None
         logger.error(f"Error getting speaker embedding: {e}")
         return None
 

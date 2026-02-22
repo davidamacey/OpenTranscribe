@@ -150,6 +150,26 @@ def recover_user_files_task(self, user_id: int | None = None):
     return summary
 
 
+def _check_opensearch_health(summary: dict) -> None:
+    """Check and repair OpenSearch indices with corrupted HNSW vector segments.
+
+    Runs outside the DB session since it only touches OpenSearch.
+    Updates the summary dict in place with repair results.
+    """
+    try:
+        from app.services.opensearch_service import check_and_repair_indices
+
+        repaired_indices = check_and_repair_indices()
+        if repaired_indices:
+            summary["opensearch_indices_repaired"] = repaired_indices
+            logger.info(
+                f"OpenSearch index repair: repaired {len(repaired_indices)} indices: "
+                f"{', '.join(repaired_indices)}"
+            )
+    except Exception as os_err:
+        logger.warning(f"OpenSearch health check failed (non-fatal): {os_err}")
+
+
 @celery_app.task(
     name="periodic_health_check",
     bind=True,
@@ -194,6 +214,7 @@ def periodic_health_check_task(self):
         "false_positive_tasks_reset": 0,
         "incomplete_post_transcription_found": 0,
         "post_transcription_tasks_dispatched": 0,
+        "opensearch_indices_repaired": [],
     }
 
     try:
@@ -369,10 +390,14 @@ def periodic_health_check_task(self):
                 f"Found {summary['stuck_llm_tasks_found']} stuck LLM tasks, marked {summary['stuck_llm_tasks_marked_failed']} as failed; "
                 f"Found {summary['false_positive_tasks_found']} false-positive tasks, reset {summary['false_positive_tasks_reset']}; "
                 f"Found {summary['incomplete_post_transcription_found']} incomplete post-transcription files, dispatched {summary['post_transcription_tasks_dispatched']} tasks"
+                f"; OpenSearch indices repaired: {summary['opensearch_indices_repaired']}"
             )
 
     except Exception as e:
         logger.error(f"Error in periodic health check: {str(e)}")
         summary["error"] = str(e)  # type: ignore[assignment]
+
+    # Step 7: Check and repair OpenSearch indices (corrupted HNSW vector segments)
+    _check_opensearch_health(summary)
 
     return summary

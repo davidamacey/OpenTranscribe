@@ -1067,34 +1067,59 @@
                                   </div>
                                 </div>
                               {:else if speaker.voice_suggestions && speaker.voice_suggestions.length > 0}
-                                <div class="chip-row">
-                                  <span class="chip-label">{$t('transcript.voiceSuggestion')}</span>
-                                  <div class="chips-wrap">
-                                    {#each speaker.voice_suggestions.slice(0, 6) as suggestion}
-                                      <button
-                                        class="suggestion-chip voice-chip"
-                                        class:high-confidence={suggestion.confidence >= 0.75}
-                                        class:medium-confidence={suggestion.confidence >= 0.5 && suggestion.confidence < 0.75}
-                                        class:low-confidence={suggestion.confidence < 0.5}
-                                        class:profile-suggestion={suggestion.suggestion_type === 'profile'}
-                                        on:click={() => {
-                                          speaker.display_name = suggestion.name;
-                                          dispatch('speakerUpdate', { speakerId: speaker.uuid, newName: suggestion.name });
-                                        }}
-                                        title="{suggestion.reason}"
-                                      >
-                                        {suggestion.name}
-                                        {#if suggestion.suggestion_type === 'profile'}
-                                          <span class="profile-mini-badge">P</span>
-                                        {/if}
-                                        <span class="chip-confidence">{suggestion.confidence_percentage}</span>
-                                      </button>
-                                    {/each}
-                                    {#if speaker.voice_suggestions.length > 6}
-                                      <span class="more-chips">{$t('transcript.moreChips', { count: speaker.voice_suggestions.length - 6 })}</span>
-                                    {/if}
+                                {#if speaker.voice_suggestions.filter(s => s.suggestion_type === 'profile').length > 0}
+                                  <div class="chip-row">
+                                    <span class="chip-label profile-label">{$t('transcript.profileMatch')}</span>
+                                    <div class="chips-wrap">
+                                      {#each speaker.voice_suggestions.filter(s => s.suggestion_type === 'profile').slice(0, 4) as suggestion}
+                                        <button
+                                          class="suggestion-chip profile-chip"
+                                          class:high-confidence={suggestion.confidence >= 0.75}
+                                          class:medium-confidence={suggestion.confidence >= 0.5 && suggestion.confidence < 0.75}
+                                          class:low-confidence={suggestion.confidence < 0.5}
+                                          on:click={() => {
+                                            speaker.display_name = suggestion.name;
+                                            dispatch('speakerUpdate', { speakerId: speaker.uuid, newName: suggestion.name });
+                                          }}
+                                          title="{suggestion.reason}"
+                                        >
+                                          <svg class="source-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                            <circle cx="12" cy="7" r="4"/>
+                                          </svg>
+                                          {suggestion.name}
+                                          <span class="chip-confidence">{suggestion.confidence_percentage}</span>
+                                        </button>
+                                      {/each}
+                                    </div>
                                   </div>
-                                </div>
+                                {/if}
+                                {#if speaker.voice_suggestions.filter(s => s.suggestion_type !== 'profile').length > 0}
+                                  <div class="chip-row">
+                                    <span class="chip-label">{$t('transcript.voiceSuggestion')}</span>
+                                    <div class="chips-wrap">
+                                      {#each speaker.voice_suggestions.filter(s => s.suggestion_type !== 'profile').slice(0, 6) as suggestion}
+                                        <button
+                                          class="suggestion-chip voice-chip"
+                                          class:high-confidence={suggestion.confidence >= 0.75}
+                                          class:medium-confidence={suggestion.confidence >= 0.5 && suggestion.confidence < 0.75}
+                                          class:low-confidence={suggestion.confidence < 0.5}
+                                          on:click={() => {
+                                            speaker.display_name = suggestion.name;
+                                            dispatch('speakerUpdate', { speakerId: speaker.uuid, newName: suggestion.name });
+                                          }}
+                                          title="{suggestion.reason}"
+                                        >
+                                          {suggestion.name}
+                                          <span class="chip-confidence">{suggestion.confidence_percentage}</span>
+                                        </button>
+                                      {/each}
+                                      {#if speaker.voice_suggestions.filter(s => s.suggestion_type !== 'profile').length > 6}
+                                        <span class="more-chips">{$t('transcript.moreChips', { count: speaker.voice_suggestions.filter(s => s.suggestion_type !== 'profile').length - 6 })}</span>
+                                      {/if}
+                                    </div>
+                                  </div>
+                                {/if}
                               {/if}
                             </div>
                           </div>
@@ -1948,21 +1973,6 @@
     font-weight: 600;
   }
 
-  .profile-mini-badge {
-    background: #f59e0b;
-    color: white;
-    font-size: 0.625rem;
-    font-weight: 700;
-    padding: 0.0625rem 0.25rem;
-    border-radius: 50%;
-    margin-left: 0.25rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1rem;
-    height: 1rem;
-  }
-
 
 
 
@@ -2424,6 +2434,24 @@
 
   .suggestion-chip.voice-chip.low-confidence:hover {
     background: #6d28d9;
+  }
+
+  /* Profile chip — consistent #f59e0b amber */
+  .suggestion-chip.profile-chip.high-confidence,
+  .suggestion-chip.profile-chip.medium-confidence,
+  .suggestion-chip.profile-chip.low-confidence {
+    background: #f59e0b;
+  }
+
+  .suggestion-chip.profile-chip.high-confidence:hover,
+  .suggestion-chip.profile-chip.medium-confidence:hover,
+  .suggestion-chip.profile-chip.low-confidence:hover {
+    background: #d97706;
+  }
+
+  .chip-label.profile-label {
+    color: #f59e0b;
+    font-weight: 600;
   }
 
   .chip-confidence {

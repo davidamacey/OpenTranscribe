@@ -99,6 +99,40 @@ class SpeakerEmbeddingService:
             logger.error(f"Error initializing pyannote embedding model: {e}")
             raise
 
+    @staticmethod
+    def _load_audio(audio_path: str) -> tuple[torch.Tensor, int]:
+        """Load audio file as a torch tensor, with fallback for missing torchaudio backends.
+
+        torchaudio 2.8+ deprecated its backend system and may have zero backends
+        available (sox, soundfile, ffmpeg). When that happens, fall back to
+        scipy.io.wavfile which is always available in the container.
+
+        Returns:
+            Tuple of (waveform tensor [channels, samples], sample_rate).
+        """
+        # Try torchaudio first (preferred when backends are available)
+        try:
+            import torchaudio
+
+            waveform, sr = torchaudio.load(audio_path)
+            return waveform, int(sr)
+        except Exception as ta_err:
+            if "backend" not in str(ta_err).lower() and "already_closed" not in str(ta_err).lower():
+                raise  # Re-raise non-backend errors
+            logger.debug(f"torchaudio.load failed ({ta_err}), falling back to scipy")
+
+        # Fallback: scipy.io.wavfile → torch tensor
+        from scipy.io import wavfile
+
+        sr, data = wavfile.read(audio_path)
+        # scipy returns int16 or float32 depending on the file
+        audio = data.astype(np.float32)
+        if np.issubdtype(data.dtype, np.integer):
+            audio = audio / np.float32(np.iinfo(data.dtype).max)
+        # Ensure shape is [channels, samples]
+        audio = audio[np.newaxis, :] if audio.ndim == 1 else audio.T
+        return torch.from_numpy(audio), sr
+
     def extract_embedding_from_file(
         self, audio_path: str, segment: Optional[dict[str, float]] = None
     ) -> Optional[np.ndarray]:
@@ -113,10 +147,7 @@ class SpeakerEmbeddingService:
             Numpy array of the embedding or None if failed
         """
         try:
-            import torchaudio
-
-            # Load audio using torchaudio (avoids torchcodec dependency issues)
-            waveform, sample_rate = torchaudio.load(audio_path)
+            waveform, sample_rate = self._load_audio(audio_path)
 
             if segment:
                 # Extract the specific segment

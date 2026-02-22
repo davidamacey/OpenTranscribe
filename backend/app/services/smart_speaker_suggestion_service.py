@@ -478,22 +478,34 @@ class SmartSpeakerSuggestionService:
         )
         suggestions.extend(voice_suggestions)
 
-        # Step 4: Deduplicate by name, keeping highest confidence with type priority
-        # Priority order: profile > voice (profiles are more reliable)
-        unique_suggestions = {}
+        # Step 4: Deduplicate by name, keeping profile type with best confidence
+        # When both profile and voice/individual exist for the same name, keep
+        # the profile type (verified identity) but use the higher confidence score.
+        unique_suggestions: dict[str, ConsolidatedSuggestion] = {}
         for suggestion in suggestions:
             name_key = suggestion.name.lower()
             if name_key not in unique_suggestions:
                 unique_suggestions[name_key] = suggestion
             else:
                 existing = unique_suggestions[name_key]
-                # Replace if higher confidence OR same confidence but better type
-                should_replace = suggestion.confidence > existing.confidence or (
-                    suggestion.confidence == existing.confidence
-                    and suggestion.suggestion_type == "profile"
-                    and existing.suggestion_type == "voice"
-                )
-                if should_replace:
+                # Profile type always wins over voice/individual
+                if (
+                    existing.suggestion_type == "profile"
+                    and suggestion.suggestion_type != "profile"
+                ):
+                    # Keep profile entry, but boost confidence if voice match is higher
+                    if suggestion.confidence > existing.confidence:
+                        existing.confidence = suggestion.confidence
+                elif (
+                    suggestion.suggestion_type == "profile"
+                    and existing.suggestion_type != "profile"
+                ):
+                    # Replace with profile, but keep higher confidence from voice
+                    if existing.confidence > suggestion.confidence:
+                        suggestion.confidence = existing.confidence
+                    unique_suggestions[name_key] = suggestion
+                elif suggestion.confidence > existing.confidence:
+                    # Same type — keep higher confidence
                     unique_suggestions[name_key] = suggestion
 
         # Step 5: Sort by type priority and confidence

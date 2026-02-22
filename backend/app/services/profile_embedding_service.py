@@ -149,6 +149,9 @@ def _check_profiles_exist_in_opensearch(
     user_id: int,
 ) -> bool:
     """Check if any profile documents exist for the user in OpenSearch."""
+    from app.services.opensearch_service import _is_index_corruption_error
+    from app.services.opensearch_service import _repair_index
+
     profile_check_query = {
         "size": 1,
         "query": {
@@ -167,6 +170,19 @@ def _check_profiles_exist_in_opensearch(
             logger.info(f"No profile documents found for user {user_id}, skipping KNN search")
             return False
     except Exception as e:
+        if _is_index_corruption_error(e):
+            logger.warning(f"Index corruption during profile check, attempting repair: {e}")
+            if _repair_index(index_name):
+                try:
+                    profile_check = opensearch_client.search(
+                        index=index_name, body=profile_check_query
+                    )
+                    if profile_check["hits"]["total"]["value"] == 0:
+                        logger.info(f"No profile documents found for user {user_id} after repair")
+                        return False
+                    return True
+                except Exception as retry_err:
+                    logger.error(f"Profile check retry after repair failed: {retry_err}")
         logger.warning(f"Profile document check failed: {e}, proceeding with KNN query")
 
     return True
@@ -180,6 +196,9 @@ def _execute_knn_search(
     threshold: float,
 ) -> list[dict]:
     """Execute KNN search and return matches above threshold."""
+    from app.services.opensearch_service import _is_index_corruption_error
+    from app.services.opensearch_service import _repair_index
+
     filters = [
         {"term": {"document_type": "profile"}},
         {"term": {"user_id": user_id}},
@@ -201,6 +220,14 @@ def _execute_knn_search(
     try:
         response = opensearch_client.search(index=index_name, body=query)
     except Exception as e:
+        if _is_index_corruption_error(e):
+            logger.warning(f"Index corruption during KNN search, attempting repair: {e}")
+            if _repair_index(index_name):
+                try:
+                    response = opensearch_client.search(index=index_name, body=query)
+                    return _extract_matches_from_response(response, threshold)
+                except Exception as retry_err:
+                    logger.error(f"KNN search retry after repair failed: {retry_err}")
         logger.error(f"Error in OpenSearch KNN search: {e}")
         return []
 

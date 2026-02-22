@@ -205,15 +205,22 @@ def _get_segment_counts_for_speakers(speaker_ids: list[int], db: Session) -> dic
 
 
 def _get_voice_suggestions(raw_cross_video_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Extract voice suggestions from cross-video matches."""
+    """Extract voice and profile suggestions from cross-video matches.
+
+    Excludes LLM suggestions since those are displayed separately in the UI.
+    """
     voice_suggestions: list[dict[str, Any]] = []
     for match in raw_cross_video_matches:
         name = match.get("name")
+        suggestion_type = match.get("suggestion_type")
+        # Skip LLM suggestions — they have their own dedicated UI section
+        if suggestion_type == "llm_analysis":
+            continue
         if (
             float(match.get("confidence", 0)) >= 0.50
             and name is not None
             and str(name).strip()
-            and match.get("suggestion_type")
+            and suggestion_type
         ):
             voice_suggestions.append(
                 {
