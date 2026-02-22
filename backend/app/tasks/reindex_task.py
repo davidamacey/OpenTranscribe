@@ -8,6 +8,7 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
+from app.core.constants import NOTIFICATION_TYPE_REINDEX_STOPPED
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +317,56 @@ def _check_and_recreate_stale_index() -> None:
         logger.error(f"Failed to check/recreate stale index: {e}")
 
 
+def _is_cancellation_requested(user_id: int) -> bool:
+    """Check if a reindex cancellation has been requested via Redis.
+
+    Args:
+        user_id: The user whose reindex to check.
+
+    Returns:
+        True if cancellation was requested.
+    """
+    try:
+        redis_client = _get_notification_redis()
+        return bool(redis_client.get(f"reindex_cancel:{user_id}"))
+    except Exception as e:
+        logger.warning(f"Could not check cancellation flag: {e}")
+        return False
+
+
+def _clear_cancellation_flag(user_id: int) -> None:
+    """Clear the reindex cancellation flag in Redis.
+
+    Args:
+        user_id: The user whose cancellation flag to clear.
+    """
+    try:
+        redis_client = _get_notification_redis()
+        redis_client.delete(f"reindex_cancel:{user_id}")
+    except Exception as e:
+        logger.warning(f"Could not clear cancellation flag: {e}")
+
+
+def _send_reindex_stopped(user_id: int, stats: dict[str, Any]) -> None:
+    """Send re-index stopped notification via Redis pub/sub for WebSocket delivery."""
+    try:
+        import json
+
+        redis_client = _get_notification_redis()
+
+        notification = {
+            "user_id": user_id,
+            "type": NOTIFICATION_TYPE_REINDEX_STOPPED,
+            "data": {"stats": stats, "reason": "cancelled_by_user"},
+        }
+
+        redis_client.publish("websocket_notifications", json.dumps(notification))
+        logger.info(f"Published reindex stopped via Redis: {stats}")
+
+    except Exception as e:
+        logger.error(f"Failed to send reindex stopped notification: {e}")
+
+
 @celery_app.task(bind=True, name="reindex_transcripts", queue="cpu")
 def reindex_transcripts_task(
     self,
@@ -357,6 +408,7 @@ def reindex_transcripts_task(
 
     task_id = self.request.id
     logger.info(f"Re-index task {task_id} started for user {user_id}")
+    _clear_cancellation_flag(user_id)
 
     if model_id:
         error = _handle_model_switch(model_id)
@@ -436,6 +488,17 @@ def reindex_transcripts_task(
                     for media_file in page_files:
                         file_uuid = str(media_file.uuid)
                         global_index += 1
+
+                        # Check for user-requested cancellation
+                        if _is_cancellation_requested(user_id):
+                            logger.info(
+                                f"Re-index task {task_id} cancelled by user after "
+                                f"{stats['indexed_files']}/{total_files} files"
+                            )
+                            stats["cancelled"] = True
+                            _send_reindex_stopped(user_id, stats)
+                            _clear_cancellation_flag(user_id)
+                            return stats
 
                         try:
                             metadata = _extract_file_metadata(db, media_file)

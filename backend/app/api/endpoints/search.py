@@ -339,6 +339,44 @@ def trigger_reindex(
     }
 
 
+@router.post("/reindex/stop")
+def stop_reindex(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Request cancellation of a running reindex task.
+
+    Sets a Redis flag that the reindex task checks between files.
+    The task will stop after completing the current file and restore
+    normal index settings (refresh_interval).
+
+    Returns:
+        Dict with stop status.
+    """
+    import redis as sync_redis
+
+    user_id = int(current_user.id)
+
+    if not _check_reindex_task_active(user_id):
+        return {
+            "status": "not_running",
+            "message": "No reindex task is currently running.",
+        }
+
+    try:
+        redis_client = sync_redis.from_url(settings.REDIS_URL)
+        redis_client.setex(f"reindex_cancel:{user_id}", 3600, "1")
+
+        logger.info(f"Reindex stop requested for user {user_id}")
+
+        return {
+            "status": "stop_requested",
+            "message": "Stop signal sent. Reindex will stop after the current file completes.",
+        }
+    except Exception as e:
+        logger.error(f"Failed to request reindex stop: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 def _check_reindex_task_active(user_id: int) -> bool:
     """Check if a reindex task is currently active for this user.
 
@@ -456,11 +494,23 @@ def reindex_status(
     # Check if a reindex task is actively running for this user
     in_progress = _check_reindex_task_active(int(current_user.id))
 
+    # Check if stop has been requested
+    stop_requested = False
+    if in_progress:
+        try:
+            import redis as sync_redis
+
+            redis_client = sync_redis.from_url(settings.REDIS_URL)
+            stop_requested = bool(redis_client.get(f"reindex_cancel:{int(current_user.id)}"))
+        except Exception as e:
+            logger.debug(f"Could not check reindex cancellation flag: {e}")
+
     return {
         "total_files": total_files,
         "indexed_files": indexed_files,
         "pending_files": max(0, total_files - indexed_files),
         "in_progress": in_progress,
+        "stop_requested": stop_requested,
         "current_model": get_search_embedding_model(),
         "current_dimension": get_search_embedding_dimension(),
         "last_indexed_at": last_indexed_at,

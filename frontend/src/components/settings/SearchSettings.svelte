@@ -35,6 +35,7 @@
   let isLoading = true;
   let isReindexing = false;
   let isSwitchingModel = false;
+  let isStopping = false;
 
   // Live reindex progress
   let reindexProgress: ReindexProgress | null = null;
@@ -53,6 +54,14 @@
     toastStore.success($t('search.reindexComplete') || 'Re-indexing complete!');
   }
 
+  function handleReindexStopped(event: CustomEvent<{ stats: any; reason: string }>) {
+    reindexProgress = null;
+    isReindexing = false;
+    isStopping = false;
+    loadStatus();
+    toastStore.success($t('search.reindexStopped') || 'Re-indexing stopped.');
+  }
+
   onMount(async () => {
     await Promise.all([loadModels(), loadStatus()]);
     isLoading = false;
@@ -60,11 +69,13 @@
     // Listen for WebSocket events
     window.addEventListener('reindex-progress', handleReindexProgress as EventListener);
     window.addEventListener('reindex-complete', handleReindexComplete as EventListener);
+    window.addEventListener('reindex-stopped', handleReindexStopped as EventListener);
   });
 
   onDestroy(() => {
     window.removeEventListener('reindex-progress', handleReindexProgress as EventListener);
     window.removeEventListener('reindex-complete', handleReindexComplete as EventListener);
+    window.removeEventListener('reindex-stopped', handleReindexStopped as EventListener);
   });
 
   async function loadModels() {
@@ -142,6 +153,23 @@
     }
   }
 
+  async function handleStopReindex() {
+    isStopping = true;
+    try {
+      const res = await axiosInstance.post('/search/reindex/stop');
+      if (res.data.status === 'not_running') {
+        isReindexing = false;
+        isStopping = false;
+        reindexProgress = null;
+        await loadStatus();
+      }
+      toastStore.info(res.data.message);
+    } catch (e: any) {
+      toastStore.error(e?.response?.data?.detail || 'Failed to stop re-indexing');
+      isStopping = false;
+    }
+  }
+
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return 'Never';
     try {
@@ -186,23 +214,45 @@
       </div>
     </div>
 
-    {#if isReindexing && reindexProgress}
+    {#if isReindexing}
       <!-- Live reindex progress -->
       <div class="reindex-live-progress">
         <div class="reindex-header">
           <span class="reindex-label">
             <span class="spinner"></span>
-            {$t('search.reindexingInProgress') || 'Re-indexing in progress...'}
+            {isStopping
+              ? ($t('search.stoppingReindex') || 'Stopping...')
+              : ($t('search.reindexingInProgress') || 'Re-indexing in progress...')}
           </span>
-          <span class="reindex-count">
-            {reindexProgress.indexed_files} / {reindexProgress.total_files} files
-          </span>
+          {#if reindexProgress}
+            <span class="reindex-count">
+              {reindexProgress.indexed_files} / {reindexProgress.total_files} files
+            </span>
+          {/if}
         </div>
-        <div class="progress-container">
-          <div class="progress-bar reindexing">
-            <div class="progress-fill" style="width: {Math.round(reindexProgress.progress * 100)}%"></div>
+        {#if reindexProgress}
+          <div class="progress-container">
+            <div class="progress-bar reindexing">
+              <div class="progress-fill" style="width: {Math.round(reindexProgress.progress * 100)}%"></div>
+            </div>
+            <span class="progress-text">{Math.round(reindexProgress.progress * 100)}%</span>
           </div>
-          <span class="progress-text">{Math.round(reindexProgress.progress * 100)}%</span>
+        {:else}
+          <div class="progress-container">
+            <div class="progress-bar reindexing">
+              <div class="progress-fill indeterminate"></div>
+            </div>
+            <span class="progress-text">{$t('search.reindexStarting') || 'Starting...'}</span>
+          </div>
+        {/if}
+        <div class="reindex-actions">
+          <button
+            class="btn btn-danger-outline btn-sm"
+            on:click={handleStopReindex}
+            disabled={isStopping}
+          >
+            {isStopping ? ($t('search.stoppingReindex') || 'Stopping...') : ($t('search.stopReindex') || 'Stop')}
+          </button>
         </div>
       </div>
     {:else if indexStatus.total_files > 0}
@@ -514,6 +564,52 @@
     }
     50% {
       opacity: 0.7;
+    }
+  }
+
+  .reindex-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
+  .btn-danger-outline {
+    background: transparent;
+    color: var(--danger-color, #dc2626);
+    border: 1px solid var(--danger-color, #dc2626);
+  }
+
+  .btn-danger-outline:hover:not(:disabled) {
+    background: var(--danger-bg, rgba(220, 38, 38, 0.08));
+  }
+
+  .btn-danger-outline:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .progress-bar.reindexing .progress-fill.indeterminate {
+    width: 30%;
+    animation: indeterminate 1.5s ease-in-out infinite;
+  }
+
+  @keyframes indeterminate {
+    0% {
+      margin-left: 0%;
+      width: 30%;
+    }
+    50% {
+      margin-left: 35%;
+      width: 30%;
+    }
+    100% {
+      margin-left: 0%;
+      width: 30%;
     }
   }
 </style>

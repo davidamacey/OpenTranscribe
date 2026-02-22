@@ -24,6 +24,7 @@ export type NotificationType =
   | 'gpu_stats_update'
   | 'reindex_progress'
   | 'reindex_complete'
+  | 'reindex_stopped'
   | 'migration_progress'
   | 'migration_complete'
   | 'cache_invalidate';
@@ -226,6 +227,12 @@ function createWebSocketStore() {
               // Reindex complete — dispatch event for SearchSettings
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('reindex-complete', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'reindex_stopped') {
+              // Reindex stopped by user — dispatch event for SearchSettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('reindex-stopped', { detail: data.data }));
               }
               return;
             } else if (data.type === 'migration_progress') {
