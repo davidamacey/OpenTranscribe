@@ -199,13 +199,10 @@ async def add_media_to_collection(
     # Bulk resolve UUIDs to IDs in a single query (avoids N+1)
     media_file_uuids = validate_uuids([str(uuid) for uuid in media_data.media_file_ids])
 
-    import uuid as uuid_mod
-
-    parsed_uuids = [uuid_mod.UUID(u) for u in media_file_uuids]  # type: ignore[arg-type]
     media_files = (
         db.query(MediaFile)
         .filter(
-            MediaFile.uuid.in_(parsed_uuids),
+            MediaFile.uuid.in_(media_file_uuids),
             MediaFile.user_id == current_user.id,
         )
         .all()
@@ -266,10 +263,7 @@ async def remove_media_from_collection(
     # Bulk resolve UUIDs to IDs in a single query (avoids N+1)
     media_file_uuids = validate_uuids([str(uuid) for uuid in media_data.media_file_ids])
 
-    import uuid as uuid_mod
-
-    parsed_uuids = [uuid_mod.UUID(u) for u in media_file_uuids]  # type: ignore[arg-type]
-    media_files = db.query(MediaFile).filter(MediaFile.uuid.in_(parsed_uuids)).all()
+    media_files = db.query(MediaFile).filter(MediaFile.uuid.in_(media_file_uuids)).all()
     media_file_ids = [f.id for f in media_files]
 
     # Remove members
