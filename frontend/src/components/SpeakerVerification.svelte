@@ -167,17 +167,7 @@
                 </span>
 
                 <!-- Source indicator -->
-                {#if suggestion.source === 'voice_embedding'}
-                  <span class="source-badge voice-embedding">
-                    <svg class="source-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                      <line x1="12" x2="12" y1="19" y2="22"/>
-                      <line x1="8" x2="16" y1="22" y2="22"/>
-                    </svg>
-                    {$t('speakerVerification.voiceMatch')}
-                  </span>
-                {:else if suggestion.source === 'llm_analysis'}
+                {#if suggestion.source === 'llm_analysis'}
                   <span class="source-badge llm-analysis">
                     <svg class="source-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
@@ -845,12 +835,6 @@
     width: 12px;
     height: 12px;
     stroke: currentColor;
-  }
-
-  .source-badge.voice-embedding {
-    background: color-mix(in srgb, var(--success-color) 15%, var(--surface-color));
-    color: var(--success-color);
-    border: 1px solid color-mix(in srgb, var(--success-color) 25%, transparent);
   }
 
   .source-badge.llm-analysis {

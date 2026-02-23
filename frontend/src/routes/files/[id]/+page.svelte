@@ -65,7 +65,6 @@
   let editedTranscript = '';
   let savingTranscript = false;
   let savingSpeakers = false;
-  let loadingVoiceSuggestions = false; // Loading state for voice suggestions during OpenSearch refresh
   let editingSegmentId: string | number | null = null;
   let editingSegmentText = '';
   let isEditingSpeakers = false;
@@ -1543,12 +1542,11 @@
       }
     });
 
-    // Optimistically update voice suggestions for all speakers
+    // Optimistically update profile suggestions for all speakers
     if (nameChanges.size > 0) {
       speakerList = speakerList.map(s => {
-        if (s.voice_suggestions && s.voice_suggestions.length > 0) {
-          s.voice_suggestions = s.voice_suggestions.map((suggestion: any) => {
-            // Find if this suggestion's name matches any profile being updated
+        if (s.profile_suggestions && s.profile_suggestions.length > 0) {
+          s.profile_suggestions = s.profile_suggestions.map((suggestion: any) => {
             for (const [profileId, change] of nameChanges) {
               if (suggestion.name === change.oldName && suggestion.suggestion_type === 'profile') {
                 return { ...suggestion, name: change.newName };
@@ -1561,10 +1559,7 @@
       });
     }
 
-    // STEP 2: Set loading state for voice suggestions (they'll refresh after OpenSearch updates)
-    loadingVoiceSuggestions = true;
-
-    // STEP 3: Update speakers in the backend with decisions
+    // STEP 2: Update speakers in the backend with decisions
     // Backend returns immediately after saving to PostgreSQL - heavy processing happens in background
     const updatePromises = speakersToUpdate.map(async (speaker: any) => {
       const decision = decisions.get(speaker.uuid);
@@ -1642,18 +1637,6 @@
     axiosInstance.delete(`/files/${file.uuid}/cache`).catch(error => {
       console.warn('Could not clear video cache:', error);
     });
-
-    // STEP 6: Voice suggestions will be refreshed via WebSocket notification
-    // The speaker_updated WebSocket event will trigger loadSpeakers() and clear the loading state
-    // This happens automatically when the backend finishes OpenSearch updates
-    // If WebSocket fails, fallback to timeout-based reload
-    setTimeout(async () => {
-      if (loadingVoiceSuggestions) {
-        // WebSocket didn't arrive in time, reload manually
-        await loadSpeakers();
-        loadingVoiceSuggestions = false;
-      }
-    }, 3000); // 3 second failsafe timeout
 
     // Refresh speakers from the backend to sync local state
     speakerList.forEach((speaker: any) => {
@@ -2240,22 +2223,12 @@
 
             // Handle speaker update notifications (for real-time voice suggestion refresh)
             if (latestNotification.type === 'speaker_updated') {
-              // Reload speakers to get fresh voice suggestions from OpenSearch
-              if (loadingVoiceSuggestions) {
-                loadSpeakers().then(() => {
-                  loadingVoiceSuggestions = false;
-                });
-              }
+              loadSpeakers();
             }
 
             // Handle speaker background processing complete notification
             if (latestNotification.type === 'speaker_processing_complete') {
-              // Background processing finished - reload speakers to get fresh data
-              if (loadingVoiceSuggestions) {
-                loadSpeakers().then(() => {
-                  loadingVoiceSuggestions = false;
-                });
-              }
+              loadSpeakers();
               // Show toast if labels were auto-applied to other speakers
               const autoAppliedCount = latestNotification.data?.auto_applied_count || 0;
               const suggestedCount = latestNotification.data?.suggested_count || 0;
@@ -2661,7 +2634,6 @@
           {editedTranscript}
           {savingTranscript}
           {savingSpeakers}
-          {loadingVoiceSuggestions}
           {speakerNamesChanged}
           {editingSegmentId}
           bind:editingSegmentText

@@ -204,89 +204,32 @@ def _get_segment_counts_for_speakers(speaker_ids: list[int], db: Session) -> dic
     return {speaker_id: count for speaker_id, count in count_results}
 
 
-def _get_voice_suggestions(raw_cross_video_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Extract voice and profile suggestions from cross-video matches.
+def _get_profile_suggestions(raw_cross_video_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Extract profile suggestions from cross-video matches.
 
-    Excludes LLM suggestions since those are displayed separately in the UI.
+    Filters out LLM suggestions since those are displayed separately in the UI.
+    All non-LLM suggestions are profile suggestions.
     """
-    voice_suggestions: list[dict[str, Any]] = []
-    for match in raw_cross_video_matches:
-        name = match.get("name")
-        suggestion_type = match.get("suggestion_type")
-        # Skip LLM suggestions — they have their own dedicated UI section
-        if suggestion_type == "llm_analysis":
-            continue
-        if (
-            float(match.get("confidence", 0)) >= 0.50
-            and name is not None
-            and str(name).strip()
-            and suggestion_type
-        ):
-            voice_suggestions.append(
-                {
-                    "name": match["name"],
-                    "confidence": match["confidence"],
-                    "confidence_percentage": match["confidence_percentage"],
-                    "suggestion_type": match["suggestion_type"],
-                    "reason": match.get("reason", ""),
-                }
-            )
-    return voice_suggestions
+    return [
+        {
+            "name": match["name"],
+            "confidence": match["confidence"],
+            "confidence_percentage": match["confidence_percentage"],
+            "suggestion_type": match["suggestion_type"],
+            "reason": match.get("reason", ""),
+        }
+        for match in raw_cross_video_matches
+        if match.get("suggestion_type") != "llm_analysis"
+        and float(match.get("confidence", 0)) >= 0.50
+        and match.get("name") is not None
+        and str(match.get("name", "")).strip()
+        and match.get("suggestion_type")
+    ]
 
 
-def _build_cross_video_match(individual_match: dict[str, Any]) -> dict[str, Any]:
-    """Build a single cross-video match entry from an individual match."""
-    return {
-        "media_file_id": individual_match["media_file_id"],
-        "filename": individual_match.get("filename")
-        or individual_match.get("media_file_title", "Unknown File"),
-        "title": individual_match.get("media_file_title")
-        or individual_match.get("filename", "Unknown File"),
-        "media_file_title": individual_match.get("media_file_title")
-        or individual_match.get("filename", "Unknown File"),
-        "speaker_label": individual_match["name"],
-        "confidence": individual_match["confidence"],
-        "verified": True,
-        "same_speaker": False,
-    }
-
-
-def _get_cross_video_matches_for_unlabeled(
-    raw_cross_video_matches: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Extract file appearances from individual_matches for unlabeled speakers."""
-    temp_matches: list[dict[str, Any]] = []
-    for match in raw_cross_video_matches:
-        if not match.get("individual_matches"):
-            continue
-        for individual_match in match["individual_matches"]:
-            if float(individual_match.get("confidence", 0)) >= 0.50:
-                temp_matches.append(_build_cross_video_match(individual_match))
-
-    # Sort by confidence (highest first) and limit to top 8 for display
-    return sorted(temp_matches, key=lambda x: x["confidence"], reverse=True)[:8]
-
-
-def _compute_suggested_name(
-    speaker: Speaker, raw_cross_video_matches: list[dict[str, Any]]
-) -> str | None:
-    """Determine whether to show the suggested name based on cross-video confidence."""
-    suggested_name = str(speaker.suggested_name) if speaker.suggested_name else None
-
-    if not (speaker.suggested_name and speaker.confidence and raw_cross_video_matches):
-        return suggested_name
-
-    # Find highest cross-video match confidence
-    highest_cross_video_confidence = max(match["confidence"] for match in raw_cross_video_matches)
-
-    # Only hide very low confidence suggestions (<50%) when much higher cross-video matches exist (>30% higher)
-    if (
-        float(speaker.confidence) < 0.5
-        and highest_cross_video_confidence > float(speaker.confidence) + 0.3
-    ):
-        return None
-
-    return suggested_name
+def _compute_suggested_name(speaker: Speaker) -> str | None:
+    """Return the speaker's suggested name if available."""
+    return str(speaker.suggested_name) if speaker.suggested_name else None
 
 
 def _get_suggestion_source(speaker: Speaker) -> str | None:
@@ -310,26 +253,26 @@ def _compute_display_flags(
     speaker: Speaker,
     suggested_name: str | None,
     suggestion_source: str | None,
-    voice_suggestions: list[dict[str, Any]],
+    profile_suggestions: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Pre-compute frontend display flags."""
     has_llm_suggestion = bool(
         suggested_name and speaker.confidence and suggestion_source == "llm_analysis"
     )
-    total_suggestions = (1 if has_llm_suggestion else 0) + len(voice_suggestions)
-    show_suggestions_section = has_llm_suggestion or len(voice_suggestions) > 0
+    total_suggestions = (1 if has_llm_suggestion else 0) + len(profile_suggestions)
+    show_suggestions_section = has_llm_suggestion or len(profile_suggestions) > 0
 
-    # Pre-compute input field display logic based on voice embedding confidence
-    voice_confidence = 0.0
-    if voice_suggestions:
-        voice_confidence = max(s["confidence"] for s in voice_suggestions)
+    # Compute best profile suggestion confidence for input styling
+    profile_confidence = 0.0
+    if profile_suggestions:
+        profile_confidence = max(s["confidence"] for s in profile_suggestions)
 
     is_high_confidence = bool(
-        voice_confidence >= 0.75 and suggested_name and not speaker.display_name
+        profile_confidence >= 0.75 and suggested_name and not speaker.display_name
     )
     is_medium_confidence = bool(
-        voice_confidence >= 0.5
-        and voice_confidence < 0.75
+        profile_confidence >= 0.5
+        and profile_confidence < 0.75
         and suggested_name
         and not speaker.display_name
     )
@@ -375,7 +318,7 @@ def _build_speaker_dict(
     current_user: User,
     suggested_name: str | None,
     suggestion_source: str | None,
-    voice_suggestions: list[dict[str, Any]],
+    profile_suggestions: list[dict[str, Any]],
     cross_video_matches: list[dict[str, Any]],
     display_flags: dict[str, Any],
     segment_count: int,
@@ -395,7 +338,7 @@ def _build_speaker_dict(
         if speaker.media_file
         else speaker.media_file_id,
         "profile": None,
-        "voice_suggestions": voice_suggestions,
+        "profile_suggestions": profile_suggestions,
         "cross_video_matches": cross_video_matches,
         "needsCrossMediaCall": _is_labeled_speaker(speaker),
         "segment_count": segment_count,
@@ -443,24 +386,21 @@ def _process_single_speaker(
     # Format suggestions for API response
     raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(smart_suggestions)
 
-    # Get voice suggestions
-    voice_suggestions = _get_voice_suggestions(raw_cross_video_matches)
+    # Get profile suggestions (all non-LLM suggestions)
+    profile_suggestions = _get_profile_suggestions(raw_cross_video_matches)
 
-    # Get cross-video matches based on whether speaker is labeled
-    if _is_labeled_speaker(speaker):
-        cross_video_matches: list[dict[str, Any]] = []  # Will be populated by cross-media API
-    else:
-        cross_video_matches = _get_cross_video_matches_for_unlabeled(raw_cross_video_matches)
+    # Cross-video matches: only populated via cross-media API for labeled speakers
+    cross_video_matches: list[dict[str, Any]] = []
 
     # Compute suggested name
-    suggested_name = _compute_suggested_name(speaker, raw_cross_video_matches)
+    suggested_name = _compute_suggested_name(speaker)
 
     # Get suggestion source
     suggestion_source = _get_suggestion_source(speaker)
 
     # Compute display flags
     display_flags = _compute_display_flags(
-        speaker, suggested_name, suggestion_source, voice_suggestions
+        speaker, suggested_name, suggestion_source, profile_suggestions
     )
 
     # Build the speaker dictionary
@@ -469,7 +409,7 @@ def _process_single_speaker(
         current_user,
         suggested_name,
         suggestion_source,
-        voice_suggestions,
+        profile_suggestions,
         cross_video_matches,
         display_flags,
         segment_count,
@@ -502,7 +442,7 @@ def list_speakers(
     This endpoint provides comprehensive speaker data including:
     - Basic speaker information and verification status
     - Automatic profile assignments when speakers are labeled
-    - Smart cross-video suggestions via embedding similarity
+    - Smart profile suggestions via embedding similarity
     - Pre-filtered, consolidated suggestions ready for frontend display
 
     All business logic for speaker suggestions and filtering is handled server-side.

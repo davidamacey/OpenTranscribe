@@ -39,7 +39,7 @@
   export let editedTranscript: string = '';
   export let savingTranscript: boolean = false;
   export let savingSpeakers: boolean = false;
-  export let loadingVoiceSuggestions: boolean = false; // Loading state for voice suggestions
+
   export let speakerNamesChanged: boolean = false; // Track if speaker names have unsaved changes
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
@@ -311,8 +311,8 @@
     if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
       return false;
     }
-    return (speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')) ||
-           speaker.cross_video_matches.some((match: any) => match.individual_matches && match.individual_matches.length > 0);
+    // Only labeled speakers have cross-video matches (appears in X videos)
+    return !!(speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_'));
   }
 
   // Search event handlers
@@ -1054,72 +1054,32 @@
                                 </div>
                               {/if}
 
-                              {#if loadingVoiceSuggestions}
+                              {#if speaker.profile_suggestions && speaker.profile_suggestions.length > 0}
                                 <div class="chip-row">
-                                  <span class="chip-label">{$t('transcript.voiceSuggestion')}</span>
-                                  <div class="chips-wrap loading-suggestions">
-                                    <div class="suggestion-spinner">
-                                      <svg class="spinner" viewBox="0 0 50 50">
-                                        <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
-                                      </svg>
-                                      <span class="loading-text">{$t('transcript.updatingSuggestions')}</span>
-                                    </div>
+                                  <span class="chip-label profile-label">{$t('transcript.profileMatch')}</span>
+                                  <div class="chips-wrap">
+                                    {#each speaker.profile_suggestions.slice(0, 4) as suggestion}
+                                      <button
+                                        class="suggestion-chip profile-chip"
+                                        class:high-confidence={suggestion.confidence >= 0.75}
+                                        class:medium-confidence={suggestion.confidence >= 0.5 && suggestion.confidence < 0.75}
+                                        class:low-confidence={suggestion.confidence < 0.5}
+                                        on:click={() => {
+                                          speaker.display_name = suggestion.name;
+                                          dispatch('speakerUpdate', { speakerId: speaker.uuid, newName: suggestion.name });
+                                        }}
+                                        title="{suggestion.reason}"
+                                      >
+                                        <svg class="source-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                          <circle cx="12" cy="7" r="4"/>
+                                        </svg>
+                                        {suggestion.name}
+                                        <span class="chip-confidence">{suggestion.confidence_percentage}</span>
+                                      </button>
+                                    {/each}
                                   </div>
                                 </div>
-                              {:else if speaker.voice_suggestions && speaker.voice_suggestions.length > 0}
-                                {#if speaker.voice_suggestions.filter(s => s.suggestion_type === 'profile').length > 0}
-                                  <div class="chip-row">
-                                    <span class="chip-label profile-label">{$t('transcript.profileMatch')}</span>
-                                    <div class="chips-wrap">
-                                      {#each speaker.voice_suggestions.filter(s => s.suggestion_type === 'profile').slice(0, 4) as suggestion}
-                                        <button
-                                          class="suggestion-chip profile-chip"
-                                          class:high-confidence={suggestion.confidence >= 0.75}
-                                          class:medium-confidence={suggestion.confidence >= 0.5 && suggestion.confidence < 0.75}
-                                          class:low-confidence={suggestion.confidence < 0.5}
-                                          on:click={() => {
-                                            speaker.display_name = suggestion.name;
-                                            dispatch('speakerUpdate', { speakerId: speaker.uuid, newName: suggestion.name });
-                                          }}
-                                          title="{suggestion.reason}"
-                                        >
-                                          <svg class="source-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                                            <circle cx="12" cy="7" r="4"/>
-                                          </svg>
-                                          {suggestion.name}
-                                          <span class="chip-confidence">{suggestion.confidence_percentage}</span>
-                                        </button>
-                                      {/each}
-                                    </div>
-                                  </div>
-                                {/if}
-                                {#if speaker.voice_suggestions.filter(s => s.suggestion_type !== 'profile').length > 0}
-                                  <div class="chip-row">
-                                    <span class="chip-label">{$t('transcript.voiceSuggestion')}</span>
-                                    <div class="chips-wrap">
-                                      {#each speaker.voice_suggestions.filter(s => s.suggestion_type !== 'profile').slice(0, 6) as suggestion}
-                                        <button
-                                          class="suggestion-chip voice-chip"
-                                          class:high-confidence={suggestion.confidence >= 0.75}
-                                          class:medium-confidence={suggestion.confidence >= 0.5 && suggestion.confidence < 0.75}
-                                          class:low-confidence={suggestion.confidence < 0.5}
-                                          on:click={() => {
-                                            speaker.display_name = suggestion.name;
-                                            dispatch('speakerUpdate', { speakerId: speaker.uuid, newName: suggestion.name });
-                                          }}
-                                          title="{suggestion.reason}"
-                                        >
-                                          {suggestion.name}
-                                          <span class="chip-confidence">{suggestion.confidence_percentage}</span>
-                                        </button>
-                                      {/each}
-                                      {#if speaker.voice_suggestions.filter(s => s.suggestion_type !== 'profile').length > 6}
-                                        <span class="more-chips">{$t('transcript.moreChips', { count: speaker.voice_suggestions.filter(s => s.suggestion_type !== 'profile').length - 6 })}</span>
-                                      {/if}
-                                    </div>
-                                  </div>
-                                {/if}
                               {/if}
                             </div>
                           </div>
@@ -1132,14 +1092,7 @@
                       <div class="cross-video-compact">
                         <div class="compact-header" role="button" tabindex="0" on:click={() => speaker.showMatches = !speaker.showMatches} on:keydown={(e) => e.key === 'Enter' && (speaker.showMatches = !speaker.showMatches)}>
                           <span class="compact-text">
-                            {#if speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')}
-                              <!-- For labeled speakers, cross_video_matches contains direct file objects -->
-                              {@const totalVideoCount = speaker.cross_video_matches.length}
-                              {totalVideoCount !== 1 ? $t('transcript.speakerAppearsInVideosPlural', { name: speaker.display_name, count: totalVideoCount }) : $t('transcript.speakerAppearsInVideos', { name: speaker.display_name, count: totalVideoCount })}
-                            {:else}
-                              <!-- For unlabeled speakers, cross_video_matches contains file objects from individual_matches -->
-                              {speaker.cross_video_matches.length > 1 ? $t('transcript.speakerMatchesOthersPlural', { speaker: translateSpeakerLabel(speaker.name), count: speaker.cross_video_matches.length }) : $t('transcript.speakerMatchesOthers', { speaker: translateSpeakerLabel(speaker.name), count: speaker.cross_video_matches.length })}
-                            {/if}
+                            {speaker.cross_video_matches.length !== 1 ? $t('transcript.speakerAppearsInVideosPlural', { name: speaker.display_name, count: speaker.cross_video_matches.length }) : $t('transcript.speakerAppearsInVideos', { name: speaker.display_name, count: speaker.cross_video_matches.length })}
                           </span>
                           <div class="compact-controls">
                             <button
@@ -1167,13 +1120,11 @@
 
                         {#if speaker.showMatches}
                           <div class="compact-dropdown" transition:slide={{ duration: 200 }}>
-                            {#if speaker.needsCrossMediaCall}
-                              <!-- For labeled speakers, cross_video_matches are pre-sorted by backend -->
+                            {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
                               {@const visibleMatches = speaker.cross_video_matches.slice(0, 3)}
                               {@const remainingMatches = speaker.cross_video_matches.slice(3, 8)}
                               {@const remainingCount = speaker.cross_video_matches.length - 3}
 
-                              <!-- After labeling: Show file list -->
                               <div class="matches-help">
                                 {$t('transcript.filesWhereAppears', { name: speaker.display_name })}
                               </div>
@@ -1214,39 +1165,6 @@
                                         </div>
                                       {/each}
                                     </div>
-                                  </div>
-                                {/if}
-                              </div>
-                            {:else}
-                              <!-- For unlabeled speakers, cross_video_matches are pre-sorted by backend -->
-                              {@const visibleMatches = speaker.cross_video_matches.slice(0, 8)}
-                              {@const remainingCount = speaker.cross_video_matches.length - visibleMatches.length}
-
-                              <!-- For unlabeled speakers: Show video matches -->
-                              <div class="matches-help">
-                                {$t('transcript.potentialVoiceMatches')}
-                              </div>
-                              <div class="compact-matches">
-                                <div class="matches-scroll-container">
-                                {#each visibleMatches as match}
-                                  <div class="compact-match" title={match.media_file_title || $t('transcript.unknownVideo')}>
-                                    <span class="match-text">{(match.media_file_title || $t('transcript.unknownVideo')).length > 20 ? (match.media_file_title || $t('transcript.unknownVideo')).substring(0, 20) + '...' : (match.media_file_title || $t('transcript.unknownVideo'))}</span>
-                                    <span class="match-confidence">
-                                      {Math.round(match.confidence * 100)}%
-                                    </span>
-                                  </div>
-                                {/each}
-                              </div>
-
-                                {#if remainingCount > 0}
-                                  <div class="more-matches-compact">
-                                    {#if remainingCount < 10}
-                                      {$t('transcript.moreVoiceMatches', { count: remainingCount })}
-                                    {:else if remainingCount < 50}
-                                      {$t('transcript.moreMatchesTopConfidence', { count: remainingCount })}
-                                    {:else}
-                                      {$t('transcript.moreMatchesMostRelevant', { count: remainingCount })}
-                                    {/if}
                                   </div>
                                 {/if}
                               </div>
@@ -1890,22 +1808,26 @@
   }
 
   .speaker-content-below {
-    margin-left: 132px; /* 120px speaker badge width + 12px gap */
+    margin-left: 0;
+    padding-left: 0;
   }
 
+  /* Matches .segment-speaker styling from transcript segments */
   .speaker-original {
+    font-size: 12px;
     font-weight: 700;
-    min-width: 120px;
-    padding: 6px 12px;
+    padding: 2px 8px;
     border-radius: 12px;
+    white-space: nowrap;
+    min-width: fit-content;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    font-size: 12px;
-    text-align: center;
     transition: all 0.2s ease;
     color: var(--speaker-light);
-    margin-top: 2px;
     flex-shrink: 0;
   }
 
@@ -2064,6 +1986,8 @@
     }
 
     .speaker-original {
+      font-size: 11px;
+      padding: 2px 6px;
       min-width: auto;
     }
   }
@@ -2411,30 +2335,6 @@
     background: #2563eb;
   }
 
-  /* Voice chip colors based on confidence */
-  .suggestion-chip.voice-chip.high-confidence {
-    background: #059669;
-  }
-
-  .suggestion-chip.voice-chip.high-confidence:hover {
-    background: #047857;
-  }
-
-  .suggestion-chip.voice-chip.medium-confidence {
-    background: #0891b2;
-  }
-
-  .suggestion-chip.voice-chip.medium-confidence:hover {
-    background: #0e7490;
-  }
-
-  .suggestion-chip.voice-chip.low-confidence {
-    background: #7c3aed;
-  }
-
-  .suggestion-chip.voice-chip.low-confidence:hover {
-    background: #6d28d9;
-  }
 
   /* Profile chip — consistent #f59e0b amber */
   .suggestion-chip.profile-chip.high-confidence,
@@ -2471,24 +2371,6 @@
     fill: none;
   }
 
-  .more-chips {
-    font-size: 0.65rem;
-    color: var(--text-secondary-color);
-    font-style: italic;
-    padding: 0.25rem 0.5rem;
-  }
-
-  /* Voice suggestions loading state */
-  .loading-suggestions {
-    padding: 0.5rem 0;
-  }
-
-  .suggestion-spinner {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--text-secondary);
-  }
 
   .spinner {
     animation: rotate 2s linear infinite;
@@ -2496,37 +2378,10 @@
     height: 20px;
   }
 
-  .spinner .path {
-    stroke: var(--primary-color);
-    stroke-linecap: round;
-    animation: dash 1.5s ease-in-out infinite;
-  }
-
   @keyframes rotate {
     100% {
       transform: rotate(360deg);
     }
-  }
-
-  @keyframes dash {
-    0% {
-      stroke-dasharray: 1, 150;
-      stroke-dashoffset: 0;
-    }
-    50% {
-      stroke-dasharray: 90, 150;
-      stroke-dashoffset: -35;
-    }
-    100% {
-      stroke-dasharray: 90, 150;
-      stroke-dashoffset: -124;
-    }
-  }
-
-  .loading-text {
-    font-size: 0.75rem;
-    font-style: italic;
-    color: var(--text-secondary);
   }
 
   /* Overlap Group Styles */
