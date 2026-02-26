@@ -8,6 +8,7 @@ This script downloads:
 - Wav2Vec2 alignment models
 - NLTK data files (punkt_tab tokenizer)
 - Sentence-Transformers models (all-MiniLM-L6-v2)
+- SpeechBrain ECAPA-TDNN model (speaker attribute detection)
 
 Models are cached to standard locations and a manifest is created.
 """
@@ -531,6 +532,46 @@ def download_sentence_transformers():
         print_error(f"Failed to download sentence-transformers model: {e}")
         return {"sentence_transformers": {"status": "failed", "error": str(e)}}
 
+def download_speechbrain_models():
+    """Download SpeechBrain ECAPA-TDNN model for speaker attribute detection.
+
+    This model is used by the speaker_attribute_service to predict gender
+    and age range from audio. It's a transitive dependency of pyannote.audio
+    but must be explicitly pre-downloaded for offline/air-gapped deployments.
+    """
+    print_header("Downloading SpeechBrain Speaker Attribute Model")
+
+    try:
+        from speechbrain.inference.classifiers import EncoderClassifier
+
+        model_name = "speechbrain/spkrec-ecapa-voxceleb"
+        print_info(f"Model: {model_name}")
+        print_info("Loading ECAPA-TDNN model (this will download if needed)...")
+
+        classifier = EncoderClassifier.from_hparams(
+            source=model_name,
+            run_opts={"device": "cpu"},
+        )
+
+        print_success(f"SpeechBrain model '{model_name}' downloaded successfully")
+
+        # Clean up
+        del classifier
+
+        return {
+            "speechbrain": {
+                "model": model_name,
+                "status": "downloaded",
+            }
+        }
+
+    except Exception as e:
+        print_error(f"Failed to download SpeechBrain model: {e}")
+        print_info("Speaker attribute detection (gender/age) will not work offline.")
+        print_info("This is non-critical - transcription will still function normally.")
+        return {"speechbrain": {"status": "failed", "error": str(e)}}
+
+
 def download_opensearch_neural_models():
     """Download OpenSearch neural search models for offline use.
 
@@ -861,6 +902,7 @@ def main():
     results.update(download_alignment_models())
     results.update(download_nltk_data())
     results.update(download_sentence_transformers())
+    results.update(download_speechbrain_models())
     results.update(download_opensearch_neural_models())
 
     # Create manifest
