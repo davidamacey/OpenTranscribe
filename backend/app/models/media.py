@@ -195,6 +195,12 @@ class SpeakerProfile(Base):
     )  # Number of speakers contributing to this embedding
     last_embedding_update = Column(DateTime(timezone=True), nullable=True)
 
+    # AI-predicted attributes (consensus from linked speakers)
+    predicted_gender = Column(String(20), nullable=True)  # "male", "female", "unknown"
+    predicted_age_range = Column(
+        String(30), nullable=True
+    )  # "child", "teen", "young_adult", "adult", "senior"
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -239,6 +245,14 @@ class Speaker(Base):
     status_text = Column(String, nullable=True)  # Human-readable status text
     status_color = Column(String, nullable=True)  # CSS color for status display
     resolved_display_name = Column(String, nullable=True)  # Best available display name
+
+    # AI-predicted voice attributes
+    predicted_gender = Column(String(20), nullable=True)  # "male", "female", "unknown"
+    predicted_age_range = Column(
+        String(30), nullable=True
+    )  # "child", "teen", "young_adult", "adult", "senior"
+    attribute_confidence = Column(JSONB, nullable=True)  # {"gender": 0.92, "age_range": 0.75}
+    attributes_predicted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="speakers")

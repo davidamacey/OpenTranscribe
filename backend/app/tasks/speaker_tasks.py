@@ -10,11 +10,15 @@ from sqlalchemy.orm import Session
 from app.core.celery import celery_app
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.db.base import SessionLocal
+from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.models.prompt import UserSetting
 from app.services.llm_service import LLMService
+from app.services.metadata_speaker_extractor import MetadataSpeakerExtractor
+from app.services.metadata_speaker_extractor import build_cross_reference_context
+from app.services.metadata_speaker_extractor import cross_reference_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +63,33 @@ def _build_metadata_context(media_file) -> str:
     """Build metadata context from MediaFile for LLM speaker identification.
 
     Extracts useful contextual information (title, author, description, tags)
-    that can help the LLM identify speakers more accurately.
+    that can help the LLM identify speakers more accurately. Also runs
+    structured metadata speaker extraction to produce name hints with roles.
     """
     context_parts = []
 
+    # Run structured metadata extraction for speaker hints
+    try:
+        extractor = MetadataSpeakerExtractor()
+        metadata = {
+            "title": media_file.title,
+            "author": media_file.author,
+            "description": media_file.description,
+            "source_url": media_file.source_url,
+            "metadata_raw": media_file.metadata_raw,
+        }
+        extraction_result = extractor.extract(metadata)
+        structured_hints = extraction_result.to_structured_context()
+        if structured_hints:
+            context_parts.append(structured_hints)
+            logger.info(
+                f"Extracted {len(extraction_result.hints)} speaker hints from metadata "
+                f"(format: {extraction_result.content_format})"
+            )
+    except Exception as e:
+        logger.warning(f"Metadata speaker extraction failed: {e}")
+
+    # Original flat metadata context
     if media_file.title:
         context_parts.append(f"File Title: {media_file.title}")
 
@@ -284,6 +311,45 @@ def _generate_predictions(
             _get_user_llm_output_language(db, user_id) if user_id else DEFAULT_LLM_OUTPUT_LANGUAGE
         )
         logger.info(f"Using LLM output language: {output_language}")
+
+        # Enhance with cross-reference data if speaker attributes exist
+        try:
+            speakers_with_attrs = (
+                db.query(Speaker)
+                .filter(
+                    Speaker.media_file_id == file_id,
+                    Speaker.predicted_gender.isnot(None),
+                )
+                .all()
+            )
+            if speakers_with_attrs:
+                speaker_attrs = {
+                    str(s.name): {
+                        "predicted_gender": s.predicted_gender,
+                        "predicted_age_range": s.predicted_age_range,
+                    }
+                    for s in speakers_with_attrs
+                }
+                media_file_obj = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+                if media_file_obj:
+                    extractor = MetadataSpeakerExtractor()
+                    extraction = extractor.extract(
+                        {
+                            "title": media_file_obj.title,
+                            "author": media_file_obj.author,
+                            "description": media_file_obj.description,
+                            "metadata_raw": media_file_obj.metadata_raw,
+                        }
+                    )
+                    cross_refs = cross_reference_attributes(
+                        extraction.hints, speaker_attrs, speaker_segments
+                    )
+                    xref_context = build_cross_reference_context(cross_refs)
+                    if xref_context:
+                        metadata_context = f"{metadata_context}\n\n{xref_context}"
+                        logger.info(f"Added {len(cross_refs)} cross-references to context")
+        except Exception as e:
+            logger.debug(f"Cross-reference enrichment skipped: {e}")
 
         llm_service = _create_llm_service(user_id)
         predictions = _run_llm_identification(
@@ -625,7 +691,6 @@ def update_speaker_embedding_on_reassignment(
 
     import numpy as np
 
-    from app.models.media import MediaFile
     from app.services.minio_service import download_file
     from app.services.opensearch_service import add_speaker_embedding
     from app.services.opensearch_service import get_speaker_document

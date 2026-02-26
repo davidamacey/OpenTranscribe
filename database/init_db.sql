@@ -226,6 +226,8 @@ CREATE TABLE IF NOT EXISTS speaker_profile (
     -- embedding_vector removed: stored in OpenSearch for optimal vector similarity performance
     embedding_count INTEGER DEFAULT 0, -- Number of embeddings averaged into this profile
     last_embedding_update TIMESTAMP WITH TIME ZONE NULL, -- When embedding was last updated
+    predicted_gender VARCHAR(20) NULL, -- AI-predicted gender consensus ("male", "female", "unknown")
+    predicted_age_range VARCHAR(30) NULL, -- AI-predicted age range consensus
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, name) -- Ensure unique profile names per user
@@ -251,6 +253,10 @@ CREATE TABLE IF NOT EXISTS speaker (
     status_text VARCHAR(500) NULL, -- Human-readable status text
     status_color VARCHAR(50) NULL, -- CSS color for status display
     resolved_display_name VARCHAR(255) NULL, -- Best available display name
+    predicted_gender VARCHAR(20) NULL, -- AI-predicted gender ("male", "female", "unknown")
+    predicted_age_range VARCHAR(30) NULL, -- AI-predicted age range ("child", "teen", "young_adult", "adult", "senior")
+    attribute_confidence JSONB NULL, -- Confidence scores: {"gender": 0.92, "age_range": 0.75}
+    attributes_predicted_at TIMESTAMP WITH TIME ZONE NULL, -- When attributes were predicted
     UNIQUE(user_id, media_file_id, name) -- Ensure unique speaker names per file per user
 );
 

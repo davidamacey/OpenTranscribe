@@ -118,8 +118,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'user' AND column_name = 'keycloak_refresh_token')"
     )
+    has_speaker_attributes = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker' AND column_name = 'predicted_gender')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v180: speaker attribute detection columns
+    if has_speaker_attributes:
+        return "v180_add_speaker_attributes"
     # v170: keycloak_refresh_token column for federated logout
     if has_keycloak_refresh_token:
         return "v170_add_keycloak_refresh_token"

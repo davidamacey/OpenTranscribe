@@ -28,6 +28,10 @@
     status_text?: string;
     status_color?: string;
     resolved_display_name?: string;
+    // Speaker attribute detection fields
+    predicted_gender?: string;
+    predicted_age_range?: string;
+    attribute_confidence?: Record<string, number>;
   }
 
   interface SpeakerProfile {
@@ -213,6 +217,33 @@
                     {getStatusText(speaker)}
                   </p>
 
+                  {#if speaker.predicted_gender || speaker.predicted_age_range}
+                    <div class="attribute-badges">
+                      {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
+                        <span
+                          class="attribute-badge"
+                          title={$t('speakerProfile.predictedGender', { gender: speaker.predicted_gender })}
+                          aria-label={$t('speakerProfile.predictedGender', { gender: speaker.predicted_gender })}
+                        >
+                          {speaker.predicted_gender === 'male' ? '\u2642' : '\u2640'}
+                        </span>
+                      {/if}
+                      {#if speaker.predicted_age_range}
+                        <span
+                          class="attribute-badge"
+                          title={$t('speakerProfile.predictedAge')}
+                          aria-label={$t('speakerProfile.predictedAge')}
+                        >
+                          {speaker.predicted_age_range === 'child' ? 'Child' :
+                           speaker.predicted_age_range === 'teen' ? 'Teen' :
+                           speaker.predicted_age_range === 'young_adult' ? 'Young' :
+                           speaker.predicted_age_range === 'adult' ? 'Adult' :
+                           speaker.predicted_age_range === 'senior' ? 'Senior' : ''}
+                        </span>
+                      {/if}
+                    </div>
+                  {/if}
+
                   {#if speaker.confidence}
                     <div class="confidence-indicator">
                       <div class="confidence-bar">
@@ -248,6 +279,33 @@
                   <p class="speaker-description">
                     {getStatusText(speaker)}
                   </p>
+
+                  {#if speaker.predicted_gender || speaker.predicted_age_range}
+                    <div class="attribute-badges">
+                      {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
+                        <span
+                          class="attribute-badge"
+                          title={$t('speakerProfile.predictedGender', { gender: speaker.predicted_gender })}
+                          aria-label={$t('speakerProfile.predictedGender', { gender: speaker.predicted_gender })}
+                        >
+                          {speaker.predicted_gender === 'male' ? '\u2642' : '\u2640'}
+                        </span>
+                      {/if}
+                      {#if speaker.predicted_age_range}
+                        <span
+                          class="attribute-badge"
+                          title={$t('speakerProfile.predictedAge')}
+                          aria-label={$t('speakerProfile.predictedAge')}
+                        >
+                          {speaker.predicted_age_range === 'child' ? 'Child' :
+                           speaker.predicted_age_range === 'teen' ? 'Teen' :
+                           speaker.predicted_age_range === 'young_adult' ? 'Young' :
+                           speaker.predicted_age_range === 'adult' ? 'Adult' :
+                           speaker.predicted_age_range === 'senior' ? 'Senior' : ''}
+                        </span>
+                      {/if}
+                    </div>
+                  {/if}
 
                   {#if speaker.confidence}
                     <div class="confidence-indicator">
@@ -452,6 +510,26 @@
     color: var(--text-secondary);
     margin: 0 0 0.75rem 0;
     line-height: 1.4;
+  }
+
+  .attribute-badges {
+    display: flex;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .attribute-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    background: var(--border-color, rgba(255, 255, 255, 0.08));
+    color: var(--text-secondary, #888);
+    cursor: help;
+    user-select: none;
+    line-height: 1;
   }
 
   .confidence-indicator {

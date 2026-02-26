@@ -9,6 +9,7 @@ export type SettingsSection =
   | 'audio-extraction'
   | 'transcription'
   | 'organization-context'
+  | 'speaker-attributes'
   | 'ai-prompts'
   | 'llm-provider'
   | 'search-indexing'
@@ -42,6 +43,7 @@ const initialState: SettingsModalState = {
     'audio-extraction': false,
     transcription: false,
     'organization-context': false,
+    'speaker-attributes': false,
     'ai-prompts': false,
     'llm-provider': false,
     'search-indexing': false,

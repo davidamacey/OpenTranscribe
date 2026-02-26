@@ -12,6 +12,9 @@
     display_name?: string;
     verified: boolean;
     confidence?: number;
+    predicted_gender?: string;
+    predicted_age_range?: string;
+    attribute_confidence?: Record<string, number>;
   };
   export let suggestions: {
     profile_id?: string;  // UUID
@@ -189,6 +192,13 @@
                 {#if suggestion.auto_accept}
                   <span class="auto-accept-badge">
                     {$t('speakerVerification.autoAccept')}
+                  </span>
+                {/if}
+
+                {#if speaker?.predicted_gender && speaker.predicted_gender !== 'unknown'}
+                  <span class="attribute-alignment-badge match">
+                    {speaker.predicted_gender === 'male' ? '\u2642' : '\u2640'}
+                    {$t('speakerVerification.genderPredicted')}
                   </span>
                 {/if}
               </div>
@@ -848,6 +858,26 @@
     background: color-mix(in srgb, var(--warning-color) 15%, var(--surface-color));
     color: var(--warning-color);
     border: 1px solid color-mix(in srgb, var(--warning-color) 25%, transparent);
+  }
+
+  .attribute-alignment-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    line-height: 1.2;
+  }
+
+  .attribute-alignment-badge.match {
+    background: rgba(81, 207, 102, 0.15);
+    color: var(--success-color, #51cf66);
+  }
+
+  .attribute-alignment-badge.mismatch {
+    background: rgba(255, 193, 7, 0.15);
+    color: var(--warning-color, #ffc107);
   }
 
   /* Suggestion Metadata */
