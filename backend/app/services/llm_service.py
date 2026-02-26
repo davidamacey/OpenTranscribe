@@ -590,6 +590,7 @@ class LLMService:
         speaker_data: Optional[dict[str, Any]] = None,
         user_id: Optional[int] = None,
         output_language: str = "en",
+        organization_context: str = "",
     ) -> dict[str, Any]:
         """
         Generate structured summary from transcript.
@@ -599,6 +600,7 @@ class LLMService:
             speaker_data: Optional speaker statistics (talk time, word count, etc.)
             user_id: Optional user ID for loading custom prompts
             output_language: ISO 639-1 code for output language (default: "en")
+            organization_context: Organization/project context to inject into prompts
 
         Returns:
             Structured summary dict with metadata
@@ -611,6 +613,8 @@ class LLMService:
         # Get language name for prompt
         output_language_name = LLM_OUTPUT_LANGUAGES.get(output_language, "English")
         logger.info(f"Generating summary in {output_language_name} ({output_language})")
+        if organization_context:
+            logger.info(f"Organization context provided ({len(organization_context)} chars)")
 
         # Chunk transcript using ONLY user's context window setting
         transcript_chunks = self._chunk_transcript_intelligently(transcript)
@@ -619,14 +623,32 @@ class LLMService:
             # Single chunk processing
             logger.info(f"Processing transcript as single section ({len(transcript)} chars)")
             return self._process_single_chunk(
-                transcript_chunks[0], speaker_data, prompt_template, output_language_name
+                transcript_chunks[0],
+                speaker_data,
+                prompt_template,
+                output_language_name,
+                organization_context,
             )
         else:
             # Multi-chunk processing
             logger.info(f"Processing transcript in {len(transcript_chunks)} sections")
             return self._process_multiple_chunks(
-                transcript_chunks, speaker_data, prompt_template, output_language_name
+                transcript_chunks,
+                speaker_data,
+                prompt_template,
+                output_language_name,
+                organization_context,
             )
+
+    def _build_org_context_block(self, organization_context: str) -> str:
+        """Build the organization context block for system prompts."""
+        if not organization_context or not organization_context.strip():
+            return ""
+        return (
+            " Use the following organization/project context to inform your analysis"
+            " and make the summary more relevant to the organization's domain:"
+            f" [{organization_context.strip()}]"
+        )
 
     def _process_single_chunk(
         self,
@@ -634,6 +656,7 @@ class LLMService:
         speaker_data: dict[str, Any] | None,
         prompt_template: str,
         output_language_name: str = "English",
+        organization_context: str = "",
     ) -> dict[str, Any]:
         """Process single transcript chunk"""
         formatted_prompt = prompt_template.format(
@@ -647,11 +670,12 @@ class LLMService:
             if output_language_name != "English"
             else ""
         )
+        org_context_block = self._build_org_context_block(organization_context)
 
         messages = [
             {
                 "role": "system",
-                "content": f"You are an expert meeting analyst. Analyze transcripts and generate structured summaries in the exact JSON format specified.{language_instruction}",
+                "content": f"You are an expert meeting analyst. Analyze transcripts and generate structured summaries in the exact JSON format specified.{language_instruction}{org_context_block}",
             },
             {"role": "user", "content": formatted_prompt},
         ]
@@ -680,6 +704,7 @@ class LLMService:
         speaker_data: dict[str, Any] | None,
         prompt_template: str,
         output_language_name: str = "English",
+        organization_context: str = "",
     ) -> dict[str, Any]:
         """Process multiple transcript chunks in parallel using ThreadPoolExecutor.
 
@@ -718,6 +743,7 @@ class LLMService:
                     speaker_data,
                     prompt_template,
                     output_language_name,
+                    organization_context,
                 ),
             )
 
@@ -743,7 +769,12 @@ class LLMService:
         # Combine sections into final summary
         logger.info("Combining section summaries into final comprehensive summary")
         return self._combine_sections(
-            section_summaries, speaker_data, prompt_template, num_chunks, output_language_name
+            section_summaries,
+            speaker_data,
+            prompt_template,
+            num_chunks,
+            output_language_name,
+            organization_context,
         )
 
     def _summarize_section(
@@ -754,6 +785,7 @@ class LLMService:
         speaker_data: dict[str, Any] | None,
         prompt_template: str,
         output_language_name: str = "English",
+        organization_context: str = "",
     ) -> dict[str, Any]:
         """Summarize a single section"""
         formatted_prompt = prompt_template.format(
@@ -767,11 +799,12 @@ class LLMService:
             if output_language_name != "English"
             else ""
         )
+        org_context_block = self._build_org_context_block(organization_context)
 
         messages = [
             {
                 "role": "system",
-                "content": f"You are analyzing section {section_num} of {total_sections}. Provide a structured summary of this section.{language_instruction}",
+                "content": f"You are analyzing section {section_num} of {total_sections}. Provide a structured summary of this section.{language_instruction}{org_context_block}",
             },
             {"role": "user", "content": formatted_prompt},
         ]
@@ -807,6 +840,7 @@ class LLMService:
         prompt_template: str,
         total_sections: int,
         output_language_name: str = "English",
+        organization_context: str = "",
     ) -> dict[str, Any]:
         """Combine multiple section summaries into final summary"""
         combined_content = f"SECTION SUMMARIES TO COMBINE:\n{json.dumps(sections, indent=2)}"
@@ -822,11 +856,12 @@ class LLMService:
             if output_language_name != "English"
             else ""
         )
+        org_context_block = self._build_org_context_block(organization_context)
 
         messages = [
             {
                 "role": "system",
-                "content": f"You are combining multiple section summaries into a comprehensive BLUF format summary.{language_instruction}",
+                "content": f"You are combining multiple section summaries into a comprehensive BLUF format summary.{language_instruction}{org_context_block}",
             },
             {"role": "user", "content": formatted_prompt},
         ]

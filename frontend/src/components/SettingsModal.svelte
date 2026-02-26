@@ -11,6 +11,7 @@
   import PromptSettings from '$components/settings/PromptSettings.svelte';
   import AudioExtractionSettings from '$components/settings/AudioExtractionSettings.svelte';
   import TranscriptionSettings from '$components/settings/TranscriptionSettings.svelte';
+  import OrganizationContextSettings from '$components/settings/OrganizationContextSettings.svelte';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
@@ -148,6 +149,7 @@
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
+        { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
         { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' }
@@ -1047,6 +1049,15 @@
               <h3 class="section-title">{$t('settings.transcription.title')}</h3>
               <p class="section-description">{$t('settings.transcription.description')}</p>
               <TranscriptionSettings />
+            </div>
+          {/if}
+
+          <!-- Organization Context Section -->
+          {#if activeSection === 'organization-context'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.orgContext.title')}</h3>
+              <p class="section-description">{$t('settings.orgContext.description')}</p>
+              <OrganizationContextSettings />
             </div>
           {/if}
 
