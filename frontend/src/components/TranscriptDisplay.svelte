@@ -269,6 +269,23 @@
     dispatch('segmentClick', { startTime });
   }
 
+  function handleSpeakerTimestampClick(startTime: number, segmentUuid: string, segmentIndex: number) {
+    // Seek the media player to this timestamp
+    dispatch('segmentClick', { startTime });
+
+    // Check if the target segment is already in the DOM
+    const segmentElement = document.querySelector(`[data-segment-id="${segmentUuid}"]`);
+    if (segmentElement) {
+      segmentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Add highlight flash animation
+      segmentElement.classList.add('highlight-flash');
+      setTimeout(() => segmentElement.classList.remove('highlight-flash'), 2000);
+    } else {
+      // Segment not loaded yet - dispatch loadUpTo event for targeted loading
+      dispatch('loadUpTo', { targetIndex: segmentIndex, segmentUuid, startTime });
+    }
+  }
+
   function editSegment(segment: any) {
     dispatch('editSegment', { segment });
   }
@@ -992,6 +1009,28 @@
                     {/if}
                     </div>
                   </div>
+
+                  <!-- Speaker Timestamp Links -->
+                  {#if speaker.segment_timestamps && speaker.segment_timestamps.length > 0}
+                    <div class="speaker-timestamps">
+                      {#each speaker.segment_timestamps as ts}
+                        <button
+                          class="timestamp-link"
+                          title={$t('transcript.jumpToTimestampTitle', { time: formatSimpleTimestamp(ts.start_time) })}
+                          on:click={() => handleSpeakerTimestampClick(ts.start_time, ts.uuid, ts.segment_index)}
+                        >
+                          {formatSimpleTimestamp(ts.start_time)}
+                        </button>
+                      {/each}
+                      {#if speaker.segment_count > speaker.segment_timestamps.length}
+                        <span class="timestamp-more">
+                          {speaker.segment_count - speaker.segment_timestamps.length === 1
+                            ? $t('transcript.moreSegmentsSingular')
+                            : $t('transcript.moreSegments', { count: speaker.segment_count - speaker.segment_timestamps.length })}
+                        </span>
+                      {/if}
+                    </div>
+                  {/if}
 
                   <div class="speaker-content-below">
                     <!-- Unified Suggestions Section -->
@@ -1805,6 +1844,52 @@
     align-items: center;
     gap: 12px;
     margin-bottom: 12px;
+  }
+
+  .speaker-timestamps {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+
+  .timestamp-link {
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-color);
+    color: var(--primary-color);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    line-height: 1.4;
+  }
+
+  .timestamp-link:hover {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .timestamp-more {
+    font-size: 0.65rem;
+    color: var(--text-secondary-color);
+    font-style: italic;
+    padding-top: 1px;
+  }
+
+  :global(.highlight-flash) {
+    animation: highlightFlash 2s ease-out;
+  }
+
+  @keyframes highlightFlash {
+    0% { background-color: rgba(59, 130, 246, 0.3); }
+    100% { background-color: transparent; }
   }
 
   .speaker-content-below {
