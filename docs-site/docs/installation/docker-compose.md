@@ -191,7 +191,7 @@ docker run --rm \
   python -c "from app.tasks.transcription import download_models; download_models()"
 ```
 
-This downloads ~2.5GB of AI models.
+This downloads ~2.9GB of AI models.
 
 ### Step 6: Start OpenTranscribe
 

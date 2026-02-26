@@ -843,7 +843,7 @@ volumes:
 - **No code complexity**: Models use their natural cache locations
 - **Persistent storage**: Models saved between container restarts
 - **User configurable**: Simple `.env` variable controls cache location
-- **No re-downloads**: Models cached after first download (~2.7GB total)
+- **No re-downloads**: Models cached after first download (~2.9GB total)
 - **Automatic setup**: OpenSearch neural models download automatically on first start
 - **Offline capability**: Models persist for air-gapped deployments
 

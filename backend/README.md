@@ -106,7 +106,7 @@ OpenTranscribe automatically caches AI models for persistence across container r
 - **WhisperX Models**: Cached via HuggingFace Hub (~1.5GB)
 - **PyAnnote Models**: Cached via PyTorch/HuggingFace (~500MB)
 - **Alignment Models**: Cached via PyTorch Hub (~360MB)
-- **Total Storage**: ~2.5GB for complete model cache
+- **Total Storage**: ~2.9GB for complete model cache
 
 Models are downloaded once on first use and automatically reused. Set `MODEL_CACHE_DIR` in your `.env` to specify the host directory for model storage.
 

@@ -267,7 +267,7 @@ Plus:
 - WhisperX models: ~1.5GB
 - Wav2Vec2 alignment: ~360MB
 - Other models: ~200MB
-- **Grand total**: ~2.5GB for all AI models
+- **Grand total**: ~2.9GB for all AI models
 
 ### Offline Use
 

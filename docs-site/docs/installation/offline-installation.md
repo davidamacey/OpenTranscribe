@@ -20,7 +20,7 @@ In offline mode, OpenTranscribe operates without any internet connectivity:
 
 You'll need an **internet-connected machine** to:
 1. Download Docker images
-2. Download AI models (~2.5GB)
+2. Download AI models (~2.9GB)
 3. Prepare installation package
 
 Then transfer everything to your **offline machine**.
@@ -97,7 +97,7 @@ cp setup-opentranscribe.sh opentranscribe-offline-setup.sh
 
 Transfer these files to offline machine:
 - `opentranscribe-images.tar` (~8GB)
-- `ai-models.tar.gz` (~2.5GB)
+- `ai-models.tar.gz` (~2.9GB)
 - `opentranscribe-offline.tar.gz` (~5MB)
 
 Via USB drive, secure file transfer, or your organization's approved method.

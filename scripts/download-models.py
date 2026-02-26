@@ -8,7 +8,7 @@ This script downloads:
 - Wav2Vec2 alignment models
 - NLTK data files (punkt_tab tokenizer)
 - Sentence-Transformers models (all-MiniLM-L6-v2)
-- SpeechBrain ECAPA-TDNN model (speaker attribute detection)
+- SpeechBrain wav2vec2 gender classifier (speaker attribute detection)
 
 Models are cached to standard locations and a manifest is created.
 """

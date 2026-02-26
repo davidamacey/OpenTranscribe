@@ -241,7 +241,7 @@ Then follow the on-screen instructions. The setup script will:
 - Download the production Docker Compose file
 - Configure environment variables with optimal settings for your hardware
 - **Prompt for your HuggingFace token** (required for speaker diarization)
-- **Automatically download and cache AI models (~2.5GB)** if token is provided
+- **Automatically download and cache AI models (~2.9GB)** if token is provided
 - Set up the management script (`opentranscribe.sh`)
 
 **⚠️ IMPORTANT - HuggingFace Setup:**
@@ -690,7 +690,7 @@ MODEL_CACHE_DIR=./cache              # Project subdirectory
 - **WhisperX Models**: ~1.5GB (depends on model size)
 - **PyAnnote Models**: ~500MB (diarization + embedding)
 - **Alignment Model**: ~360MB (Wav2Vec2)
-- **Total**: ~2.5GB for complete setup```
+- **Total**: ~2.9GB for complete setup```
 
 ### **🔑 HuggingFace Token Setup**
 

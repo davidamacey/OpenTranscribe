@@ -1552,7 +1552,7 @@ configure_https_settings() {
 download_ai_models() {
     print_header "AI Model Pre-Download"
 
-    echo "OpenTranscribe requires AI models (~2.7GB) for transcription, speaker diarization, and semantic search."
+    echo "OpenTranscribe requires AI models (~2.9GB) for transcription, speaker diarization, and semantic search."
     echo ""
     echo "Configuration summary:"
     echo "  • Hardware: $DETECTED_DEVICE ($COMPUTE_TYPE precision)"
@@ -1630,7 +1630,7 @@ download_ai_models() {
     fi
 
     # Token is configured - proceed with download
-    echo -e "${YELLOW}Ready to download AI models (~2.7GB)${NC}"
+    echo -e "${YELLOW}Ready to download AI models (~2.9GB)${NC}"
     echo "This will take 10-30 minutes depending on your internet speed."
     echo ""
     read -p "Start model download now? (Y/n) " -n 1 -r </dev/tty

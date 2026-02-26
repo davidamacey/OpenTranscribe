@@ -133,7 +133,7 @@ AI models are cached locally to avoid re-downloading:
 | Wav2Vec2 Model | ~360MB | Word alignment |
 | Sentence Transformers | ~80MB | Semantic search |
 | NLTK Data | ~13MB | Text processing |
-| **Total** | **~2.5GB** | All AI models |
+| **Total** | **~2.9GB** | All AI models |
 
 **Configuration**: Set `MODEL_CACHE_DIR` in `.env` (default: `./models`)
 

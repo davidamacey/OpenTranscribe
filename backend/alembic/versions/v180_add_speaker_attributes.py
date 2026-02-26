@@ -7,7 +7,7 @@ Create Date: 2026-02-25
 Adds predicted_gender, predicted_age_range, attribute_confidence, and
 attributes_predicted_at columns to the speaker and speaker_profile tables.
 These store AI-predicted voice attributes (gender, age range) detected
-by SpeechBrain's ECAPA-TDNN model from acoustic features.
+by SpeechBrain's wav2vec2 gender classifier from acoustic features.
 
 GitHub issue: #141
 """
