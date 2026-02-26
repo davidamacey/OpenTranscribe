@@ -1062,6 +1062,34 @@
                           <div class="suggestions-dropdown" transition:slide={{ duration: 200 }}>
                             <!-- Horizontal chip layout -->
                             <div class="suggestion-chips-container">
+                              {#if speaker.metadata_hints && speaker.metadata_hints.length > 0}
+                                <div class="chip-row">
+                                  <span class="chip-label metadata-label">{$t('transcript.metadataHints')}</span>
+                                  <div class="chips-wrap">
+                                    {#each speaker.metadata_hints.slice(0, 4) as hint}
+                                      <button
+                                        class="suggestion-chip metadata-chip"
+                                        on:click={() => {
+                                          speaker.display_name = hint.name;
+                                          dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: hint.name });
+                                        }}
+                                        title="{$t('transcript.metadataHintTooltip')} ({hint.source})"
+                                      >
+                                        <svg class="source-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                          <polyline points="14 2 14 8 20 8"></polyline>
+                                        </svg>
+                                        {hint.name}
+                                        {#if hint.role && hint.role !== 'unknown'}
+                                          <span class="chip-role">{hint.role}</span>
+                                        {/if}
+                                        <span class="chip-confidence">{Math.round(hint.confidence * 100)}%</span>
+                                      </button>
+                                    {/each}
+                                  </div>
+                                </div>
+                              {/if}
+
                               {#if speaker.has_llm_suggestion}
                                 <div class="chip-row">
                                   <span class="chip-label">{$t('transcript.aiSuggestion')}</span>
@@ -1094,6 +1122,11 @@
                                         <line x1="12" y1="19" x2="12" y2="23"/>
                                         <line x1="8" y1="23" x2="16" y2="23"/>
                                       </svg>
+                                    {/if}
+                                    {#if speaker.gender_alignment === 'match'}
+                                      <span class="alignment-dot match" title="Gender matches metadata hint"></span>
+                                    {:else if speaker.gender_alignment === 'mismatch'}
+                                      <span class="alignment-dot mismatch" title="Gender conflicts with metadata"></span>
                                     {/if}
                                     {speaker.suggested_name}
                                     <span class="chip-confidence">{Math.round(speaker.confidence * 100)}%</span>
@@ -2483,6 +2516,43 @@
     opacity: 0.9;
     stroke: white;
     fill: none;
+  }
+
+  .metadata-chip {
+    background: rgba(100, 149, 237, 0.1);
+    color: var(--text-color, #e0e0e0);
+    border: 1px solid rgba(100, 149, 237, 0.3);
+  }
+
+  .metadata-chip:hover {
+    background: rgba(100, 149, 237, 0.2);
+  }
+
+  .metadata-label {
+    color: var(--text-secondary, #888);
+  }
+
+  .chip-role {
+    font-size: 0.65rem;
+    opacity: 0.7;
+    text-transform: capitalize;
+    font-style: italic;
+  }
+
+  .alignment-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .alignment-dot.match {
+    background: var(--success-color, #51cf66);
+  }
+
+  .alignment-dot.mismatch {
+    background: var(--warning-color, #ffc107);
   }
 
 

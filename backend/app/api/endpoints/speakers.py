@@ -341,6 +341,8 @@ def _compute_display_flags(
     # Pre-compute placeholder text
     if is_high_confidence:
         input_placeholder = suggested_name
+    elif suggested_name and suggestion_source == "metadata_hint":
+        input_placeholder = f"From metadata: {suggested_name}"
     elif suggested_name:
         input_placeholder = f"Suggested: {suggested_name}"
     else:
@@ -386,6 +388,24 @@ def _build_speaker_dict(
     segment_timestamps: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the speaker dictionary for API response."""
+    # Extract cross-reference alignment data stored in attribute_confidence JSONB
+    attr_conf: dict[str, Any] = dict(speaker.attribute_confidence or {})
+    gender_alignment = attr_conf.get("alignment")  # "match", "mismatch", or None
+    gender_alignment_hint = attr_conf.get("alignment_hint")  # e.g., "Joe Rogan"
+    metadata_hints: list[dict[str, Any]] = attr_conf.get("metadata_hints", [])
+
+    # Return only numeric confidence values; string fields are exposed separately
+    numeric_confidence: dict[str, Any] | None = (
+        {
+            k: v
+            for k, v in attr_conf.items()
+            if isinstance(v, (int, float))
+            and k not in ("alignment", "alignment_hint", "metadata_hints")
+        }
+        if attr_conf
+        else None
+    )
+
     speaker_dict: dict[str, Any] = {
         "uuid": str(speaker.uuid),
         "name": speaker.name,
@@ -408,10 +428,14 @@ def _build_speaker_dict(
         # AI-predicted speaker attributes
         "predicted_gender": speaker.predicted_gender,
         "predicted_age_range": speaker.predicted_age_range,
-        "attribute_confidence": speaker.attribute_confidence,
+        "attribute_confidence": numeric_confidence,
         "attributes_predicted_at": speaker.attributes_predicted_at.isoformat()
         if speaker.attributes_predicted_at
         else None,
+        # Cross-reference alignment data from metadata hints
+        "gender_alignment": gender_alignment,
+        "gender_alignment_hint": gender_alignment_hint,
+        "metadata_hints": metadata_hints,
         # Pre-computed display flags
         **display_flags,
     }

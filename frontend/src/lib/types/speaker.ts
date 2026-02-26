@@ -19,8 +19,17 @@ export interface Speaker {
   };
   // AI-predicted speaker attributes
   predicted_gender?: string; // "male", "female"
-  attribute_confidence?: Record<string, number>; // e.g., {"gender": 0.92}
+  attribute_confidence?: Record<string, number | string>; // e.g., {"gender": 0.92}
   attributes_predicted_at?: string; // ISO timestamp
+  // Gender alignment with metadata hints
+  gender_alignment?: string; // "match" | "mismatch" | null
+  gender_alignment_hint?: string; // e.g., "Joe Rogan"
+  metadata_hints?: Array<{
+    name: string;
+    role: string;
+    confidence: number;
+    source: string;
+  }>;
   // Backend computed fields
   computed_status?: string;
   status_text?: string;

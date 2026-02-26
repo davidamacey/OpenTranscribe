@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.celery import celery_app
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
@@ -125,6 +126,114 @@ def _build_metadata_context(media_file) -> str:
     return "\n".join(context_parts) if context_parts else ""
 
 
+def _store_metadata_hints_as_suggestions(db: Session, file_id: int, media_file) -> None:
+    """Extract speaker name hints from file metadata and store them for immediate display.
+
+    These hints appear in the UI within seconds of transcription completing,
+    before the LLM speaker identification task runs.
+
+    Args:
+        db: Active database session.
+        file_id: Database ID of the media file.
+        media_file: MediaFile ORM object to extract metadata from.
+    """
+    try:
+        extractor = MetadataSpeakerExtractor()
+        result = extractor.extract(
+            {
+                "title": media_file.title,
+                "author": media_file.author,
+                "description": media_file.description,
+                "source_url": media_file.source_url,
+                "metadata_raw": media_file.metadata_raw,
+            }
+        )
+
+        if not result.hints:
+            return
+
+        # Store all hints in each speaker's attribute_confidence JSONB.
+        # Format: {"metadata_hints": [{"name": "Joe Rogan", "role": "host",
+        #          "confidence": 0.80, "source": "title"}, ...]}
+        speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+        if not speakers:
+            return
+
+        hints_data = [
+            {
+                "name": h.name,
+                "role": h.role,
+                "confidence": round(h.confidence, 3),
+                "source": h.source,
+            }
+            for h in result.hints
+            if h.confidence >= 0.5  # only include reasonably confident hints
+        ]
+
+        if not hints_data:
+            return
+
+        for speaker in speakers:
+            existing: dict[str, Any] = dict(speaker.attribute_confidence or {})
+            existing["metadata_hints"] = hints_data
+            speaker.attribute_confidence = existing  # type: ignore[assignment]
+            flag_modified(speaker, "attribute_confidence")
+
+        db.flush()
+        logger.info(
+            f"Stored {len(hints_data)} metadata hints for {len(speakers)} speakers "
+            f"in file {file_id}"
+        )
+
+    except Exception as e:
+        logger.debug(f"Metadata hint storage skipped: {e}")
+
+
+def _store_alignment_results(db: Session, file_id: int, cross_refs: list[dict]) -> None:
+    """Store cross-reference alignment results in speaker attribute_confidence for frontend display.
+
+    Args:
+        db: Active database session.
+        file_id: Database ID of the media file.
+        cross_refs: List of cross-reference dicts produced by cross_reference_attributes().
+    """
+    try:
+        # Group by speaker_label, keep best alignment (match > mismatch > unknown)
+        best_per_speaker: dict[str, dict] = {}
+        for ref in cross_refs:
+            label = ref.get("speaker_label", "")
+            alignment = ref.get("alignment", "unknown")
+            if alignment == "unknown":
+                continue
+            existing = best_per_speaker.get(label)
+            # Prefer match over mismatch
+            if existing is None or alignment == "match":
+                best_per_speaker[label] = ref
+
+        if not best_per_speaker:
+            return
+
+        speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+        speaker_map: dict[str, Speaker] = {str(s.name): s for s in speakers}
+
+        for label, ref in best_per_speaker.items():
+            spk = speaker_map.get(label)
+            if not spk:
+                continue
+            existing_conf: dict[str, Any] = dict(spk.attribute_confidence or {})
+            existing_conf["alignment"] = ref["alignment"]
+            existing_conf["alignment_hint"] = ref["hint_name"]
+            spk.attribute_confidence = existing_conf  # type: ignore[assignment]
+            flag_modified(spk, "attribute_confidence")
+
+        db.flush()
+        logger.info(
+            f"Stored alignment results for {len(best_per_speaker)} speakers in file {file_id}"
+        )
+    except Exception as e:
+        logger.debug(f"Alignment storage skipped: {e}")
+
+
 def _get_user_llm_output_language(db: Session, user_id: int) -> str:
     """
     Retrieve user's LLM output language setting from the database.
@@ -239,6 +348,14 @@ def identify_speakers_llm_task(self, file_uuid: str):
         create_task_record(db, task_id, int(media_file.user_id), file_id, "speaker_identification")
         update_task_status(db, task_id, "in_progress", progress=0.1)
 
+        # Store metadata hints immediately so they appear in the UI before the LLM call
+        _store_metadata_hints_as_suggestions(db, file_id, media_file)
+        try:
+            db.commit()
+        except Exception as e:
+            logger.debug(f"Metadata hints commit skipped: {e}")
+            db.rollback()
+
         transcript_segments = (
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id == file_id)
@@ -348,6 +465,9 @@ def _generate_predictions(
                     if xref_context:
                         metadata_context = f"{metadata_context}\n\n{xref_context}"
                         logger.info(f"Added {len(cross_refs)} cross-references to context")
+                    # Store alignment results in speaker attribute_confidence for frontend display
+                    if cross_refs:
+                        _store_alignment_results(db, file_id, cross_refs)
         except Exception as e:
             logger.debug(f"Cross-reference enrichment skipped: {e}")
 

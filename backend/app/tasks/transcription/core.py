@@ -988,9 +988,13 @@ def _get_collection_prompt_uuid(file_id: int) -> str | None:
         return None
 
 
-# Import for automatic summarization, speaker identification, and analytics
+# Import for automatic summarization and analytics
 def trigger_automatic_summarization(file_id: int, file_uuid: str):
-    """Trigger automatic summarization, speaker identification, and analytics after transcription completes"""
+    """Trigger automatic summarization and analytics after transcription completes.
+
+    Note: LLM speaker identification is dispatched by detect_speaker_attributes_task
+    after gender detection completes, ensuring gender data is available to the LLM.
+    """
     try:
         # First trigger analytics computation
         from app.tasks.analytics import analyze_transcript_task
@@ -1000,13 +1004,8 @@ def trigger_automatic_summarization(file_id: int, file_uuid: str):
             f"Automatic analytics computation task {analytics_task.id} started for file {file_id}"
         )
 
-        # Then trigger speaker identification
-        from app.tasks.speaker_tasks import identify_speakers_llm_task
-
-        speaker_task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
-        logger.info(
-            f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
-        )
+        # Speaker LLM identification is dispatched by detect_speaker_attributes_task
+        # after gender detection completes
 
         # Look up collection default prompt for this file
         collection_prompt_uuid = _get_collection_prompt_uuid(file_id)

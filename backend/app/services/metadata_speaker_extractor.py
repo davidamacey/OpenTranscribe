@@ -509,11 +509,16 @@ def cross_reference_attributes(
                     "speaker_label": speaker_label,
                     "name_gender": name_gender,
                     "voice_gender": voice_gender,
+                    "voice_confidence": attrs.get("gender_confidence"),
                     "alignment": alignment,
                     "confidence_boost": confidence_boost,
                 }
             )
 
+    # Filter to only meaningful alignments, sort matches first, cap at 10
+    results = [r for r in results if r.get("alignment") != "unknown"]
+    results.sort(key=lambda r: 0 if r.get("alignment") == "match" else 1)
+    results = results[:10]
     return results
 
 
@@ -535,31 +540,51 @@ def build_cross_reference_context(cross_refs: list[dict]) -> str:
 
     Returns:
         Formatted string for inclusion in LLM context.
+
+    Example output::
+
+        SPEAKER ATTRIBUTE CROSS-REFERENCES:
+          ✓ Joe Rogan (male name) ↔ SPEAKER_02 (voice: male 99%) — Gender match
+          ✓ Sarah Anderson (female name) ↔ SPEAKER_01 (voice: female 97%) — Gender match
+          ⚠ Bob Smith (male name) ↔ SPEAKER_00 (voice: female 80%) — Gender mismatch
     """
     if not cross_refs:
         return ""
 
     lines = ["SPEAKER ATTRIBUTE CROSS-REFERENCES:"]
-    seen = set()
+    seen: set[tuple[str, str]] = set()
 
     for ref in cross_refs:
+        alignment = ref.get("alignment")
+        if alignment not in ("match", "mismatch"):
+            continue
+
         key = (ref["hint_name"], ref["speaker_label"])
         if key in seen:
             continue
         seen.add(key)
 
-        if ref["alignment"] == "match":
+        if alignment == "match":
             icon = "\u2713"
-            note = "Gender matches metadata hint"
-        elif ref["alignment"] == "mismatch":
-            icon = "\u26a0"
-            note = "Gender mismatch with metadata"
+            note = "Gender match"
         else:
-            continue  # Skip unknown alignments
+            icon = "\u26a0"
+            note = "Gender mismatch"
+
+        name_gender = ref.get("name_gender", "unknown")
+        voice_gender = ref.get("voice_gender", "unknown")
+
+        # Build voice label with optional confidence percentage
+        voice_confidence = ref.get("voice_confidence")
+        if voice_confidence is not None:
+            confidence_pct = int(float(voice_confidence) * 100)
+            voice_label = f"voice: {voice_gender} {confidence_pct}%"
+        else:
+            voice_label = f"voice: {voice_gender}"
 
         lines.append(
-            f"  {icon} {ref['hint_name']} ({ref['name_gender']}) vs "
-            f"{ref['speaker_label']} ({ref['voice_gender']}): {note}"
+            f"  {icon} {ref['hint_name']} ({name_gender} name) \u2194 "
+            f"{ref['speaker_label']} ({voice_label}) \u2014 {note}"
         )
 
     if len(lines) <= 1:
