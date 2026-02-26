@@ -29,6 +29,22 @@ def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] 
     Returns:
         The prompt text to use for summarization
     """
+    return get_user_active_prompt_info(user_id, db)[0]
+
+
+def get_user_active_prompt_info(
+    user_id: Optional[int] = None, db: Optional[Session] = None
+) -> tuple[str, bool]:
+    """
+    Get the active summary prompt and whether it is a system default.
+
+    Args:
+        user_id: User ID to get prompt for (None for system default)
+        db: Optional database session (creates new one if not provided)
+
+    Returns:
+        Tuple of (prompt_text, is_system_default)
+    """
     should_close_db = db is None
     if db is None:
         db = SessionLocal()
@@ -36,7 +52,7 @@ def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] 
     try:
         # If no user specified, return system default
         if user_id is None:
-            return get_system_default_prompt(db)
+            return get_system_default_prompt(db), True
 
         # Get user's active prompt setting
         active_setting = (
@@ -64,16 +80,16 @@ def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] 
 
         # If no active prompt or prompt not found, get system default from database
         if not active_prompt:
-            return get_system_default_prompt(db)
+            return get_system_default_prompt(db), True
 
         # Verify user has access to this prompt
         if not active_prompt.is_system_default and active_prompt.user_id != user_id:
             logger.warning(
                 f"User {user_id} attempted to use inaccessible prompt {active_prompt.id}"
             )
-            return get_system_default_prompt(db)
+            return get_system_default_prompt(db), True
 
-        return str(active_prompt.prompt_text)
+        return str(active_prompt.prompt_text), bool(active_prompt.is_system_default)
 
     except Exception as e:
         logger.error(f"Error getting user active prompt for user {user_id}: {e}")

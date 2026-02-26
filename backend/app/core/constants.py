@@ -474,5 +474,17 @@ LLM_OUTPUT_LANGUAGES = {
     "ar": "Arabic",
 }
 
+# =============================================================================
+# Organization Context Settings
+# =============================================================================
+
+# Organization context maximum character length
+ORG_CONTEXT_MAX_LENGTH = 10000
+
+# Default organization context settings
+DEFAULT_ORG_CONTEXT_TEXT = ""
+DEFAULT_ORG_CONTEXT_INCLUDE_DEFAULT_PROMPTS = True
+DEFAULT_ORG_CONTEXT_INCLUDE_CUSTOM_PROMPTS = False
+
 # Note: LANGUAGES_WITH_ALIGNMENT is defined at the top of this file
 # via dynamic import from whisperx.alignment module

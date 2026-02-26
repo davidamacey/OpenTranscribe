@@ -392,6 +392,60 @@ def _get_user_llm_output_language(db: Session, user_id: int) -> str:
     return DEFAULT_LLM_OUTPUT_LANGUAGE
 
 
+def _get_organization_context(db: Session, user_id: int) -> str:
+    """Retrieve organization context for a user, respecting prompt type toggles."""
+    from app import models
+    from app.utils.prompt_manager import get_user_active_prompt_info
+
+    # Get the context text
+    context_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key == "org_context_text",
+        )
+        .first()
+    )
+
+    if not context_setting or not context_setting.setting_value:
+        return ""
+
+    context_text = str(context_setting.setting_value).strip()
+    if not context_text:
+        return ""
+
+    # Determine if the active prompt is a system default or custom
+    _, is_system_default = get_user_active_prompt_info(user_id, db)
+
+    # Check the relevant toggle
+    if is_system_default:
+        toggle_key = "org_context_include_default_prompts"
+        default_value = "true"
+    else:
+        toggle_key = "org_context_include_custom_prompts"
+        default_value = "false"
+
+    toggle_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key == toggle_key,
+        )
+        .first()
+    )
+
+    toggle_value = str(toggle_setting.setting_value).lower() if toggle_setting else default_value
+
+    if toggle_value != "true":
+        logger.info(
+            f"Organization context skipped: {toggle_key}={toggle_value} "
+            f"(prompt is {'system default' if is_system_default else 'custom'})"
+        )
+        return ""
+
+    return context_text
+
+
 def _generate_llm_summary(
     media_file: MediaFile,
     file_id: int,
@@ -419,6 +473,13 @@ def _generate_llm_summary(
         output_language = _get_user_llm_output_language(db, int(media_file.user_id))
     logger.info(f"LLM output language: {output_language}")
 
+    # Get user's organization context if configured
+    organization_context = ""
+    if media_file.user_id:
+        organization_context = _get_organization_context(db, int(media_file.user_id))
+        if organization_context:
+            logger.info(f"Organization context loaded ({len(organization_context)} chars)")
+
     # Create LLM service using user settings or system settings
     if media_file.user_id:
         llm_service = LLMService.create_from_user_settings(int(media_file.user_id))
@@ -441,6 +502,7 @@ def _generate_llm_summary(
             speaker_data=speaker_stats,
             user_id=int(media_file.user_id),
             output_language=output_language,
+            organization_context=organization_context,
         )
     except Exception as e:
         _handle_llm_error(e, media_file, file_id, full_transcript, llm_provider, llm_model, db)

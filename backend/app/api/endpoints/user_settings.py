@@ -6,6 +6,7 @@ that need to persist across sessions and devices. Supports:
 - Recording settings (duration, quality, auto-stop)
 - Audio extraction settings
 - Transcription settings (speaker detection, garbage cleanup)
+- Organization context settings (LLM prompt injection)
 """
 
 from typing import Any
@@ -24,6 +25,9 @@ from app.core.constants import COMMON_LANGUAGES
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
+from app.core.constants import DEFAULT_ORG_CONTEXT_INCLUDE_CUSTOM_PROMPTS
+from app.core.constants import DEFAULT_ORG_CONTEXT_INCLUDE_DEFAULT_PROMPTS
+from app.core.constants import DEFAULT_ORG_CONTEXT_TEXT
 from app.core.constants import DEFAULT_RECORDING_AUTO_STOP
 from app.core.constants import DEFAULT_RECORDING_MAX_DURATION
 from app.core.constants import DEFAULT_RECORDING_QUALITY
@@ -39,6 +43,8 @@ from app.core.constants import VALID_RECORDING_QUALITIES
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
 from app.core.constants import WHISPER_LANGUAGES
 from app.db.base import get_db
+from app.schemas.organization_context import OrganizationContextSettings
+from app.schemas.organization_context import OrganizationContextUpdate
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
@@ -775,3 +781,135 @@ def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
         common_languages=COMMON_LANGUAGES,
         languages_with_alignment=sorted(list(LANGUAGES_WITH_ALIGNMENT or [])),
     )
+
+
+# =============================================================================
+# Organization Context Settings Endpoints
+# =============================================================================
+
+# Database keys for organization context settings
+_ORG_CONTEXT_DB_KEYS = [
+    "org_context_text",
+    "org_context_include_default_prompts",
+    "org_context_include_custom_prompts",
+]
+
+# Defaults for organization context settings
+DEFAULT_ORG_CONTEXT_SETTINGS = {
+    "context_text": DEFAULT_ORG_CONTEXT_TEXT,
+    "include_in_default_prompts": DEFAULT_ORG_CONTEXT_INCLUDE_DEFAULT_PROMPTS,
+    "include_in_custom_prompts": DEFAULT_ORG_CONTEXT_INCLUDE_CUSTOM_PROMPTS,
+}
+
+
+def _build_org_context_response(db: Session, user_id: int) -> OrganizationContextSettings:
+    """Build organization context settings response for a user."""
+    org_settings = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key.in_(_ORG_CONTEXT_DB_KEYS),
+        )
+        .all()
+    )
+
+    settings_map: dict[str, str] = {
+        str(setting.setting_key): str(setting.setting_value) for setting in org_settings
+    }
+
+    return OrganizationContextSettings(
+        context_text=settings_map.get("org_context_text", DEFAULT_ORG_CONTEXT_TEXT),
+        include_in_default_prompts=settings_map.get(
+            "org_context_include_default_prompts", "true"
+        ).lower()
+        == "true",
+        include_in_custom_prompts=settings_map.get(
+            "org_context_include_custom_prompts", "false"
+        ).lower()
+        == "true",
+    )
+
+
+@router.get("/organization-context", response_model=OrganizationContextSettings)
+def get_organization_context(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> OrganizationContextSettings:
+    """
+    Get user's organization context settings.
+
+    Returns settings with defaults for any values not customized by the user.
+
+    Returns:
+        OrganizationContextSettings containing context_text, include_in_default_prompts,
+        and include_in_custom_prompts
+    """
+    return _build_org_context_response(db, int(current_user.id))
+
+
+@router.put("/organization-context", response_model=OrganizationContextSettings)
+def update_organization_context(
+    *,
+    db: Session = Depends(get_db),
+    settings_data: OrganizationContextUpdate,
+    current_user: models.User = Depends(get_current_active_user),
+) -> OrganizationContextSettings:
+    """
+    Update user's organization context settings.
+
+    Validates input and updates only the provided fields.
+
+    Args:
+        settings_data: OrganizationContextUpdate with optional fields
+
+    Returns:
+        Updated OrganizationContextSettings with all current values
+    """
+    update_data = settings_data.model_dump(exclude_none=True)
+
+    if not update_data:
+        return _build_org_context_response(db, int(current_user.id))
+
+    # Map frontend keys to database keys
+    setting_mappings = {
+        "context_text": "org_context_text",
+        "include_in_default_prompts": "org_context_include_default_prompts",
+        "include_in_custom_prompts": "org_context_include_custom_prompts",
+    }
+
+    for frontend_key, value in update_data.items():
+        _upsert_user_setting(db, int(current_user.id), setting_mappings[frontend_key], value)
+
+    db.commit()
+
+    return _build_org_context_response(db, int(current_user.id))
+
+
+@router.delete("/organization-context")
+def reset_organization_context(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Reset user's organization context settings to defaults.
+
+    Deletes all user-specific organization context settings from the database.
+
+    Returns:
+        Message confirming reset and the default settings
+    """
+    deleted_count = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == current_user.id,
+            models.UserSetting.setting_key.in_(_ORG_CONTEXT_DB_KEYS),
+        )
+        .delete(synchronize_session=False)
+    )
+
+    db.commit()
+
+    return {
+        "message": f"Organization context reset to defaults. Removed {deleted_count} custom settings.",
+        "default_settings": DEFAULT_ORG_CONTEXT_SETTINGS,
+    }
