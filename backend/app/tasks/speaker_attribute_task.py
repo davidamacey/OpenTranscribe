@@ -156,6 +156,10 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
             f"{updated_count}/{len(speakers)} speakers updated"
         )
 
+        # Send WebSocket notification so frontend refreshes speaker data
+        if updated_count > 0:
+            _send_speaker_attributes_notification(user_id, file_uuid, updated_count)
+
         return {
             "status": "success",
             "file_uuid": file_uuid,
@@ -170,3 +174,28 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
 
     finally:
         db.close()
+
+
+def _send_speaker_attributes_notification(user_id: int, file_uuid: str, updated_count: int) -> None:
+    """Notify frontend that speaker attributes have been detected via Redis pub/sub."""
+    import json
+
+    import redis
+
+    from app.core.config import settings
+
+    try:
+        redis_client = redis.from_url(settings.REDIS_URL)
+        notification = {
+            "user_id": user_id,
+            "type": "speaker_updated",
+            "data": {
+                "file_id": file_uuid,
+                "reason": "speaker_attributes_detected",
+                "speakers_updated": updated_count,
+            },
+        }
+        redis_client.publish("websocket_notifications", json.dumps(notification))
+        logger.info(f"Sent speaker_updated notification for file {file_uuid}")
+    except Exception as e:
+        logger.warning(f"Failed to send speaker attribute notification: {e}")

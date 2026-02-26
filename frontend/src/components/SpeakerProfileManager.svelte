@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import axiosInstance from '$lib/axios';
   import SpeakerVerification from './SpeakerVerification.svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import { getSpeakerAttributeSettings } from '$lib/api/speakerAttributeSettings';
 
   export let fileId: string;  // UUID
   export let isVisible = false;
 
   const dispatch = createEventDispatcher();
+  let showAttributesOnCards = true;
 
   interface Speaker {
     uuid: string;  // UUID (public identifier)
@@ -52,10 +54,27 @@
   let isLoading = false;
   let errorMessage: string = '';
 
+  function handleSpeakerUpdated(event: Event) {
+    const detail = (event as CustomEvent).detail;
+    if (detail?.file_id === fileId && isVisible) {
+      loadData();
+    }
+  }
+
   onMount(() => {
     if (isVisible) {
       loadData();
     }
+    // Load display preference
+    getSpeakerAttributeSettings()
+      .then((settings) => { showAttributesOnCards = settings.show_attributes_on_cards; })
+      .catch(() => { /* use default true */ });
+    // Listen for real-time speaker attribute updates
+    window.addEventListener('speaker-updated', handleSpeakerUpdated);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('speaker-updated', handleSpeakerUpdated);
   });
 
   $: if (isVisible) {
@@ -217,7 +236,7 @@
                     {getStatusText(speaker)}
                   </p>
 
-                  {#if speaker.predicted_gender || speaker.predicted_age_range}
+                  {#if showAttributesOnCards && (speaker.predicted_gender || speaker.predicted_age_range)}
                     <div class="attribute-badges">
                       {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
                         <span
@@ -280,7 +299,7 @@
                     {getStatusText(speaker)}
                   </p>
 
-                  {#if speaker.predicted_gender || speaker.predicted_age_range}
+                  {#if showAttributesOnCards && (speaker.predicted_gender || speaker.predicted_age_range)}
                     <div class="attribute-badges">
                       {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
                         <span

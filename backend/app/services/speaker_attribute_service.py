@@ -46,7 +46,7 @@ class SpeakerAttributeService:
             from speechbrain.inference.classifiers import EncoderClassifier
 
             # Use ECAPA-TDNN for gender classification
-            # This model is already available as a transitive dependency of pyannote.audio
+            # Requires speechbrain package (explicit dependency in requirements.txt)
             self._gender_classifier = EncoderClassifier.from_hparams(
                 source="speechbrain/spkrec-ecapa-voxceleb",
                 run_opts={"device": "cpu"},

@@ -262,6 +262,12 @@ function createWebSocketStore() {
                 window.dispatchEvent(new CustomEvent('cache-invalidated', { detail: data.data }));
               }
               return;
+            } else if (data.type === 'speaker_updated') {
+              // Speaker attributes detected — dispatch event so components refresh
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('speaker-updated', { detail: data.data }));
+              }
+              return;
             } else if (data.type === 'speaker_processing_complete') {
               // Speaker background processing complete — silent notification, dispatch event only
               if (typeof window !== 'undefined') {

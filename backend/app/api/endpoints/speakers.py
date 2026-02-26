@@ -342,6 +342,13 @@ def _build_speaker_dict(
         "cross_video_matches": cross_video_matches,
         "needsCrossMediaCall": _is_labeled_speaker(speaker),
         "segment_count": segment_count,
+        # AI-predicted speaker attributes
+        "predicted_gender": speaker.predicted_gender,
+        "predicted_age_range": speaker.predicted_age_range,
+        "attribute_confidence": speaker.attribute_confidence,
+        "attributes_predicted_at": speaker.attributes_predicted_at.isoformat()
+        if speaker.attributes_predicted_at
+        else None,
         # Pre-computed display flags
         **display_flags,
     }
