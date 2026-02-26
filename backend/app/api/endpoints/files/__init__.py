@@ -842,6 +842,7 @@ async def reprocess_media_file(
     min_speakers = reprocess_request.min_speakers if reprocess_request else None
     max_speakers = reprocess_request.max_speakers if reprocess_request else None
     num_speakers = reprocess_request.num_speakers if reprocess_request else None
+    stages: list[str] = list(reprocess_request.stages) if reprocess_request else []
 
     return await process_file_reprocess(
         file_uuid,
@@ -850,6 +851,7 @@ async def reprocess_media_file(
         min_speakers,
         max_speakers,
         num_speakers,  # type: ignore[arg-type]
+        stages=stages,
     )
 
 

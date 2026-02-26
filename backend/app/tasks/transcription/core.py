@@ -751,7 +751,10 @@ def _run_transcription_pipeline(
 
 
 def _process_transcription_result(
-    ctx: TranscriptionContext, result: dict, audio_file_path: str
+    ctx: TranscriptionContext,
+    result: dict,
+    audio_file_path: str,
+    downstream_tasks: list[str] | None = None,
 ) -> dict:
     """Process successful transcription result including speakers, indexing, and finalization."""
     import time
@@ -900,7 +903,7 @@ def _process_transcription_result(
     logger.info(
         f"Transcription completed successfully for file {ctx.file_id}, triggering automatic summarization"
     )
-    trigger_automatic_summarization(ctx.file_id, ctx.file_uuid)
+    trigger_automatic_summarization(ctx.file_id, ctx.file_uuid, tasks_to_run=downstream_tasks)
 
     # Dispatch speaker attribute detection (fire-and-forget, CPU queue)
     try:
@@ -989,42 +992,60 @@ def _get_collection_prompt_uuid(file_id: int) -> str | None:
 
 
 # Import for automatic summarization, speaker identification, and analytics
-def trigger_automatic_summarization(file_id: int, file_uuid: str):
-    """Trigger automatic summarization, speaker identification, and analytics after transcription completes"""
+def trigger_automatic_summarization(
+    file_id: int, file_uuid: str, tasks_to_run: list[str] | None = None
+):
+    """Trigger automatic summarization, speaker identification, and analytics after transcription completes.
+
+    Args:
+        file_id: Internal file ID
+        file_uuid: File UUID string
+        tasks_to_run: Optional list of specific stages to run. None = run all tasks.
+            Valid values: 'analytics', 'speaker_llm', 'summarization',
+            'topic_extraction', 'search_indexing'
+    """
     try:
-        # First trigger analytics computation
-        from app.tasks.analytics import analyze_transcript_task
+        # Analytics computation
+        if tasks_to_run is None or "analytics" in tasks_to_run:
+            from app.tasks.analytics import analyze_transcript_task
 
-        analytics_task = analyze_transcript_task.delay(file_uuid=file_uuid)
-        logger.info(
-            f"Automatic analytics computation task {analytics_task.id} started for file {file_id}"
-        )
+            analytics_task = analyze_transcript_task.delay(file_uuid=file_uuid)
+            logger.info(
+                f"Automatic analytics computation task {analytics_task.id} started for file {file_id}"
+            )
 
-        # Then trigger speaker identification
-        from app.tasks.speaker_tasks import identify_speakers_llm_task
+        # Speaker identification
+        if tasks_to_run is None or "speaker_llm" in tasks_to_run:
+            from app.tasks.speaker_tasks import identify_speakers_llm_task
 
-        speaker_task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
-        logger.info(
-            f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
-        )
+            speaker_task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
+            logger.info(
+                f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
+            )
 
         # Look up collection default prompt for this file
         collection_prompt_uuid = _get_collection_prompt_uuid(file_id)
 
-        # Trigger summarization (this will use the speaker suggestions when available)
-        from app.tasks.summarization import summarize_transcript_task
+        # Summarization
+        if tasks_to_run is None or "summarization" in tasks_to_run:
+            from app.tasks.summarization import summarize_transcript_task
 
-        summary_task = summarize_transcript_task.delay(
-            file_uuid=file_uuid,
-            prompt_uuid=collection_prompt_uuid,
-        )
-        logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
+            summary_task = summarize_transcript_task.delay(
+                file_uuid=file_uuid,
+                prompt_uuid=collection_prompt_uuid,
+            )
+            logger.info(
+                f"Automatic summarization task {summary_task.id} started for file {file_id}"
+            )
 
-        # Trigger topic extraction (after transcription completes, independent of summarization)
-        from app.tasks.topic_extraction import extract_topics_task
+        # Topic extraction
+        if tasks_to_run is None or "topic_extraction" in tasks_to_run:
+            from app.tasks.topic_extraction import extract_topics_task
 
-        topic_task = extract_topics_task.delay(file_uuid=file_uuid, force_regenerate=False)
-        logger.info(f"Automatic topic extraction task {topic_task.id} started for file {file_id}")
+            topic_task = extract_topics_task.delay(file_uuid=file_uuid, force_regenerate=False)
+            logger.info(
+                f"Automatic topic extraction task {topic_task.id} started for file {file_id}"
+            )
     except Exception as e:
         logger.warning(f"Failed to start automatic tasks for file {file_id}: {e}")
 
@@ -1052,6 +1073,7 @@ def _process_file_in_temp_dir(
     min_speakers: int | None,
     max_speakers: int | None,
     num_speakers: int | None,
+    downstream_tasks: list[str] | None = None,
 ) -> dict:
     """Process the transcription pipeline within a temporary directory."""
     # Save downloaded file
@@ -1094,7 +1116,7 @@ def _process_file_in_temp_dir(
         return validation_error
 
     # Process successful result
-    return _process_transcription_result(ctx, result, audio_file_path)
+    return _process_transcription_result(ctx, result, audio_file_path, downstream_tasks)
 
 
 def _handle_outer_exception(
@@ -1132,6 +1154,7 @@ def transcribe_audio_task(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    downstream_tasks: list[str] | None = None,
 ):
     """Process an audio/video file for transcription and speaker diarization.
 
@@ -1143,6 +1166,9 @@ def transcribe_audio_task(
         min_speakers: Minimum speakers for diarization (falls back to settings).
         max_speakers: Maximum speakers for diarization (falls back to settings).
         num_speakers: Fixed speaker count for diarization (falls back to settings).
+        downstream_tasks: Optional list of specific post-transcription stages to run.
+            None = run all tasks. Valid values: 'analytics', 'speaker_llm',
+            'summarization', 'topic_extraction', 'search_indexing'.
     """
     task_id = self.request.id
     ctx = None
@@ -1170,7 +1196,14 @@ def transcribe_audio_task(
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 return _process_file_in_temp_dir(
-                    ctx, temp_dir, file_data, file_ext, min_speakers, max_speakers, num_speakers
+                    ctx,
+                    temp_dir,
+                    file_data,
+                    file_ext,
+                    min_speakers,
+                    max_speakers,
+                    num_speakers,
+                    downstream_tasks,
                 )
         except PermissionError as e:
             logger.error(f"PyAnnote model access error: {str(e)}")
