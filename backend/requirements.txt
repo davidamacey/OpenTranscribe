@@ -74,11 +74,7 @@ pyannote.audio>=4.0.0
 # to bypass the pyannote-audio<4.0.0 conflict
 # =============================================================================
 
-# Speaker attribute detection (gender/age from voice)
-speechbrain>=1.0.0
-
 # Supporting libraries
-omegaconf>=2.3.0
 ffmpeg-python>=0.2.0
 gender-guesser>=0.4.0
 sentencepiece>=0.1.99

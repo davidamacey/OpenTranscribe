@@ -8,7 +8,7 @@ This script downloads:
 - Wav2Vec2 alignment models
 - NLTK data files (punkt_tab tokenizer)
 - Sentence-Transformers models (all-MiniLM-L6-v2)
-- SpeechBrain wav2vec2 gender classifier (speaker attribute detection)
+- wav2vec2 gender classifier (speaker attribute detection)
 
 Models are cached to standard locations and a manifest is created.
 """
@@ -532,43 +532,42 @@ def download_sentence_transformers():
         print_error(f"Failed to download sentence-transformers model: {e}")
         return {"sentence_transformers": {"status": "failed", "error": str(e)}}
 
-def download_speechbrain_models():
-    """Download SpeechBrain gender classifier for speaker attribute detection.
+def download_speaker_attribute_models():
+    """Download wav2vec2 gender classifier for speaker attribute detection.
 
-    Uses wav2vec2 fine-tuned on CommonVoice for accurate gender classification.
+    Uses prithivMLmods/Common-Voice-Gender-Detection (~380MB, Apache 2.0) which
+    is fine-tuned from wav2vec2-base-960h for gender classification (98.46% accuracy).
     Must be pre-downloaded for offline/air-gapped deployments.
     """
-    print_header("Downloading SpeechBrain Speaker Attribute Model")
+    print_header("Downloading Speaker Attribute Model (gender)")
 
     try:
-        from speechbrain.inference.classifiers import EncoderClassifier
+        from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2ForSequenceClassification
 
-        model_name = "speechbrain/gender-recognition-wav2vec2-commonvoice-14-en"
+        model_name = "prithivMLmods/Common-Voice-Gender-Detection"
         print_info(f"Model: {model_name}")
         print_info("Loading gender classifier model (this will download if needed)...")
 
-        classifier = EncoderClassifier.from_hparams(
-            source=model_name,
-            run_opts={"device": "cpu"},
-        )
+        feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(model_name)
+        model = Wav2Vec2ForSequenceClassification.from_pretrained(model_name)
 
-        print_success(f"SpeechBrain model '{model_name}' downloaded successfully")
+        print_success(f"Gender model '{model_name}' downloaded successfully")
 
         # Clean up
-        del classifier
+        del feature_extractor, model
 
         return {
-            "speechbrain": {
+            "speaker_attributes": {
                 "model": model_name,
                 "status": "downloaded",
             }
         }
 
     except Exception as e:
-        print_error(f"Failed to download SpeechBrain model: {e}")
-        print_info("Speaker attribute detection (gender/age) will not work offline.")
+        print_error(f"Failed to download speaker attribute model: {e}")
+        print_info("Speaker gender detection will not work offline.")
         print_info("This is non-critical - transcription will still function normally.")
-        return {"speechbrain": {"status": "failed", "error": str(e)}}
+        return {"speaker_attributes": {"status": "failed", "error": str(e)}}
 
 
 def download_opensearch_neural_models():
@@ -901,7 +900,7 @@ def main():
     results.update(download_alignment_models())
     results.update(download_nltk_data())
     results.update(download_sentence_transformers())
-    results.update(download_speechbrain_models())
+    results.update(download_speaker_attribute_models())
     results.update(download_opensearch_neural_models())
 
     # Create manifest

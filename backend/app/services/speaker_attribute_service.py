@@ -1,10 +1,11 @@
 """
 Speaker attribute detection service.
 
-Uses SpeechBrain's gender-recognition-wav2vec2 model for gender classification
-and name-based gender heuristics as a fallback. Age range is estimated from
-voice characteristics using spectral analysis. Runs on CPU queue after
-transcription.
+Uses prithivMLmods/Common-Voice-Gender-Detection for gender prediction from audio.
+This model (~380MB, Apache 2.0) is fine-tuned from wav2vec2-base-960h and achieves
+98.46% accuracy on gender classification (female/male).
+
+Model card: https://huggingface.co/prithivMLmods/Common-Voice-Gender-Detection
 """
 
 import logging
@@ -16,48 +17,46 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# SpeechBrain gender classifier - fine-tuned wav2vec2 on CommonVoice
-GENDER_MODEL = "speechbrain/gender-recognition-wav2vec2-commonvoice-14-en"
+MODEL_NAME = "prithivMLmods/Common-Voice-Gender-Detection"
 
-# Age range bins used for display
-AGE_RANGES = ["child", "teen", "young_adult", "adult", "senior"]
+# Label mapping: model index → gender string
+GENDER_ID2LABEL = {0: "female", 1: "male"}
 
 
 class SpeakerAttributeService:
-    """Predicts speaker gender from audio using SpeechBrain's gender classifier."""
+    """Predicts speaker gender from audio using wav2vec2 sequence classification."""
 
-    def __init__(self):
-        self._gender_classifier = None
+    def __init__(self) -> None:
+        self._model: Optional[Any] = None
+        self._feature_extractor: Optional[Any] = None
         self._model_loaded = False
 
     def load_models(self) -> None:
-        """Lazy-load SpeechBrain gender classifier."""
+        """Lazy-load the gender model from HuggingFace (cached after first run)."""
         if self._model_loaded:
             return
 
         try:
-            from speechbrain.inference.classifiers import EncoderClassifier
+            from transformers import Wav2Vec2FeatureExtractor
+            from transformers import Wav2Vec2ForSequenceClassification
 
-            self._gender_classifier = EncoderClassifier.from_hparams(
-                source=GENDER_MODEL,
-                run_opts={"device": "cpu"},
-            )
+            self._feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(MODEL_NAME)
+            self._model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_NAME)
+            self._model.eval()
             self._model_loaded = True
-            logger.info(f"SpeechBrain gender classifier loaded: {GENDER_MODEL}")
+            logger.info(f"Gender model loaded: {MODEL_NAME}")
+
         except Exception as e:
-            logger.error(f"Failed to load SpeechBrain gender model: {e}")
+            logger.error(f"Failed to load gender model: {e}")
             raise
 
     @staticmethod
-    def _load_audio_ffmpeg(audio_path: str, target_sr: int = 16000):
-        """Load audio via ffmpeg pipe to numpy/torch.
+    def _load_audio_ffmpeg(audio_path: str, target_sr: int = 16000) -> np.ndarray:
+        """Load audio to float32 numpy array at target_sr via ffmpeg.
 
-        Avoids torchaudio backend issues (soundfile/sox not installed in
-        container). ffmpeg is always available and handles all formats.
-        Outputs mono float32 PCM at target_sr.
+        Avoids torchaudio backend issues - ffmpeg is always available.
+        Returns 1-D float32 array (mono, normalized).
         """
-        import torch
-
         cmd = [
             "ffmpeg",
             "-i",
@@ -75,9 +74,31 @@ class SpeakerAttributeService:
             "pipe:1",
         ]
         result = subprocess.run(cmd, capture_output=True, check=True)  # noqa: S603 # nosec B603
-        audio_np = np.frombuffer(result.stdout, dtype=np.float32).copy()
-        waveform = torch.from_numpy(audio_np).unsqueeze(0)  # [1, samples]
-        return waveform, target_sr
+        return np.frombuffer(result.stdout, dtype=np.float32).copy()
+
+    def _run_inference(self, audio_np: np.ndarray) -> tuple[str, float]:
+        """Run model inference on a 1-D float32 audio array at 16kHz.
+
+        Returns:
+            (gender, confidence) where gender is "female" or "male".
+        """
+        import torch
+
+        inputs = self._feature_extractor(  # type: ignore[misc]
+            audio_np,
+            sampling_rate=16000,
+            return_tensors="pt",
+            padding=True,
+        )
+
+        with torch.no_grad():
+            logits = self._model(**inputs).logits  # type: ignore[misc]
+
+        probs = torch.nn.functional.softmax(logits, dim=1).squeeze().cpu().numpy()
+        predicted_id = int(np.argmax(probs))
+        gender = GENDER_ID2LABEL.get(predicted_id, "male")
+        confidence = float(probs[predicted_id])
+        return gender, confidence
 
     def predict_attributes(
         self,
@@ -85,29 +106,25 @@ class SpeakerAttributeService:
         segments: list[dict[str, Any]],
         speaker_mapping: dict[str, int],
     ) -> dict[str, dict[str, Any]]:
-        """Predict gender for each speaker in the audio file.
+        """Predict gender for each speaker.
 
         Args:
-            audio_path: Path to the audio file (wav/mp3/etc).
-            segments: List of diarized segments with "speaker", "start", "end" keys.
-            speaker_mapping: Maps speaker label (e.g. "SPEAKER_00") to DB speaker id.
+            audio_path: Path to the audio file.
+            segments: Diarized segments with "speaker", "start", "end" keys.
+            speaker_mapping: Maps speaker label to DB speaker id.
 
         Returns:
             Dict keyed by speaker label with predicted attributes.
         """
         self.load_models()
 
-        import torch
-
         try:
-            waveform, sample_rate = self._load_audio_ffmpeg(audio_path)
+            full_audio = self._load_audio_ffmpeg(audio_path)
         except Exception as e:
             logger.error(f"Failed to load audio for attribute detection: {e}")
             return {}
 
-        # Convert to mono if needed (ffmpeg already does this, defensive check)
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
+        sample_rate = 16000
 
         # Group segments by speaker
         speaker_segments: dict[str, list[dict]] = {}
@@ -124,59 +141,46 @@ class SpeakerAttributeService:
                 continue
 
             try:
-                # Use the 5 longest segments for most representative sample
+                # Pick top-5 longest segments for most representative sample
                 sorted_segs = sorted(segs, key=lambda s: s["end"] - s["start"], reverse=True)
                 selected = sorted_segs[:5]
 
-                # Accumulate gender class probabilities across clips
-                gender_probs_list = []
+                gender_probs_acc: dict[str, float] = {"male": 0.0, "female": 0.0}
+                valid_clips = 0
 
                 for seg in selected:
-                    start_sample = int(seg["start"] * sample_rate)
-                    end_sample = int(seg["end"] * sample_rate)
+                    start = int(seg["start"] * sample_rate)
+                    end = int(seg["end"] * sample_rate)
 
-                    # Skip clips under 0.5s - too short for reliable classification
-                    if end_sample - start_sample < int(sample_rate * 0.5):
+                    # Skip clips under 1s - too short for wav2vec2
+                    if end - start < sample_rate:
                         continue
 
-                    clip = waveform[:, start_sample:end_sample]
-                    if clip.shape[1] == 0:
+                    clip = full_audio[start:end]
+                    if len(clip) == 0:
                         continue
 
-                    with torch.no_grad():
-                        # classify_batch returns (out_prob, score, index, label)
-                        out_prob, score, index, label = self._gender_classifier.classify_batch(clip)  # type: ignore[union-attr]
-                        # out_prob shape: [batch, num_classes] — take first item
-                        gender_probs_list.append(out_prob[0].cpu().numpy())
+                    gender, gender_conf = self._run_inference(clip)
+                    gender_probs_acc[gender] = gender_probs_acc.get(gender, 0.0) + gender_conf
+                    valid_clips += 1
 
-                if not gender_probs_list:
+                if valid_clips == 0:
                     logger.warning(f"No valid clips for speaker {speaker_label}")
                     continue
 
-                # Average probabilities across clips for robust prediction
-                avg_probs = np.mean(gender_probs_list, axis=0)
-                predicted_idx = int(np.argmax(avg_probs))
-                gender_confidence = float(avg_probs[predicted_idx])
-
-                # Map model output label to our schema
-                label_map = self._gender_classifier.hparams.label_encoder.ind2lab  # type: ignore[union-attr]
-                raw_label = label_map.get(predicted_idx, "unknown").lower()
-                predicted_gender = raw_label if raw_label in ("male", "female") else "unknown"
-
-                # Age range from spectral characteristics of the audio clips
-                age_range, age_conf = self._estimate_age_range(waveform, selected, sample_rate)
+                # Final gender: highest accumulated probability across clips
+                final_gender = max(gender_probs_acc, key=lambda k: gender_probs_acc[k])
+                final_gender_conf = gender_probs_acc[final_gender] / valid_clips
 
                 results[speaker_label] = {
-                    "predicted_gender": predicted_gender,
-                    "predicted_age_range": age_range,
+                    "predicted_gender": final_gender,
+                    "predicted_age_range": None,
                     "attribute_confidence": {
-                        "gender": round(gender_confidence, 3),
-                        "age_range": round(age_conf, 3),
+                        "gender": round(final_gender_conf, 3),
                     },
                 }
                 logger.info(
-                    f"Speaker {speaker_label}: gender={predicted_gender} "
-                    f"({gender_confidence:.2f}), age={age_range} ({age_conf:.2f})"
+                    f"Speaker {speaker_label}: gender={final_gender} ({final_gender_conf:.2f})"
                 )
 
             except Exception as e:
@@ -185,61 +189,10 @@ class SpeakerAttributeService:
 
         return results
 
-    def _estimate_age_range(
-        self,
-        waveform: Any,
-        segments: list[dict],
-        sample_rate: int,
-    ) -> tuple[str, float]:
-        """Estimate age range using spectral centroid and zero-crossing rate.
-
-        These are proxy features - not as reliable as gender. The confidence
-        is intentionally capped lower to reflect this uncertainty.
-        """
-        zcr_values = []
-        centroid_values = []
-
-        for seg in segments:
-            start_sample = int(seg["start"] * sample_rate)
-            end_sample = int(seg["end"] * sample_rate)
-            clip = waveform[:, start_sample:end_sample]
-            if clip.shape[1] < sample_rate * 0.5:
-                continue
-
-            audio = clip[0].numpy()
-
-            # Zero-crossing rate - higher in younger voices
-            signs = np.sign(audio)
-            zcr = np.mean(np.abs(np.diff(signs)) / 2)
-            zcr_values.append(zcr)
-
-            # Spectral centroid - higher in brighter/younger voices
-            fft = np.abs(np.fft.rfft(audio))
-            freqs = np.fft.rfftfreq(len(audio), 1 / sample_rate)
-            if fft.sum() > 0:
-                centroid = float(np.sum(freqs * fft) / np.sum(fft))
-                centroid_values.append(centroid)
-
-        if not zcr_values:
-            return "adult", 0.3
-
-        avg_zcr = np.mean(zcr_values)
-        avg_centroid = np.mean(centroid_values) if centroid_values else 2000.0
-
-        # Thresholds derived from typical voice characteristics
-        # Confidence is capped at 0.65 - age estimation is inherently uncertain
-        if avg_zcr > 0.12 and avg_centroid > 2500:
-            return "young_adult", 0.55
-        elif avg_zcr > 0.08 and avg_centroid > 1800:
-            return "adult", 0.5
-        elif avg_zcr < 0.05 and avg_centroid < 1500:
-            return "senior", 0.5
-        else:
-            return "adult", 0.4
-
     def cleanup(self) -> None:
         """Release model resources."""
-        self._gender_classifier = None
+        self._model = None
+        self._feature_extractor = None
         self._model_loaded = False
         logger.info("Speaker attribute models released")
 
