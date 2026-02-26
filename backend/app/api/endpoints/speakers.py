@@ -204,6 +204,67 @@ def _get_segment_counts_for_speakers(speaker_ids: list[int], db: Session) -> dic
     return {speaker_id: count for speaker_id, count in count_results}
 
 
+def _get_first_segment_timestamps_for_speakers(
+    speaker_ids: list[int], file_id: int, db: Session
+) -> dict[int, list[dict[str, Any]]]:
+    """Get the first 4 segment timestamps per speaker with global segment index.
+
+    Uses SQL window functions for efficient single-pass computation:
+    - ROW_NUMBER() OVER (PARTITION BY speaker_id ORDER BY start_time) for per-speaker rank
+    - ROW_NUMBER() OVER (ORDER BY start_time) for global segment position
+
+    Returns:
+        Dict mapping speaker_id to list of timestamp dicts with uuid, start_time,
+        and segment_index (0-based global position within the file).
+    """
+    from sqlalchemy import text
+
+    if not speaker_ids:
+        return {}
+
+    # Use a raw SQL query with window functions for efficiency
+    # This gets all segments for the file, ranks them per-speaker and globally,
+    # then filters to only the first 4 per speaker
+    sql = text("""
+        WITH ranked AS (
+            SELECT
+                ts.speaker_id,
+                ts.uuid,
+                ts.start_time,
+                ROW_NUMBER() OVER (
+                    PARTITION BY ts.speaker_id ORDER BY ts.start_time
+                ) AS speaker_rank,
+                ROW_NUMBER() OVER (
+                    ORDER BY ts.start_time
+                ) - 1 AS segment_index
+            FROM transcript_segment ts
+            WHERE ts.media_file_id = :file_id
+              AND ts.speaker_id = ANY(:speaker_ids)
+        )
+        SELECT speaker_id, uuid, start_time, segment_index
+        FROM ranked
+        WHERE speaker_rank <= 4
+        ORDER BY speaker_id, start_time
+    """)
+
+    results = db.execute(sql, {"file_id": file_id, "speaker_ids": speaker_ids}).fetchall()
+
+    timestamps: dict[int, list[dict[str, Any]]] = {}
+    for row in results:
+        sid = row[0]
+        if sid not in timestamps:
+            timestamps[sid] = []
+        timestamps[sid].append(
+            {
+                "uuid": str(row[1]),
+                "start_time": float(row[2]),
+                "segment_index": int(row[3]),
+            }
+        )
+
+    return timestamps
+
+
 def _get_profile_suggestions(raw_cross_video_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Extract profile suggestions from cross-video matches.
 
@@ -322,6 +383,7 @@ def _build_speaker_dict(
     cross_video_matches: list[dict[str, Any]],
     display_flags: dict[str, Any],
     segment_count: int,
+    segment_timestamps: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the speaker dictionary for API response."""
     speaker_dict: dict[str, Any] = {
@@ -342,6 +404,7 @@ def _build_speaker_dict(
         "cross_video_matches": cross_video_matches,
         "needsCrossMediaCall": _is_labeled_speaker(speaker),
         "segment_count": segment_count,
+        "segment_timestamps": segment_timestamps or [],
         # AI-predicted speaker attributes
         "predicted_gender": speaker.predicted_gender,
         "predicted_age_range": speaker.predicted_age_range,
@@ -369,6 +432,7 @@ def _process_single_speaker(
     current_user: User,
     segment_count: int,
     db: Session,
+    segment_timestamps: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Process a single speaker and build its response dictionary."""
     from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
@@ -420,6 +484,7 @@ def _process_single_speaker(
         cross_video_matches,
         display_flags,
         segment_count,
+        segment_timestamps,
     )
 
 
@@ -487,10 +552,19 @@ def list_speakers(
         speaker_ids = [int(s.id) for s in speakers]
         segment_counts = _get_segment_counts_for_speakers(speaker_ids, db)
 
+        # Pre-fetch first 4 segment timestamps per speaker for jump-to-timestamp UI
+        all_timestamps: dict[int, list[dict[str, Any]]] = {}
+        if file_id is not None and speaker_ids:
+            all_timestamps = _get_first_segment_timestamps_for_speakers(speaker_ids, file_id, db)
+
         # Process each speaker and build result
         result = [
             _process_single_speaker(
-                speaker, current_user, segment_counts.get(int(speaker.id), 0), db
+                speaker,
+                current_user,
+                segment_counts.get(int(speaker.id), 0),
+                db,
+                all_timestamps.get(int(speaker.id)),
             )
             for speaker in speakers
         ]

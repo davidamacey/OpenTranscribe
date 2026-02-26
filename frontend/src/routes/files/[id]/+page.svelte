@@ -293,6 +293,69 @@
     }
   }
 
+  /**
+   * Load segments up to a target index for jump-to-timestamp navigation.
+   * Makes a single API call to fetch all segments from current offset to target + buffer.
+   */
+  async function handleLoadUpTo(event: any): Promise<void> {
+    const { targetIndex, segmentUuid, startTime } = event.detail;
+    if (!fileId || loadingMoreSegments) return;
+
+    const currentCount = file?.transcript_segments?.length || 0;
+    if (targetIndex < currentCount) {
+      // Already loaded - just scroll and highlight
+      scrollToAndHighlight(segmentUuid);
+      return;
+    }
+
+    try {
+      loadingMoreSegments = true;
+      const buffer = 50;
+      const neededCount = targetIndex - currentCount + buffer + 1;
+
+      const response = await axiosInstance.get(`/files/${fileId}`, {
+        params: {
+          segment_limit: neededCount,
+          segment_offset: currentCount
+        }
+      });
+
+      if (response.data && response.data.transcript_segments) {
+        file.transcript_segments = [
+          ...(file.transcript_segments || []),
+          ...response.data.transcript_segments
+        ];
+        file = { ...file };
+        reactiveFile.set(file);
+        totalSegments = response.data.total_segments || totalSegments;
+
+        if (file?.uuid && file.transcript_segments && speakerList) {
+          transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
+        }
+      }
+
+      // Wait for DOM update then scroll to target segment
+      setTimeout(() => scrollToAndHighlight(segmentUuid), 300);
+    } catch (error) {
+      console.error('Error loading segments up to target:', error);
+      toastStore.error($t('fileDetail.failedToLoadMoreSegments'));
+    } finally {
+      loadingMoreSegments = false;
+    }
+  }
+
+  /**
+   * Scroll to a segment by UUID and apply a highlight flash animation.
+   */
+  function scrollToAndHighlight(segmentUuid: string): void {
+    const el = document.querySelector(`[data-segment-id="${segmentUuid}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('highlight-flash');
+      setTimeout(() => el.classList.remove('highlight-flash'), 2000);
+    }
+  }
+
 
   /**
    * Load AI suggestions for tags and collections
@@ -2659,6 +2722,7 @@
           on:reprocess={handleReprocess}
           on:seekToPlayhead={handleSeekTo}
           on:loadMore={loadMoreSegments}
+          on:loadUpTo={handleLoadUpTo}
         />
         </section>
       {:else}
