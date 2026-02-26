@@ -54,16 +54,26 @@
   let isLoading = false;
   let errorMessage: string = '';
 
+  let needsReload = false;
+  let wasVisible = false;
+
   function handleSpeakerUpdated(event: Event) {
     const detail = (event as CustomEvent).detail;
-    if (detail?.file_id === fileId && isVisible) {
-      loadData();
+    if (detail?.file_id === fileId) {
+      if (isVisible) {
+        // Panel is open — reload immediately
+        loadData();
+      } else {
+        // Panel is closed — flag for reload when it opens
+        needsReload = true;
+      }
     }
   }
 
   onMount(() => {
     if (isVisible) {
       loadData();
+      wasVisible = true;
     }
     // Load display preference
     getSpeakerAttributeSettings()
@@ -77,7 +87,15 @@
     window.removeEventListener('speaker-updated', handleSpeakerUpdated);
   });
 
-  $: if (isVisible) {
+  // Re-fetch when panel becomes visible (transition false→true only)
+  $: if (isVisible && !wasVisible) {
+    wasVisible = true;
+    loadData();
+    needsReload = false;
+  } else if (!isVisible) {
+    wasVisible = false;
+  } else if (isVisible && needsReload) {
+    needsReload = false;
     loadData();
   }
 

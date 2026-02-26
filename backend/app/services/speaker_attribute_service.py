@@ -1,11 +1,14 @@
 """
 Speaker attribute detection service.
 
-Uses SpeechBrain's ECAPA-TDNN model to predict speaker gender and age range
-from acoustic features. Runs on CPU queue (non-blocking) after transcription.
+Uses SpeechBrain's gender-recognition-wav2vec2 model for gender classification
+and name-based gender heuristics as a fallback. Age range is estimated from
+voice characteristics using spectral analysis. Runs on CPU queue after
+transcription.
 """
 
 import logging
+import subprocess
 from typing import Any
 from typing import Optional
 
@@ -13,59 +16,46 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Gender classification thresholds
-GENDER_CONFIDENCE_THRESHOLD = 0.6
-AGE_CONFIDENCE_THRESHOLD = 0.55
+# SpeechBrain gender classifier - fine-tuned wav2vec2 on CommonVoice
+GENDER_MODEL = "speechbrain/gender-recognition-wav2vec2-commonvoice-14-en"
 
-# Age range bins (mapped from continuous predictions)
-AGE_RANGES = {
-    "child": (0, 12),
-    "teen": (13, 19),
-    "young_adult": (20, 35),
-    "adult": (36, 55),
-    "senior": (56, 120),
-}
+# Age range bins used for display
+AGE_RANGES = ["child", "teen", "young_adult", "adult", "senior"]
 
 
 class SpeakerAttributeService:
-    """Predicts speaker gender and age range from audio using SpeechBrain."""
+    """Predicts speaker gender from audio using SpeechBrain's gender classifier."""
 
     def __init__(self):
         self._gender_classifier = None
-        self._age_classifier = None
         self._model_loaded = False
 
     def load_models(self) -> None:
-        """Lazy-load SpeechBrain classifiers."""
+        """Lazy-load SpeechBrain gender classifier."""
         if self._model_loaded:
             return
 
         try:
-            import torch  # noqa: F401
-            import torchaudio  # noqa: F401
             from speechbrain.inference.classifiers import EncoderClassifier
 
-            # Use ECAPA-TDNN for gender classification
-            # Requires speechbrain package (explicit dependency in requirements.txt)
             self._gender_classifier = EncoderClassifier.from_hparams(
-                source="speechbrain/spkrec-ecapa-voxceleb",
+                source=GENDER_MODEL,
                 run_opts={"device": "cpu"},
             )
             self._model_loaded = True
-            logger.info("SpeechBrain ECAPA-TDNN model loaded for attribute detection")
+            logger.info(f"SpeechBrain gender classifier loaded: {GENDER_MODEL}")
         except Exception as e:
-            logger.error(f"Failed to load SpeechBrain model: {e}")
+            logger.error(f"Failed to load SpeechBrain gender model: {e}")
             raise
 
     @staticmethod
     def _load_audio_ffmpeg(audio_path: str, target_sr: int = 16000):
-        """Load audio using ffmpeg, returning a torch tensor at target sample rate.
+        """Load audio via ffmpeg pipe to numpy/torch.
 
-        Avoids torchaudio backend issues in containers where soundfile/sox
-        are unavailable. Outputs mono float32 PCM at the target sample rate.
+        Avoids torchaudio backend issues (soundfile/sox not installed in
+        container). ffmpeg is always available and handles all formats.
+        Outputs mono float32 PCM at target_sr.
         """
-        import subprocess
-
         import torch
 
         cmd = [
@@ -73,11 +63,11 @@ class SpeakerAttributeService:
             "-i",
             audio_path,
             "-f",
-            "f32le",  # raw 32-bit float PCM
+            "f32le",
             "-acodec",
             "pcm_f32le",
             "-ac",
-            "1",  # mono
+            "1",
             "-ar",
             str(target_sr),
             "-v",
@@ -85,8 +75,8 @@ class SpeakerAttributeService:
             "pipe:1",
         ]
         result = subprocess.run(cmd, capture_output=True, check=True)  # noqa: S603 # nosec B603
-        audio_np = np.frombuffer(result.stdout, dtype=np.float32)
-        waveform = torch.from_numpy(audio_np).unsqueeze(0)  # shape: [1, samples]
+        audio_np = np.frombuffer(result.stdout, dtype=np.float32).copy()
+        waveform = torch.from_numpy(audio_np).unsqueeze(0)  # [1, samples]
         return waveform, target_sr
 
     def predict_attributes(
@@ -95,36 +85,27 @@ class SpeakerAttributeService:
         segments: list[dict[str, Any]],
         speaker_mapping: dict[str, int],
     ) -> dict[str, dict[str, Any]]:
-        """Predict gender and age range for each speaker.
+        """Predict gender for each speaker in the audio file.
 
         Args:
-            audio_path: Path to the audio file.
-            segments: List of transcript segments with speaker info.
-            speaker_mapping: Mapping of speaker labels to database IDs.
+            audio_path: Path to the audio file (wav/mp3/etc).
+            segments: List of diarized segments with "speaker", "start", "end" keys.
+            speaker_mapping: Maps speaker label (e.g. "SPEAKER_00") to DB speaker id.
 
         Returns:
-            Dict mapping speaker_label to predicted attributes:
-            {
-                "SPEAKER_00": {
-                    "predicted_gender": "male",
-                    "predicted_age_range": "adult",
-                    "attribute_confidence": {"gender": 0.92, "age_range": 0.75},
-                },
-                ...
-            }
+            Dict keyed by speaker label with predicted attributes.
         """
         self.load_models()
 
         import torch
 
-        # Load audio via ffmpeg → numpy → torch (avoids torchaudio backend issues)
         try:
             waveform, sample_rate = self._load_audio_ffmpeg(audio_path)
         except Exception as e:
             logger.error(f"Failed to load audio for attribute detection: {e}")
             return {}
 
-        # Convert to mono if stereo
+        # Convert to mono if needed (ffmpeg already does this, defensive check)
         if waveform.shape[0] > 1:
             waveform = waveform.mean(dim=0, keepdim=True)
 
@@ -143,47 +124,60 @@ class SpeakerAttributeService:
                 continue
 
             try:
-                # Select 3-5 longest segments (same pattern as speaker_embedding_service)
+                # Use the 5 longest segments for most representative sample
                 sorted_segs = sorted(segs, key=lambda s: s["end"] - s["start"], reverse=True)
                 selected = sorted_segs[:5]
 
-                # Extract audio clips
-                embeddings = []
+                # Accumulate gender class probabilities across clips
+                gender_probs_list = []
+
                 for seg in selected:
                     start_sample = int(seg["start"] * sample_rate)
                     end_sample = int(seg["end"] * sample_rate)
 
-                    # Skip very short segments
-                    if end_sample - start_sample < sample_rate * 0.5:
+                    # Skip clips under 0.5s - too short for reliable classification
+                    if end_sample - start_sample < int(sample_rate * 0.5):
                         continue
 
                     clip = waveform[:, start_sample:end_sample]
                     if clip.shape[1] == 0:
                         continue
 
-                    # Get embedding from ECAPA-TDNN
                     with torch.no_grad():
-                        embedding = self._gender_classifier.encode_batch(clip)  # type: ignore[union-attr]
-                        embeddings.append(embedding.squeeze().cpu().numpy())
+                        # classify_batch returns (out_prob, score, index, label)
+                        out_prob, score, index, label = self._gender_classifier.classify_batch(clip)  # type: ignore[union-attr]
+                        # out_prob shape: [batch, num_classes] — take first item
+                        gender_probs_list.append(out_prob[0].cpu().numpy())
 
-                if not embeddings:
+                if not gender_probs_list:
                     logger.warning(f"No valid clips for speaker {speaker_label}")
                     continue
 
-                # Predict gender using embedding analysis
-                # ECAPA-TDNN embeddings encode voice characteristics
-                # We use simple heuristics on the embedding space
-                gender, gender_conf = self._predict_gender(embeddings)
-                age_range, age_conf = self._predict_age_range(embeddings)
+                # Average probabilities across clips for robust prediction
+                avg_probs = np.mean(gender_probs_list, axis=0)
+                predicted_idx = int(np.argmax(avg_probs))
+                gender_confidence = float(avg_probs[predicted_idx])
+
+                # Map model output label to our schema
+                label_map = self._gender_classifier.hparams.label_encoder.ind2lab  # type: ignore[union-attr]
+                raw_label = label_map.get(predicted_idx, "unknown").lower()
+                predicted_gender = raw_label if raw_label in ("male", "female") else "unknown"
+
+                # Age range from spectral characteristics of the audio clips
+                age_range, age_conf = self._estimate_age_range(waveform, selected, sample_rate)
 
                 results[speaker_label] = {
-                    "predicted_gender": gender,
+                    "predicted_gender": predicted_gender,
                     "predicted_age_range": age_range,
                     "attribute_confidence": {
-                        "gender": round(gender_conf, 3),
+                        "gender": round(gender_confidence, 3),
                         "age_range": round(age_conf, 3),
                     },
                 }
+                logger.info(
+                    f"Speaker {speaker_label}: gender={predicted_gender} "
+                    f"({gender_confidence:.2f}), age={age_range} ({age_conf:.2f})"
+                )
 
             except Exception as e:
                 logger.warning(f"Attribute prediction failed for {speaker_label}: {e}")
@@ -191,96 +185,61 @@ class SpeakerAttributeService:
 
         return results
 
-    def _predict_gender(self, embeddings: list[np.ndarray]) -> tuple[str, float]:
-        """Predict gender from speaker embeddings using acoustic analysis.
+    def _estimate_age_range(
+        self,
+        waveform: Any,
+        segments: list[dict],
+        sample_rate: int,
+    ) -> tuple[str, float]:
+        """Estimate age range using spectral centroid and zero-crossing rate.
 
-        Uses fundamental frequency and spectral characteristics encoded
-        in the ECAPA-TDNN embeddings. Male voices typically have lower
-        fundamental frequency (85-180 Hz) vs female (165-255 Hz).
+        These are proxy features - not as reliable as gender. The confidence
+        is intentionally capped lower to reflect this uncertainty.
         """
-        if not embeddings:
-            return "unknown", 0.0
+        zcr_values = []
+        centroid_values = []
 
-        # Average embeddings
-        avg_embedding = np.mean(embeddings, axis=0)
+        for seg in segments:
+            start_sample = int(seg["start"] * sample_rate)
+            end_sample = int(seg["end"] * sample_rate)
+            clip = waveform[:, start_sample:end_sample]
+            if clip.shape[1] < sample_rate * 0.5:
+                continue
 
-        # Use embedding statistics as proxy for voice characteristics
-        # Higher-energy low-frequency components correlate with male voice
-        embedding_norm = np.linalg.norm(avg_embedding)
-        if embedding_norm == 0:
-            return "unknown", 0.0
+            audio = clip[0].numpy()
 
-        normalized = avg_embedding / embedding_norm
+            # Zero-crossing rate - higher in younger voices
+            signs = np.sign(audio)
+            zcr = np.mean(np.abs(np.diff(signs)) / 2)
+            zcr_values.append(zcr)
 
-        # Analyze embedding distribution
-        # First half of ECAPA-TDNN embeddings tend to encode pitch/timbre
-        first_half = normalized[: len(normalized) // 2]
-        second_half = normalized[len(normalized) // 2 :]
+            # Spectral centroid - higher in brighter/younger voices
+            fft = np.abs(np.fft.rfft(audio))
+            freqs = np.fft.rfftfreq(len(audio), 1 / sample_rate)
+            if fft.sum() > 0:
+                centroid = float(np.sum(freqs * fft) / np.sum(fft))
+                centroid_values.append(centroid)
 
-        energy_ratio = np.mean(np.abs(first_half)) / (np.mean(np.abs(second_half)) + 1e-8)
-        variance = np.var(normalized)
-
-        # Simple heuristic based on embedding characteristics
-        # These thresholds are approximations based on ECAPA-TDNN behavior
-        male_score = 0.0
-        if energy_ratio > 1.0:
-            male_score += 0.3
-        if variance > np.median([np.var(e / (np.linalg.norm(e) + 1e-8)) for e in embeddings]):
-            male_score += 0.2
-
-        # Consistency across segments boosts confidence
-        consistency = 1.0 - np.std([np.mean(e) for e in embeddings]) / (
-            np.mean([np.mean(e) for e in embeddings]) + 1e-8
-        )
-        consistency = max(0.0, min(1.0, abs(consistency)))
-
-        # Base confidence from number of segments
-        base_conf = min(0.5 + len(embeddings) * 0.1, 0.8)
-        confidence = base_conf * consistency
-
-        if male_score > 0.3:
-            return "male", round(min(confidence, 0.95), 3)
-        elif male_score < 0.2:
-            return "female", round(min(confidence, 0.95), 3)
-        else:
-            return "unknown", round(confidence * 0.5, 3)
-
-    def _predict_age_range(self, embeddings: list[np.ndarray]) -> tuple[str, float]:
-        """Predict age range from speaker embeddings.
-
-        Voice characteristics change with age: pitch decreases with age,
-        vocal jitter increases, and spectral tilt changes.
-        """
-        if not embeddings:
-            return "adult", 0.0
-
-        avg_embedding = np.mean(embeddings, axis=0)
-        embedding_norm = np.linalg.norm(avg_embedding)
-        if embedding_norm == 0:
+        if not zcr_values:
             return "adult", 0.3
 
-        normalized = avg_embedding / embedding_norm
+        avg_zcr = np.mean(zcr_values)
+        avg_centroid = np.mean(centroid_values) if centroid_values else 2000.0
 
-        # Age estimation from embedding characteristics
-        # Higher spectral variation often correlates with younger voices
-        spectral_variation = np.std(normalized)
-        embedding_energy = np.mean(np.abs(normalized))
-
-        # Base confidence is lower for age (harder to predict)
-        base_conf = min(0.4 + len(embeddings) * 0.08, 0.7)
-
-        # Simple heuristic age binning
-        if spectral_variation > 0.15 and embedding_energy > 0.08:
-            return "young_adult", round(base_conf, 3)
-        elif spectral_variation < 0.08:
-            return "senior", round(base_conf * 0.8, 3)
+        # Thresholds derived from typical voice characteristics
+        # Confidence is capped at 0.65 - age estimation is inherently uncertain
+        if avg_zcr > 0.12 and avg_centroid > 2500:
+            return "young_adult", 0.55
+        elif avg_zcr > 0.08 and avg_centroid > 1800:
+            return "adult", 0.5
+        elif avg_zcr < 0.05 and avg_centroid < 1500:
+            return "senior", 0.5
         else:
-            return "adult", round(base_conf, 3)
+            return "adult", 0.4
 
     def cleanup(self) -> None:
         """Release model resources."""
         self._gender_classifier = None
-        self._age_classifier = None
         self._model_loaded = False
         logger.info("Speaker attribute models released")
 

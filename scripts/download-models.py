@@ -533,20 +533,19 @@ def download_sentence_transformers():
         return {"sentence_transformers": {"status": "failed", "error": str(e)}}
 
 def download_speechbrain_models():
-    """Download SpeechBrain ECAPA-TDNN model for speaker attribute detection.
+    """Download SpeechBrain gender classifier for speaker attribute detection.
 
-    This model is used by the speaker_attribute_service to predict gender
-    and age range from audio. It's a transitive dependency of pyannote.audio
-    but must be explicitly pre-downloaded for offline/air-gapped deployments.
+    Uses wav2vec2 fine-tuned on CommonVoice for accurate gender classification.
+    Must be pre-downloaded for offline/air-gapped deployments.
     """
     print_header("Downloading SpeechBrain Speaker Attribute Model")
 
     try:
         from speechbrain.inference.classifiers import EncoderClassifier
 
-        model_name = "speechbrain/spkrec-ecapa-voxceleb"
+        model_name = "speechbrain/gender-recognition-wav2vec2-commonvoice-14-en"
         print_info(f"Model: {model_name}")
-        print_info("Loading ECAPA-TDNN model (this will download if needed)...")
+        print_info("Loading gender classifier model (this will download if needed)...")
 
         classifier = EncoderClassifier.from_hparams(
             source=model_name,
