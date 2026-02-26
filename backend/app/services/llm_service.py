@@ -591,6 +591,7 @@ class LLMService:
         user_id: Optional[int] = None,
         output_language: str = "en",
         organization_context: str = "",
+        prompt_uuid: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         Generate structured summary from transcript.
@@ -608,7 +609,7 @@ class LLMService:
         from app.core.constants import LLM_OUTPUT_LANGUAGES
         from app.utils.prompt_manager import get_user_active_prompt
 
-        prompt_template = get_user_active_prompt(user_id)
+        prompt_template = get_user_active_prompt(user_id, prompt_uuid=prompt_uuid)
 
         # Get language name for prompt
         output_language_name = LLM_OUTPUT_LANGUAGES.get(output_language, "English")

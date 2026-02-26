@@ -342,6 +342,7 @@ CREATE TABLE IF NOT EXISTS collection (
     description TEXT NULL,
     user_id INTEGER NOT NULL REFERENCES "user"(id),
     is_public BOOLEAN DEFAULT FALSE,
+    default_summary_prompt_id INTEGER REFERENCES summary_prompt(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, name) -- Ensure unique collection names per user
@@ -409,6 +410,7 @@ CREATE INDEX IF NOT EXISTS idx_task_status ON task(status);
 CREATE INDEX IF NOT EXISTS idx_task_media_file_id ON task(media_file_id);
 
 CREATE INDEX IF NOT EXISTS idx_collection_user_id ON collection(user_id);
+CREATE INDEX IF NOT EXISTS idx_collection_default_prompt_id ON collection(default_summary_prompt_id);
 CREATE INDEX IF NOT EXISTS idx_collection_member_collection_id ON collection_member(collection_id);
 CREATE INDEX IF NOT EXISTS idx_collection_member_media_file_id ON collection_member(media_file_id);
 

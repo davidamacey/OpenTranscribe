@@ -122,8 +122,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'speaker' AND column_name = 'predicted_gender')"
     )
+    has_collection_default_prompt = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'collection' AND column_name = 'default_summary_prompt_id')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v190: default_summary_prompt_id column on collection table
+    if has_collection_default_prompt:
+        return "v190_add_collection_default_prompt"
     # v180: speaker attribute detection columns
     if has_speaker_attributes:
         return "v180_add_speaker_attributes"

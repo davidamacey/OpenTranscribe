@@ -97,8 +97,40 @@ def get_prompts(
         .all()
     )
 
+    # Get collections that use each prompt as default (for current user only)
+    from app.models.media import Collection
+
+    prompt_ids = [p.id for p in prompts]
+    collection_map: dict[int, list[schemas.LinkedCollection]] = {}
+    if prompt_ids:
+        collection_rows = (
+            db.query(
+                Collection.default_summary_prompt_id,
+                Collection.uuid,
+                Collection.name,
+            )
+            .filter(
+                Collection.default_summary_prompt_id.in_(prompt_ids),
+                Collection.user_id == current_user.id,
+            )
+            .order_by(Collection.name)
+            .all()
+        )
+        for row in collection_rows:
+            pid = row[0]
+            if pid not in collection_map:
+                collection_map[pid] = []
+            collection_map[pid].append(schemas.LinkedCollection(uuid=row[1], name=row[2]))
+
+    # Build response with linked collections
+    prompt_list = []
+    for p in prompts:
+        pwc = schemas.SummaryPromptWithCollections.model_validate(p)
+        pwc.linked_collections = collection_map.get(p.id, [])
+        prompt_list.append(pwc)
+
     return schemas.SummaryPromptList(
-        prompts=cast(list[schemas.SummaryPrompt], prompts),  # type: ignore[arg-type]
+        prompts=prompt_list,
         total=total,
         page=skip // limit + 1 if limit > 0 else 1,
         size=len(prompts),

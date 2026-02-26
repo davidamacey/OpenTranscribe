@@ -49,11 +49,13 @@ from .media import TranscriptSegmentUpdate
 from .prompt import ActivePromptResponse
 from .prompt import ActivePromptSelection
 from .prompt import ContentTypePromptsResponse
+from .prompt import LinkedCollection
 from .prompt import SummaryPrompt
 from .prompt import SummaryPromptBase
 from .prompt import SummaryPromptCreate
 from .prompt import SummaryPromptList
 from .prompt import SummaryPromptUpdate
+from .prompt import SummaryPromptWithCollections
 from .prompt import UserSetting
 from .prompt import UserSettingBase
 from .prompt import UserSettingCreate
@@ -101,6 +103,8 @@ __all__ = [
     "SummaryPromptUpdate",
     "SummaryPrompt",
     "SummaryPromptList",
+    "SummaryPromptWithCollections",
+    "LinkedCollection",
     "UserSettingBase",
     "UserSettingCreate",
     "UserSettingUpdate",

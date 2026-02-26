@@ -3,6 +3,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy import func
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
@@ -12,6 +13,7 @@ from app.db.base import get_db
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
+from app.models.prompt import SummaryPrompt
 from app.models.user import User
 from app.schemas.media import Collection as CollectionSchema
 from app.schemas.media import CollectionCreate
@@ -26,6 +28,38 @@ from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
 from app.utils.uuid_helpers import validate_uuids
 
 router = APIRouter()
+
+
+def _resolve_prompt_uuid(db: Session, prompt_uuid: str | None, user_id: int) -> int | None:
+    """Resolve a prompt UUID to its internal ID, validating access."""
+    if prompt_uuid is None:
+        return None
+
+    prompt = (
+        db.query(SummaryPrompt)
+        .filter(
+            SummaryPrompt.uuid == prompt_uuid,
+            SummaryPrompt.is_active,
+            or_(SummaryPrompt.is_system_default, SummaryPrompt.user_id == user_id),
+        )
+        .first()
+    )
+
+    if not prompt:
+        raise HTTPException(
+            status_code=404,
+            detail="Summary prompt not found or not accessible",
+        )
+
+    return int(prompt.id)
+
+
+def _get_prompt_info(collection: Collection) -> tuple:
+    """Get prompt UUID and name from a collection's default_summary_prompt relationship."""
+    prompt = collection.default_summary_prompt
+    if prompt:
+        return (prompt.uuid, prompt.name)
+    return (None, None)
 
 
 @router.get("", response_model=list[CollectionWithCount])
@@ -50,10 +84,13 @@ async def list_collections(
     collection_ids = [c[0] for c in counts_query]
     counts_dict = {c[0]: c[1] or 0 for c in counts_query}
 
-    # Then fetch full collection objects with user relationship
+    # Then fetch full collection objects with user and prompt relationships
     collections_objs = (
         db.query(Collection)
-        .options(joinedload(Collection.user))
+        .options(
+            joinedload(Collection.user),
+            joinedload(Collection.default_summary_prompt),
+        )
         .filter(Collection.id.in_(collection_ids))
         .all()
     )
@@ -64,6 +101,10 @@ async def list_collections(
         collection_with_count = CollectionWithCount.model_validate(collection)
         # Set the media_count from our counts dict
         collection_with_count.media_count = counts_dict.get(collection.id, 0)
+        # Set prompt info
+        prompt_uuid, prompt_name = _get_prompt_info(collection)
+        collection_with_count.default_prompt_id = prompt_uuid
+        collection_with_count.default_prompt_name = prompt_name
         collections.append(collection_with_count)
 
     return collections
@@ -89,12 +130,32 @@ async def create_collection(
             detail=f"Collection with name '{collection.name}' already exists",
         )
 
-    db_collection = Collection(**collection.dict(), user_id=current_user.id)
+    # Resolve prompt UUID to internal ID if provided
+    create_data = collection.dict(exclude={"default_prompt_id"})
+    prompt_internal_id = None
+    if collection.default_prompt_id:
+        prompt_internal_id = _resolve_prompt_uuid(
+            db, str(collection.default_prompt_id), int(current_user.id)
+        )
+
+    db_collection = Collection(
+        **create_data,
+        user_id=current_user.id,
+        default_summary_prompt_id=prompt_internal_id,
+    )
     db.add(db_collection)
     db.commit()
     db.refresh(db_collection)
 
-    return db_collection
+    # Eagerly load prompt relationship for response
+    if db_collection.default_summary_prompt_id:
+        db.refresh(db_collection, ["default_summary_prompt"])
+
+    result = CollectionSchema.model_validate(db_collection)
+    prompt_uuid, prompt_name = _get_prompt_info(db_collection)
+    result.default_prompt_id = prompt_uuid
+    result.default_prompt_name = prompt_name
+    return result
 
 
 @router.get("/{collection_uuid}", response_model=CollectionResponse)
@@ -110,7 +171,10 @@ async def get_collection(
     reloaded_collection = (
         db.query(Collection)
         .filter(Collection.id == collection.id)
-        .options(joinedload(Collection.collection_members).joinedload(CollectionMember.media_file))
+        .options(
+            joinedload(Collection.collection_members).joinedload(CollectionMember.media_file),
+            joinedload(Collection.default_summary_prompt),
+        )
         .first()
     )
 
@@ -122,11 +186,14 @@ async def get_collection(
     # Extract media files from collection members
     media_files = [member.media_file for member in collection.collection_members]
 
-    # Create response with media files
-    collection_dict = collection.__dict__.copy()
-    collection_dict["media_files"] = media_files
+    # Build response with prompt info
+    result = CollectionResponse.model_validate(collection)
+    result.media_files = media_files
+    prompt_uuid, prompt_name = _get_prompt_info(collection)
+    result.default_prompt_id = prompt_uuid
+    result.default_prompt_name = prompt_name
 
-    return CollectionResponse(**collection_dict)
+    return result
 
 
 @router.put("/{collection_uuid}", response_model=CollectionSchema)
@@ -160,13 +227,32 @@ async def update_collection(
 
     # Update fields
     update_data = collection_update.dict(exclude_unset=True)
+
+    # Handle prompt UUID resolution separately
+    if "default_prompt_id" in update_data:
+        prompt_uuid = update_data.pop("default_prompt_id")
+        if prompt_uuid is None:
+            # Explicitly clearing the prompt
+            collection.default_summary_prompt_id = None  # type: ignore[assignment]
+        else:
+            prompt_internal_id = _resolve_prompt_uuid(db, str(prompt_uuid), int(current_user.id))
+            collection.default_summary_prompt_id = prompt_internal_id  # type: ignore[assignment]
+
     for field, value in update_data.items():
         setattr(collection, field, value)
 
     db.commit()
     db.refresh(collection)
 
-    return collection
+    # Eagerly load prompt relationship for response
+    if collection.default_summary_prompt_id:
+        db.refresh(collection, ["default_summary_prompt"])
+
+    result = CollectionSchema.model_validate(collection)
+    prompt_uuid_val, prompt_name = _get_prompt_info(collection)
+    result.default_prompt_id = prompt_uuid_val
+    result.default_prompt_name = prompt_name
+    return result
 
 
 @router.delete("/{collection_uuid}")

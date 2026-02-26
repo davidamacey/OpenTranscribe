@@ -18,7 +18,11 @@ from app.models import UserSetting
 logger = logging.getLogger(__name__)
 
 
-def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] = None) -> str:
+def get_user_active_prompt(
+    user_id: Optional[int] = None,
+    db: Optional[Session] = None,
+    prompt_uuid: Optional[str] = None,
+) -> str:
     """
     Get the active summary prompt for a user, falling back to system default
 
@@ -29,11 +33,13 @@ def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] 
     Returns:
         The prompt text to use for summarization
     """
-    return get_user_active_prompt_info(user_id, db)[0]
+    return get_user_active_prompt_info(user_id, db, prompt_uuid=prompt_uuid)[0]
 
 
 def get_user_active_prompt_info(
-    user_id: Optional[int] = None, db: Optional[Session] = None
+    user_id: Optional[int] = None,
+    db: Optional[Session] = None,
+    prompt_uuid: Optional[str] = None,
 ) -> tuple[str, bool]:
     """
     Get the active summary prompt and whether it is a system default.
@@ -50,6 +56,24 @@ def get_user_active_prompt_info(
         db = SessionLocal()
 
     try:
+        # If specific prompt UUID provided (from collection default or manual selection), use it
+        if prompt_uuid:
+            prompt_by_uuid = (
+                db.query(SummaryPrompt)
+                .filter(
+                    and_(
+                        SummaryPrompt.uuid == prompt_uuid,
+                        SummaryPrompt.is_active,
+                    )
+                )
+                .first()
+            )
+            if prompt_by_uuid:
+                logger.info(f"Using prompt by UUID: {prompt_by_uuid.name} ({prompt_uuid})")
+                return str(prompt_by_uuid.prompt_text), bool(prompt_by_uuid.is_system_default)
+            else:
+                logger.warning(f"Prompt UUID {prompt_uuid} not found or inactive, falling back")
+
         # If no user specified, return system default
         if user_id is None:
             return get_system_default_prompt(db), True

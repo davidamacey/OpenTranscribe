@@ -29,6 +29,12 @@
   let selectedCollectionId: string | null = null;  // UUID
   let addingToCollection = false;
 
+  // Prompt selection state
+  let availablePrompts: any[] = [];
+  let newCollectionPromptId: string | null = null;
+  let editCollectionPromptId: string | null = null;
+  let loadingPrompts = false;
+
   // Fetch collections
   async function fetchCollections() {
     loading = true;
@@ -44,6 +50,20 @@
     }
   }
 
+  // Fetch available prompts for dropdown
+  async function fetchPrompts() {
+    loadingPrompts = true;
+    try {
+      const response = await axiosInstance.get('/prompts');
+      availablePrompts = response.data.prompts || [];
+    } catch (err: any) {
+      console.error('Error fetching prompts:', err);
+      // Non-critical: prompts dropdown will just be empty
+    } finally {
+      loadingPrompts = false;
+    }
+  }
+
   // Create new collection
   async function createCollection() {
     if (!newCollectionName.trim()) return;
@@ -53,7 +73,8 @@
     try {
       const response = await axiosInstance.post('/collections', {
         name: newCollectionName.trim(),
-        description: newCollectionDescription.trim() || null
+        description: newCollectionDescription.trim() || null,
+        default_prompt_id: newCollectionPromptId || null
       });
 
       collections = [...collections, { ...response.data, media_count: 0 }];
@@ -61,6 +82,7 @@
       // Reset form for potential next collection
       newCollectionName = '';
       newCollectionDescription = '';
+      newCollectionPromptId = null;
 
       // If in add mode and media is selected, add to new collection
       if (viewMode === 'add' && selectedMediaIds.length > 0) {
@@ -92,7 +114,8 @@
     try {
       const response = await axiosInstance.put(`/collections/${collectionToEdit.uuid}`, {
         name: editCollectionName.trim(),
-        description: editCollectionDescription.trim() || null
+        description: editCollectionDescription.trim() || null,
+        default_prompt_id: editCollectionPromptId || null
       });
 
       // Update local state
@@ -116,6 +139,7 @@
     collectionToEdit = collection;
     editCollectionName = collection.name;
     editCollectionDescription = collection.description || '';
+    editCollectionPromptId = collection.default_prompt_id || null;
     showEditModal = true;
   }
 
@@ -205,6 +229,7 @@
 
   onMount(() => {
     fetchCollections();
+    fetchPrompts();
   });
 </script>
 
@@ -254,6 +279,9 @@
               <span class="media-count">{collection.media_count} {collection.media_count !== 1 ? $t('collectionsPanel.files') : $t('collectionsPanel.file')}</span>
               {#if collection.is_public}
                 <span class="badge public">{$t('collectionsPanel.public')}</span>
+              {/if}
+              {#if collection.default_prompt_name}
+                <span class="badge prompt">{collection.default_prompt_name}</span>
               {/if}
             </div>
           </div>
@@ -356,6 +384,24 @@
             ></textarea>
           </div>
 
+          <div class="form-group">
+            <label for="collection-prompt">{$t('collectionsPanel.defaultPrompt')}</label>
+            <select
+              id="collection-prompt"
+              bind:value={newCollectionPromptId}
+              class="form-control"
+              disabled={creating || loadingPrompts}
+            >
+              <option value={null}>{$t('collectionsPanel.noDefaultPrompt')}</option>
+              {#each availablePrompts as prompt}
+                <option value={prompt.uuid}>
+                  {prompt.name}{prompt.is_system_default ? ` (${$t('collectionsPanel.system')})` : ''}
+                </option>
+              {/each}
+            </select>
+            <span class="form-hint">{$t('collectionsPanel.defaultPromptHint')}</span>
+          </div>
+
           <div class="form-actions">
             <button
               type="button"
@@ -445,6 +491,24 @@
               rows="3"
               disabled={updating}
             ></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="edit-collection-prompt">{$t('collectionsPanel.defaultPrompt')}</label>
+            <select
+              id="edit-collection-prompt"
+              bind:value={editCollectionPromptId}
+              class="form-control"
+              disabled={updating || loadingPrompts}
+            >
+              <option value={null}>{$t('collectionsPanel.noDefaultPrompt')}</option>
+              {#each availablePrompts as prompt}
+                <option value={prompt.uuid}>
+                  {prompt.name}{prompt.is_system_default ? ` (${$t('collectionsPanel.system')})` : ''}
+                </option>
+              {/each}
+            </select>
+            <span class="form-hint">{$t('collectionsPanel.defaultPromptHint')}</span>
           </div>
 
           <div class="form-actions">
@@ -701,6 +765,11 @@
     color: rgb(34, 197, 94);
   }
 
+  .badge.prompt {
+    background: rgba(59, 130, 246, 0.1);
+    color: rgb(59, 130, 246);
+  }
+
   .collection-actions {
     display: flex;
     gap: 8px;
@@ -857,6 +926,14 @@
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
 
+  .form-hint {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
   .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -972,6 +1049,11 @@
   :global(.dark) .badge.public {
     background: rgba(34, 197, 94, 0.2);
     color: #4ade80;
+  }
+
+  :global(.dark) .badge.prompt {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
   }
 
   /* Modal button styling to match app design */

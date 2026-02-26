@@ -449,6 +449,14 @@
                 {#if prompt.description}
                   <div class="config-url">{prompt.description}</div>
                 {/if}
+                {#if prompt.linked_collections && prompt.linked_collections.length > 0}
+                  <div class="linked-collections">
+                    <span class="linked-label">{$t('prompts.usedByCollections')}:</span>
+                    {#each prompt.linked_collections as col}
+                      <span class="collection-tag">{col.name}</span>
+                    {/each}
+                  </div>
+                {/if}
               </div>
               <div class="prompt-actions">
                 {#if selectedPromptId === prompt.uuid}
@@ -532,6 +540,14 @@
                 <div class="config-provider">{prompt.content_type || 'General'}</div>
                 {#if prompt.description}
                   <div class="config-url">{prompt.description}</div>
+                {/if}
+                {#if prompt.linked_collections && prompt.linked_collections.length > 0}
+                  <div class="linked-collections">
+                    <span class="linked-label">{$t('prompts.usedByCollections')}:</span>
+                    {#each prompt.linked_collections as col}
+                      <span class="collection-tag">{col.name}</span>
+                    {/each}
+                  </div>
                 {/if}
               </div>
               <div class="prompt-actions">
@@ -818,6 +834,16 @@
             <div class="detail-row">
               <strong>{$t('prompts.systemPrompt')}</strong> {viewingPrompt.is_system_default ? $t('common.yes') : $t('common.no')}
             </div>
+            {#if viewingPrompt.linked_collections && viewingPrompt.linked_collections.length > 0}
+              <div class="detail-row">
+                <strong>{$t('prompts.usedByCollections')}:</strong>
+                <div class="linked-collections-modal">
+                  {#each viewingPrompt.linked_collections as col}
+                    <span class="collection-tag">{col.name}</span>
+                  {/each}
+                </div>
+              </div>
+            {/if}
           </div>
           <div class="prompt-text-container">
             <div class="prompt-text-header">
@@ -1207,6 +1233,45 @@
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.4;
+  }
+
+  .linked-collections {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+  }
+
+  .linked-label {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+
+  .collection-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .linked-collections-modal {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.25rem;
+  }
+
+  :global(.dark) .collection-tag {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
   }
 
   .empty-state {

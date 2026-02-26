@@ -85,10 +85,23 @@ class SummaryPrompt(SummaryPromptBase, UUIDBaseSchema):
     updated_at: datetime
 
 
+class LinkedCollection(BaseModel):
+    """Minimal collection info for display in prompt listings"""
+
+    uuid: UUID
+    name: str
+
+
+class SummaryPromptWithCollections(SummaryPrompt):
+    """Summary prompt with linked collection information"""
+
+    linked_collections: list[LinkedCollection] = []
+
+
 class SummaryPromptList(BaseModel):
     """Schema for paginated summary prompt lists"""
 
-    prompts: list[SummaryPrompt]
+    prompts: list[SummaryPromptWithCollections]
     total: int
     page: int
     size: int

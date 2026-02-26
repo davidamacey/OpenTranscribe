@@ -19,6 +19,7 @@
     close: void;
     generateSummary: { fileId: number };
     reprocessSummary: { fileId: number };
+    regenerateWithPrompt: { fileId: number; promptUuid: string | null };
   }>();
 
   let summary: SummaryData | null = null;
@@ -165,6 +166,11 @@
 
     // Simply dispatch event to parent - parent handles everything
     dispatch('reprocessSummary', { fileId });
+  }
+
+  function regenerateWithPrompt(event: CustomEvent<{ promptUuid: string | null }>) {
+    if (!fileId) return;
+    dispatch('regenerateWithPrompt', { fileId, promptUuid: event.detail.promptUuid });
   }
 
   function countMatches(query: string, summaryData: SummaryData): number {
@@ -540,6 +546,7 @@
           {summaryStatus}
           on:generateSummary={generateSummary}
           on:retrySummary={retryFailedSummary}
+          on:regenerateWithPrompt={regenerateWithPrompt}
         />
       {/if}
     </div>

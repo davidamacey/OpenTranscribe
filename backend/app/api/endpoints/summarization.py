@@ -90,6 +90,7 @@ async def trigger_summarization(
         task = summarize_transcript_task.delay(
             file_uuid=file_uuid,
             force_regenerate=request.force_regenerate,
+            prompt_uuid=request.prompt_uuid,
         )
 
         logger.info(

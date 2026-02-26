@@ -957,6 +957,37 @@ def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list
     return cleaned_segments, garbage_count
 
 
+def _get_collection_prompt_uuid(file_id: int) -> str | None:
+    """Look up the default summary prompt UUID from the file's first collection (by added_at)."""
+    try:
+        from app.db.session_utils import session_scope
+        from app.models.media import Collection
+        from app.models.media import CollectionMember
+        from app.models.prompt import SummaryPrompt
+
+        with session_scope() as db:
+            result = (
+                db.query(SummaryPrompt.uuid)
+                .join(Collection, Collection.default_summary_prompt_id == SummaryPrompt.id)
+                .join(CollectionMember, CollectionMember.collection_id == Collection.id)
+                .filter(
+                    CollectionMember.media_file_id == file_id,
+                    SummaryPrompt.is_active,
+                )
+                .order_by(CollectionMember.added_at.asc())
+                .first()
+            )
+
+            if result:
+                logger.info(f"File {file_id} using collection default prompt: {result[0]}")
+                return str(result[0])
+
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to get collection prompt for file {file_id}: {e}")
+        return None
+
+
 # Import for automatic summarization, speaker identification, and analytics
 def trigger_automatic_summarization(file_id: int, file_uuid: str):
     """Trigger automatic summarization, speaker identification, and analytics after transcription completes"""
@@ -977,10 +1008,16 @@ def trigger_automatic_summarization(file_id: int, file_uuid: str):
             f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
         )
 
+        # Look up collection default prompt for this file
+        collection_prompt_uuid = _get_collection_prompt_uuid(file_id)
+
         # Trigger summarization (this will use the speaker suggestions when available)
         from app.tasks.summarization import summarize_transcript_task
 
-        summary_task = summarize_transcript_task.delay(file_uuid=file_uuid)
+        summary_task = summarize_transcript_task.delay(
+            file_uuid=file_uuid,
+            prompt_uuid=collection_prompt_uuid,
+        )
         logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
 
         # Trigger topic extraction (after transcription completes, independent of summarization)

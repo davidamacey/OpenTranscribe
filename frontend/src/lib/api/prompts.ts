@@ -15,6 +15,7 @@ export interface SummaryPrompt {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  linked_collections?: Array<{ uuid: string; name: string }>;
 }
 
 export interface SummaryPromptCreate {
