@@ -436,7 +436,7 @@
   "settings.orgContext.description": "Provide background context about your organization or project to improve AI-generated summaries.",
   "settings.orgContext.label": "Context Text",
   "settings.orgContext.labelHint": "Describe your organization, project, or domain so the AI can produce more relevant summaries.",
-  "settings.orgContext.placeholder": "Example: Acme Corp is a defense contractor working on the SHIELD program. Key personnel include Dr. Smith (CTO), Jane Doe (PM). Our primary focus is radar systems and signal processing. Common acronyms: SIGINT, EW, AESA.",
+  "settings.orgContext.placeholder": "Example: Greenleaf Analytics is a healthcare data company building the Pulse platform. Key personnel include Dr. Chen (CTO), Sarah Miller (VP Product). We focus on patient outcome modeling and clinical trial analytics. Common acronyms: EHR, RWE, FDA, HIPAA.",
   "settings.orgContext.includeDefault": "Include with system prompts",
   "settings.orgContext.includeDefaultDesc": "Inject this context when using built-in system summary prompts.",
   "settings.orgContext.includeCustom": "Include with custom prompts",

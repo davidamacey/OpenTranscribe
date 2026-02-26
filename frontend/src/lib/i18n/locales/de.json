@@ -1097,7 +1097,7 @@
   "settings.orgContext.description": "Geben Sie Hintergrundinformationen zu Ihrer Organisation oder Ihrem Projekt an, um KI-generierte Zusammenfassungen zu verbessern.",
   "settings.orgContext.label": "Kontexttext",
   "settings.orgContext.labelHint": "Beschreiben Sie Ihre Organisation, Ihr Projekt oder Ihren Fachbereich, damit die KI relevantere Zusammenfassungen erstellt.",
-  "settings.orgContext.placeholder": "Beispiel: Acme Corp ist ein Verteidigungsunternehmen, das am SHIELD-Programm arbeitet. Schlüsselpersonal umfasst Dr. Smith (CTO), Jane Doe (PM). Unser Hauptfokus liegt auf Radarsystemen und Signalverarbeitung.",
+  "settings.orgContext.placeholder": "Beispiel: Greenleaf Analytics ist ein Gesundheitsdatenunternehmen, das die Pulse-Plattform entwickelt. Schlüsselpersonal umfasst Dr. Chen (CTO), Sarah Miller (VP Produkt). Unser Fokus liegt auf Patientenergebnis-Modellierung und Analyse klinischer Studien. Gängige Akronyme: EHR, RWE, FDA, HIPAA.",
   "settings.orgContext.includeDefault": "Mit System-Prompts einbeziehen",
   "settings.orgContext.includeDefaultDesc": "Diesen Kontext bei Verwendung der integrierten System-Zusammenfassungs-Prompts einfügen.",
   "settings.orgContext.includeCustom": "Mit benutzerdefinierten Prompts einbeziehen",

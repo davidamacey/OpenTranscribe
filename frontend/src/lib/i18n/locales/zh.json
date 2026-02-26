@@ -1097,7 +1097,7 @@
   "settings.orgContext.description": "提供有关您的组织或项目的背景信息，以改善AI生成的摘要。",
   "settings.orgContext.label": "上下文文本",
   "settings.orgContext.labelHint": "描述您的组织、项目或领域，以便AI生成更相关的摘要。",
-  "settings.orgContext.placeholder": "示例：Acme公司是一家国防承包商，负责SHIELD项目。关键人员包括Smith博士（CTO）、Jane Doe（PM）。我们的主要关注点是雷达系统和信号处理。",
+  "settings.orgContext.placeholder": "示例：Greenleaf Analytics是一家医疗数据公司，正在开发Pulse平台。关键人员包括Chen博士（CTO）、Sarah Miller（产品VP）。我们专注于患者结果建模和临床试验分析。常用缩写：EHR、RWE、FDA、HIPAA。",
   "settings.orgContext.includeDefault": "包含在系统提示中",
   "settings.orgContext.includeDefaultDesc": "使用内置系统摘要提示时注入此上下文。",
   "settings.orgContext.includeCustom": "包含在自定义提示中",

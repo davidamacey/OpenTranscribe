@@ -1097,7 +1097,7 @@
   "settings.orgContext.description": "組織やプロジェクトの背景情報を提供して、AI生成の要約を改善します。",
   "settings.orgContext.label": "コンテキストテキスト",
   "settings.orgContext.labelHint": "組織、プロジェクト、または分野を説明して、AIがより関連性の高い要約を生成できるようにします。",
-  "settings.orgContext.placeholder": "例：Acme社はSHIELDプログラムに取り組む防衛請負業者です。主要人員にはSmith博士（CTO）、Jane Doe（PM）が含まれます。主な焦点はレーダーシステムと信号処理です。",
+  "settings.orgContext.placeholder": "例：Greenleaf Analyticsは、Pulseプラットフォームを開発するヘルスケアデータ企業です。主要人員にはChen博士（CTO）、Sarah Miller（プロダクトVP）が含まれます。患者アウトカムモデリングと臨床試験分析に注力しています。一般的な略語：EHR、RWE、FDA、HIPAA。",
   "settings.orgContext.includeDefault": "システムプロンプトに含める",
   "settings.orgContext.includeDefaultDesc": "組み込みのシステム要約プロンプトを使用する際にこのコンテキストを注入します。",
   "settings.orgContext.includeCustom": "カスタムプロンプトに含める",

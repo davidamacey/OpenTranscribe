@@ -1097,7 +1097,7 @@
   "settings.orgContext.description": "Forneça contexto sobre sua organização ou projeto para melhorar os resumos gerados por IA.",
   "settings.orgContext.label": "Texto de Contexto",
   "settings.orgContext.labelHint": "Descreva sua organização, projeto ou domínio para que a IA produza resumos mais relevantes.",
-  "settings.orgContext.placeholder": "Exemplo: Acme Corp é uma empresa de defesa trabalhando no programa SHIELD. Pessoal-chave inclui Dr. Smith (CTO), Jane Doe (PM). Nosso foco principal são sistemas de radar e processamento de sinais.",
+  "settings.orgContext.placeholder": "Exemplo: Greenleaf Analytics é uma empresa de dados de saúde desenvolvendo a plataforma Pulse. Pessoal-chave inclui Dra. Chen (CTO), Sarah Miller (VP Produto). Nosso foco é modelagem de resultados de pacientes e análise de ensaios clínicos. Acrônimos comuns: EHR, RWE, FDA, HIPAA.",
   "settings.orgContext.includeDefault": "Incluir com prompts do sistema",
   "settings.orgContext.includeDefaultDesc": "Injetar este contexto ao usar os prompts de resumo do sistema integrados.",
   "settings.orgContext.includeCustom": "Incluir com prompts personalizados",

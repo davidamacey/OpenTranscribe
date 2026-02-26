@@ -40,7 +40,7 @@ class OrganizationContextSettings(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "context_text": "Acme Corp is a defense contractor specializing in the SHIELD program...",
+                "context_text": "Greenleaf Analytics is a healthcare data company building the Pulse platform...",
                 "include_in_default_prompts": True,
                 "include_in_custom_prompts": False,
             }
