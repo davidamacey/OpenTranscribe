@@ -57,6 +57,38 @@ class SpeakerAttributeService:
             logger.error(f"Failed to load SpeechBrain model: {e}")
             raise
 
+    @staticmethod
+    def _load_audio_ffmpeg(audio_path: str, target_sr: int = 16000):
+        """Load audio using ffmpeg, returning a torch tensor at target sample rate.
+
+        Avoids torchaudio backend issues in containers where soundfile/sox
+        are unavailable. Outputs mono float32 PCM at the target sample rate.
+        """
+        import subprocess
+
+        import torch
+
+        cmd = [
+            "ffmpeg",
+            "-i",
+            audio_path,
+            "-f",
+            "f32le",  # raw 32-bit float PCM
+            "-acodec",
+            "pcm_f32le",
+            "-ac",
+            "1",  # mono
+            "-ar",
+            str(target_sr),
+            "-v",
+            "quiet",
+            "pipe:1",
+        ]
+        result = subprocess.run(cmd, capture_output=True, check=True)  # noqa: S603 # nosec B603
+        audio_np = np.frombuffer(result.stdout, dtype=np.float32)
+        waveform = torch.from_numpy(audio_np).unsqueeze(0)  # shape: [1, samples]
+        return waveform, target_sr
+
     def predict_attributes(
         self,
         audio_path: str,
@@ -84,20 +116,13 @@ class SpeakerAttributeService:
         self.load_models()
 
         import torch
-        import torchaudio
 
-        # Load audio
+        # Load audio via ffmpeg → numpy → torch (avoids torchaudio backend issues)
         try:
-            waveform, sample_rate = torchaudio.load(audio_path)
+            waveform, sample_rate = self._load_audio_ffmpeg(audio_path)
         except Exception as e:
             logger.error(f"Failed to load audio for attribute detection: {e}")
             return {}
-
-        # Resample to 16kHz if needed (SpeechBrain expects 16kHz)
-        if sample_rate != 16000:
-            resampler = torchaudio.transforms.Resample(sample_rate, 16000)
-            waveform = resampler(waveform)
-            sample_rate = 16000
 
         # Convert to mono if stereo
         if waveform.shape[0] > 1:
