@@ -32,7 +32,6 @@
     resolved_display_name?: string;
     // Speaker attribute detection fields
     predicted_gender?: string;
-    predicted_age_range?: string;
     attribute_confidence?: Record<string, number>;
   }
 
@@ -254,7 +253,7 @@
                     {getStatusText(speaker)}
                   </p>
 
-                  {#if showAttributesOnCards && (speaker.predicted_gender || speaker.predicted_age_range)}
+                  {#if showAttributesOnCards && speaker.predicted_gender}
                     <div class="attribute-badges">
                       {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
                         <span
@@ -263,19 +262,6 @@
                           aria-label={$t('speakerProfile.predictedGender', { gender: speaker.predicted_gender })}
                         >
                           {speaker.predicted_gender === 'male' ? '\u2642' : '\u2640'}
-                        </span>
-                      {/if}
-                      {#if speaker.predicted_age_range}
-                        <span
-                          class="attribute-badge"
-                          title={$t('speakerProfile.predictedAge')}
-                          aria-label={$t('speakerProfile.predictedAge')}
-                        >
-                          {speaker.predicted_age_range === 'child' ? 'Child' :
-                           speaker.predicted_age_range === 'teen' ? 'Teen' :
-                           speaker.predicted_age_range === 'young_adult' ? 'Young' :
-                           speaker.predicted_age_range === 'adult' ? 'Adult' :
-                           speaker.predicted_age_range === 'senior' ? 'Senior' : ''}
                         </span>
                       {/if}
                     </div>
@@ -317,7 +303,7 @@
                     {getStatusText(speaker)}
                   </p>
 
-                  {#if showAttributesOnCards && (speaker.predicted_gender || speaker.predicted_age_range)}
+                  {#if showAttributesOnCards && speaker.predicted_gender}
                     <div class="attribute-badges">
                       {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
                         <span
@@ -326,19 +312,6 @@
                           aria-label={$t('speakerProfile.predictedGender', { gender: speaker.predicted_gender })}
                         >
                           {speaker.predicted_gender === 'male' ? '\u2642' : '\u2640'}
-                        </span>
-                      {/if}
-                      {#if speaker.predicted_age_range}
-                        <span
-                          class="attribute-badge"
-                          title={$t('speakerProfile.predictedAge')}
-                          aria-label={$t('speakerProfile.predictedAge')}
-                        >
-                          {speaker.predicted_age_range === 'child' ? 'Child' :
-                           speaker.predicted_age_range === 'teen' ? 'Teen' :
-                           speaker.predicted_age_range === 'young_adult' ? 'Young' :
-                           speaker.predicted_age_range === 'adult' ? 'Adult' :
-                           speaker.predicted_age_range === 'senior' ? 'Senior' : ''}
                         </span>
                       {/if}
                     </div>

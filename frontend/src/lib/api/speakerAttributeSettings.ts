@@ -4,7 +4,6 @@
  * Manages user preferences for speaker attribute detection including:
  * - Enable/disable attribute detection
  * - Gender prediction from voice
- * - Age range estimation from voice
  * - Display preferences for attribute badges on speaker cards
  */
 
@@ -16,7 +15,6 @@ import axiosInstance from '../axios';
 export interface SpeakerAttributeSettings {
   detection_enabled: boolean;
   gender_detection_enabled: boolean;
-  age_detection_enabled: boolean;
   show_attributes_on_cards: boolean;
 }
 
@@ -26,7 +24,6 @@ export interface SpeakerAttributeSettings {
 export interface SpeakerAttributeSystemDefaults {
   detection_enabled: boolean;
   gender_detection_enabled: boolean;
-  age_detection_enabled: boolean;
   show_attributes_on_cards: boolean;
 }
 

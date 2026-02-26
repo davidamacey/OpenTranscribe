@@ -18,9 +18,8 @@ export interface Speaker {
     description?: string;
   };
   // AI-predicted speaker attributes
-  predicted_gender?: string; // "male", "female", "unknown"
-  predicted_age_range?: string; // "child", "teen", "young_adult", "adult", "senior"
-  attribute_confidence?: Record<string, number>; // e.g., {"gender": 0.92, "age_range": 0.75}
+  predicted_gender?: string; // "male", "female"
+  attribute_confidence?: Record<string, number>; // e.g., {"gender": 0.92}
   attributes_predicted_at?: string; // ISO timestamp
   // Backend computed fields
   computed_status?: string;

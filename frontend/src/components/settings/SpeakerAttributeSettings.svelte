@@ -12,7 +12,6 @@
   let settings: SpeakerAttributeSettings = {
     detection_enabled: true,
     gender_detection_enabled: true,
-    age_detection_enabled: true,
     show_attributes_on_cards: true,
   };
 
@@ -25,7 +24,6 @@
   $: isDirty =
     settings.detection_enabled !== originalSettings.detection_enabled ||
     settings.gender_detection_enabled !== originalSettings.gender_detection_enabled ||
-    settings.age_detection_enabled !== originalSettings.age_detection_enabled ||
     settings.show_attributes_on_cards !== originalSettings.show_attributes_on_cards;
 
   $: settingsModalStore.setDirty('speaker-attributes', isDirty);
@@ -124,25 +122,6 @@
               type="checkbox"
               id="gender-detection"
               bind:checked={settings.gender_detection_enabled}
-            />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <div class="setting-row sub-setting">
-          <div class="setting-info">
-            <label class="setting-label" for="age-detection">
-              {$t('settings.speakerAttributes.ageDetection')}
-            </label>
-            <p class="setting-description">
-              {$t('settings.speakerAttributes.ageDetectionDesc')}
-            </p>
-          </div>
-          <label class="toggle">
-            <input
-              type="checkbox"
-              id="age-detection"
-              bind:checked={settings.age_detection_enabled}
             />
             <span class="toggle-slider"></span>
           </label>

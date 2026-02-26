@@ -13,7 +13,6 @@
     verified: boolean;
     confidence?: number;
     predicted_gender?: string;
-    predicted_age_range?: string;
     attribute_confidence?: Record<string, number>;
   };
   export let suggestions: {

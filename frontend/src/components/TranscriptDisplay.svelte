@@ -977,6 +977,14 @@
                     >
                       {translateSpeakerLabel(speaker.name)}
                     </span>
+                    {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
+                      <span
+                        class="gender-badge"
+                        title="Predicted gender: {speaker.predicted_gender} ({Math.round((speaker.attribute_confidence?.gender ?? 0) * 100)}%)"
+                      >
+                        {speaker.predicted_gender === 'male' ? '♂' : '♀'}
+                      </span>
+                    {/if}
                     <div class="speaker-input-wrapper">
                     <input
                       type="text"
@@ -1953,6 +1961,25 @@
 
 
   /* Embedding Suggestion Interface */
+
+  .gender-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: var(--surface-color, #e8e8e8);
+    color: var(--text-secondary, #666);
+    flex-shrink: 0;
+    cursor: default;
+  }
+
+  :global([data-theme='dark']) .gender-badge {
+    background: var(--surface-color, #3a3a3a);
+    color: var(--text-secondary, #aaa);
+  }
 
   .speaker-profile-badge {
     background: #f59e0b;
