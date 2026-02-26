@@ -11,6 +11,7 @@
   import GalleryCountChip from '$components/gallery/GalleryCountChip.svelte';
   import GallerySortDropdown from '$components/gallery/GallerySortDropdown.svelte';
   import GalleryViewToggle from '$components/gallery/GalleryViewToggle.svelte';
+  import GalleryActionButtons from '$components/gallery/GalleryActionButtons.svelte';
   import VirtualList from '$components/gallery/VirtualList.svelte';
   import VirtualGrid from '$components/gallery/VirtualGrid.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
@@ -662,6 +663,244 @@
     }
   }
 
+  // Bulk reprocess selected files
+  async function bulkReprocess() {
+    const selected = $galleryState.selectedFiles;
+    if (selected.size === 0) return;
+
+    const reprocessable = files.filter(f => selected.has(f.uuid) && ['completed', 'error', 'cancelled'].includes(f.status));
+    if (reprocessable.length === 0) {
+      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
+      return;
+    }
+
+    showConfirmation(
+      $t('gallery.bulk.reprocessConfirmTitle'),
+      $t('gallery.bulk.reprocessConfirmMessage', { count: reprocessable.length }),
+      async () => {
+        try {
+          const response = await axiosInstance.post('/files/management/bulk-action', {
+            file_uuids: reprocessable.map(f => f.uuid),
+            action: 'reprocess'
+          });
+          const results = response.data;
+          const successful = results.filter((r: any) => r.success);
+          const failed = results.filter((r: any) => !r.success);
+
+          if (successful.length > 0) {
+            toastStore.success($t('gallery.bulk.reprocessStarted', { count: successful.length }));
+          }
+          if (failed.length > 0) {
+            toastStore.error($t('gallery.bulk.reprocessFailed', { count: failed.length }));
+          }
+          clearSelection();
+        } catch (err) {
+          console.error('Bulk reprocess error:', err);
+          toastStore.error($t('gallery.bulk.reprocessFailed', { count: reprocessable.length }));
+        }
+      }
+    );
+  }
+
+  // Bulk summarize selected files
+  async function bulkSummarize() {
+    const selected = $galleryState.selectedFiles;
+    if (selected.size === 0) return;
+
+    const completed = files.filter(f => selected.has(f.uuid) && f.status === 'completed');
+    if (completed.length === 0) {
+      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_uuids: completed.map(f => f.uuid),
+        action: 'summarize'
+      });
+      const results = response.data;
+      const successful = results.filter((r: any) => r.success);
+      const failed = results.filter((r: any) => !r.success);
+
+      // Check if LLM is not configured
+      const llmNotAvailable = failed.some((r: any) => r.error === 'LLM_NOT_AVAILABLE');
+      if (llmNotAvailable) {
+        toastStore.error($t('gallery.bulk.llmNotConfigured'));
+        return;
+      }
+
+      if (successful.length > 0) {
+        toastStore.success($t('gallery.bulk.summarizeStarted', { count: successful.length }));
+      }
+      if (failed.length > 0 && !llmNotAvailable) {
+        toastStore.error($t('gallery.bulk.summarizeFailed', { count: failed.length }));
+      }
+      clearSelection();
+    } catch (err) {
+      console.error('Bulk summarize error:', err);
+      toastStore.error($t('gallery.bulk.summarizeFailed', { count: completed.length }));
+    }
+  }
+
+  // Bulk retry failed files
+  async function bulkRetryFailed() {
+    const selected = $galleryState.selectedFiles;
+    if (selected.size === 0) return;
+
+    const failedFiles = files.filter(f => selected.has(f.uuid) && f.status === 'error');
+    if (failedFiles.length === 0) {
+      toastStore.warning($t('gallery.bulk.noFailedFiles'));
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_uuids: failedFiles.map(f => f.uuid),
+        action: 'retry'
+      });
+      const results = response.data;
+      const successful = results.filter((r: any) => r.success);
+      const failed = results.filter((r: any) => !r.success);
+
+      if (successful.length > 0) {
+        toastStore.success($t('gallery.bulk.retryStarted', { count: successful.length }));
+      }
+      if (failed.length > 0) {
+        toastStore.error($t('gallery.bulk.retryFailedError', { count: failed.length }));
+      }
+      clearSelection();
+    } catch (err) {
+      console.error('Bulk retry error:', err);
+      toastStore.error($t('gallery.bulk.retryFailedError', { count: failedFiles.length }));
+    }
+  }
+
+  // Bulk export selected files
+  async function bulkExport(format: string) {
+    const selected = $galleryState.selectedFiles;
+    if (selected.size === 0) return;
+
+    const completed = files.filter(f => selected.has(f.uuid) && f.status === 'completed');
+    if (completed.length === 0) {
+      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
+      return;
+    }
+
+    const ext = format === 'webvtt' ? 'vtt' : format;
+    const total = completed.length;
+    let exported = 0;
+    let failed = 0;
+
+    toastStore.info($t('gallery.bulk.exportStarted', { count: total, format: ext.toUpperCase() }));
+
+    for (const file of completed) {
+      try {
+        const response = await axiosInstance.get(`/files/${file.uuid}/subtitles`, {
+          params: { subtitle_format: format },
+          responseType: 'blob'
+        });
+
+        // Create download link
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        const baseName = file.filename ? file.filename.replace(/\.[^/.]+$/, '') : file.uuid;
+        link.setAttribute('download', `${baseName}.${ext}`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        exported++;
+
+        // Delay between downloads to avoid browser "allow multiple downloads" popup
+        if (exported < total) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (err) {
+        console.error(`Export failed for ${file.filename}:`, err);
+        failed++;
+      }
+    }
+
+    if (exported > 0) {
+      toastStore.success($t('gallery.bulk.exportComplete', { count: exported, format: ext.toUpperCase() }));
+    }
+    if (failed > 0) {
+      toastStore.error($t('gallery.bulk.exportFailed', { count: failed }));
+    }
+    clearSelection();
+  }
+
+  // Bulk speaker identification
+  async function bulkSpeakerId() {
+    const selected = $galleryState.selectedFiles;
+    if (selected.size === 0) return;
+
+    const completed = files.filter(f => selected.has(f.uuid) && f.status === 'completed');
+    if (completed.length === 0) {
+      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
+      return;
+    }
+
+    try {
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const file of completed) {
+        try {
+          await axiosInstance.post(`/files/${file.uuid}/identify-speakers`);
+          successCount++;
+        } catch {
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toastStore.success($t('gallery.bulk.speakerIdStarted', { count: successCount }));
+      }
+      if (failCount > 0) {
+        toastStore.error($t('gallery.bulk.speakerIdFailed', { count: failCount }));
+      }
+      clearSelection();
+    } catch (err) {
+      console.error('Bulk speaker ID error:', err);
+      toastStore.error($t('gallery.bulk.speakerIdFailed', { count: completed.length }));
+    }
+  }
+
+  // Bulk cancel processing
+  async function bulkCancelProcessing() {
+    const selected = $galleryState.selectedFiles;
+    if (selected.size === 0) return;
+
+    const processing = files.filter(f => selected.has(f.uuid) && f.status === 'processing');
+    if (processing.length === 0) {
+      toastStore.warning($t('gallery.bulk.noProcessingFiles'));
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_uuids: processing.map(f => f.uuid),
+        action: 'cancel'
+      });
+      const results = response.data;
+      const successful = results.filter((r: any) => r.success);
+      const failed = results.filter((r: any) => !r.success);
+
+      if (successful.length > 0) {
+        toastStore.success($t('gallery.bulk.cancelStarted', { count: successful.length }));
+      }
+      if (failed.length > 0) {
+        toastStore.error($t('gallery.bulk.cancelFailed', { count: failed.length }));
+      }
+      clearSelection();
+    } catch (err) {
+      console.error('Bulk cancel error:', err);
+      toastStore.error($t('gallery.bulk.cancelFailed', { count: processing.length }));
+    }
+  }
+
   // File upload completed handler
   function handleUploadComplete(event: CustomEvent) {
     // For URL uploads, don't immediately refresh - let WebSocket notifications handle it
@@ -958,12 +1197,42 @@
       deleteSelectedFiles();
     });
 
+    const unsubscribeReprocess = galleryStore.onReprocessTrigger(() => {
+      bulkReprocess();
+    });
+
+    const unsubscribeSummarize = galleryStore.onSummarizeTrigger(() => {
+      bulkSummarize();
+    });
+
+    const unsubscribeRetryFailed = galleryStore.onRetryFailedTrigger(() => {
+      bulkRetryFailed();
+    });
+
+    const unsubscribeExport = galleryStore.onExportTrigger((format) => {
+      bulkExport(format);
+    });
+
+    const unsubscribeSpeakerId = galleryStore.onSpeakerIdTrigger(() => {
+      bulkSpeakerId();
+    });
+
+    const unsubscribeCancelProcessing = galleryStore.onCancelProcessingTrigger(() => {
+      bulkCancelProcessing();
+    });
+
     // Cleanup subscriptions
     return () => {
       unsubscribeUpload();
       unsubscribeCollections();
       unsubscribeAddToCollection();
       unsubscribeDeleteSelected();
+      unsubscribeReprocess();
+      unsubscribeSummarize();
+      unsubscribeRetryFailed();
+      unsubscribeExport();
+      unsubscribeSpeakerId();
+      unsubscribeCancelProcessing();
     };
   });
 </script>
@@ -1015,6 +1284,24 @@
       <!-- Right Content: Scrollable Media Grid -->
       <div class="content-area">
         <div class="scrollable-content" bind:this={scrollableContentEl}>
+      <!-- Gallery Header (sticky) - always visible for action buttons -->
+      <div class="gallery-header">
+        <div class="gallery-header-left">
+          <GalleryActionButtons {files} />
+        </div>
+        {#if files.length > 0}
+          <div class="gallery-header-right">
+            <GallerySortDropdown
+              {sortBy}
+              {sortOrder}
+              on:change={handleSortChange}
+            />
+            <GalleryViewToggle />
+            <GalleryCountChip loading={loading} filesLoaded={files.length} />
+          </div>
+        {/if}
+      </div>
+
       {#if loading}
         <div class="loading-state">
           <p>{$t('gallery.loadingFiles')}</p>
@@ -1034,21 +1321,6 @@
           <p>{$t('gallery.uploadFirstFile')}</p>
         </div>
       {:else}
-        <!-- Gallery Header (sticky) with sort dropdown and count chip -->
-        {#if !loading || files.length > 0}
-          <div class="gallery-header">
-            <div class="gallery-header-right">
-              <GallerySortDropdown
-                {sortBy}
-                {sortOrder}
-                on:change={handleSortChange}
-              />
-              <GalleryViewToggle />
-              <GalleryCountChip loading={loading} filesLoaded={files.length} />
-            </div>
-          </div>
-        {/if}
-
         {#if $galleryViewMode === 'list'}
           <!-- List View (Virtual Scrolling) -->
           <VirtualList
@@ -1595,7 +1867,7 @@
     top: 0;
     z-index: 10;
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.75rem;
@@ -1608,10 +1880,19 @@
     padding-right: 1.5rem;
   }
 
+  .gallery-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .gallery-header-right {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-shrink: 0;
   }
 
   @media (max-width: 768px) {

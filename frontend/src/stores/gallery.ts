@@ -59,6 +59,12 @@ export interface GalleryActions {
   triggerCollections: () => void;
   triggerAddToCollection: () => void;
   triggerDeleteSelected: () => void;
+  triggerReprocess: () => void;
+  triggerSummarize: () => void;
+  triggerRetryFailed: () => void;
+  triggerExport: (format: string) => void;
+  triggerSpeakerId: () => void;
+  triggerCancelProcessing: () => void;
   appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => void;
   resetPagination: () => void;
   setLoadingMore: (loading: boolean) => void;
@@ -91,6 +97,12 @@ function createGalleryStore() {
   const collectionsTrigger = writable<number>(0);
   const addToCollectionTrigger = writable<number>(0);
   const deleteSelectedTrigger = writable<number>(0);
+  const reprocessTrigger = writable<number>(0);
+  const summarizeTrigger = writable<number>(0);
+  const retryFailedTrigger = writable<number>(0);
+  const exportTrigger = writable<string>(''); // format string
+  const speakerIdTrigger = writable<number>(0);
+  const cancelProcessingTrigger = writable<number>(0);
 
   return {
     subscribe,
@@ -223,6 +235,30 @@ function createGalleryStore() {
       deleteSelectedTrigger.update((n) => n + 1);
     },
 
+    triggerReprocess: () => {
+      reprocessTrigger.update((n) => n + 1);
+    },
+
+    triggerSummarize: () => {
+      summarizeTrigger.update((n) => n + 1);
+    },
+
+    triggerRetryFailed: () => {
+      retryFailedTrigger.update((n) => n + 1);
+    },
+
+    triggerExport: (format: string) => {
+      exportTrigger.set(format);
+    },
+
+    triggerSpeakerId: () => {
+      speakerIdTrigger.update((n) => n + 1);
+    },
+
+    triggerCancelProcessing: () => {
+      cancelProcessingTrigger.update((n) => n + 1);
+    },
+
     appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => {
       update((state) => {
         // Guard against undefined/null data from failed API responses
@@ -302,6 +338,66 @@ function createGalleryStore() {
     onDeleteSelectedTrigger: (callback: (value: number) => void) => {
       let hasInitialized = false;
       return deleteSelectedTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onReprocessTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return reprocessTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onSummarizeTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return summarizeTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onRetryFailedTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return retryFailedTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onExportTrigger: (callback: (format: string) => void) => {
+      let hasInitialized = false;
+      return exportTrigger.subscribe((value) => {
+        if (hasInitialized && value !== '') {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onSpeakerIdTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return speakerIdTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onCancelProcessingTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return cancelProcessingTrigger.subscribe((value) => {
         if (hasInitialized && value > 0) {
           callback(value);
         }

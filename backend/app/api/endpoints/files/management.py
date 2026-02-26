@@ -19,6 +19,7 @@ from app.api.endpoints.files.crud import get_media_file_by_uuid
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.user import User
+from app.tasks.summarization import summarize_transcript_task
 from app.tasks.transcription import transcribe_audio_task
 from app.utils.task_utils import cancel_active_task
 from app.utils.task_utils import check_for_stuck_files
@@ -56,7 +57,7 @@ class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
     file_uuids: list[str]
-    action: str  # "delete", "retry", "cancel", "recover"
+    action: str  # "delete", "retry", "cancel", "recover", "reprocess", "summarize"
     force: bool = False
     reset_retry_count: bool = False
 
@@ -448,6 +449,97 @@ def _handle_recover_action(db: Session, file_uuid: str, file_id: int) -> BulkAct
     )
 
 
+def _handle_reprocess_action(db: Session, file_uuid: str, file_id: int) -> BulkActionResult:
+    """Handle reprocess action for bulk operations."""
+    import os
+
+    from app.models.media import MediaFile
+
+    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    if not db_file:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="File not found",
+            error="NOT_FOUND",
+        )
+
+    # Only reprocess completed or error files
+    if db_file.status not in [FileStatus.COMPLETED, FileStatus.ERROR, FileStatus.CANCELLED]:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=f"Cannot reprocess file in {db_file.status} status",
+            error="INVALID_STATUS",
+        )
+
+    # Reset file for retry
+    success = reset_file_for_retry(db, file_id, True)
+    if not success:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="Failed to reset file for reprocessing",
+            error="RESET_FAILED",
+        )
+
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        task = transcribe_audio_task.delay(file_uuid)
+        message = f"Reprocessing started (task: {task.id})"
+    else:
+        message = "Reprocessing prepared (test mode)"
+
+    return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
+
+
+def _handle_summarize_action(db: Session, file_uuid: str, file_id: int) -> BulkActionResult:
+    """Handle summarize action for bulk operations."""
+    import os
+
+    from app.models.media import MediaFile
+    from app.services.llm_service import LLMService
+
+    # Check if LLM is configured
+    try:
+        llm_service = LLMService.create_from_settings()
+        if llm_service is None:
+            return BulkActionResult(
+                file_uuid=file_uuid,
+                success=False,
+                message="LLM provider is not configured",
+                error="LLM_NOT_AVAILABLE",
+            )
+        llm_service.close()
+    except Exception:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="LLM provider is not configured",
+            error="LLM_NOT_AVAILABLE",
+        )
+
+    # Check file status - must be completed
+    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    if not db_file or db_file.status != FileStatus.COMPLETED:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="File must be completed before summarizing",
+            error="INVALID_STATUS",
+        )
+
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        task = summarize_transcript_task.delay(
+            file_uuid=file_uuid,
+            force_regenerate=False,
+        )
+        message = f"Summarization started (task: {task.id})"
+    else:
+        message = "Summarization prepared (test mode)"
+
+    return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
+
+
 def _process_single_file_action(
     db: Session,
     file_uuid: str,
@@ -466,6 +558,8 @@ def _process_single_file_action(
         "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count),
         "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),
         "recover": lambda: _handle_recover_action(db, file_uuid, file_id),
+        "reprocess": lambda: _handle_reprocess_action(db, file_uuid, file_id),
+        "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id),
     }
 
     handler = action_handlers.get(action)

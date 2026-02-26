@@ -297,6 +297,8 @@
   .virtual-grid-container {
     overflow: hidden;
     contain: layout style paint;
+    padding-top: 0.5rem;
+    margin-top: -0.5rem;
   }
 
   .file-grid {

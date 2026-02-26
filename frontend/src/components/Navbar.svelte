@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { user, logout, fetchUserInfo } from "../stores/auth";
-  import { onMount, onDestroy, createEventDispatcher } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import NotificationsPanel from "./NotificationsPanel.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import AboutModal from "./AboutModal.svelte";
@@ -19,7 +19,7 @@
   import { toastStore } from '../stores/toast';
 
   // Import gallery store for modern state management
-  import { galleryStore, galleryState, selectedCount, allFilesSelected } from '../stores/gallery';
+  import { galleryStore, galleryState } from '../stores/gallery';
 
   // Import settings modal store
   import { settingsModalStore } from '../stores/settingsModalStore';
@@ -27,9 +27,6 @@
   // Import i18n
   import { t } from '../stores/locale';
   import { getFlowerUrl } from '$lib/utils/url';
-
-  // Create event dispatcher for gallery actions
-  const dispatch = createEventDispatcher();
 
   // Gallery state detection based on location
   $: isGalleryPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '';
@@ -187,38 +184,6 @@
     galleryStore.setActiveTab(tab);
   }
 
-  function handleUploadClick() {
-    galleryStore.triggerUpload();
-  }
-
-  function handleCollectionsClick() {
-    galleryStore.triggerCollections();
-  }
-
-  function handleSelectFilesClick() {
-    galleryStore.setSelecting(true);
-  }
-
-  function handleSelectAllFiles() {
-    galleryStore.selectAllFiles();
-  }
-
-  function handleDeleteSelected() {
-    galleryStore.triggerDeleteSelected();
-  }
-
-  function handleCancelSelection() {
-    galleryStore.clearSelection();
-  }
-
-  function handleAddToCollection() {
-    galleryStore.triggerAddToCollection();
-  }
-
-  function handleToggleFilters() {
-    galleryStore.toggleFilters();
-  }
-
   /**
    * Format recording duration for display with consistent width
    */
@@ -329,41 +294,6 @@
           </svg>
           {$t('nav.fileStatus')}
         </button>
-      </div>
-    {/if}
-
-    <!-- Gallery action buttons (after tabs when on gallery page) -->
-    {#if isGalleryPage && $galleryState.activeTab === 'gallery'}
-      <div class="gallery-actions">
-        {#if $galleryState.isSelecting}
-          <button class="nav-btn select-all-btn" on:click={handleSelectAllFiles}>
-            {$allFilesSelected ? $t('nav.deselectAll') : $t('nav.selectAll')}
-          </button>
-          <button class="nav-btn add-to-collection-btn" on:click={handleAddToCollection}>
-            {$t('nav.addToCollection')}
-          </button>
-          <button class="nav-btn delete-selected-btn" on:click={handleDeleteSelected}>
-            {$t('nav.deleteSelected', { count: $selectedCount })}
-          </button>
-          <button class="nav-btn cancel-selection-btn" on:click={handleCancelSelection}>
-            {$t('nav.cancelSelection')}
-          </button>
-        {:else}
-          <button class="nav-btn upload-btn" on:click={handleUploadClick}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-            {$t('nav.addMedia')}
-          </button>
-          <button class="nav-btn collections-btn" on:click={handleCollectionsClick}>
-            {$t('nav.collections')}
-          </button>
-          <button class="nav-btn select-files-btn" on:click={handleSelectFilesClick}>
-            {$t('nav.selectFiles')}
-          </button>
-        {/if}
       </div>
     {/if}
 
@@ -678,22 +608,6 @@
     align-items: center;
   }
 
-  .gallery-actions {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-    flex-wrap: nowrap;
-    flex-shrink: 0;
-    overflow-x: auto;
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE/Edge */
-  }
-
-  .gallery-actions::-webkit-scrollbar {
-    display: none; /* Chrome/Safari */
-  }
-
-
   /* Tab Button Styles */
   .tab-button {
     color: var(--text-color);
@@ -734,108 +648,6 @@
     height: 3px;
     background-color: var(--primary-color, #3b82f6);
     border-radius: 2px;
-  }
-
-  /* Nav Button Styles - Smaller for navbar but same styling */
-  .nav-btn {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 10px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    white-space: nowrap;
-    flex-shrink: 0;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .nav-btn:hover:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
-    transform: scale(1.02); /* Changed from translateY to scale for smoother effect */
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-    text-decoration: none;
-  }
-
-  .nav-btn:active:not(:disabled) {
-    transform: scale(1); /* Reset scale on click */
-  }
-
-  .nav-btn svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* Specific button styles */
-  .collections-btn {
-    background-color: #8b5cf6 !important;
-    box-shadow: 0 2px 4px rgba(139, 92, 246, 0.2);
-  }
-
-  .collections-btn:hover:not(:disabled) {
-    background-color: #7c3aed !important;
-    color: white !important;
-    transform: scale(1.02) !important; /* Changed from translateY to scale */
-    box-shadow: 0 4px 8px rgba(139, 92, 246, 0.25) !important;
-    text-decoration: none !important;
-  }
-
-  .select-files-btn {
-    background-color: #059669 !important;
-    box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
-  }
-
-  .select-files-btn:hover:not(:disabled) {
-    background-color: #047857 !important;
-    color: white !important;
-    transform: scale(1.02) !important; /* Changed from translateY to scale */
-    box-shadow: 0 4px 8px rgba(5, 150, 105, 0.25) !important;
-    text-decoration: none !important;
-  }
-
-  .delete-selected-btn {
-    background-color: #dc2626 !important;
-    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
-  }
-
-  .delete-selected-btn:hover:not(:disabled) {
-    background-color: #991b1b !important;
-    color: white !important;
-    transform: scale(1.02) !important; /* Changed from translateY to scale */
-    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25) !important;
-    text-decoration: none !important;
-  }
-
-  .cancel-selection-btn {
-    background-color: #6b7280 !important;
-    box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
-  }
-
-  .cancel-selection-btn:hover:not(:disabled) {
-    background-color: #4b5563 !important;
-    color: white !important;
-    transform: scale(1.02) !important; /* Changed from translateY to scale */
-    box-shadow: 0 4px 8px rgba(107, 114, 128, 0.25) !important;
-    text-decoration: none !important;
-  }
-
-  .add-to-collection-btn {
-    background-color: #10b981 !important;
-    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
-  }
-
-  .add-to-collection-btn:hover:not(:disabled) {
-    background-color: #047857 !important;
-    color: white !important;
-    transform: scale(1.02) !important; /* Changed from translateY to scale */
-    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25) !important;
-    text-decoration: none !important;
   }
 
   .navbar-brand {
@@ -1238,17 +1050,8 @@
       order: 2;
     }
 
-    .gallery-actions {
-      order: 3;
-      gap: 0.4rem;
-    }
-
     .nav-links {
-      order: 4;
-    }
-
-    .gallery-actions .nav-btn {
-      display: none;
+      order: 3;
     }
 
     .tab-button {
