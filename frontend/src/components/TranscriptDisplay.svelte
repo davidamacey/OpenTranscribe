@@ -980,9 +980,9 @@
                     {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
                       <span
                         class="gender-badge"
-                        title="Predicted gender: {speaker.predicted_gender} ({Math.round((speaker.attribute_confidence?.gender ?? 0) * 100)}%)"
+                        title="AI predicted gender: {speaker.predicted_gender} ({Math.round((speaker.attribute_confidence?.gender ?? 0) * 100)}% confidence)"
                       >
-                        {speaker.predicted_gender === 'male' ? '♂' : '♀'}
+                        {speaker.predicted_gender === 'male' ? '♂ Male' : '♀ Female'}
                       </span>
                     {/if}
                     <div class="speaker-input-wrapper">
@@ -1965,20 +1965,22 @@
   .gender-badge {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: 0.85rem;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 50%;
-    background: var(--surface-color, #e8e8e8);
-    color: var(--text-secondary, #666);
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 0.15rem 0.4rem;
+    border-radius: 999px;
     flex-shrink: 0;
     cursor: default;
+    white-space: nowrap;
+    background: rgba(128, 128, 128, 0.1);
+    color: var(--text-secondary, #777);
+    border: 1px solid rgba(128, 128, 128, 0.25);
   }
 
   :global([data-theme='dark']) .gender-badge {
-    background: var(--surface-color, #3a3a3a);
-    color: var(--text-secondary, #aaa);
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text-secondary, #888);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 
   .speaker-profile-badge {
