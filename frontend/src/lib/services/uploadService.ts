@@ -38,6 +38,9 @@ export interface UploadItem {
   minSpeakers?: number | null;
   maxSpeakers?: number | null;
   numSpeakers?: number | null;
+  // Organization parameters
+  collectionIds?: string[];
+  tagNames?: string[];
 }
 
 // Upload configuration constants
@@ -107,7 +110,9 @@ class UploadService {
       minSpeakers?: number | null;
       maxSpeakers?: number | null;
       numSpeakers?: number | null;
-    }
+    },
+    collectionIds?: string[],
+    tagNames?: string[]
   ): string {
     const id = this.generateId();
     const uploadName = name || this.getSourceName(source);
@@ -124,6 +129,8 @@ class UploadService {
       minSpeakers: speakerParams?.minSpeakers,
       maxSpeakers: speakerParams?.maxSpeakers,
       numSpeakers: speakerParams?.numSpeakers,
+      collectionIds,
+      tagNames,
     };
 
     this.uploads.set(id, upload);
@@ -138,11 +145,11 @@ class UploadService {
     return id;
   }
 
-  addMultipleFiles(files: File[]): string[] {
+  addMultipleFiles(files: File[], collectionIds?: string[], tagNames?: string[]): string[] {
     const uploadIds: string[] = [];
 
     files.forEach((file) => {
-      const id = this.addUpload('file', file);
+      const id = this.addUpload('file', file, undefined, undefined, collectionIds, tagNames);
       uploadIds.push(id);
     });
 
@@ -324,6 +331,8 @@ class UploadService {
       file_size: file.size,
       content_type: file instanceof File ? file.type : 'audio/webm',
       file_hash: fileHash,
+      collection_ids: upload.collectionIds || undefined,
+      tag_names: upload.tagNames || undefined,
     });
 
     const { file_id: fileId, is_duplicate } = prepareResponse.data;
@@ -413,6 +422,8 @@ class UploadService {
       content_type: audioBlob.type || 'audio/opus',
       file_hash: originalFileHash,
       extracted_from_video: extractionMetadata?.videoMetadata || null,
+      collection_ids: upload.collectionIds || undefined,
+      tag_names: upload.tagNames || undefined,
     });
 
     const { file_id: fileId, is_duplicate } = prepareResponse.data;
@@ -467,6 +478,8 @@ class UploadService {
   }
 
   private async processUrl(uploadId: string, url: string): Promise<any> {
+    const upload = this.uploads.get(uploadId)!;
+
     // Create cancel token
     const cancelToken = axios.CancelToken.source();
     this.updateUpload(uploadId, {
@@ -478,6 +491,8 @@ class UploadService {
       '/files/process-url',
       {
         url: url.trim(),
+        collection_ids: upload.collectionIds || undefined,
+        tag_names: upload.tagNames || undefined,
       },
       {
         timeout: UPLOAD_TIMEOUT_MS,

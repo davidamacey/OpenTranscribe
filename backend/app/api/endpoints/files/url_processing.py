@@ -66,6 +66,14 @@ class URLProcessingRequest(BaseModel):
             "(never stored, only used for this request)"
         ),
     )
+    collection_ids: list[str] | None = Field(
+        default=None,
+        description="Collection UUIDs to add the file to after creation",
+    )
+    tag_names: list[str] | None = Field(
+        default=None,
+        description="Tag names to apply to the file after creation",
+    )
 
 
 # Response models for URL processing
@@ -187,12 +195,19 @@ def _validate_youtube_url(url: str) -> tuple[str, MediaDownloadService]:
     return _validate_media_url(url)
 
 
-def _handle_playlist_processing(normalized_url: str, user_id: int) -> PlaylistProcessingResponse:
+def _handle_playlist_processing(
+    normalized_url: str,
+    user_id: int,
+    collection_ids: list[str] | None = None,
+    tag_names: list[str] | None = None,
+) -> PlaylistProcessingResponse:
     """Handle playlist URL processing by dispatching a background task.
 
     Args:
         normalized_url: Normalized YouTube playlist URL.
         user_id: ID of the user requesting processing.
+        collection_ids: Optional collection UUIDs to assign to each video.
+        tag_names: Optional tag names to apply to each video.
 
     Returns:
         PlaylistProcessingResponse with processing status.
@@ -203,7 +218,12 @@ def _handle_playlist_processing(normalized_url: str, user_id: int) -> PlaylistPr
     logger.info(f"Detected playlist URL: {normalized_url}")
 
     try:
-        task_result = process_youtube_playlist_task.delay(url=normalized_url, user_id=user_id)
+        task_result = process_youtube_playlist_task.delay(
+            url=normalized_url,
+            user_id=user_id,
+            collection_ids=collection_ids,
+            tag_names=tag_names,
+        )
         logger.info(
             f"Dispatched YouTube playlist processing task {task_result.id} for user {user_id}"
         )
@@ -427,6 +447,8 @@ def _dispatch_video_task(
     user_id: int,
     media_username: str | None = None,
     media_password: str | None = None,
+    collection_ids: list[str] | None = None,
+    tag_names: list[str] | None = None,
 ) -> None:
     """Dispatch the video processing background task.
 
@@ -435,6 +457,8 @@ def _dispatch_video_task(
         media_file: MediaFile record to process.
         normalized_url: Normalized media URL.
         user_id: User ID.
+        collection_ids: Optional collection UUIDs to assign after processing.
+        tag_names: Optional tag names to apply after processing.
 
     Raises:
         HTTPException: If task dispatch fails.
@@ -446,6 +470,8 @@ def _dispatch_video_task(
             file_uuid=str(media_file.uuid),
             media_username=media_username,
             media_password=media_password,
+            collection_ids=collection_ids,
+            tag_names=tag_names,
         )
         logger.info(
             f"Dispatched media processing task {task_result.id} for MediaFile {media_file.id}"
@@ -557,7 +583,12 @@ async def process_media_url(
 
         # Handle playlist processing (early return) - currently YouTube only
         if media_service.is_playlist_url(normalized_url):
-            return _handle_playlist_processing(normalized_url, int(current_user.id))
+            return _handle_playlist_processing(
+                normalized_url,
+                int(current_user.id),
+                collection_ids=request_data.collection_ids,
+                tag_names=request_data.tag_names,
+            )
 
         # Extract video info
         video_id, video_title, video_info = _extract_video_info(
@@ -575,6 +606,24 @@ async def process_media_url(
             db, int(current_user.id), normalized_url, video_id, video_title, video_info
         )
 
+        # Assign to collections and apply tags immediately for single videos
+        if request_data.collection_ids or request_data.tag_names:
+            from app.api.endpoints.files.prepare_upload import add_file_to_collections
+            from app.api.endpoints.files.prepare_upload import add_tags_to_file
+
+            if request_data.collection_ids:
+                from uuid import UUID as _UUID
+
+                add_file_to_collections(
+                    db,
+                    int(media_file.id),
+                    int(current_user.id),
+                    [_UUID(c) for c in request_data.collection_ids],
+                )
+            if request_data.tag_names:
+                add_tags_to_file(db, int(media_file.id), request_data.tag_names)
+            db.commit()
+
         # Dispatch background task (pass credentials only for this processing request)
         _dispatch_video_task(
             db,
@@ -583,6 +632,8 @@ async def process_media_url(
             int(current_user.id),
             media_username=request_data.media_username,
             media_password=request_data.media_password,
+            collection_ids=request_data.collection_ids,
+            tag_names=request_data.tag_names,
         )
 
         # Send WebSocket notification

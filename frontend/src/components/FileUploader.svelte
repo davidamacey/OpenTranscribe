@@ -111,10 +111,44 @@
   let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
   let userHasManuallyToggledSettings = false; // Track if user manually expanded/collapsed
 
+  // Organization state (collections and tags for upload)
+  let showOrganizeSection = false;
+  let selectedCollections: Array<{uuid: string; name: string}> = [];
+  let availableCollections: Array<{uuid: string; name: string; media_count?: number}> = [];
+  let collectionSearchQuery = '';
+  let showCollectionDropdown = false;
+  let newCollectionName = '';
+  let creatingCollection = false;
+
+  let selectedTags: string[] = [];
+  let availableTags: Array<{uuid: string; name: string; usage_count: number}> = [];
+  let tagInput = '';
+  let showTagDropdown = false;
+
   // Reactive validation for speaker settings - ensure values are >= 1 if set
   $: if (minSpeakers !== null && minSpeakers < 1) minSpeakers = 1;
   $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
   $: if (numSpeakers !== null && numSpeakers < 1) numSpeakers = 1;
+
+  // Reactive: filtered collections based on search
+  $: filteredCollections = availableCollections.filter(c =>
+    !selectedCollections.some(s => s.uuid === c.uuid) &&
+    c.name.toLowerCase().includes(collectionSearchQuery.toLowerCase())
+  );
+
+  // Reactive: filtered tags (exclude already selected, match input)
+  $: filteredTags = availableTags.filter(t =>
+    !selectedTags.includes(t.name) &&
+    t.name.toLowerCase().includes(tagInput.toLowerCase())
+  );
+
+  // Reactive: suggested tags (top 5 most used, not already selected)
+  $: suggestedTags = availableTags
+    .filter(t => t.usage_count > 0 && !selectedTags.includes(t.name))
+    .slice(0, 5);
+
+  // Count badge for organize section
+  $: organizeCount = selectedCollections.length + selectedTags.length;
 
   // Cleanup references for onDestroy
   let dragDropCleanup: (() => void) | null = null;
@@ -172,6 +206,20 @@
           common_languages: ['auto', 'en'],
           languages_with_alignment: ['en']
         };
+      }
+    })();
+
+    // Load collections and tags for organization section
+    (async () => {
+      try {
+        const [collectionsRes, tagsRes] = await Promise.all([
+          axiosInstance.get('/collections'),
+          axiosInstance.get('/tags'),
+        ]);
+        availableCollections = collectionsRes.data;
+        availableTags = tagsRes.data;
+      } catch (err) {
+        console.error('Failed to load collections/tags:', err);
       }
     })();
 
@@ -372,6 +420,84 @@
     applyTranscriptionPreferences();
   }
 
+  // Organization helpers
+  function toggleOrganizeSection() {
+    showOrganizeSection = !showOrganizeSection;
+  }
+
+  function selectCollection(collection: {uuid: string; name: string}) {
+    if (!selectedCollections.some(c => c.uuid === collection.uuid)) {
+      selectedCollections = [...selectedCollections, collection];
+    }
+    collectionSearchQuery = '';
+    showCollectionDropdown = false;
+  }
+
+  function removeCollection(uuid: string) {
+    selectedCollections = selectedCollections.filter(c => c.uuid !== uuid);
+  }
+
+  async function createAndSelectCollection() {
+    const name = (newCollectionName || collectionSearchQuery).trim();
+    if (!name) return;
+
+    creatingCollection = true;
+    try {
+      const response = await axiosInstance.post('/collections', { name });
+      const newCollection = response.data;
+      availableCollections = [...availableCollections, { uuid: newCollection.uuid, name: newCollection.name }];
+      selectCollection({ uuid: newCollection.uuid, name: newCollection.name });
+      newCollectionName = '';
+      collectionSearchQuery = '';
+      toastStore.success($t('uploader.collectionCreated'));
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        toastStore.warning($t('uploader.collectionAlreadyExists'));
+      } else {
+        toastStore.error($t('uploader.createCollectionFailed'));
+      }
+    } finally {
+      creatingCollection = false;
+    }
+  }
+
+  function addTag(name: string) {
+    const trimmed = name.trim().slice(0, 50);
+    if (!trimmed || selectedTags.includes(trimmed)) return;
+    selectedTags = [...selectedTags, trimmed];
+    tagInput = '';
+    showTagDropdown = false;
+  }
+
+  function removeTag(name: string) {
+    selectedTags = selectedTags.filter(t => t !== name);
+  }
+
+  function handleTagKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (tagInput.trim()) {
+        addTag(tagInput);
+      }
+    }
+  }
+
+  function getOrganizeParams(): { collectionIds: string[] | undefined; tagNames: string[] | undefined } {
+    return {
+      collectionIds: selectedCollections.length > 0 ? selectedCollections.map(c => c.uuid) : undefined,
+      tagNames: selectedTags.length > 0 ? [...selectedTags] : undefined,
+    };
+  }
+
+  function resetOrganizeState() {
+    selectedCollections = [];
+    selectedTags = [];
+    showOrganizeSection = false;
+    collectionSearchQuery = '';
+    tagInput = '';
+    newCollectionName = '';
+  }
+
   // Start recording using global recording manager
   async function startRecording() {
     try {
@@ -422,10 +548,12 @@
     try {
       // Use background upload service for recording
       const filename = `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
-      const uploadId = uploadsStore.addRecording(recordedBlob, filename);
+      const { collectionIds, tagNames } = getOrganizeParams();
+      const uploadId = uploadsStore.addRecording(recordedBlob, filename, collectionIds, tagNames);
 
       // Clear recording state when starting upload
       recordingManager.clearRecording();
+      resetOrganizeState();
 
       // Clear any UI state
       file = null;
@@ -544,9 +672,11 @@
   function handleBulkExtractionConfirm() {
     showBulkAudioExtractionModal = false;
 
+    const { collectionIds, tagNames } = getOrganizeParams();
+
     // Add regular files to upload queue
     if (bulkRegularFiles.length > 0) {
-      uploadsStore.addFiles(bulkRegularFiles);
+      uploadsStore.addFiles(bulkRegularFiles, collectionIds, tagNames);
     }
 
     // Start extracting audio from large videos
@@ -574,10 +704,12 @@
   function handleBulkUploadAllFull() {
     showBulkAudioExtractionModal = false;
 
+    const { collectionIds, tagNames } = getOrganizeParams();
+
     // Upload all files as-is (no extraction)
     const allFiles = [...bulkVideosToExtract, ...bulkRegularFiles];
     if (allFiles.length > 0) {
-      uploadsStore.addFiles(allFiles);
+      uploadsStore.addFiles(allFiles, collectionIds, tagNames);
     }
 
     // Close upload modal and show success
@@ -863,14 +995,17 @@
       }
 
       // Add regular files to upload queue immediately
+      const { collectionIds: bCollIds, tagNames: bTagNames } = getOrganizeParams();
       if (filesToUpload.length > 0) {
-        uploadsStore.addFiles(filesToUpload);
+        uploadsStore.addFiles(filesToUpload, bCollIds, bTagNames);
       }
 
       // Auto-extract if show_modal is disabled
       if (videosToExtract.length > 0) {
         startBulkExtraction(videosToExtract);
       }
+
+      resetOrganizeState();
 
       // Close modal and show success message
       dispatch('uploadComplete', { multiple: true, count: validFiles.length });
@@ -940,7 +1075,8 @@
         numSpeakers: effectiveSettings.numSpeakers,
       };
 
-      const uploadId = uploadsStore.addFile(file, speakerParams);
+      const { collectionIds, tagNames } = getOrganizeParams();
+      const uploadId = uploadsStore.addFile(file, speakerParams, collectionIds, tagNames);
 
       // Clear form and close modal
       file = null;
@@ -949,6 +1085,7 @@
       numSpeakers = null;
       showAdvancedSettings = false;
       userHasManuallyToggledSettings = false; // Reset for next upload
+      resetOrganizeState();
       if (fileInput) fileInput.value = '';
       dispatch('uploadComplete', { uploadId, isFile: true });
 
@@ -1424,6 +1561,11 @@
         payload.media_password = mediaPassword || undefined;
       }
 
+      // Include collection/tag organization params
+      const { collectionIds, tagNames } = getOrganizeParams();
+      if (collectionIds) payload.collection_ids = collectionIds;
+      if (tagNames) payload.tag_names = tagNames;
+
       // Call the API endpoint directly for immediate processing
       const response = await axiosInstance.post('/files/process-url', payload);
 
@@ -1434,6 +1576,7 @@
       mediaUrl = '';
       mediaUsername = '';
       mediaPassword = '';
+      resetOrganizeState();
 
       // Check if this is a playlist or single video response
       if (responseData.type === 'playlist') {
@@ -1738,6 +1881,134 @@
           <p class="file-name">{file.name}</p>
           <p class="file-size">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
         </div>
+      </div>
+
+      <!-- Organize Section (Collections & Tags) -->
+      <div class="organize-section">
+        <button
+          type="button"
+          class="organize-toggle"
+          on:click={toggleOrganizeSection}
+          title={$t('uploader.organizeTooltip')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          {$t('uploader.organize')}
+          {#if organizeCount > 0}
+            <span class="organize-count">{organizeCount}</span>
+          {/if}
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron {showOrganizeSection ? 'open' : ''}">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        {#if showOrganizeSection}
+          <div class="organize-content">
+            <p class="organize-hint">{$t('uploader.organizeHint')}</p>
+
+            <!-- Collections -->
+            <div class="organize-group">
+              <span class="organize-label">{$t('uploader.collections')}</span>
+
+              {#if selectedCollections.length > 0}
+                <div class="selected-chips">
+                  {#each selectedCollections as collection}
+                    <span class="chip">
+                      {collection.name}
+                      <button type="button" class="chip-remove" on:click={() => removeCollection(collection.uuid)} title={$t('uploader.removeItem')}>×</button>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+
+              <div class="dropdown-container">
+                <input
+                  type="text"
+                  class="organize-input"
+                  placeholder={$t('uploader.selectCollection')}
+                  bind:value={collectionSearchQuery}
+                  on:focus={() => showCollectionDropdown = true}
+                  on:blur={() => setTimeout(() => showCollectionDropdown = false, 200)}
+                />
+                {#if showCollectionDropdown && (filteredCollections.length > 0 || collectionSearchQuery.trim())}
+                  <div class="dropdown-list">
+                    {#each filteredCollections as collection}
+                      <button type="button" class="dropdown-item" on:mousedown|preventDefault={() => selectCollection(collection)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        {collection.name}
+                      </button>
+                    {/each}
+                    {#if collectionSearchQuery.trim() && !availableCollections.some(c => c.name.toLowerCase() === collectionSearchQuery.trim().toLowerCase())}
+                      <button type="button" class="dropdown-item create-new" on:mousedown|preventDefault={() => createAndSelectCollection()}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        {$t('uploader.createNewCollection')}: "{collectionSearchQuery.trim()}"
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            </div>
+
+            <!-- Tags -->
+            <div class="organize-group">
+              <span class="organize-label">{$t('uploader.tags')}</span>
+
+              {#if suggestedTags.length > 0 && selectedTags.length === 0}
+                <div class="suggested-tags">
+                  <span class="suggested-label">{$t('uploader.suggestedTags')}:</span>
+                  {#each suggestedTags as tag}
+                    <button type="button" class="suggested-tag" on:click={() => addTag(tag.name)}>
+                      {tag.name}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if selectedTags.length > 0}
+                <div class="selected-chips">
+                  {#each selectedTags as tag}
+                    <span class="chip tag-chip">
+                      {tag}
+                      <button type="button" class="chip-remove" on:click={() => removeTag(tag)} title={$t('uploader.removeItem')}>×</button>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+
+              <div class="dropdown-container">
+                <input
+                  type="text"
+                  class="organize-input"
+                  placeholder={$t('uploader.addTagPlaceholder')}
+                  bind:value={tagInput}
+                  on:keydown={handleTagKeydown}
+                  on:focus={() => showTagDropdown = true}
+                  on:blur={() => setTimeout(() => showTagDropdown = false, 200)}
+                />
+                {#if showTagDropdown && tagInput.trim() && filteredTags.length > 0}
+                  <div class="dropdown-list">
+                    {#each filteredTags.slice(0, 8) as tag}
+                      <button type="button" class="dropdown-item" on:mousedown|preventDefault={() => addTag(tag.name)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                          <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                        </svg>
+                        {tag.name}
+                        <span class="tag-count">({tag.usage_count})</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          </div>
+        {/if}
       </div>
 
       <!-- Advanced Settings Panel -->
@@ -2489,6 +2760,267 @@
     color: var(--text-light);
     font-size: 0.8rem;
     margin: 0.25rem 0 0;
+  }
+
+  /* Organize Section */
+  .organize-section {
+    margin-top: 0.75rem;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .organize-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary, #64748b);
+    transition: background 0.15s ease;
+  }
+
+  .organize-toggle:hover {
+    background: var(--bg-hover, rgba(0, 0, 0, 0.03));
+  }
+
+  :global(.dark) .organize-toggle:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .organize-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--primary-color, #3b82f6);
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .organize-content {
+    padding: 0 0.75rem 0.75rem;
+  }
+
+  .organize-hint {
+    font-size: 0.75rem;
+    color: var(--text-tertiary, #94a3b8);
+    margin: 0 0 0.625rem 0;
+  }
+
+  .organize-group {
+    margin-bottom: 0.625rem;
+  }
+
+  .organize-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .organize-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary, #64748b);
+    margin-bottom: 0.375rem;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    cursor: default;
+  }
+
+  .selected-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-bottom: 0.375rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 999px;
+    background: var(--primary-bg, #eff6ff);
+    color: var(--primary-color, #3b82f6);
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid var(--primary-border, #bfdbfe);
+  }
+
+  :global(.dark) .chip {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  .tag-chip {
+    background: var(--tag-bg, #f0fdf4);
+    color: var(--tag-color, #16a34a);
+    border-color: var(--tag-border, #bbf7d0);
+  }
+
+  :global(.dark) .tag-chip {
+    background: rgba(22, 163, 74, 0.15);
+    border-color: rgba(22, 163, 74, 0.3);
+  }
+
+  .chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    border-radius: 50%;
+    font-size: 0.875rem;
+    line-height: 1;
+    opacity: 0.7;
+  }
+
+  .chip-remove:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  :global(.dark) .chip-remove:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .dropdown-container {
+    position: relative;
+  }
+
+  .organize-input {
+    width: 100%;
+    padding: 0.4375rem 0.625rem;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    background: var(--input-bg, white);
+    color: var(--text-primary, #1e293b);
+    outline: none;
+    transition: border-color 0.15s ease;
+    box-sizing: border-box;
+  }
+
+  .organize-input:focus {
+    border-color: var(--primary-color, #3b82f6);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+
+  :global(.dark) .organize-input {
+    background: var(--dark-input-bg, #1e293b);
+    border-color: var(--dark-border, #334155);
+    color: var(--dark-text, #e2e8f0);
+  }
+
+  .dropdown-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-primary, white);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    margin-top: 2px;
+  }
+
+  :global(.dark) .dropdown-list {
+    background: var(--dark-bg, #1e293b);
+    border-color: var(--dark-border, #334155);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.625rem;
+    border: none;
+    background: transparent;
+    color: var(--text-primary, #1e293b);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .dropdown-item:hover {
+    background: var(--bg-hover, #f1f5f9);
+  }
+
+  :global(.dark) .dropdown-item {
+    color: var(--dark-text, #e2e8f0);
+  }
+
+  :global(.dark) .dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .dropdown-item.create-new {
+    color: var(--primary-color, #3b82f6);
+    font-weight: 500;
+    border-top: 1px solid var(--border-color, #e2e8f0);
+  }
+
+  :global(.dark) .dropdown-item.create-new {
+    border-top-color: var(--dark-border, #334155);
+  }
+
+  .tag-count {
+    margin-left: auto;
+    font-size: 0.6875rem;
+    color: var(--text-tertiary, #94a3b8);
+  }
+
+  .suggested-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0.375rem;
+  }
+
+  .suggested-label {
+    font-size: 0.6875rem;
+    color: var(--text-tertiary, #94a3b8);
+  }
+
+  .suggested-tag {
+    padding: 0.1875rem 0.5rem;
+    border: 1px dashed var(--border-color, #cbd5e1);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary, #64748b);
+    font-size: 0.6875rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .suggested-tag:hover {
+    border-color: var(--primary-color, #3b82f6);
+    color: var(--primary-color, #3b82f6);
+    background: var(--primary-bg, #eff6ff);
+  }
+
+  :global(.dark) .suggested-tag:hover {
+    background: rgba(59, 130, 246, 0.1);
   }
 
   /* Advanced Settings Panel */

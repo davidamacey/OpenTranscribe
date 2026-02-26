@@ -117,6 +117,8 @@ def process_youtube_url_task(
     file_uuid: str,
     media_username: str | None = None,
     media_password: str | None = None,
+    collection_ids: list[str] | None = None,
+    tag_names: list[str] | None = None,
 ) -> YouTubeProcessingResult:
     """Background task to process YouTube URL by downloading and creating media file.
 
@@ -226,6 +228,21 @@ def process_youtube_url_task(
                 # Update status to pending for transcription
                 updated_media_file.status = FileStatus.PENDING  # type: ignore[assignment]
                 db.commit()
+
+                # Apply collections and tags if specified
+                if collection_ids or tag_names:
+                    from app.api.endpoints.files.prepare_upload import add_file_to_collections
+                    from app.api.endpoints.files.prepare_upload import add_tags_to_file
+
+                    if collection_ids:
+                        from uuid import UUID as _UUID
+
+                        add_file_to_collections(
+                            db, file_id, user_id, [_UUID(c) for c in collection_ids]
+                        )
+                    if tag_names:
+                        add_tags_to_file(db, file_id, tag_names)
+                    db.commit()
 
                 # Send completion notification
                 send_youtube_notification_via_redis(
@@ -498,7 +515,14 @@ def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None
         logger.error(f"Failed to send file_created notification for video {media_file.id}: {e}")
 
 
-def _dispatch_video_task(media_file: MediaFile, user_id: int, db, countdown: int = 0) -> bool:
+def _dispatch_video_task(
+    media_file: MediaFile,
+    user_id: int,
+    db,
+    countdown: int = 0,
+    collection_ids: list[str] | None = None,
+    tag_names: list[str] | None = None,
+) -> bool:
     """Dispatch processing task for a single video.
 
     Args:
@@ -506,6 +530,8 @@ def _dispatch_video_task(media_file: MediaFile, user_id: int, db, countdown: int
         user_id: User ID who initiated the request.
         db: Database session.
         countdown: Delay in seconds before task starts (default: 0).
+        collection_ids: Optional collection UUIDs to assign after processing.
+        tag_names: Optional tag names to apply after processing.
 
     Returns:
         True if task was dispatched successfully, False otherwise.
@@ -516,6 +542,7 @@ def _dispatch_video_task(media_file: MediaFile, user_id: int, db, countdown: int
         # Use apply_async to support countdown parameter
         process_youtube_url_task.apply_async(
             args=[video_url, user_id, str(media_file.uuid)],
+            kwargs={"collection_ids": collection_ids, "tag_names": tag_names},
             countdown=countdown,
         )
 
@@ -532,7 +559,13 @@ def _dispatch_video_task(media_file: MediaFile, user_id: int, db, countdown: int
 
 
 @celery_app.task(name="process_youtube_playlist_task", bind=True)
-def process_youtube_playlist_task(self, url: str, user_id: int) -> YouTubePlaylistProcessingResult:
+def process_youtube_playlist_task(
+    self,
+    url: str,
+    user_id: int,
+    collection_ids: list[str] | None = None,
+    tag_names: list[str] | None = None,
+) -> YouTubePlaylistProcessingResult:
     """Background task to process YouTube playlist by extracting videos and dispatching individual tasks.
 
     This task handles asynchronous YouTube playlist processing:
@@ -545,6 +578,8 @@ def process_youtube_playlist_task(self, url: str, user_id: int) -> YouTubePlayli
         self: Celery task instance (automatically passed when bind=True).
         url: YouTube playlist URL to process.
         user_id: ID of the user who initiated the request.
+        collection_ids: Optional collection UUIDs to assign to each video.
+        tag_names: Optional tag names to apply to each video.
 
     Returns:
         Dict: Processing result containing status, message, and video counts.
@@ -558,19 +593,26 @@ def process_youtube_playlist_task(self, url: str, user_id: int) -> YouTubePlayli
     _send_playlist_notification(user_id, "processing", "Extracting playlist information...", 5)
 
     try:
-        return _process_playlist_with_db(url, user_id)
+        return _process_playlist_with_db(url, user_id, collection_ids, tag_names)
     except Exception as e:
         logger.error(f"Unexpected error in YouTube playlist processing task: {e}")
         _send_playlist_notification(user_id, "error", f"Unexpected error: {str(e)}", 0)
         return _create_playlist_error_result(str(e))
 
 
-def _process_playlist_with_db(url: str, user_id: int) -> YouTubePlaylistProcessingResult:
+def _process_playlist_with_db(
+    url: str,
+    user_id: int,
+    collection_ids: list[str] | None = None,
+    tag_names: list[str] | None = None,
+) -> YouTubePlaylistProcessingResult:
     """Process playlist within a database session.
 
     Args:
         url: YouTube playlist URL.
         user_id: User ID.
+        collection_ids: Optional collection UUIDs to assign to each video.
+        tag_names: Optional tag names to apply to each video.
 
     Returns:
         YouTubePlaylistProcessingResult with processing outcome.
@@ -589,7 +631,7 @@ def _process_playlist_with_db(url: str, user_id: int) -> YouTubePlaylistProcessi
             result = MediaDownloadService().process_youtube_playlist_sync(
                 url=url, db=db, user=user, progress_callback=progress_callback
             )
-            return _handle_playlist_result(result, user_id, db)
+            return _handle_playlist_result(result, user_id, db, collection_ids, tag_names)
         except Exception as e:
             logger.error(f"Error processing YouTube playlist {url}: {e}")
             _send_playlist_notification(
@@ -598,13 +640,21 @@ def _process_playlist_with_db(url: str, user_id: int) -> YouTubePlaylistProcessi
             return _create_playlist_error_result(str(e))
 
 
-def _handle_playlist_result(result: dict, user_id: int, db) -> YouTubePlaylistProcessingResult:
+def _handle_playlist_result(
+    result: dict,
+    user_id: int,
+    db,
+    collection_ids: list[str] | None = None,
+    tag_names: list[str] | None = None,
+) -> YouTubePlaylistProcessingResult:
     """Handle successful playlist extraction result.
 
     Args:
         result: Result dict from YouTubeService.process_youtube_playlist_sync.
         user_id: User ID.
         db: Database session.
+        collection_ids: Optional collection UUIDs to assign to each video.
+        tag_names: Optional tag names to apply to each video.
 
     Returns:
         YouTubePlaylistProcessingResult with success outcome.
@@ -621,6 +671,23 @@ def _handle_playlist_result(result: dict, user_id: int, db) -> YouTubePlaylistPr
         f"{skipped_count} skipped"
     )
 
+    # Apply collections and tags to each playlist video
+    if collection_ids or tag_names:
+        from app.api.endpoints.files.prepare_upload import add_file_to_collections
+        from app.api.endpoints.files.prepare_upload import add_tags_to_file
+
+        if collection_ids:
+            from uuid import UUID as _UUID
+
+            parsed_ids = [_UUID(c) for c in collection_ids]
+
+        for media_file in created_media_files:
+            if collection_ids:
+                add_file_to_collections(db, int(media_file.id), user_id, parsed_ids)
+            if tag_names:
+                add_tags_to_file(db, int(media_file.id), tag_names)
+        db.commit()
+
     # Send file_created notifications for each video
     for media_file in created_media_files:
         _send_file_created_notification(user_id, media_file)
@@ -635,7 +702,14 @@ def _handle_playlist_result(result: dict, user_id: int, db) -> YouTubePlaylistPr
     for idx, media_file in enumerate(created_media_files):
         countdown = delays[idx]
 
-        if _dispatch_video_task(media_file, user_id, db, countdown=countdown):
+        if _dispatch_video_task(
+            media_file,
+            user_id,
+            db,
+            countdown=countdown,
+            collection_ids=collection_ids,
+            tag_names=tag_names,
+        ):
             dispatched_count += 1
             logger.info(
                 f"Video {idx + 1}/{len(created_media_files)}: "
