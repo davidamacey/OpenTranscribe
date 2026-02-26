@@ -749,6 +749,7 @@
   "prompts.createPrompt": "Créer un Prompt",
   "prompts.createPromptBtn": "Créer le Prompt",
   "prompts.currentlyActive": "Actuellement Actif",
+  "prompts.usedByCollections": "Utilise par",
   "prompts.customPrompts": "Vos Prompts Personnalisés",
   "prompts.delete": "Supprimer",
   "prompts.deleteConfirmMessage": "Êtes-vous sûr de vouloir supprimer le prompt \"{{name}}\" ? Cette action ne peut pas être annulée.",

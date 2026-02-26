@@ -749,6 +749,7 @@
   "prompts.createPrompt": "创建提示词",
   "prompts.createPromptBtn": "创建提示词",
   "prompts.currentlyActive": "当前激活",
+  "prompts.usedByCollections": "使用此提示词的集合",
   "prompts.customPrompts": "您的自定义提示词",
   "prompts.delete": "删除",
   "prompts.deleteConfirmMessage": "您确定要删除提示词「{{name}}」吗? 此操作无法撤消。",

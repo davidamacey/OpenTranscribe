@@ -749,6 +749,7 @@
   "prompts.createPrompt": "Prompt Erstellen",
   "prompts.createPromptBtn": "Prompt Erstellen",
   "prompts.currentlyActive": "Derzeit Aktiv",
+  "prompts.usedByCollections": "Verwendet von",
   "prompts.customPrompts": "Ihre benutzerdefinierten Prompts",
   "prompts.delete": "Löschen",
   "prompts.deleteConfirmMessage": "Sind Sie sicher, dass Sie den Prompt \"{{name}}\" löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",

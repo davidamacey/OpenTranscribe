@@ -749,6 +749,7 @@
   "prompts.createPrompt": "プロンプトを作成",
   "prompts.createPromptBtn": "プロンプトを作成",
   "prompts.currentlyActive": "現在アクティブ",
+  "prompts.usedByCollections": "使用中のコレクション",
   "prompts.customPrompts": "カスタムプロンプト",
   "prompts.delete": "削除",
   "prompts.deleteConfirmMessage": "プロンプト「{{name}}」を削除してもよろしいですか？この操作は元に戻せません。",

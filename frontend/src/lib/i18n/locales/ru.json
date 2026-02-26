@@ -375,6 +375,7 @@
   "prompts.noCustomPromptsDesc": "Создайте свой первый пользовательский промпт для персонализации ИИ-суммаризации.",
   "prompts.createFirstPrompt": "Создать первый промпт",
   "prompts.currentlyActive": "Активен сейчас",
+  "prompts.usedByCollections": "Используется в",
   "prompts.activate": "Активировать",
   "prompts.makeActive": "Сделать этот промпт активным",
   "prompts.viewPrompt": "Посмотреть текст промпта",

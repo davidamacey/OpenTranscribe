@@ -375,6 +375,7 @@
   "prompts.noCustomPromptsDesc": "Create your first custom prompt to personalize your AI summarization experience.",
   "prompts.createFirstPrompt": "Create First Prompt",
   "prompts.currentlyActive": "Currently Active",
+  "prompts.usedByCollections": "Used by",
   "prompts.activate": "Activate",
   "prompts.makeActive": "Make this prompt active",
   "prompts.viewPrompt": "View prompt text",
