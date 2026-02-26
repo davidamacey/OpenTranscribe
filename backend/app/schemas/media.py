@@ -88,6 +88,8 @@ class PrepareUploadRequest(BaseModel):
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization (overrides min/max)
+        collection_ids: Optional collection UUIDs to add the file to after creation
+        tag_names: Optional tag names to apply to the file after creation
     """
 
     filename: str = Field(..., description="Name of the file to be uploaded")
@@ -107,6 +109,12 @@ class PrepareUploadRequest(BaseModel):
     )
     num_speakers: Optional[int] = Field(
         None, description="Fixed number of speakers for diarization (overrides min/max when set)"
+    )
+    collection_ids: Optional[list[UUID]] = Field(
+        None, description="Collection UUIDs to add the file to after creation"
+    )
+    tag_names: Optional[list[str]] = Field(
+        None, description="Tag names to apply to the file after creation"
     )
 
     @field_validator("min_speakers", "max_speakers", "num_speakers")

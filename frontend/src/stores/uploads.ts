@@ -87,21 +87,30 @@ function createUploadStore() {
         minSpeakers?: number | null;
         maxSpeakers?: number | null;
         numSpeakers?: number | null;
-      }
+      },
+      collectionIds?: string[],
+      tagNames?: string[]
     ) {
-      return uploadService.addUpload('file', file, undefined, speakerParams);
+      return uploadService.addUpload(
+        'file',
+        file,
+        undefined,
+        speakerParams,
+        collectionIds,
+        tagNames
+      );
     },
 
-    addFiles(files: File[]) {
-      return uploadService.addMultipleFiles(files);
+    addFiles(files: File[], collectionIds?: string[], tagNames?: string[]) {
+      return uploadService.addMultipleFiles(files, collectionIds, tagNames);
     },
 
-    addUrl(url: string) {
-      return uploadService.addUpload('url', url);
+    addUrl(url: string, collectionIds?: string[], tagNames?: string[]) {
+      return uploadService.addUpload('url', url, undefined, undefined, collectionIds, tagNames);
     },
 
-    addRecording(blob: Blob, name?: string) {
-      return uploadService.addUpload('recording', blob, name);
+    addRecording(blob: Blob, name?: string, collectionIds?: string[], tagNames?: string[]) {
+      return uploadService.addUpload('recording', blob, name, undefined, collectionIds, tagNames);
     },
 
     addExtractedAudio(
