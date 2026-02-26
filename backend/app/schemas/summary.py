@@ -162,6 +162,7 @@ class SpeakerIdentificationResponse(BaseModel):
 
 class SummaryTaskRequest(BaseModel):
     force_regenerate: bool = False
+    prompt_uuid: Optional[str] = None
 
 
 class SummaryTaskStatus(BaseModel):

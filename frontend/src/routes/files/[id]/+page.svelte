@@ -2825,6 +2825,27 @@
         summaryGenerating = false;
       }
     }}
+    on:regenerateWithPrompt={async (event) => {
+      showSummaryModal = false;
+      summaryGenerating = true;
+
+      if (file) {
+        file.summary_data = null;
+        file.summary_opensearch_id = null;
+        file = { ...file };
+      }
+
+      try {
+        await axiosInstance.post(`/files/${file.uuid}/summarize`, {
+          force_regenerate: true,
+          prompt_uuid: event.detail.promptUuid
+        });
+      } catch (error) {
+        console.error('Failed to start regeneration with prompt:', error);
+        toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
+        summaryGenerating = false;
+      }
+    }}
   />
 {/if}
 

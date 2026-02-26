@@ -340,6 +340,12 @@ class Collection(Base):
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     is_public = Column(Boolean, default=False)
+    default_summary_prompt_id = Column(
+        Integer,
+        ForeignKey("summary_prompt.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -351,6 +357,7 @@ class Collection(Base):
     collection_members = relationship(
         "CollectionMember", back_populates="collection", cascade="all, delete-orphan"
     )
+    default_summary_prompt = relationship("SummaryPrompt", foreign_keys=[default_summary_prompt_id])
 
 
 class CollectionMember(Base):

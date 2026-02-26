@@ -547,19 +547,22 @@ class CollectionBase(BaseModel):
 
 
 class CollectionCreate(CollectionBase):
-    pass
+    default_prompt_id: Optional[UUID] = None
 
 
 class CollectionUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_public: Optional[bool] = None
+    default_prompt_id: Optional[UUID] = None
 
 
 class Collection(CollectionBase, UUIDBaseSchema):
     """Collection with UUID as public identifier"""
 
     user_id: UUID
+    default_prompt_id: Optional[UUID] = None
+    default_prompt_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

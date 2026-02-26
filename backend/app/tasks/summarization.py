@@ -399,6 +399,7 @@ def _generate_llm_summary(
     speaker_stats: dict[str, Any],
     task_id: str,
     db: Session,
+    prompt_uuid: str | None = None,
 ) -> dict[str, Any] | None:
     """Generate LLM summary and return summary data."""
     start_time = time.time()
@@ -441,6 +442,7 @@ def _generate_llm_summary(
             speaker_data=speaker_stats,
             user_id=int(media_file.user_id),
             output_language=output_language,
+            prompt_uuid=prompt_uuid,
         )
     except Exception as e:
         _handle_llm_error(e, media_file, file_id, full_transcript, llm_provider, llm_model, db)
@@ -498,6 +500,7 @@ def summarize_transcript_task(
     self,
     file_uuid: str,
     force_regenerate: bool = False,
+    prompt_uuid: str | None = None,
 ):
     """
     Generate a comprehensive summary of a transcript using LLM with structured BLUF format
@@ -565,7 +568,7 @@ def summarize_transcript_task(
 
         start_time = time.time()
         summary_data = _generate_llm_summary(
-            media_file, file_id, full_transcript, speaker_stats, task_id, db
+            media_file, file_id, full_transcript, speaker_stats, task_id, db, prompt_uuid
         )
 
         if summary_data is None:

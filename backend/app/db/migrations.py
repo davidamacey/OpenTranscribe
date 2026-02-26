@@ -118,8 +118,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'user' AND column_name = 'keycloak_refresh_token')"
     )
+    has_collection_default_prompt = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'collection' AND column_name = 'default_summary_prompt_id')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v180: default_summary_prompt_id column on collection table
+    if has_collection_default_prompt:
+        return "v180_add_collection_default_prompt"
     # v170: keycloak_refresh_token column for federated logout
     if has_keycloak_refresh_token:
         return "v170_add_keycloak_refresh_token"
