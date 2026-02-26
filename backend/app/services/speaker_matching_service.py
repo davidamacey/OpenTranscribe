@@ -563,29 +563,8 @@ class SpeakerMatchingService:
 
         self.db.flush()
 
-        # Sync profile assignment to OpenSearch immediately
+        # Update profile embedding and propagate assignment (DB-only operations, no OS doc needed)
         if match["auto_accept"] and match.get("profile_id"):
-            from app.services.opensearch_service import update_speaker_profile
-
-            # Get profile UUID
-            profile_uuid = None
-            if speaker.profile_id:
-                profile = (
-                    self.db.query(SpeakerProfile)
-                    .filter(SpeakerProfile.id == speaker.profile_id)
-                    .first()
-                )
-                if profile:
-                    profile_uuid = str(profile.uuid)
-
-            update_speaker_profile(
-                speaker_uuid=str(speaker.uuid),
-                profile_id=int(speaker.profile_id) if speaker.profile_id else None,
-                profile_uuid=profile_uuid,
-                verified=bool(speaker.verified),
-            )
-
-            # Update the profile embedding to include this newly assigned speaker
             from app.services.profile_embedding_service import ProfileEmbeddingService
 
             if speaker.profile_id:
@@ -598,6 +577,7 @@ class SpeakerMatchingService:
                 )
 
         # Store/update embedding with suggested name for future matching
+        # profile_id is included here so new documents are created with profile already set
         if aggregated_embedding is not None and aggregated_embedding.size > 0:
             add_speaker_embedding(
                 speaker_id=int(speaker.id),
@@ -616,6 +596,27 @@ class SpeakerMatchingService:
             # Find and store matches with other speakers
             self.find_and_store_speaker_matches(
                 int(speaker.id), aggregated_embedding, user_id, threshold=0.5
+            )
+
+        # Sync profile assignment to OpenSearch after the document has been created/updated
+        if match["auto_accept"] and match.get("profile_id"):
+            from app.services.opensearch_service import update_speaker_profile
+
+            profile_uuid = None
+            if speaker.profile_id:
+                profile = (
+                    self.db.query(SpeakerProfile)
+                    .filter(SpeakerProfile.id == speaker.profile_id)
+                    .first()
+                )
+                if profile:
+                    profile_uuid = str(profile.uuid)
+
+            update_speaker_profile(
+                speaker_uuid=str(speaker.uuid),
+                profile_id=int(speaker.profile_id) if speaker.profile_id else None,
+                profile_uuid=profile_uuid,
+                verified=bool(speaker.verified),
             )
 
         return {

@@ -69,6 +69,8 @@ triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 # WhisperX's DiarizationPipeline is monkey-patched at runtime
 # See: backend/app/utils/pyannote_compat.py
 pyannote.audio>=4.0.0
+# Required by pyannote/embedding model checkpoint (pickle dependency)
+omegaconf>=2.3.0
 
 # NOTE: whisperx==3.7.6 is installed separately in Dockerfile with --no-deps
 # to bypass the pyannote-audio<4.0.0 conflict
