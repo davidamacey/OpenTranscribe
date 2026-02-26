@@ -902,6 +902,18 @@ def _process_transcription_result(
     )
     trigger_automatic_summarization(ctx.file_id, ctx.file_uuid)
 
+    # Dispatch speaker attribute detection (fire-and-forget, CPU queue)
+    try:
+        from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
+
+        if _is_speaker_attribute_detection_enabled(ctx.user_id):
+            from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
+
+            detect_speaker_attributes_task.delay(str(ctx.file_uuid), ctx.user_id)
+            logger.info(f"Dispatched speaker attribute detection for {ctx.file_uuid}")
+    except Exception as e:
+        logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
+
     return {"status": "success", "file_id": ctx.file_id, "segments": len(processed_segments)}
 
 

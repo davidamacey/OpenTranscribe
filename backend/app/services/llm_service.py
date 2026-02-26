@@ -1275,6 +1275,11 @@ ANALYSIS METHODOLOGY:
    - Historical context from previous conversations
    - Cross-references to known speaker profiles
    - File metadata (title, description, author, tags) may contain speaker names or roles
+   - METADATA SPEAKER HINTS (if provided) contain names extracted from metadata with roles and confidence scores
+     * Hosts typically speak first, introduce guests, and ask questions
+     * Guests are introduced, answer questions, and demonstrate focused expertise
+     * Channel/uploader name often corresponds to the primary host
+     * Higher-confidence hints should carry more weight in your analysis
 
 CONFIDENCE SCORING:
 - 0.9-1.0: Multiple strong indicators align (name mentioned + role + speech pattern match)
@@ -1297,7 +1302,16 @@ Only provide predictions with confidence >= 0.5. Explain your reasoning clearly 
             # Build metadata section for additional context
             metadata_section = ""
             if metadata_context:
-                metadata_section = f"\nFILE METADATA:\n{metadata_context}\n"
+                # Split structured hints from raw metadata
+                if "SPEAKER HINTS FROM METADATA:" in metadata_context:
+                    parts = metadata_context.split("\nFile Title:", 1)
+                    hints_section = parts[0]
+                    raw_section = "File Title:" + parts[1] if len(parts) > 1 else ""
+                    metadata_section = f"\n{hints_section}\n"
+                    if raw_section:
+                        metadata_section += f"\nFILE METADATA:\n{raw_section}\n"
+                else:
+                    metadata_section = f"\nFILE METADATA:\n{metadata_context}\n"
 
             reserved_tokens = (
                 len(system_prompt) // 3
@@ -1324,6 +1338,7 @@ Analyze this conversation transcript and identify each speaker label based on th
 - Any direct or indirect name mentions or role references
 - Communication styles and interpersonal dynamics
 - File metadata clues (title, description, author, tags)
+- Metadata speaker hints (names extracted from metadata with roles and confidence scores)
 
 For each speaker you can identify with reasonable confidence (>=0.5), provide a detailed analysis.
 

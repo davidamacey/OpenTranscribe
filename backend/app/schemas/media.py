@@ -167,6 +167,12 @@ class Speaker(SpeakerBase, UUIDBaseSchema):
     status_color: Optional[str] = None  # CSS color for status display
     resolved_display_name: Optional[str] = None  # Best available display name
 
+    # AI-predicted voice attributes
+    predicted_gender: Optional[str] = None
+    predicted_age_range: Optional[str] = None
+    attribute_confidence: Optional[dict[str, float]] = None
+    attributes_predicted_at: Optional[datetime] = None
+
 
 # Speaker Profile schemas
 class SpeakerProfileBase(BaseModel):
@@ -189,6 +195,10 @@ class SpeakerProfile(SpeakerProfileBase, UUIDBaseSchema):
     user_id: UUID
     created_at: datetime
     updated_at: datetime
+
+    # AI-predicted attributes (consensus from linked speakers)
+    predicted_gender: Optional[str] = None
+    predicted_age_range: Optional[str] = None
 
 
 # Speaker Collection schemas

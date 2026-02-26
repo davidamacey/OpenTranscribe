@@ -39,6 +39,9 @@ from app.core.constants import VALID_RECORDING_QUALITIES
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
 from app.core.constants import WHISPER_LANGUAGES
 from app.db.base import get_db
+from app.schemas.speaker_attribute_settings import SpeakerAttributeSettings
+from app.schemas.speaker_attribute_settings import SpeakerAttributeSettingsUpdate
+from app.schemas.speaker_attribute_settings import SpeakerAttributeSystemDefaults
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
@@ -774,4 +777,131 @@ def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
         available_llm_output_languages=LLM_OUTPUT_LANGUAGES,
         common_languages=COMMON_LANGUAGES,
         languages_with_alignment=sorted(list(LANGUAGES_WITH_ALIGNMENT or [])),
+    )
+
+
+# =============================================================================
+# Speaker Attribute Settings Endpoints
+# =============================================================================
+
+# Database keys for speaker attribute settings
+_SPEAKER_ATTR_DB_KEYS = [
+    "speaker_attribute_detection_enabled",
+    "speaker_attribute_gender_detection_enabled",
+    "speaker_attribute_age_detection_enabled",
+    "speaker_attribute_show_on_cards",
+]
+
+
+@router.get("/speaker-attributes", response_model=SpeakerAttributeSettings)
+def get_speaker_attribute_settings(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> SpeakerAttributeSettings:
+    """Get user's speaker attribute detection settings."""
+    user_settings = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == current_user.id,
+            models.UserSetting.setting_key.in_(_SPEAKER_ATTR_DB_KEYS),
+        )
+        .all()
+    )
+
+    settings_map: dict[str, str] = {str(s.setting_key): str(s.setting_value) for s in user_settings}
+
+    return SpeakerAttributeSettings(
+        detection_enabled=settings_map.get("speaker_attribute_detection_enabled", "true").lower()
+        == "true",
+        gender_detection_enabled=settings_map.get(
+            "speaker_attribute_gender_detection_enabled", "true"
+        ).lower()
+        == "true",
+        age_detection_enabled=settings_map.get(
+            "speaker_attribute_age_detection_enabled", "true"
+        ).lower()
+        == "true",
+        show_attributes_on_cards=settings_map.get("speaker_attribute_show_on_cards", "true").lower()
+        == "true",
+    )
+
+
+@router.put("/speaker-attributes", response_model=SpeakerAttributeSettings)
+def update_speaker_attribute_settings(
+    *,
+    db: Session = Depends(get_db),
+    settings_data: SpeakerAttributeSettingsUpdate,
+    current_user: models.User = Depends(get_current_active_user),
+) -> SpeakerAttributeSettings:
+    """Update user's speaker attribute detection settings (partial update)."""
+    update_data = settings_data.model_dump(exclude_none=True)
+
+    if not update_data:
+        return get_speaker_attribute_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
+
+    setting_mappings = {
+        "detection_enabled": "speaker_attribute_detection_enabled",
+        "gender_detection_enabled": "speaker_attribute_gender_detection_enabled",
+        "age_detection_enabled": "speaker_attribute_age_detection_enabled",
+        "show_attributes_on_cards": "speaker_attribute_show_on_cards",
+    }
+
+    for frontend_key, value in update_data.items():
+        _upsert_user_setting(db, int(current_user.id), setting_mappings[frontend_key], value)
+
+    db.commit()
+
+    return get_speaker_attribute_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
+
+
+@router.delete("/speaker-attributes")
+def reset_speaker_attribute_settings(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Reset speaker attribute settings to defaults."""
+    deleted_count = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == current_user.id,
+            models.UserSetting.setting_key.in_(_SPEAKER_ATTR_DB_KEYS),
+        )
+        .delete(synchronize_session=False)
+    )
+
+    db.commit()
+
+    return {
+        "message": (f"Speaker attribute settings reset. Removed {deleted_count} custom settings."),
+        "default_settings": SpeakerAttributeSettings().model_dump(),
+    }
+
+
+@router.get(
+    "/speaker-attributes/system-defaults",
+    response_model=SpeakerAttributeSystemDefaults,
+)
+def get_speaker_attribute_system_defaults(
+    db: Session = Depends(get_db),
+) -> SpeakerAttributeSystemDefaults:
+    """Get system-level speaker attribute defaults."""
+    import os
+
+    from app.services.system_settings_service import get_setting_bool
+
+    env_enabled = os.environ.get("SPEAKER_ATTRIBUTE_DETECTION_ENABLED", "true").lower() == "true"
+
+    return SpeakerAttributeSystemDefaults(
+        detection_enabled=get_setting_bool(
+            db, "speaker_attribute.detection_enabled", default=env_enabled
+        ),
+        gender_detection_enabled=get_setting_bool(
+            db, "speaker_attribute.gender_detection_enabled", default=True
+        ),
+        age_detection_enabled=get_setting_bool(
+            db, "speaker_attribute.age_detection_enabled", default=True
+        ),
+        show_attributes_on_cards=get_setting_bool(
+            db, "speaker_attribute.show_on_cards", default=True
+        ),
     )

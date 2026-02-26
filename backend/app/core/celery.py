@@ -57,6 +57,7 @@ celery_app = Celery(
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
         "app.tasks.speaker_tasks",
+        "app.tasks.speaker_attribute_task",
         "app.tasks.topic_extraction",
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
@@ -93,6 +94,7 @@ celery_app.conf.update(
         "generate_waveform_data": {"queue": "cpu"},
         "extract_audio": {"queue": "cpu"},
         "analyze_transcript": {"queue": "cpu"},
+        "detect_speaker_attributes": {"queue": "cpu"},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         # These are I/O-bound API calls to external LLM services (vLLM, OpenAI, etc.)
         # Moderate concurrency to avoid overwhelming LLM APIs and maintain stability

@@ -17,6 +17,7 @@
   import SearchSettings from '$components/settings/SearchSettings.svelte';
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
+  import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
@@ -148,6 +149,7 @@
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
+        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
         { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' }
@@ -1047,6 +1049,13 @@
               <h3 class="section-title">{$t('settings.transcription.title')}</h3>
               <p class="section-description">{$t('settings.transcription.description')}</p>
               <TranscriptionSettings />
+            </div>
+          {/if}
+
+          <!-- Speaker Attribute Settings Section -->
+          {#if activeSection === 'speaker-attributes'}
+            <div class="content-section">
+              <SpeakerAttributeSettings />
             </div>
           {/if}
 
