@@ -67,6 +67,7 @@ celery_app = Celery(
         "app.tasks.speaker_embedding_migration",
         "app.tasks.baseline_export",
         "app.tasks.cleanup",
+        "app.tasks.rediarize_task",
     ],
 )
 
@@ -84,6 +85,7 @@ celery_app.conf.update(
         # WhisperX transcription + PyAnnote diarization - runs continuously without blocking
         "app.tasks.transcription.*": {"queue": "gpu"},
         "transcribe_audio": {"queue": "gpu"},
+        "rediarize": {"queue": "gpu"},
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
         # YouTube downloads in parallel, immediately dispatch to GPU when complete
         "process_youtube_url_task": {"queue": "download"},

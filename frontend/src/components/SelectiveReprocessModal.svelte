@@ -1,0 +1,952 @@
+<script lang="ts">
+  import { createEventDispatcher } from 'svelte';
+  import { fade } from 'svelte/transition';
+  import { t } from '$stores/locale';
+  import { isLLMAvailable } from '../stores/llmStatus';
+  import axiosInstance from '../lib/axios';
+  import { toastStore } from '../stores/toast';
+
+  export let showModal: boolean = false;
+  export let file: any = null;
+  export let reprocessing: boolean = false;
+
+  const dispatch = createEventDispatcher();
+
+  // Stage selection state
+  let selectedStages = new Set<string>();
+
+  // Speaker settings
+  let minSpeakers: number | null = null;
+  let maxSpeakers: number | null = null;
+  let numSpeakers: number | null = null;
+
+  // Computed state
+  $: hasTranscript =
+    file?.status === 'completed' &&
+    (file?.transcript_count > 0 || file?.segments?.length > 0);
+  $: hasWordTimestamps = file?.status === 'completed';
+  $: showSpeakerSettings =
+    selectedStages.has('transcription') || selectedStages.has('rediarize');
+  $: isValid =
+    selectedStages.size > 0 &&
+    (!showSpeakerSettings ||
+      !(
+        minSpeakers !== null &&
+        maxSpeakers !== null &&
+        minSpeakers > maxSpeakers
+      ));
+
+  // Validation guards
+  $: if (minSpeakers !== null && minSpeakers < 1) minSpeakers = 1;
+  $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
+  $: if (numSpeakers !== null && numSpeakers < 1) numSpeakers = 1;
+
+  // Stage definitions
+  interface StageDefinition {
+    id: string;
+    labelKey: string;
+    descKey: string;
+    disabled: boolean;
+    disabledReason: string;
+  }
+
+  $: coreStages = [
+    {
+      id: 'transcription',
+      labelKey: 'reprocess.stageTranscription',
+      descKey: 'reprocess.stageTranscriptionDesc',
+      disabled: false,
+      disabledReason: '',
+    },
+    {
+      id: 'rediarize',
+      labelKey: 'reprocess.stageRediarize',
+      descKey: 'reprocess.stageRediarizeDesc',
+      disabled: !hasWordTimestamps,
+      disabledReason: $t('reprocess.stageRediarizeDisabled'),
+    },
+  ] as StageDefinition[];
+
+  $: searchStages = [
+    {
+      id: 'search_indexing',
+      labelKey: 'reprocess.stageSearchIndexing',
+      descKey: 'reprocess.stageSearchIndexingDesc',
+      disabled: !hasTranscript,
+      disabledReason: $t('reprocess.transcriptRequired'),
+    },
+    {
+      id: 'analytics',
+      labelKey: 'reprocess.stageAnalytics',
+      descKey: 'reprocess.stageAnalyticsDesc',
+      disabled: !hasTranscript,
+      disabledReason: $t('reprocess.transcriptRequired'),
+    },
+  ] as StageDefinition[];
+
+  $: aiStages = [
+    {
+      id: 'speaker_llm',
+      labelKey: 'reprocess.stageSpeakerLLM',
+      descKey: 'reprocess.stageSpeakerLLMDesc',
+      disabled: !hasTranscript || !$isLLMAvailable,
+      disabledReason: !hasTranscript
+        ? $t('reprocess.transcriptRequired')
+        : $t('reprocess.llmNotAvailable'),
+    },
+    {
+      id: 'summarization',
+      labelKey: 'reprocess.stageSummarization',
+      descKey: 'reprocess.stageSummarizationDesc',
+      disabled: !hasTranscript || !$isLLMAvailable,
+      disabledReason: !hasTranscript
+        ? $t('reprocess.transcriptRequired')
+        : $t('reprocess.llmNotAvailable'),
+    },
+    {
+      id: 'topic_extraction',
+      labelKey: 'reprocess.stageTopicExtraction',
+      descKey: 'reprocess.stageTopicExtractionDesc',
+      disabled: !hasTranscript || !$isLLMAvailable,
+      disabledReason: !hasTranscript
+        ? $t('reprocess.transcriptRequired')
+        : $t('reprocess.llmNotAvailable'),
+    },
+  ] as StageDefinition[];
+
+  function toggleStage(stageId: string) {
+    const newSet = new Set(selectedStages);
+
+    if (newSet.has(stageId)) {
+      newSet.delete(stageId);
+    } else {
+      newSet.add(stageId);
+
+      // Mutual exclusion: transcription <-> rediarize
+      if (stageId === 'transcription') {
+        newSet.delete('rediarize');
+      } else if (stageId === 'rediarize') {
+        newSet.delete('transcription');
+      }
+    }
+
+    selectedStages = newSet;
+  }
+
+  async function handleSubmit() {
+    if (selectedStages.size === 0) return;
+
+    try {
+      reprocessing = true;
+      const requestBody: Record<string, unknown> = {
+        stages: Array.from(selectedStages),
+      };
+
+      if (showSpeakerSettings) {
+        if (minSpeakers !== null) requestBody.min_speakers = minSpeakers;
+        if (maxSpeakers !== null) requestBody.max_speakers = maxSpeakers;
+        if (numSpeakers !== null) requestBody.num_speakers = numSpeakers;
+      }
+
+      await axiosInstance.post(
+        `/api/files/${file.uuid}/reprocess`,
+        requestBody
+      );
+
+      toastStore.success($t('reprocess.startedSuccess'));
+      dispatch('reprocess', {
+        fileId: file.uuid,
+        stages: Array.from(selectedStages),
+      });
+      showModal = false;
+
+      // Reset state
+      selectedStages = new Set();
+      minSpeakers = null;
+      maxSpeakers = null;
+      numSpeakers = null;
+    } catch (error) {
+      console.error('Error reprocessing file:', error);
+      toastStore.error($t('reprocess.startFailed'));
+      reprocessing = false;
+    }
+  }
+
+  function handleClose() {
+    dispatch('close');
+    showModal = false;
+  }
+
+  function handleBackdropClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) {
+      handleClose();
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      handleClose();
+    }
+  }
+</script>
+
+{#if showModal}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div
+    class="modal-backdrop"
+    transition:fade={{ duration: 200 }}
+    on:click={handleBackdropClick}
+    on:keydown={handleKeydown}
+    tabindex="-1"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="reprocess-modal-title"
+  >
+    <div class="modal-container" transition:fade={{ duration: 200, delay: 100 }}>
+      <div class="modal-content">
+        <!-- Header -->
+        <div class="modal-header">
+          <h2 id="reprocess-modal-title" class="modal-title">
+            {$t('reprocess.modalTitle')}
+          </h2>
+          <button
+            class="modal-close-button"
+            on:click={handleClose}
+            aria-label={$t('reprocess.cancel')}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="modal-body">
+          <!-- Core Processing -->
+          <div class="stage-group">
+            <div class="stage-group-header">
+              <span class="stage-group-label">{$t('reprocess.coreProcessing')}</span>
+              <div class="stage-group-line"></div>
+            </div>
+            {#each coreStages as stage (stage.id)}
+              <label
+                class="stage-item"
+                class:disabled={stage.disabled}
+                class:selected={selectedStages.has(stage.id)}
+              >
+                <div class="stage-checkbox-area">
+                  <input
+                    type="checkbox"
+                    checked={selectedStages.has(stage.id)}
+                    disabled={stage.disabled}
+                    on:change={() => toggleStage(stage.id)}
+                    class="stage-checkbox"
+                  />
+                  <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
+                    {#if selectedStages.has(stage.id)}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    {/if}
+                  </div>
+                </div>
+                <div class="stage-info">
+                  <span class="stage-label">{$t(stage.labelKey)}</span>
+                  <span class="stage-desc">{$t(stage.descKey)}</span>
+                  {#if stage.disabled && stage.disabledReason}
+                    <span class="stage-disabled-hint">{stage.disabledReason}</span>
+                  {/if}
+                </div>
+              </label>
+            {/each}
+          </div>
+
+          <!-- Search & Discovery -->
+          <div class="stage-group">
+            <div class="stage-group-header">
+              <span class="stage-group-label">{$t('reprocess.searchDiscovery')}</span>
+              <div class="stage-group-line"></div>
+            </div>
+            {#each searchStages as stage (stage.id)}
+              <label
+                class="stage-item"
+                class:disabled={stage.disabled}
+                class:selected={selectedStages.has(stage.id)}
+              >
+                <div class="stage-checkbox-area">
+                  <input
+                    type="checkbox"
+                    checked={selectedStages.has(stage.id)}
+                    disabled={stage.disabled}
+                    on:change={() => toggleStage(stage.id)}
+                    class="stage-checkbox"
+                  />
+                  <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
+                    {#if selectedStages.has(stage.id)}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    {/if}
+                  </div>
+                </div>
+                <div class="stage-info">
+                  <span class="stage-label">{$t(stage.labelKey)}</span>
+                  <span class="stage-desc">{$t(stage.descKey)}</span>
+                  {#if stage.disabled && stage.disabledReason}
+                    <span class="stage-disabled-hint">{stage.disabledReason}</span>
+                  {/if}
+                </div>
+              </label>
+            {/each}
+          </div>
+
+          <!-- AI Features -->
+          <div class="stage-group">
+            <div class="stage-group-header">
+              <span class="stage-group-label">{$t('reprocess.aiFeatures')}</span>
+              <div class="stage-group-line"></div>
+            </div>
+            {#each aiStages as stage (stage.id)}
+              <label
+                class="stage-item"
+                class:disabled={stage.disabled}
+                class:selected={selectedStages.has(stage.id)}
+              >
+                <div class="stage-checkbox-area">
+                  <input
+                    type="checkbox"
+                    checked={selectedStages.has(stage.id)}
+                    disabled={stage.disabled}
+                    on:change={() => toggleStage(stage.id)}
+                    class="stage-checkbox"
+                  />
+                  <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
+                    {#if selectedStages.has(stage.id)}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    {/if}
+                  </div>
+                </div>
+                <div class="stage-info">
+                  <span class="stage-label">{$t(stage.labelKey)}</span>
+                  <span class="stage-desc">{$t(stage.descKey)}</span>
+                  {#if stage.disabled && stage.disabledReason}
+                    <span class="stage-disabled-hint">{stage.disabledReason}</span>
+                  {/if}
+                </div>
+              </label>
+            {/each}
+          </div>
+
+          <!-- Warning banners -->
+          {#if selectedStages.has('transcription')}
+            <div class="warning-banner warning-destructive">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <span>{$t('reprocess.warningDataLoss')}</span>
+            </div>
+          {/if}
+
+          {#if selectedStages.has('rediarize')}
+            <div class="warning-banner warning-caution">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span>{$t('reprocess.warningRediarize')}</span>
+            </div>
+          {/if}
+
+          {#if selectedStages.has('transcription') || selectedStages.has('rediarize')}
+            <div class="warning-banner warning-info">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span>{$t('reprocess.warningV4Migration')}</span>
+            </div>
+          {/if}
+
+          <!-- Speaker Settings (conditional) -->
+          {#if showSpeakerSettings}
+            <div class="speaker-settings-section">
+              <div class="stage-group-header">
+                <span class="stage-group-label">{$t('reprocess.speakerSettings')}</span>
+                <div class="stage-group-line"></div>
+              </div>
+
+              <div class="settings-row">
+                <div class="setting-field">
+                  <label for="modal-min-speakers">{$t('reprocess.minSpeakers')}</label>
+                  <input
+                    id="modal-min-speakers"
+                    type="number"
+                    min="1"
+                    placeholder={$t('reprocess.defaultPlaceholder')}
+                    bind:value={minSpeakers}
+                    disabled={numSpeakers !== null}
+                  />
+                </div>
+
+                <div class="setting-field">
+                  <label for="modal-max-speakers">{$t('reprocess.maxSpeakers')}</label>
+                  <input
+                    id="modal-max-speakers"
+                    type="number"
+                    min="1"
+                    placeholder={$t('reprocess.defaultPlaceholder')}
+                    bind:value={maxSpeakers}
+                    disabled={numSpeakers !== null}
+                  />
+                </div>
+              </div>
+
+              <div class="setting-field">
+                <label for="modal-num-speakers">
+                  {$t('reprocess.fixedCount')}
+                  <span class="hint">{$t('reprocess.fixedCountHint')}</span>
+                </label>
+                <input
+                  id="modal-num-speakers"
+                  type="number"
+                  min="1"
+                  placeholder={$t('reprocess.autoPlaceholder')}
+                  bind:value={numSpeakers}
+                />
+              </div>
+
+              {#if minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers}
+                <div class="validation-error">
+                  {$t('reprocess.validationError')}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+
+        <!-- Footer -->
+        <div class="modal-footer">
+          <button
+            class="modal-button cancel-button"
+            on:click={handleClose}
+            type="button"
+          >
+            {$t('reprocess.cancel')}
+          </button>
+          <button
+            class="modal-button primary-button"
+            on:click={handleSubmit}
+            disabled={!isValid || reprocessing}
+            type="button"
+          >
+            {#if reprocessing}
+              <div class="spinner-small"></div>
+            {/if}
+            {reprocessing ? $t('reprocess.buttonLabelProcessing') : $t('reprocess.startReprocessing')}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  /* Modal overlay */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 1rem;
+  }
+
+  .modal-container {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    max-width: 520px;
+    width: 100%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1),
+      0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    animation: slideIn 0.2s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .modal-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .modal-title {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text-color);
+    line-height: 1.4;
+  }
+
+  .modal-close-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-close-button:hover {
+    color: var(--text-color);
+    background: var(--button-hover);
+  }
+
+  /* Body */
+  .modal-body {
+    padding: 1rem 1.5rem 1.25rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  /* Stage Groups */
+  .stage-group {
+    margin-bottom: 1rem;
+  }
+
+  .stage-group:last-of-type {
+    margin-bottom: 0.75rem;
+  }
+
+  .stage-group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .stage-group-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .stage-group-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+  }
+
+  /* Stage Items */
+  .stage-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    margin-bottom: 0.25rem;
+  }
+
+  .stage-item:hover:not(.disabled) {
+    background: var(--surface-color);
+  }
+
+  .stage-item.selected:not(.disabled) {
+    background: rgba(59, 130, 246, 0.06);
+  }
+
+  .stage-item.disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  /* Custom checkbox */
+  .stage-checkbox-area {
+    position: relative;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+
+  .stage-checkbox {
+    position: absolute;
+    opacity: 0;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    z-index: 1;
+    margin: 0;
+  }
+
+  .stage-checkbox:disabled {
+    cursor: not-allowed;
+  }
+
+  .stage-check-custom {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    background: var(--background-color);
+  }
+
+  .stage-check-custom.checked {
+    background: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color, #3b82f6);
+    color: white;
+  }
+
+  .stage-check-custom.disabled {
+    background: var(--surface-color);
+    border-color: var(--border-color);
+    opacity: 0.6;
+  }
+
+  /* Stage info */
+  .stage-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  .stage-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+
+  .stage-desc {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .stage-disabled-hint {
+    font-size: 0.7rem;
+    color: #f59e0b;
+    font-style: italic;
+    line-height: 1.3;
+  }
+
+  /* Warning banners */
+  .warning-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    margin-top: 0.75rem;
+  }
+
+  .warning-banner svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .warning-destructive {
+    background-color: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: var(--text-secondary);
+  }
+
+  .warning-destructive svg {
+    color: #ef4444;
+  }
+
+  .warning-caution {
+    background-color: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    color: var(--text-secondary);
+  }
+
+  .warning-caution svg {
+    color: #f59e0b;
+  }
+
+  .warning-info {
+    background-color: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    color: var(--text-secondary);
+  }
+
+  .warning-info svg {
+    color: #3b82f6;
+  }
+
+  /* Speaker Settings */
+  .speaker-settings-section {
+    margin-top: 1rem;
+  }
+
+  .settings-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .setting-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .setting-field label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .setting-field .hint {
+    font-weight: 400;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+  }
+
+  .setting-field input {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--input-background, var(--card-background));
+    color: var(--text-primary);
+    font-size: 0.85rem;
+  }
+
+  .setting-field input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+
+  .setting-field input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: var(--disabled-background, #f5f5f5);
+  }
+
+  .setting-field input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .validation-error {
+    padding: 0.4rem 0.6rem;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    color: #dc2626;
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Footer */
+  .modal-footer {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem 1.25rem;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .modal-button {
+    padding: 0.55rem 1.1rem;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .cancel-button {
+    background: var(--card-background);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--card-shadow);
+  }
+
+  .cancel-button:hover {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .cancel-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .primary-button {
+    background: #3b82f6;
+    color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .primary-button:hover:not(:disabled) {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+  }
+
+  .primary-button:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .primary-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Spinner */
+  .spinner-small {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Dark mode */
+  :global([data-theme='dark']) .modal-backdrop {
+    background: var(--modal-backdrop, rgba(0, 0, 0, 0.7));
+  }
+
+  :global([data-theme='dark']) .modal-container {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3),
+      0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  }
+
+  :global([data-theme='dark']) .modal-close-button:hover {
+    background: var(--button-hover, rgba(255, 255, 255, 0.1));
+  }
+
+  :global([data-theme='dark']) .cancel-button:hover {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+  }
+
+  :global([data-theme='dark']) .setting-field input:disabled {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  :global([data-theme='dark']) .validation-error {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  /* Responsive design */
+  @media (max-width: 480px) {
+    .modal-container {
+      margin: 0.5rem;
+      max-width: none;
+      max-height: 90vh;
+    }
+
+    .modal-footer {
+      flex-direction: column-reverse;
+    }
+
+    .modal-button {
+      width: 100%;
+    }
+
+    .settings-row {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .modal-container {
+      animation: none;
+    }
+
+    .modal-button,
+    .stage-item,
+    .stage-check-custom {
+      transition: none;
+    }
+  }
+
+  /* Focus styles */
+  .modal-button:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+
+  .cancel-button:focus {
+    outline: 2px solid var(--text-color);
+    outline-offset: 2px;
+  }
+</style>
