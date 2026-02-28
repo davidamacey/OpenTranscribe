@@ -1303,6 +1303,7 @@
   "settings.statistics.new": "新增",
   "settings.statistics.newUsers": "新增（7天）",
   "settings.statistics.noGpu": "无可用GPU",
+  "settings.statistics.gpuStatsLoading": "正在从工作节点收集GPU统计信息...",
   "settings.statistics.noRecentTasks": "没有找到最近的任务",
   "settings.statistics.throughput": "吞吐量",
   "settings.statistics.currentRate": "当前速率",

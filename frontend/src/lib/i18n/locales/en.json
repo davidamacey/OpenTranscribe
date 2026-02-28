@@ -648,6 +648,7 @@
   "settings.statistics.gpuVram": "GPU VRAM",
   "settings.statistics.gpu": "GPU",
   "settings.statistics.noGpu": "No GPU Available",
+  "settings.statistics.gpuStatsLoading": "Collecting GPU stats from worker...",
   "settings.statistics.recentTasks": "Recent Tasks",
   "settings.statistics.taskId": "Task ID",
   "settings.statistics.type": "Type",

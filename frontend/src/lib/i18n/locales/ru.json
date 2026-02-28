@@ -648,6 +648,7 @@
   "settings.statistics.gpuVram": "Видеопамять GPU",
   "settings.statistics.gpu": "GPU",
   "settings.statistics.noGpu": "GPU недоступен",
+  "settings.statistics.gpuStatsLoading": "Сбор статистики GPU с рабочего узла...",
   "settings.statistics.recentTasks": "Недавние задачи",
   "settings.statistics.taskId": "ID задачи",
   "settings.statistics.type": "Тип",

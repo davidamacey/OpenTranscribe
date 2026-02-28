@@ -1303,6 +1303,7 @@
   "settings.statistics.new": "Nuevos",
   "settings.statistics.newUsers": "Nuevos (7d)",
   "settings.statistics.noGpu": "GPU No Disponible",
+  "settings.statistics.gpuStatsLoading": "Recopilando estadísticas de GPU del worker...",
   "settings.statistics.noRecentTasks": "No se encontraron tareas recientes",
   "settings.statistics.throughput": "Rendimiento",
   "settings.statistics.currentRate": "Tasa actual",

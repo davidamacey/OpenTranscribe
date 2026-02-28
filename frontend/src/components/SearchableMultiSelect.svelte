@@ -24,14 +24,8 @@
     return option.name.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
-  // Sort: selected first, then by count (if available), then alphabetically
-  $: sortedOptions = filteredOptions.sort((a, b) => {
-    const aSelected = selectedIds.includes(a.id);
-    const bSelected = selectedIds.includes(b.id);
-
-    if (aSelected && !bSelected) return -1;
-    if (!aSelected && bSelected) return 1;
-
+  // Sort by count (if available), then alphabetically — never reorder on selection
+  $: sortedOptions = [...filteredOptions].sort((a, b) => {
     if (showCounts && a.count !== undefined && b.count !== undefined) {
       if (b.count !== a.count) return b.count - a.count;
     }

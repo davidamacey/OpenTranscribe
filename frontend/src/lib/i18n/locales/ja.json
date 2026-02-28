@@ -1303,6 +1303,7 @@
   "settings.statistics.new": "新規",
   "settings.statistics.newUsers": "新規（7日間）",
   "settings.statistics.noGpu": "GPUなし",
+  "settings.statistics.gpuStatsLoading": "ワーカーからGPU統計を収集中...",
   "settings.statistics.noRecentTasks": "最近のタスクが見つかりません",
   "settings.statistics.throughput": "スループット",
   "settings.statistics.currentRate": "現在の速度",

@@ -107,6 +107,7 @@
   let statsRefreshing = false;
   let statsInitialLoaded = false;
   let statsPollingInterval: ReturnType<typeof setInterval> | null = null;
+  let gpuRetryScheduled = false;
 
   // Admin Task Health section
   let taskHealthData: any = null;
@@ -547,6 +548,15 @@
       const response = await axiosInstance.get('/system/stats');
       stats = response.data;
       statsInitialLoaded = true;
+
+      // Auto-retry once if GPU stats are loading
+      if (response.data?.system?.gpu?.loading && !gpuRetryScheduled) {
+        gpuRetryScheduled = true;
+        setTimeout(() => {
+          gpuRetryScheduled = false;
+          loadStats();
+        }, 5000);
+      }
     } catch (err: any) {
       console.error('Error loading stats:', err);
       const message = err.response?.data?.detail || $t('settings.toast.statisticsLoadFailed');
@@ -1315,6 +1325,12 @@
                       <div class="progress-bar">
                         <div class="progress-fill" style="width: {parseFloat(stats.system.gpu.memory_percent) || 0}%"></div>
                       </div>
+                    {:else if stats.system?.gpu?.loading}
+                      <div class="stat-card-content">
+                        <h4>{$t('settings.statistics.gpuVram')}</h4>
+                        <div class="stat-value loading-text">{$t('common.loading')}</div>
+                        <div class="stat-detail">{$t('settings.statistics.gpuStatsLoading') || 'Collecting GPU stats from worker...'}</div>
+                      </div>
                     {:else}
                       <div class="stat-card-content">
                         <h4>{$t('settings.statistics.gpuVram')}</h4>
@@ -2061,6 +2077,16 @@
     font-weight: 700;
     color: var(--text-color);
     margin-bottom: 0.375rem;
+  }
+
+  .loading-text {
+    opacity: 0.6;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
   }
 
   .stat-detail {

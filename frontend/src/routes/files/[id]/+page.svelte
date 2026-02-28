@@ -923,9 +923,13 @@
 
 
   function formatSimpleTimestamp(seconds: number): string {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
 
   // Format seconds to SRT timestamp format (HH:MM:SS,mmm)
@@ -1189,17 +1193,37 @@
 
       switch (format) {
         case 'txt':
-          // Build each segment line respecting the timestamp/speaker toggle options
-          let segments = transcriptData.map((seg: any) => {
+          // Group consecutive segments by the same speaker
+          const speakerGroups: Array<{ speaker: string; startTime: number; endTime: number; texts: string[] }> = [];
+          let currentGroup: typeof speakerGroups[0] | null = null;
+
+          for (const seg of transcriptData) {
+            const speaker = getSpeakerDisplayName(seg);
+            const startTime = seg.start_time || seg.start || 0;
+            const endTime = seg.end_time || seg.end || 0;
+
+            if (currentGroup && currentGroup.speaker === speaker) {
+              currentGroup.endTime = endTime;
+              currentGroup.texts.push(seg.text);
+            } else {
+              if (currentGroup) speakerGroups.push(currentGroup);
+              currentGroup = { speaker, startTime, endTime, texts: [seg.text] };
+            }
+          }
+          if (currentGroup) speakerGroups.push(currentGroup);
+
+          // Format each group as a single block
+          let segments = speakerGroups.map(group => {
             const parts: string[] = [];
             if (txtOptions?.includeTimestamps !== false) {
-              parts.push(`[${formatSimpleTimestamp(seg.start_time || seg.start || 0)} --> ${formatSimpleTimestamp(seg.end_time || seg.end || 0)}]`);
+              parts.push(`[${formatSimpleTimestamp(group.startTime)} --> ${formatSimpleTimestamp(group.endTime)}]`);
             }
             if (txtOptions?.includeSpeakers !== false) {
-              parts.push(`${getSpeakerDisplayName(seg)}:`);
+              parts.push(`${group.speaker}:`);
             }
-            parts.push(seg.text);
-            return parts.join(' ');
+            const header = parts.join(' ');
+            const text = group.texts.join(' ');
+            return header ? `${header}\n${text}` : text;
           });
 
           // Add comments if requested (comments always retain their timestamps since they are positional)

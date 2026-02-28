@@ -683,7 +683,7 @@
   }
 
   .notification-action {
-    display: inline-block;
+    display: block;
     font-size: 12px;
     font-weight: 600;
     color: var(--primary-color);
@@ -692,7 +692,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 160px;
+    max-width: 100%;
     line-height: 1.2;
   }
 

@@ -124,8 +124,8 @@ def get_cpu_usage():
         physical_cores = psutil.cpu_count(logical=False) or 1
 
         return {
-            "total_percent": f"{cpu_percent}%",
-            "per_cpu": [f"{p}%" for p in per_cpu],
+            "total_percent": f"{cpu_percent:.1f}%",
+            "per_cpu": [f"{p:.1f}%" for p in per_cpu],
             "logical_cores": cpu_count,
             "physical_cores": physical_cores,
         }
@@ -224,7 +224,7 @@ def get_gpu_usage():
         direct_stats = _query_gpu_via_smi()
         if direct_stats:
             # Cache the result so subsequent polls don't re-run nvidia-smi
-            redis_client.setex("gpu_stats", 300, json.dumps(direct_stats))
+            redis_client.setex("gpu_stats", 600, json.dumps(direct_stats))
             return direct_stats
 
         # nvidia-smi not available — dispatch to GPU worker (debounced)
@@ -235,7 +235,8 @@ def get_gpu_usage():
 
         return {
             "available": False,
-            "name": "GPU stats loading...",
+            "loading": True,
+            "name": "Loading GPU stats...",
             "memory_total": "N/A",
             "memory_used": "N/A",
             "memory_free": "N/A",

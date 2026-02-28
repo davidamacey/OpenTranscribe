@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { cachedThumbnail } from '$lib/thumbnailCache';
   import { galleryStore } from '$stores/gallery';
@@ -37,7 +37,13 @@
 
   $: {
     if (items && scrollContainer) {
-      recalculate();
+      // Defer to after DOM update — reading getBoundingClientRect() synchronously
+      // returns stale geometry because Svelte hasn't patched the DOM yet
+      tick().then(() => {
+        updateColumns();
+        measureOffset();
+        recalculate();
+      });
     }
   }
 
