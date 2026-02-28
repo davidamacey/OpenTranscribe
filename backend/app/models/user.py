@@ -34,7 +34,7 @@ class User(Base):
     allow_local_fallback = Column(
         Boolean, default=False, nullable=False
     )  # When True: user can authenticate via password even if auth_type != 'local'
-    ldap_uid = Column(String, nullable=True, index=True)  # sAMAccountName from AD
+    ldap_uid = Column(String, nullable=True, unique=True, index=True)  # sAMAccountName from AD
     keycloak_id = Column(String(255), unique=True, nullable=True, index=True)  # Keycloak subject ID
     keycloak_refresh_token = Column(
         Text, nullable=True

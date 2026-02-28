@@ -8,14 +8,14 @@
 
 OpenTranscribe uses a hybrid approach to database management:
 
-1. **Development & Testing Phases**: The `database/init_db.sql` file is considered the source of truth for the database schema. This approach allows for rapid iterations during development.
+1. **All Environments**: The Alembic migration chain in `backend/alembic/versions/` is the sole authority for the database schema. The bootstrap migration (`v000_bootstrap.py`) creates the full schema from scratch, and subsequent migrations handle schema evolution.
 
-2. **Production & Post-Release**: Once the application reaches a stable release, we will use Alembic migrations for all schema changes to ensure proper versioning and backward compatibility.
+2. **Legacy Reference**: The `database/init_db.sql` file is retained for historical reference only and is no longer used for schema initialization.
 
 ## Current Setup
 
-During development:
-- The `./opentr.sh reset dev` script uses `database/init_db.sql` to initialize the database with a clean schema
+Current setup:
+- The `./opentr.sh reset dev` script drops the database and runs the full Alembic migration chain (`alembic upgrade head`) to recreate the schema
 - The script also calls `app/initial_data.py` to create initial test data and admin user
 - The database can be completely reset using: `./opentr.sh reset dev` (⚠️ **WARNING**: This deletes ALL data)
 - Individual services can be restarted without data loss using: `./opentr.sh restart-backend`
@@ -39,15 +39,14 @@ The current schema includes several new features and improvements:
 - **Improved file upload handling** with concurrent processing and retry logic
 - **Enhanced notification system** with WebSocket integration and progress tracking
 
-## Future Migration Approach
+## Migration Workflow
 
-When the application reaches the release phase:
-- We will use Alembic to manage all database migrations
-- The workflow will be:
-  1. Make changes to SQLAlchemy models
-  2. Generate migration scripts with `alembic revision --autogenerate`
-  3. Review and edit the generated migration as needed
-  4. Apply migrations with `alembic upgrade head`
+All schema changes use Alembic migrations:
+1. Create a new migration file in `backend/alembic/versions/`
+2. Update SQLAlchemy models in `backend/app/models/` to match
+3. Update Pydantic schemas in `backend/app/schemas/` if needed
+4. Update `backend/app/db/migrations.py` detection logic for the new version
+5. Test with `./opentr.sh reset dev` (runs full migration chain from scratch)
 
 ## Speaker Identification System
 
@@ -60,6 +59,6 @@ The application uses a UUID-based system to track speakers across different vide
 
 ## Maintaining Database Consistency
 
-- Always check for any schema changes in SQLAlchemy models and update init_db.sql accordingly
-- Keep the schema in the SQL file and the SQLAlchemy models in sync
+- Always create Alembic migrations for any schema changes
+- Keep the Alembic migrations and SQLAlchemy models in sync
 - Document any breaking changes to the schema

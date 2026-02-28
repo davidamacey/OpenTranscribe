@@ -281,6 +281,19 @@ async def lifespan(app: FastAPI):
         logger.critical(f"Database migration failed — aborting startup: {e}")
         raise SystemExit(1) from e
 
+    # Seed initial data (admin user, default tags, system prompts)
+    try:
+        from app.db.base import SessionLocal
+        from app.initial_data import init_db
+
+        db = SessionLocal()
+        try:
+            init_db(db)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Initial data seeding failed (non-fatal): {e}")
+
     # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns)
     try:
         from app.services.opensearch_service import check_and_repair_indices
