@@ -542,6 +542,7 @@ class TranscriptIndexingService:
         duration: float | None = None,
         file_size: int | None = None,
         collection_ids: list[int] | None = None,
+        accessible_user_ids: list[int] | None = None,
     ) -> dict[str, Any] | int:
         """Chunk and index a transcript using OpenSearch neural search.
 
@@ -563,6 +564,9 @@ class TranscriptIndexingService:
             duration: Duration in seconds.
             file_size: File size in bytes.
             collection_ids: List of collection IDs the file belongs to.
+            accessible_user_ids: List of user IDs with access to this file.
+                Includes owner + users/groups with collection shares.
+                If None, defaults to [user_id] (owner only).
 
         Returns:
             Dict with indexing stats or int (chunk count).
@@ -623,10 +627,11 @@ class TranscriptIndexingService:
 
         # 3. Add indexed_at timestamp and accessible_user_ids
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        # Use provided access list or fall back to owner-only
+        effective_user_ids = accessible_user_ids if accessible_user_ids else [user_id]
         for chunk in chunks:
             chunk["indexed_at"] = now
-            # Initial access list is just the file owner; updated when shares change
-            chunk["accessible_user_ids"] = [user_id]
+            chunk["accessible_user_ids"] = effective_user_ids
 
         # 4. Bulk index to OpenSearch
         t_index_start = time.time()
@@ -696,6 +701,7 @@ class TranscriptIndexingService:
         duration: float | None = None,
         file_size: int | None = None,
         collection_ids: list[int] | None = None,
+        accessible_user_ids: list[int] | None = None,
     ) -> int:
         """Re-chunk and re-index a single transcript.
 
@@ -723,6 +729,7 @@ class TranscriptIndexingService:
             duration=duration,
             file_size=file_size,
             collection_ids=collection_ids,
+            accessible_user_ids=accessible_user_ids,
         )
         # Extract chunk count from result (dict or int)
         if isinstance(result, dict):

@@ -43,6 +43,7 @@
       fileSizeRange?: { min: number | null; max: number | null };
       fileTypes?: string[];
       statuses?: string[];
+      ownership?: 'all' | 'mine' | 'shared';
     };
   }
 
@@ -105,6 +106,7 @@
   let fileSizeRange = { min: null as number | null, max: null as number | null };
   let selectedFileTypes: string[] = [];
   let selectedStatuses: string[] = [];
+  let ownershipFilter: 'all' | 'mine' | 'shared' = 'all';
   // Use store for showFilters
   $: showFilters = $galleryState.showFilters;
 
@@ -237,6 +239,11 @@
     // Statuses
     if (selectedStatuses.length > 0) {
       selectedStatuses.forEach(status => params.append('status', status));
+    }
+
+    // Ownership filter (backend defaults to 'mine' if omitted)
+    if (ownershipFilter) {
+      params.append('ownership', ownershipFilter);
     }
 
     return params;
@@ -531,7 +538,7 @@
 
   // Handle filter changes
   function applyFilters(event: FilterEvent) {
-    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses } = event.detail;
+    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, ownership } = event.detail;
 
     searchQuery = search;
     selectedTags = tags;
@@ -544,6 +551,7 @@
     if (fileSize !== undefined) fileSizeRange = fileSize;
     if (fileTypes !== undefined) selectedFileTypes = fileTypes;
     if (statuses !== undefined) selectedStatuses = statuses;
+    if (ownership !== undefined) ownershipFilter = ownership;
 
     fetchFiles();
   }
@@ -599,6 +607,7 @@
     fileSizeRange = { min: null, max: null };
     selectedFileTypes = [];
     selectedStatuses = [];
+    ownershipFilter = 'all';
 
     // Skip animation when resetting filters to avoid highlighting previously filtered items
     fetchFiles(false, true);
@@ -1268,6 +1277,7 @@
               fileSizeRange={{min: null, max: null}}
               selectedFileTypes={selectedFileTypes}
               selectedStatuses={selectedStatuses}
+              ownershipFilter={ownershipFilter}
               on:filter={applyFilters}
               on:reset={resetFilters}
             />

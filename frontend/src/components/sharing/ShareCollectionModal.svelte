@@ -25,11 +25,14 @@
   // Derived existing targets for search filtering
   $: existingShareTargets = [
     ...shares.map(s => ({ type: s.target_type, uuid: s.target_uuid })),
-    ...pendingTargets.map(t => ({ type: t.type, uuid: t.uuid })),
+    ...pendingTargets.map(pt => ({ type: pt.type, uuid: pt.uuid })),
   ];
 
   async function loadShares() {
     loading = true;
+    // Clear stale shares immediately to prevent previous collection's data from flashing
+    shares = [];
+    sharingStore.setCurrentShares([]);
     try {
       const data = await SharingApi.fetchCollectionShares(collectionUuid);
       shares = data;
@@ -53,8 +56,8 @@
   }
 
   function handlePendingPermissionChange(index: number, event: CustomEvent<PermissionLevel>) {
-    pendingTargets = pendingTargets.map((t, i) =>
-      i === index ? { ...t, permission: event.detail } : t
+    pendingTargets = pendingTargets.map((pt, i) =>
+      i === index ? { ...pt, permission: event.detail } : pt
     );
   }
 

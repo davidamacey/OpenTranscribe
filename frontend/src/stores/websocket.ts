@@ -290,6 +290,8 @@ function createWebSocketStore() {
                 .then(({ apiCache }) => {
                   apiCache.invalidateByScope('collections');
                   apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
                 })
                 .catch(() => {});
               // Fall through to create a visible notification
@@ -302,6 +304,8 @@ function createWebSocketStore() {
                 .then(({ apiCache }) => {
                   apiCache.invalidateByScope('collections');
                   apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
                 })
                 .catch(() => {});
               // Fall through to create a visible notification
@@ -313,6 +317,8 @@ function createWebSocketStore() {
               import('$lib/apiCache')
                 .then(({ apiCache }) => {
                   apiCache.invalidateByScope('collections');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
                 })
                 .catch(() => {});
               // Fall through to create a visible notification
@@ -325,6 +331,8 @@ function createWebSocketStore() {
                 .then(({ apiCache }) => {
                   apiCache.invalidateByScope('collections');
                   apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
                 })
                 .catch(() => {});
               // Fall through to create a visible notification
@@ -339,6 +347,8 @@ function createWebSocketStore() {
                 .then(({ apiCache }) => {
                   apiCache.invalidateByScope('collections');
                   apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
                 })
                 .catch(() => {});
               // Fall through to create a visible notification

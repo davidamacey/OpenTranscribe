@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
 from app.api.endpoints.auth import get_current_active_user
+from app.core.constants import NOTIFICATION_TYPE_GROUP_MEMBER_ADDED
+from app.core.constants import NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED
 from app.db.base import get_db
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
@@ -26,6 +28,7 @@ from app.schemas.group import GroupUpdate
 from app.schemas.user import UserBrief
 from app.tasks.search_indexing_task import update_file_access_index
 from app.utils.uuid_helpers import get_by_uuid
+from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +283,9 @@ def delete_group(
             detail="Only the group owner can delete this group",
         )
 
+    # Reindex files BEFORE deletion (cascade will remove shares)
+    _reindex_group_shared_files(db, int(group.id))
+
     db.delete(group)
     db.commit()
 
@@ -323,6 +329,18 @@ def add_member(
 
     # Reindex files in collections shared with this group
     _reindex_group_shared_files(db, int(group.id))
+
+    # Notify the new member
+    send_ws_event(
+        int(target_user.id),
+        NOTIFICATION_TYPE_GROUP_MEMBER_ADDED,
+        {
+            "group_uuid": str(group.uuid),
+            "group_name": group.name,
+            "role": member.role,
+            "message": f"You have been added to group '{group.name}'",
+        },
+    )
 
     return GroupMember(
         uuid=member.uuid,
@@ -424,10 +442,24 @@ def remove_member(
     if not is_self_remove:
         _require_group_admin(db, group, int(current_user.id))
 
+    removed_user_id = int(target_user.id)
+
     db.delete(target_membership)
     db.commit()
 
     # Reindex files in collections shared with this group
     _reindex_group_shared_files(db, int(group.id))
+
+    # Notify the removed member (skip if self-removal)
+    if not is_self_remove:
+        send_ws_event(
+            removed_user_id,
+            NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED,
+            {
+                "group_uuid": str(group.uuid),
+                "group_name": group.name,
+                "message": f"You have been removed from group '{group.name}'",
+            },
+        )
 
     return None

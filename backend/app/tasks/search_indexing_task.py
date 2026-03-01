@@ -40,6 +40,7 @@ def index_transcript_search_task(  # noqa: C901
     from app.models.media import MediaFile
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.services.permission_service import PermissionService
     from app.services.search.indexing_service import TranscriptIndexingService
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
@@ -118,6 +119,9 @@ def index_transcript_search_task(  # noqa: C901
             if hasattr(media_file, "collections") and media_file.collections:
                 collection_ids = [c.id for c in media_file.collections]
 
+            # Compute full access list (owner + shared users/groups)
+            accessible_user_ids = PermissionService.get_users_with_file_access(db, file_id)
+
         # Index in OpenSearch
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.4)
@@ -137,6 +141,7 @@ def index_transcript_search_task(  # noqa: C901
             duration=duration,
             file_size=file_size,
             collection_ids=collection_ids,
+            accessible_user_ids=accessible_user_ids,
         )
 
         total_ms = round((time.time() - total_start) * 1000)

@@ -16,9 +16,28 @@
   let loading = false;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Cache groups to avoid fetching on every keystroke
+  let cachedGroups: ShareTargetSearchResult[] | null = null;
+
   onDestroy(() => {
     if (debounceTimer) clearTimeout(debounceTimer);
   });
+
+  async function loadGroupsOnce(): Promise<ShareTargetSearchResult[]> {
+    if (cachedGroups !== null) return cachedGroups;
+    try {
+      const groups = await GroupsApi.fetchGroups();
+      cachedGroups = groups.map(g => ({
+        type: 'group' as const,
+        uuid: g.uuid,
+        name: g.name,
+        member_count: g.member_count,
+      }));
+    } catch {
+      cachedGroups = [];
+    }
+    return cachedGroups;
+  }
 
   async function doSearch(query: string) {
     if (query.trim().length < 2) {
@@ -28,8 +47,12 @@
 
     loading = true;
     try {
-      // Search users
-      const users = await GroupsApi.searchUsers(query.trim());
+      // Search users and load cached groups in parallel
+      const [users, allGroups] = await Promise.all([
+        GroupsApi.searchUsers(query.trim()),
+        loadGroupsOnce(),
+      ]);
+
       const userResults: ShareTargetSearchResult[] = users.map(u => ({
         type: 'user' as const,
         uuid: u.uuid,
@@ -37,21 +60,10 @@
         email: u.email,
       }));
 
-      // Search groups
-      let groupResults: ShareTargetSearchResult[] = [];
-      try {
-        const groups = await GroupsApi.fetchGroups();
-        groupResults = groups
-          .filter(g => g.name.toLowerCase().includes(query.toLowerCase()))
-          .map(g => ({
-            type: 'group' as const,
-            uuid: g.uuid,
-            name: g.name,
-            member_count: g.member_count,
-          }));
-      } catch {
-        // Groups may not be accessible, that's ok
-      }
+      // Filter cached groups by query
+      const groupResults = allGroups.filter(
+        g => g.name.toLowerCase().includes(query.toLowerCase())
+      );
 
       // Merge and filter out existing targets
       const allResults = [...userResults, ...groupResults];

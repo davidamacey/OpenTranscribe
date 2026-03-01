@@ -19,6 +19,9 @@ from sqlalchemy.orm import selectinload
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import apply_all_filters
+from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED
+from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED
+from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARED
 from app.db.base import get_db
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
@@ -49,10 +52,63 @@ from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
 from app.utils.uuid_helpers import get_collection_by_uuid_with_sharing
 from app.utils.uuid_helpers import validate_uuids
+from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _get_share_target_user_ids(db: Session, share: CollectionShare) -> list[int]:
+    """Return the user IDs affected by a share.
+
+    For user-targeted shares this is a single-element list.
+    For group-targeted shares this is all group members.
+    """
+    if share.target_type == "user" and share.target_user_id:
+        return [int(share.target_user_id)]
+    if share.target_type == "group" and share.target_group_id:
+        return [
+            int(m.user_id)
+            for m in db.query(UserGroupMember.user_id)
+            .filter(UserGroupMember.group_id == share.target_group_id)
+            .all()
+        ]
+    return []
+
+
+def _notify_share_event(
+    db: Session,
+    share: CollectionShare,
+    collection: Collection,
+    notification_type: str,
+    extra_data: dict | None = None,
+) -> None:
+    """Send a WebSocket notification for a sharing event to all affected users."""
+    target_ids = _get_share_target_user_ids(db, share)
+    data: dict = {
+        "collection_uuid": str(collection.uuid),
+        "collection_name": collection.name,
+        "share_uuid": str(share.uuid),
+        "permission": share.permission,
+        "message": _share_message(notification_type, collection.name),
+    }
+    if extra_data:
+        data.update(extra_data)
+
+    for uid in target_ids:
+        send_ws_event(uid, notification_type, data)
+
+
+def _share_message(notification_type: str, collection_name: str) -> str:
+    """Build a human-readable message for a share notification."""
+    if notification_type == NOTIFICATION_TYPE_COLLECTION_SHARED:
+        return f"Collection '{collection_name}' has been shared with you"
+    if notification_type == NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED:
+        return f"Your access to collection '{collection_name}' has been revoked"
+    if notification_type == NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED:
+        return f"Your permissions on collection '{collection_name}' have been updated"
+    return "Collection sharing update"
 
 
 def _resolve_prompt_uuid(db: Session, prompt_uuid: str | None, user_id: int) -> int | None:
@@ -561,6 +617,16 @@ async def delete_collection(
             detail="Only the collection owner can delete it",
         )
 
+    # Reindex files BEFORE deletion (cascade will remove shares + members)
+    file_ids = [
+        cm.media_file_id
+        for cm in db.query(CollectionMember.media_file_id)
+        .filter(CollectionMember.collection_id == collection.id)
+        .all()
+    ]
+    if file_ids:
+        update_file_access_index.delay(file_ids)
+
     db.delete(collection)
     db.commit()
 
@@ -942,6 +1008,9 @@ async def create_collection_share(
     if file_ids:
         update_file_access_index.delay(file_ids)
 
+    # Notify affected user(s) about the new share
+    _notify_share_event(db, share, collection, NOTIFICATION_TYPE_COLLECTION_SHARED)
+
     return _build_share_response(db, share)
 
 
@@ -983,6 +1052,19 @@ async def update_collection_share(
         .first()
     )
 
+    # Reindex files since permission level changed
+    file_ids = [
+        cm.media_file_id
+        for cm in db.query(CollectionMember.media_file_id)
+        .filter(CollectionMember.collection_id == collection.id)
+        .all()
+    ]
+    if file_ids:
+        update_file_access_index.delay(file_ids)
+
+    # Notify affected user(s) about the permission change
+    _notify_share_event(db, share, collection, NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED)
+
     return _build_share_response(db, share)
 
 
@@ -1010,6 +1092,16 @@ async def delete_collection_share(
             detail="Share not found on this collection",
         )
 
+    # Capture notification data before deletion
+    target_user_ids = _get_share_target_user_ids(db, share)
+    revoke_data: dict = {
+        "collection_uuid": str(collection.uuid),
+        "collection_name": collection.name,
+        "share_uuid": share_uuid,
+        "permission": share.permission,
+        "message": _share_message(NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED, collection.name),
+    }
+
     db.delete(share)
     db.commit()
 
@@ -1022,5 +1114,9 @@ async def delete_collection_share(
     ]
     if file_ids:
         update_file_access_index.delay(file_ids)
+
+    # Notify affected user(s) about the revocation
+    for uid in target_user_ids:
+        send_ws_event(uid, NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED, revoke_data)
 
     return None
