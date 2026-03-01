@@ -8,6 +8,7 @@ from .endpoints import auth
 from .endpoints import auth_config
 from .endpoints import comments
 from .endpoints import embedding_migration
+from .endpoints import groups
 from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import media_collections
@@ -75,6 +76,7 @@ include_router_with_consistency(system.router, prefix="/system", tags=["system"]
 include_router_with_consistency(
     media_collections.router, prefix="/collections", tags=["collections"]
 )
+include_router_with_consistency(groups.router, prefix="/groups", tags=["groups"])
 include_router_with_consistency(user_files.router, prefix="/my-files", tags=["user-files"])
 include_router_with_consistency(summarization.router, prefix="/files", tags=["summarization"])
 include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompts"])

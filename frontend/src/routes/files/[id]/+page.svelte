@@ -86,6 +86,10 @@
   let aiTagSuggestions: TagSuggestion[] = [];
   let aiCollectionSuggestions: CollectionSuggestion[] = [];
 
+  // Permission level for shared files (null = owner/full access)
+  let myPermission: string | null = null;
+  $: canEdit = !myPermission || myPermission === 'editor' || myPermission === 'owner';
+
   // LLM availability for summary functionality
   $: llmAvailable = $isLLMAvailable;
 
@@ -205,6 +209,7 @@
       if (response.data && typeof response.data === 'object') {
         file = response.data;
         collections = response.data.collections || [];
+        myPermission = response.data.my_permission || null;
         reactiveFile.set(file);
 
         // Track pagination metadata
@@ -2329,6 +2334,16 @@
     <div class="file-header">
       <FileHeader {file} {currentProcessingStep} />
 
+      {#if myPermission}
+        <div class="shared-file-notice">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+            <polyline points="16 6 12 2 8 6"/>
+            <line x1="12" y1="2" x2="12" y2="15"/>
+          </svg>
+          <span>{$t('sharing.sharedFileNotice', { permission: myPermission })}</span>
+        </div>
+      {/if}
 
       <MetadataDisplay
         {file}
@@ -2379,7 +2394,7 @@
               <div class="spinner-small"></div>
               <span>{$t('fileDetail.aiSummary')}</span>
             </button>
-          {:else if file?.status === 'completed'}
+          {:else if file?.status === 'completed' && canEdit}
             <button
               class="generate-summary-btn"
               on:click={handleGenerateSummary}
@@ -2399,8 +2414,8 @@
               {/if}
             </button>
           {/if}
-          <!-- Reprocess Button (opens SelectiveReprocessModal) -->
-          {#if file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
+          <!-- Reprocess Button (opens SelectiveReprocessModal) - editors/owners only -->
+          {#if canEdit && file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
             <button
               class="reprocess-button-header"
               on:click={() => showReprocessModal = true}
@@ -2732,6 +2747,24 @@
     margin: 0 auto;
     font-family: var(--font-family-sans);
     color: var(--text-color);
+  }
+
+  .shared-file-notice {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.4rem 0.75rem;
+    margin-top: 0.5rem;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.08);
+    color: #3b82f6;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+
+  :global(.dark) .shared-file-notice {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
   }
 
   .loading-container,

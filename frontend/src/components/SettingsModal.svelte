@@ -16,6 +16,7 @@
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
   import SearchSettings from '$components/settings/SearchSettings.svelte';
+  import GroupsSettings from '$components/settings/GroupsSettings.svelte';
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
@@ -154,7 +155,8 @@
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
-        { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' }
+        { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' },
+        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group' }
       ]
     }
   ];
@@ -1103,6 +1105,13 @@
               <h3 class="section-title">{$t('settings.searchIndexing.title')}</h3>
               <p class="section-description">{$t('settings.searchIndexing.description')}</p>
               <SearchSettings />
+            </div>
+          {/if}
+
+          <!-- Groups Section -->
+          {#if activeSection === 'groups'}
+            <div class="content-section">
+              <GroupsSettings />
             </div>
           {/if}
 

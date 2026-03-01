@@ -1,0 +1,335 @@
+<script lang="ts">
+  import { createEventDispatcher, onDestroy } from 'svelte';
+  import type { UserSearchResult } from '$lib/types/groups';
+  import { GroupsApi } from '$lib/api/groups';
+  import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
+
+  export let groupUuid: string;
+  export let existingMemberUuids: string[] = [];
+
+  const dispatch = createEventDispatcher<{
+    memberAdded: { userUuid: string };
+  }>();
+
+  let searchQuery = '';
+  let searchResults: UserSearchResult[] = [];
+  let isSearching = false;
+  let addingUserUuid: string | null = null;
+  let selectedRole: 'admin' | 'member' = 'member';
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  onDestroy(() => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+  });
+
+  $: filteredResults = searchResults.filter(
+    (user) => !existingMemberUuids.includes(user.uuid)
+  );
+
+  function handleSearchInput() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+
+    if (searchQuery.trim().length < 2) {
+      searchResults = [];
+      return;
+    }
+
+    debounceTimer = setTimeout(async () => {
+      await performSearch();
+    }, 300);
+  }
+
+  async function performSearch() {
+    if (searchQuery.trim().length < 2) return;
+    isSearching = true;
+
+    try {
+      searchResults = await GroupsApi.searchUsers(searchQuery.trim());
+    } catch (err: any) {
+      console.error('User search failed:', err);
+      searchResults = [];
+    } finally {
+      isSearching = false;
+    }
+  }
+
+  async function handleAddMember(user: UserSearchResult) {
+    addingUserUuid = user.uuid;
+
+    try {
+      await GroupsApi.addMember(groupUuid, {
+        user_uuid: user.uuid,
+        role: selectedRole,
+      });
+
+      toastStore.success($t('groups.toast.memberAdded'));
+      dispatch('memberAdded', { userUuid: user.uuid });
+
+      // Remove from results
+      searchResults = searchResults.filter((u) => u.uuid !== user.uuid);
+    } catch (err: any) {
+      const message = err?.response?.data?.detail || $t('groups.toast.addMemberFailed');
+      toastStore.error(message);
+    } finally {
+      addingUserUuid = null;
+    }
+  }
+
+  function getInitials(name: string | null, email: string): string {
+    if (name) {
+      return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+    }
+    return email[0].toUpperCase();
+  }
+</script>
+
+<div class="member-search">
+  <div class="search-header">
+    <h4 class="search-title">{$t('groups.addMembers')}</h4>
+  </div>
+
+  <div class="search-controls">
+    <div class="search-input-wrapper">
+      <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input
+        type="text"
+        class="search-input"
+        placeholder={$t('groups.searchUsersPlaceholder')}
+        bind:value={searchQuery}
+        on:input={handleSearchInput}
+      />
+      {#if isSearching}
+        <span class="search-spinner"></span>
+      {/if}
+    </div>
+
+    <select class="role-picker" bind:value={selectedRole}>
+      <option value="member">{$t('groups.roles.member')}</option>
+      <option value="admin">{$t('groups.roles.admin')}</option>
+    </select>
+  </div>
+
+  {#if filteredResults.length > 0}
+    <div class="search-results">
+      {#each filteredResults as user (user.uuid)}
+        <div class="result-row">
+          <div class="result-avatar">
+            {getInitials(user.full_name, user.email)}
+          </div>
+          <div class="result-info">
+            <span class="result-name">{user.full_name || user.email}</span>
+            {#if user.full_name}
+              <span class="result-email">{user.email}</span>
+            {/if}
+          </div>
+          <button
+            class="btn-add"
+            on:click={() => handleAddMember(user)}
+            disabled={addingUserUuid === user.uuid}
+          >
+            {#if addingUserUuid === user.uuid}
+              {$t('groups.adding')}
+            {:else}
+              {$t('groups.add')}
+            {/if}
+          </button>
+        </div>
+      {/each}
+    </div>
+  {:else if searchQuery.trim().length >= 2 && !isSearching}
+    <p class="no-results">{$t('groups.noUsersFound')}</p>
+  {/if}
+</div>
+
+<style>
+  .member-search {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .search-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .search-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0;
+  }
+
+  .search-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .search-input-wrapper {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 0.625rem;
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.5rem 0.625rem 0.5rem 2rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.8125rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-light);
+  }
+
+  .search-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+  }
+
+  .search-spinner {
+    position: absolute;
+    right: 0.625rem;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .role-picker {
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .role-picker:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-light);
+  }
+
+  .search-results {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.25rem;
+  }
+
+  .result-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: 6px;
+    transition: background-color 0.15s;
+  }
+
+  .result-row:hover {
+    background-color: var(--background-color);
+  }
+
+  .result-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .result-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .result-name {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .result-email {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .btn-add {
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--primary-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--primary-color);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .btn-add:hover:not(:disabled) {
+    background-color: var(--primary-color);
+    color: white;
+  }
+
+  .btn-add:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .no-results {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 0.75rem 0;
+    margin: 0;
+  }
+</style>

@@ -1,13 +1,35 @@
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import EmailStr
 from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
 from app.schemas.base import UUIDBaseSchema
+
+
+class UserBrief(BaseModel):
+    """Minimal user info for sharing/group contexts."""
+
+    uuid: UUID
+    full_name: Optional[str] = None
+    email: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserSearchResult(BaseModel):
+    """Minimal user info returned by user search endpoint."""
+
+    uuid: UUID
+    full_name: Optional[str] = None
+    email: str
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserBase(BaseModel):

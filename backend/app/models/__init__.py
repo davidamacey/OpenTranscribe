@@ -6,6 +6,8 @@ This package contains database models for all entities in the system.
 
 from .auth_config import AuthConfig
 from .auth_config import AuthConfigAudit
+from .group import UserGroup
+from .group import UserGroupMember
 from .media import Analytics
 from .media import Collection
 from .media import CollectionMember
@@ -24,6 +26,7 @@ from .password_history import PasswordHistory
 from .prompt import SummaryPrompt
 from .prompt import UserSetting
 from .refresh_token import RefreshToken
+from .sharing import CollectionShare
 from .topic import TopicSuggestion
 from .user import User
 from .user_llm_settings import UserLLMSettings
@@ -54,4 +57,7 @@ __all__ = [
     "PasswordHistory",
     "AuthConfig",
     "AuthConfigAudit",
+    "UserGroup",
+    "UserGroupMember",
+    "CollectionShare",
 ]

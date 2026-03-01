@@ -372,6 +372,10 @@ class Collection(Base):
         "CollectionMember", back_populates="collection", cascade="all, delete-orphan"
     )
     default_summary_prompt = relationship("SummaryPrompt", foreign_keys=[default_summary_prompt_id])
+    # Sharing relationships
+    shares = relationship(
+        "CollectionShare", back_populates="collection", cascade="all, delete-orphan"
+    )
 
 
 class CollectionMember(Base):

@@ -89,6 +89,9 @@
   /** @type {string[]} */
   export let selectedStatuses: string[] = []; // ['pending', 'processing', 'completed', 'error']
 
+  /** @type {'all' | 'mine' | 'shared'} */
+  export let ownershipFilter: 'all' | 'mine' | 'shared' = 'all';
+
   // State
   /** @type {Tag[]} */
   let allTags: any[] = [];
@@ -439,6 +442,14 @@
   }
 
   /**
+   * Handle ownership filter change
+   */
+  function setOwnershipFilter(value: 'all' | 'mine' | 'shared') {
+    ownershipFilter = value;
+    triggerFiltersImmediate();
+  }
+
+  /**
    * Toggle a file type in the filter
    * @param {string} fileType - The file type to toggle
    */
@@ -480,6 +491,7 @@
       fileSizeRange,
       fileTypes: selectedFileTypes,
       statuses: selectedStatuses,
+      ownership: ownershipFilter,
     });
   }
 
@@ -500,6 +512,7 @@
     fileSizeRange = { min: null, max: null };
     selectedFileTypes = [];
     selectedStatuses = [];
+    ownershipFilter = 'all';
 
     // Reset sliders to full bounds
     durationSliderValues = [durationBounds.min, durationBounds.max];
@@ -603,6 +616,33 @@
       title={$t('filter.searchTooltip')}
     />
     <small class="input-help">{$t('filter.searchHelp')}</small>
+  </div>
+
+  <div class="filter-section">
+    <h3>{$t('filter.ownership')}</h3>
+    <div class="ownership-list">
+      <button
+        class="ownership-button"
+        class:selected={ownershipFilter === 'all'}
+        on:click={() => setOwnershipFilter('all')}
+      >
+        {$t('filter.allFiles')}
+      </button>
+      <button
+        class="ownership-button"
+        class:selected={ownershipFilter === 'mine'}
+        on:click={() => setOwnershipFilter('mine')}
+      >
+        {$t('filter.myFiles')}
+      </button>
+      <button
+        class="ownership-button"
+        class:selected={ownershipFilter === 'shared'}
+        on:click={() => setOwnershipFilter('shared')}
+      >
+        {$t('filter.sharedWithMe')}
+      </button>
+    </div>
   </div>
 
   <div class="filter-section">
@@ -1219,6 +1259,37 @@
 
   .file-type-button.selected,
   .status-button.selected {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+
+  /* Ownership filter styles */
+  .ownership-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .ownership-button {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .ownership-button:hover {
+    background-color: var(--hover-color);
+    border-color: var(--primary-color-light);
+  }
+
+  .ownership-button.selected {
     background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);

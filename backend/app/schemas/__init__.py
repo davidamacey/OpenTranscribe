@@ -21,6 +21,13 @@ from .auth_config import MFAConfig
 from .auth_config import PasswordPolicyConfig
 from .auth_config import PKIConfig
 from .auth_config import SessionConfig
+from .group import Group as GroupSchema
+from .group import GroupCreate
+from .group import GroupDetail
+from .group import GroupMember
+from .group import GroupMemberAdd
+from .group import GroupMemberUpdate
+from .group import GroupUpdate
 from .llm_settings import ConnectionStatus
 from .llm_settings import ConnectionTestRequest
 from .llm_settings import ConnectionTestResponse
@@ -61,6 +68,10 @@ from .prompt import UserSettingBase
 from .prompt import UserSettingCreate
 from .prompt import UserSettingsList
 from .prompt import UserSettingUpdate
+from .sharing import Share
+from .sharing import ShareCreate
+from .sharing import SharedCollectionInfo
+from .sharing import ShareUpdate
 from .summary import ActionItem
 from .summary import MajorTopic
 from .summary import SummaryData
@@ -72,11 +83,15 @@ from .transcription_settings import TranscriptionSettings
 from .transcription_settings import TranscriptionSettingsUpdate
 from .transcription_settings import TranscriptionSystemDefaults
 from .user import User as UserSchema
+from .user import UserBrief
 from .user import UserCreate
+from .user import UserSearchResult
 from .user import UserUpdate
 
 __all__ = [
+    "UserBrief",
     "UserCreate",
+    "UserSearchResult",
     "UserUpdate",
     "UserSchema",
     "MediaFile",
@@ -147,4 +162,17 @@ __all__ = [
     "MFAConfig",
     "SessionConfig",
     "LoginBannerConfig",
+    # Group schemas
+    "GroupSchema",
+    "GroupCreate",
+    "GroupUpdate",
+    "GroupDetail",
+    "GroupMember",
+    "GroupMemberAdd",
+    "GroupMemberUpdate",
+    # Sharing schemas
+    "Share",
+    "ShareCreate",
+    "ShareUpdate",
+    "SharedCollectionInfo",
 ]

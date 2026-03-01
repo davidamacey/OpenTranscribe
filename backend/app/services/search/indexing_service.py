@@ -19,7 +19,7 @@ _neural_pipeline_available = False
 
 # Index version -- bump when mappings or analysis settings change.
 # Stored in index _meta so ensure_chunks_index_exists() can detect stale indices.
-_INDEX_VERSION = 3
+_INDEX_VERSION = 4
 
 # Transient bulk error types that are safe to retry
 _RETRYABLE_ERROR_TYPES = frozenset(
@@ -102,6 +102,7 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
             "duration": {"type": "float"},
             "file_size": {"type": "long"},
             "collection_ids": {"type": "integer"},
+            "accessible_user_ids": {"type": "integer"},
             "upload_time": {"type": "date"},
             "language": {"type": "keyword"},
             # Timestamps (for video navigation)
@@ -620,10 +621,12 @@ class TranscriptIndexingService:
                 f"Neural pipeline not available for file {file_uuid}, indexing text-only"
             )
 
-        # 3. Add indexed_at timestamp
+        # 3. Add indexed_at timestamp and accessible_user_ids
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         for chunk in chunks:
             chunk["indexed_at"] = now
+            # Initial access list is just the file owner; updated when shares change
+            chunk["accessible_user_ids"] = [user_id]
 
         # 4. Bulk index to OpenSearch
         t_index_start = time.time()

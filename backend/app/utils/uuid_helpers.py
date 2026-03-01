@@ -202,6 +202,9 @@ def get_file_by_uuid_with_permission(
     """
     Get media file by UUID with permission check.
 
+    Checks direct ownership first, then falls back to shared access
+    via PermissionService (direct shares and group shares).
+
     Args:
         db: Database session
         uuid: File UUID
@@ -214,16 +217,23 @@ def get_file_by_uuid_with_permission(
     Raises:
         HTTPException: 404 if not found, 403 if no permission
     """
+    from app.services.permission_service import PermissionService
+
     file = get_file_by_uuid(db, uuid)
 
-    # Check permissions
-    if file.user_id != user_id and not (allow_public and file.is_public):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this file",
-        )
+    # Direct ownership or public access (fast path)
+    if file.user_id == user_id or (allow_public and file.is_public):
+        return file
 
-    return file
+    # Check shared access via PermissionService
+    permission = PermissionService.get_file_permission(db, file.id, user_id)
+    if permission is not None:
+        return file
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="You do not have permission to access this file",
+    )
 
 
 def get_collection_by_uuid_with_permission(
@@ -231,6 +241,9 @@ def get_collection_by_uuid_with_permission(
 ) -> Collection:
     """
     Get collection by UUID with permission check.
+
+    Checks direct ownership first, then falls back to shared access
+    via PermissionService (direct shares and group shares).
 
     Args:
         db: Database session
@@ -243,12 +256,125 @@ def get_collection_by_uuid_with_permission(
     Raises:
         HTTPException: 404 if not found, 403 if no permission
     """
+    from app.services.permission_service import PermissionService
+
     collection = get_collection_by_uuid(db, uuid)
 
-    if collection.user_id != user_id:
+    # Direct ownership (fast path)
+    if collection.user_id == user_id:
+        return collection
+
+    # Check shared access via PermissionService
+    permission = PermissionService.get_collection_permission(db, collection.id, user_id)
+    if permission is not None:
+        return collection
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="You do not have permission to access this collection",
+    )
+
+
+# Sharing-aware permission helpers (return permission level)
+def get_file_by_uuid_with_sharing(
+    db: Session,
+    uuid: UUID | str,
+    user_id: int,
+    is_admin: bool = False,
+    min_permission: str = "viewer",
+) -> tuple[MediaFile, str]:
+    """
+    Get file by UUID with permission-aware access checking.
+
+    Returns (file, effective_permission) tuple. Admin users bypass
+    permission checks and receive 'owner' as their effective permission.
+
+    Args:
+        db: Database session
+        uuid: File UUID
+        user_id: Current user ID
+        is_admin: Whether the user has admin privileges
+        min_permission: Minimum required permission level
+
+    Returns:
+        Tuple of (MediaFile, effective_permission_string)
+
+    Raises:
+        HTTPException: 404 if not found, 403 if insufficient permission
+    """
+    from app.services.permission_service import PERMISSION_LEVELS
+    from app.services.permission_service import PermissionService
+
+    file = get_file_by_uuid(db, uuid)
+
+    # Admin bypass
+    if is_admin:
+        return file, "owner"
+
+    # Check permission via PermissionService
+    permission = PermissionService.get_file_permission(db, file.id, user_id)
+    if permission is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this collection",
+            detail="Not authorized to access this file",
         )
 
-    return collection
+    if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Requires {min_permission} permission on this file",
+        )
+
+    return file, permission
+
+
+def get_collection_by_uuid_with_sharing(
+    db: Session,
+    uuid: UUID | str,
+    user_id: int,
+    is_admin: bool = False,
+    min_permission: str = "viewer",
+) -> tuple[Collection, str]:
+    """
+    Get collection by UUID with permission-aware access checking.
+
+    Returns (collection, effective_permission) tuple. Admin users bypass
+    permission checks and receive 'owner' as their effective permission.
+
+    Args:
+        db: Database session
+        uuid: Collection UUID
+        user_id: Current user ID
+        is_admin: Whether the user has admin privileges
+        min_permission: Minimum required permission level
+
+    Returns:
+        Tuple of (Collection, effective_permission_string)
+
+    Raises:
+        HTTPException: 404 if not found, 403 if insufficient permission
+    """
+    from app.services.permission_service import PERMISSION_LEVELS
+    from app.services.permission_service import PermissionService
+
+    collection = get_collection_by_uuid(db, uuid)
+
+    # Admin bypass
+    if is_admin:
+        return collection, "owner"
+
+    # Check permission via PermissionService
+    permission = PermissionService.get_collection_permission(db, collection.id, user_id)
+    if permission is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this collection",
+        )
+
+    if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Requires {min_permission} permission on this collection",
+        )
+
+    return collection, permission

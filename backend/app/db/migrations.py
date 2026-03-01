@@ -136,8 +136,12 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='user_mfa' AND column_name='uuid')"
     )
+    has_user_group = "user_group" in tables
 
     # Return the highest version stamp that matches (newest first)
+    # v210: user groups and collection sharing tables
+    if has_user_group:
+        return "v210_add_groups_and_sharing"
     # v200: schema reconciliation (jti on refresh_token + uuid on user_mfa)
     if has_collection_default_prompt and has_refresh_token_jti and has_mfa_uuid:
         return "v200_schema_reconciliation"

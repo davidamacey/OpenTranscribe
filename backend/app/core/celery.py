@@ -107,6 +107,7 @@ celery_app.conf.update(
         "reindex_transcripts": {"queue": "embedding"},
         "index_transcript_search": {"queue": "embedding"},
         "app.tasks.search_indexing_task.*": {"queue": "embedding"},
+        "update_file_access_index": {"queue": "embedding"},
         "search_index_maintenance": {"queue": "embedding"},
         # Utility Queue - Lightweight maintenance tasks (concurrency=2)
         "app.tasks.utility.*": {"queue": "utility"},

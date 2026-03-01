@@ -13,6 +13,7 @@ export type SettingsSection =
   | 'ai-prompts'
   | 'llm-provider'
   | 'search-indexing'
+  | 'groups'
   // System sections (visible to all users)
   | 'system-statistics'
   // Admin sections
@@ -47,6 +48,7 @@ const initialState: SettingsModalState = {
     'ai-prompts': false,
     'llm-provider': false,
     'search-indexing': false,
+    groups: false,
     'system-statistics': false,
     'admin-users': false,
     'admin-task-health': false,

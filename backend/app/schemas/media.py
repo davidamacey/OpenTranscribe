@@ -12,6 +12,7 @@ from pydantic import field_validator
 from pydantic import model_validator
 
 from app.schemas.base import UUIDBaseSchema
+from app.schemas.user import UserBrief
 
 
 class FileStatus(str, Enum):
@@ -604,6 +605,10 @@ class Collection(CollectionBase, UUIDBaseSchema):
 
 class CollectionWithCount(Collection):
     media_count: int = 0
+    is_shared: bool = False  # True if shared with (not owned by) the caller
+    my_permission: str = "owner"  # caller's effective permission
+    shared_by: Optional[UserBrief] = None  # who shared it (for shared collections)
+    share_count: int = 0  # Number of shares on this collection
 
 
 class CollectionResponse(Collection):
