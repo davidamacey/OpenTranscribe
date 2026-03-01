@@ -259,7 +259,7 @@
   "settings.transcription.loadFailed": "Не удалось загрузить настройки транскрипции. Используются стандартные.",
   "settings.transcription.resetSuccess": "Настройки транскрипции сброшены по умолчанию",
   "settings.transcription.resetFailed": "Не удалось сбросить настройки транскрипции",
-  "settings.download.title": "Загрузка медиа",
+  "settings.download.title": "Качество импорта URL",
   "settings.download.description": "Настройка качества видео и аудио по умолчанию для загрузок по URL.",
   "settings.download.loading": "Загрузка настроек...",
   "settings.download.videoQuality": "Качество видео",

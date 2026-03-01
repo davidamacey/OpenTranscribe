@@ -259,7 +259,7 @@
   "settings.transcription.loadFailed": "Failed to load transcription settings. Using defaults.",
   "settings.transcription.resetSuccess": "Transcription settings reset to defaults",
   "settings.transcription.resetFailed": "Failed to reset transcription settings",
-  "settings.download.title": "Media Download",
+  "settings.download.title": "URL Import Quality",
   "settings.download.description": "Configure default video and audio quality when importing media from URLs (YouTube, TikTok, and 1800+ platforms).",
   "settings.download.loading": "Loading download settings...",
   "settings.download.videoQuality": "Video Quality",
