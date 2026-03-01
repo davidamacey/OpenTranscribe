@@ -429,3 +429,34 @@ ORG_CONTEXT_MAX_LENGTH = 10000
 DEFAULT_ORG_CONTEXT_TEXT = ""
 DEFAULT_ORG_CONTEXT_INCLUDE_DEFAULT_PROMPTS = True
 DEFAULT_ORG_CONTEXT_INCLUDE_CUSTOM_PROMPTS = False
+
+# =============================================================================
+# Download Quality Settings (URL/YouTube Downloads)
+# =============================================================================
+
+VIDEO_QUALITY_OPTIONS: dict[str, str] = {
+    "best": "Best Available",
+    "2160p": "4K (2160p)",
+    "1440p": "1440p (QHD)",
+    "1080p": "1080p (Full HD)",
+    "720p": "720p (HD)",
+    "480p": "480p (SD)",
+    "360p": "360p (Low)",
+}
+
+AUDIO_QUALITY_OPTIONS: dict[str, str] = {
+    "best": "Best Available",
+    "320": "320 kbps",
+    "192": "192 kbps",
+    "128": "128 kbps",
+}
+
+DEFAULT_VIDEO_QUALITY = "best"
+DEFAULT_AUDIO_ONLY = False
+DEFAULT_AUDIO_QUALITY = "best"
+
+VALID_VIDEO_QUALITIES = list(VIDEO_QUALITY_OPTIONS.keys())
+VALID_AUDIO_QUALITIES = list(AUDIO_QUALITY_OPTIONS.keys())
+
+# Note: LANGUAGES_WITH_ALIGNMENT is defined at the top of this file
+# via dynamic import from whisperx.alignment module

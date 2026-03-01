@@ -21,6 +21,9 @@ from .auth_config import MFAConfig
 from .auth_config import PasswordPolicyConfig
 from .auth_config import PKIConfig
 from .auth_config import SessionConfig
+from .download_settings import DownloadSettings
+from .download_settings import DownloadSettingsUpdate
+from .download_settings import DownloadSystemDefaults
 from .llm_settings import ConnectionStatus
 from .llm_settings import ConnectionTestRequest
 from .llm_settings import ConnectionTestResponse
@@ -147,4 +150,8 @@ __all__ = [
     "MFAConfig",
     "SessionConfig",
     "LoginBannerConfig",
+    # Download settings schemas
+    "DownloadSettings",
+    "DownloadSettingsUpdate",
+    "DownloadSystemDefaults",
 ]

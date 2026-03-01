@@ -31,6 +31,9 @@
     DEFAULT_TRANSCRIPTION_SETTINGS
   } from '../lib/api/transcriptionSettings';
 
+  // Import download quality settings API
+  import { getDownloadSettings, getDownloadSystemDefaults, type DownloadSettings, type DownloadSystemDefaults } from '$lib/api/downloadSettings';
+
   // Import network connectivity store
   import { isOnline } from '../stores/network';
 
@@ -78,6 +81,18 @@
   // URL processing state (no inline messages - use toast notifications only)
   let mediaUrl = '';
   let processingUrl = false;
+
+  // Download quality options (per-download overrides)
+  let downloadVideoQuality = '';
+  let downloadAudioOnly = false;
+  let downloadAudioQuality = '';
+  // Track initial values loaded from user settings so we only send
+  // overrides when the user actually changed something in the panel.
+  let downloadInitialVideoQuality = '';
+  let downloadInitialAudioOnly = false;
+  let downloadInitialAudioQuality = '';
+  let downloadDefaults: DownloadSystemDefaults | null = null;
+  let showDownloadOptions = false;
 
   // Local recording UI state
   let showRecordingInfo = false;
@@ -233,7 +248,6 @@
       const customEvent = event as CustomEvent;
       if (customEvent.detail?.activeTab) {
         activeTab = customEvent.detail.activeTab;
-        // Tab change is handled by reactive updates
       }
     };
 
@@ -1535,6 +1549,26 @@
     }
   }
 
+  // Load download quality defaults for URL tab
+  async function loadDownloadDefaults() {
+    if (downloadDefaults) return;
+    try {
+      const [settings, defaults] = await Promise.all([
+        getDownloadSettings(),
+        getDownloadSystemDefaults()
+      ]);
+      downloadDefaults = defaults;
+      downloadVideoQuality = settings.video_quality;
+      downloadAudioOnly = settings.audio_only;
+      downloadAudioQuality = settings.audio_quality;
+      downloadInitialVideoQuality = settings.video_quality;
+      downloadInitialAudioOnly = settings.audio_only;
+      downloadInitialAudioQuality = settings.audio_quality;
+    } catch (err) {
+      console.error('Failed to load download defaults:', err);
+    }
+  }
+
   // Process Media URL (YouTube, Vimeo, Twitter/X, TikTok, and 1800+ more)
   async function processMediaUrl() {
     if (!mediaUrl.trim()) {
@@ -1571,6 +1605,22 @@
       if (collectionIds) payload.collection_ids = collectionIds;
       if (tagNames) payload.tag_names = tagNames;
 
+      // Only send download quality overrides if user explicitly opened the
+      // download options panel and changed values from their saved defaults.
+      // The backend looks up the user's saved preferences from the database
+      // when no overrides are provided.
+      if (showDownloadOptions && downloadDefaults) {
+        const hasChanges =
+          downloadVideoQuality !== downloadInitialVideoQuality ||
+          downloadAudioOnly !== downloadInitialAudioOnly ||
+          downloadAudioQuality !== downloadInitialAudioQuality;
+        if (hasChanges) {
+          payload.video_quality = downloadVideoQuality;
+          payload.audio_only = downloadAudioOnly;
+          payload.audio_quality = downloadAudioQuality;
+        }
+      }
+
       // Call the API endpoint directly for immediate processing
       const response = await axiosInstance.post('/files/process-url', payload);
 
@@ -1582,6 +1632,13 @@
       mediaUsername = '';
       mediaPassword = '';
       resetOrganizeState();
+
+      // Reset download options so next URL starts with fresh defaults
+      showDownloadOptions = false;
+      downloadDefaults = null;
+      downloadVideoQuality = '';
+      downloadAudioOnly = false;
+      downloadAudioQuality = '';
 
       // Check if this is a playlist or single video response
       if (responseData.type === 'playlist') {
@@ -2249,6 +2306,57 @@
             <p class="protected-media-hint">{$t('uploader.protectedMediaHint')}</p>
           </div>
         {/if}
+
+        <!-- Download Quality Options -->
+        <details
+          class="download-options"
+          bind:open={showDownloadOptions}
+          on:toggle={() => { if (showDownloadOptions && !downloadDefaults) loadDownloadDefaults(); }}
+        >
+          <summary class="download-options-summary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            {$t('uploader.downloadOptions')}
+          </summary>
+          {#if downloadDefaults}
+            <div class="download-options-content">
+              <div class="download-option-row">
+                <label for="dl-video-quality">{$t('settings.download.videoQuality')}</label>
+                <select id="dl-video-quality" bind:value={downloadVideoQuality} disabled={downloadAudioOnly} class="download-select">
+                  {#each Object.entries(downloadDefaults.available_video_qualities) as [value, label]}
+                    <option {value}>{label}</option>
+                  {/each}
+                </select>
+              </div>
+              <div class="download-option-row">
+                <label for="dl-audio-only">{$t('settings.download.audioOnly')}</label>
+                <label class="download-toggle">
+                  <input id="dl-audio-only" type="checkbox" bind:checked={downloadAudioOnly} />
+                  <span class="download-toggle-slider"></span>
+                </label>
+              </div>
+              {#if downloadAudioOnly}
+                <div class="download-option-row">
+                  <label for="dl-audio-quality">{$t('settings.download.audioQuality')}</label>
+                  <select id="dl-audio-quality" bind:value={downloadAudioQuality} class="download-select">
+                    {#each Object.entries(downloadDefaults.available_audio_qualities) as [value, label]}
+                      <option {value}>{label}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
+              <p class="download-options-hint">{$t('uploader.downloadOptionsHint')}</p>
+            </div>
+          {:else}
+            <div class="download-options-loading">
+              <span class="download-spinner"></span>
+              {$t('common.loading')}
+            </div>
+          {/if}
+        </details>
 
         <div class="url-actions">
           <button
@@ -4262,5 +4370,146 @@
     background-color: var(--surface-color);
     border-color: var(--border-color);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .download-options {
+    margin-top: 0.75rem;
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+
+  .download-options-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary, #6b7280);
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+
+  .download-options-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .download-options-summary:hover {
+    color: var(--text-primary, #111827);
+    background-color: var(--bg-secondary, #f9fafb);
+  }
+
+  .download-options-content {
+    padding: 0.75rem 0.875rem;
+    border-top: 1px solid var(--border-color, #e5e7eb);
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .download-option-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .download-option-row label {
+    font-size: 0.8125rem;
+    color: var(--text-primary, #111827);
+    white-space: nowrap;
+  }
+
+  .download-select {
+    flex: 1;
+    max-width: 200px;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--border-color, #d1d5db);
+    border-radius: 0.375rem;
+    background-color: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #111827);
+    font-size: 0.8125rem;
+  }
+
+  .download-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .download-toggle {
+    position: relative;
+    display: inline-block;
+    width: 2.5rem;
+    height: 1.375rem;
+    cursor: pointer;
+  }
+
+  .download-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .download-toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border-color, #d1d5db);
+    border-radius: 1.375rem;
+    transition: background-color 0.2s;
+  }
+
+  .download-toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 1rem;
+    width: 1rem;
+    left: 0.1875rem;
+    bottom: 0.1875rem;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .download-toggle input:checked + .download-toggle-slider {
+    background-color: var(--primary-color, #3b82f6);
+  }
+
+  .download-toggle input:checked + .download-toggle-slider::before {
+    transform: translateX(1.125rem);
+  }
+
+  .download-options-hint {
+    font-size: 0.75rem;
+    color: var(--text-tertiary, #9ca3af);
+    margin: 0;
+    font-style: italic;
+  }
+
+  .download-options-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem;
+    border-top: 1px solid var(--border-color, #e5e7eb);
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
+  }
+
+  .download-spinner {
+    width: 0.875rem;
+    height: 0.875rem;
+    border: 2px solid var(--border-color, #e5e7eb);
+    border-top-color: var(--primary-color, #3b82f6);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>
