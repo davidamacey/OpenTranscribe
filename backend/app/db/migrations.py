@@ -136,8 +136,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='user_mfa' AND column_name='uuid')"
     )
+    has_speaker_cluster = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'speaker_cluster')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v210: speaker clustering tables
+    if has_speaker_cluster:
+        return "v210_add_speaker_clusters"
     # v200: schema reconciliation (jti on refresh_token + uuid on user_mfa)
     if has_collection_default_prompt and has_refresh_token_jti and has_mfa_uuid:
         return "v200_schema_reconciliation"
