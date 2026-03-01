@@ -442,9 +442,7 @@ When you need to add columns, indexes, or constraints:
 
 3. **Update Pydantic schemas** in `backend/app/schemas/` if needed
 
-4. **Update `database/init_db.sql`** for fresh installs (add the same columns/indexes)
-
-5. **Update migration detection** in `backend/app/db/migrations.py`:
+4. **Update migration detection** in `backend/app/db/migrations.py`:
    - Add detection logic for the new schema version
    - Update the latest version check
 
@@ -452,9 +450,9 @@ When you need to add columns, indexes, or constraints:
 
 | File | Purpose |
 |------|---------|
-| `backend/alembic/versions/*.py` | Alembic migrations (versioned, run on existing DBs) |
+| `backend/alembic/versions/*.py` | Alembic migrations (versioned, the schema authority) |
 | `backend/app/db/migrations.py` | Auto-detection and startup runner |
-| `database/init_db.sql` | Fresh install schema (used by `./opentr.sh reset dev`) |
+| `database/init_db.sql` | Legacy reference only (no longer used for schema) |
 
 ### How Migrations Run
 
@@ -465,7 +463,7 @@ On backend startup, `migrations.py` automatically:
 
 ### Development Workflow
 
-- **Testing schema changes**: Use `./opentr.sh reset dev` (deletes data, uses init_db.sql)
+- **Testing schema changes**: Use `./opentr.sh reset dev` (deletes data, runs full migration chain)
 - **Testing migrations**: Rebuild backend and restart (migrations run on startup)
 - **Production upgrades**: Just restart the backend - migrations apply automatically
 
@@ -616,7 +614,7 @@ A pre-commit hook automatically runs `svelte-check` and `vite build` when fronte
 ### Important File Locations
 - Environment config: `.env` (never overwrite without confirmation)
 - Environment template: `.env.example` (freely editable - keep in sync when adding new env vars)
-- Database init: `database/init_db.sql`
+- Database migrations: `backend/alembic/versions/` (schema authority)
 - Docker base config: `docker-compose.yml` (common to all environments)
 - Docker dev config: `docker-compose.override.yml` (auto-loaded in dev)
 - Docker prod config: `docker-compose.prod.yml` (production overrides)
@@ -937,7 +935,8 @@ This script will change ownership of your model cache to UID:GID 1000:1000, maki
 5. Test with `./opentr.sh restart-frontend`
 
 ### Database Changes
-1. Modify `database/init_db.sql`
-2. Update SQLAlchemy models
-3. Update Pydantic schemas
-4. Reset dev environment: `./opentr.sh reset dev`
+1. Create an Alembic migration in `backend/alembic/versions/`
+2. Update SQLAlchemy models in `backend/app/models/`
+3. Update Pydantic schemas in `backend/app/schemas/` if needed
+4. Update `backend/app/db/migrations.py` detection logic for the new version
+5. Test with `./opentr.sh reset dev` (runs full migration chain from scratch)

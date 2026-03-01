@@ -12,7 +12,7 @@ from sqlalchemy import pool
 from alembic import context  # type: ignore[attr-defined]
 from app.db.base import Base
 
-# NOTE: OpenTranscribe uses init_db.sql as the source of truth for database schema
+# NOTE: Alembic is the sole authority for database schema creation and upgrades
 # until the application reaches releases. After that, we will use Alembic migrations.
 
 # this is the Alembic Config object, which provides

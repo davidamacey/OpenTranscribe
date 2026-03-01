@@ -1,3 +1,12 @@
+-- =====================================================
+-- REFERENCE ONLY - This file is NOT used in production.
+-- Database schema is managed exclusively by Alembic
+-- migrations in backend/alembic/versions/
+-- Seed data is managed by backend/app/initial_data.py
+--
+-- This file is preserved for documentation and reference.
+-- =====================================================
+
 -- Initialize database tables for OpenTranscribe
 -- Enable UUID extension for PostgreSQL
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

@@ -30,7 +30,7 @@ class RefreshToken(Base):
     Attributes:
         id: Primary key
         user_id: Foreign key to user table
-        token_hash: SHA-256 hash of the refresh token (64 chars hex)
+        token_hash: SHA-256/SHA-512 hash of the refresh token (up to 128 chars hex)
         jti: JWT ID claim from the token for Redis blacklist lookup
         expires_at: Token expiration timestamp
         revoked_at: Timestamp when token was revoked (null if active)
@@ -43,7 +43,7 @@ class RefreshToken(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
-    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    token_hash = Column(String(128), unique=True, nullable=False, index=True)
     jti = Column(String(36), unique=True, nullable=False, index=True)  # UUID format
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)

@@ -261,7 +261,7 @@ start_app() {
     # Production: Use base + prod override files
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.prod.yml"
 
-    # Note: INIT_DB_PATH uses default ./database/init_db.sql (same for all modes)
+    # Note: Database schema is managed by Alembic migrations on backend startup
 
     if [ "$PULL_FLAG" = "--pull" ]; then
       echo "⬇️  Forcing pull of latest production images from Docker Hub..."
@@ -542,7 +542,7 @@ reset_and_init() {
   if [ "$ENVIRONMENT" = "prod" ]; then
     # Production: Use base + prod override files
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.prod.yml"
-    # Note: INIT_DB_PATH uses default ./database/init_db.sql (same for all modes)
+    # Note: Database schema is managed by Alembic migrations on backend startup
 
     if [ "$PULL_FLAG" = "--pull" ]; then
       echo "⬇️  Forcing pull of latest production images from Docker Hub..."
@@ -728,9 +728,9 @@ reset_and_init() {
   echo "⏳ Waiting for backend to be ready..."
   wait_for_backend_health
 
-  # Note: Database tables, admin user, and default tags are automatically created
-  # by PostgreSQL's entrypoint from /docker-entrypoint-initdb.d/init_db.sql
-  # on first container start (when postgres_data volume is empty after 'down -v')
+  # Note: Database tables, admin user, default tags, and system prompts are
+  # automatically created by Alembic migrations and initial_data.py on backend startup
+  # (runs on first container start when postgres_data volume is empty after 'down -v')
 
   echo "✅ Setup complete!"
 

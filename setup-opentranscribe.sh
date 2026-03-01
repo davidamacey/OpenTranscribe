@@ -228,27 +228,8 @@ check_network_connectivity() {
 validate_downloaded_files() {
     echo -e "${BLUE}🔍 Validating downloaded files...${NC}"
 
-    # Validate init_db.sql (in database/ subdirectory)
-    if [ ! -f "database/init_db.sql" ]; then
-        echo -e "${RED}❌ database/init_db.sql file not found${NC}"
-        return 1
-    fi
-
-    # Check file size (should be substantial)
-    local db_size
-    db_size=$(wc -c < database/init_db.sql)
-    if [ "$db_size" -lt 10000 ]; then
-        echo -e "${RED}❌ database/init_db.sql file too small ($db_size bytes)${NC}"
-        return 1
-    fi
-
-    # Check for essential database content including admin user
-    if ! grep -q "CREATE TABLE.*user" database/init_db.sql || ! grep -q "CREATE TABLE.*media_file" database/init_db.sql || ! grep -q "admin@example.com" database/init_db.sql; then
-        echo -e "${RED}❌ database/init_db.sql missing essential database tables or admin user${NC}"
-        return 1
-    fi
-
-    echo "✓ database/init_db.sql validated ($db_size bytes)"
+    # Note: Database schema is managed by Alembic migrations on backend startup.
+    # No init_db.sql validation needed.
 
     # Validate docker-compose files exist
     if [ ! -f "docker-compose.yml" ]; then
@@ -357,41 +338,7 @@ create_database_files() {
     # Create database directory
     mkdir -p database
 
-    # Download the official init_db.sql from the repository
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db.sql"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o database/init_db.sql; then
-            # Validate downloaded file
-            if [ -s database/init_db.sql ] && grep -q "CREATE TABLE" database/init_db.sql && grep -q "admin@example.com" database/init_db.sql; then
-                echo "✓ Downloaded and validated database/init_db.sql"
-                return 0
-            else
-                echo "⚠️  Downloaded file appears invalid, retrying..."
-                rm -f database/init_db.sql
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    echo -e "${RED}❌ Failed to download database initialization file after $max_retries attempts${NC}"
-    echo "Please check your internet connection and try again."
-    echo "Alternative: You can manually download from:"
-    echo "$download_url"
-    exit 1
+    # Note: Database schema is managed by Alembic migrations - no init_db.sql download needed
 }
 
 create_configuration_files() {
@@ -1399,8 +1346,7 @@ create_env_file() {
     echo "DETECTED_DEVICE=${DETECTED_DEVICE}" >> .env
     echo "USE_NVIDIA_RUNTIME=${USE_GPU_RUNTIME}" >> .env
 
-    # Note: INIT_DB_PATH uses default ./database/init_db.sql from .env.example
-    # All deployment methods now use the same standardized path
+    # Note: Database schema is managed by Alembic migrations on backend startup
 
     # Clean up backup file
     rm -f .env.bak
@@ -1768,7 +1714,7 @@ validate_setup() {
     echo -e "${BLUE}✅ Validating setup...${NC}"
 
     # Check required files
-    local required_files=(".env" "docker-compose.yml" "docker-compose.prod.yml" "opentranscribe.sh" "database/init_db.sql")
+    local required_files=(".env" "docker-compose.yml" "docker-compose.prod.yml" "opentranscribe.sh")
     for file in "${required_files[@]}"; do
         if [ -f "$file" ]; then
             echo "✓ $file exists"
@@ -1806,7 +1752,7 @@ validate_setup() {
         echo "  1. Missing or invalid environment variables in .env"
         echo "  2. Syntax errors in docker-compose files"
         echo "  3. Missing required files referenced in docker-compose"
-        echo "  4. Missing database/init_db.sql file"
+        echo "  4. Backend failed to apply Alembic migrations"
         echo ""
         read -p "Continue setup anyway? (y/N) " -n 1 -r </dev/tty
         echo

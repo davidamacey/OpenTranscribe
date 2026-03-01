@@ -729,9 +729,8 @@ copy_configuration() {
     print_info "Copying .env.example..."
     cp .env.example "${PACKAGE_DIR}/.env.example"
 
-    # Copy database init
-    print_info "Copying database initialization..."
-    cp database/init_db.sql "${PACKAGE_DIR}/database/"
+    # Note: Database schema is managed by Alembic migrations on backend startup
+    # No init_db.sql needed in the package
 
     # Copy nginx config
     print_info "Copying nginx configuration..."
