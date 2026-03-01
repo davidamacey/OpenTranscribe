@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
 from pydantic import BaseModel
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_user
@@ -60,6 +61,11 @@ class BulkActionRequest(BaseModel):
     action: str  # "delete", "retry", "cancel", "recover", "reprocess", "summarize"
     force: bool = False
     reset_retry_count: bool = False
+    # Selective reprocessing (optional, used when action='reprocess')
+    stages: list[str] = Field(default_factory=list)
+    min_speakers: Optional[int] = None
+    max_speakers: Optional[int] = None
+    num_speakers: Optional[int] = None
 
 
 class BulkActionResult(BaseModel):
@@ -449,7 +455,15 @@ def _handle_recover_action(db: Session, file_uuid: str, file_id: int) -> BulkAct
     )
 
 
-def _handle_reprocess_action(db: Session, file_uuid: str, file_id: int) -> BulkActionResult:
+def _handle_reprocess_action(
+    db: Session,
+    file_uuid: str,
+    file_id: int,
+    stages: list[str] | None = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
+    num_speakers: int | None = None,
+) -> BulkActionResult:
     """Handle reprocess action for bulk operations."""
     import os
 
@@ -473,7 +487,35 @@ def _handle_reprocess_action(db: Session, file_uuid: str, file_id: int) -> BulkA
             error="INVALID_STATUS",
         )
 
-    # Reset file for retry
+    if stages:
+        # Selective reprocessing
+        from app.api.endpoints.files.reprocess import clear_selective_data
+        from app.api.endpoints.files.reprocess import dispatch_selective_tasks
+
+        if "transcription" in stages:
+            success = reset_file_for_retry(db, file_id, True)
+            if not success:
+                return BulkActionResult(
+                    file_uuid=file_uuid,
+                    success=False,
+                    message="Failed to reset file for reprocessing",
+                    error="RESET_FAILED",
+                )
+
+        clear_selective_data(db, db_file, stages)
+        dispatch_selective_tasks(
+            file_uuid,
+            stages,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            file_id=file_id,
+            user_id=int(db_file.user_id),
+        )
+        message = f"Selective reprocessing started (stages: {', '.join(stages)})"
+        return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
+
+    # Full reprocess (backward compatible)
     success = reset_file_for_retry(db, file_id, True)
     if not success:
         return BulkActionResult(
@@ -492,7 +534,9 @@ def _handle_reprocess_action(db: Session, file_uuid: str, file_id: int) -> BulkA
     return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
 
 
-def _handle_summarize_action(db: Session, file_uuid: str, file_id: int) -> BulkActionResult:
+def _handle_summarize_action(
+    db: Session, file_uuid: str, file_id: int, user_id: int | None = None
+) -> BulkActionResult:
     """Handle summarize action for bulk operations."""
     import os
 
@@ -501,7 +545,7 @@ def _handle_summarize_action(db: Session, file_uuid: str, file_id: int) -> BulkA
 
     # Check if LLM is configured
     try:
-        llm_service = LLMService.create_from_settings()
+        llm_service = LLMService.create_from_settings(user_id=user_id)
         if llm_service is None:
             return BulkActionResult(
                 file_uuid=file_uuid,
@@ -548,6 +592,10 @@ def _process_single_file_action(
     is_admin: bool,
     force: bool,
     reset_retry_count: bool,
+    stages: list[str] | None = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
+    num_speakers: int | None = None,
 ) -> BulkActionResult:
     """Process a single file action, returning the result."""
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
@@ -558,8 +606,10 @@ def _process_single_file_action(
         "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count),
         "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),
         "recover": lambda: _handle_recover_action(db, file_uuid, file_id),
-        "reprocess": lambda: _handle_reprocess_action(db, file_uuid, file_id),
-        "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id),
+        "reprocess": lambda: _handle_reprocess_action(
+            db, file_uuid, file_id, stages, min_speakers, max_speakers, num_speakers
+        ),
+        "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, int(current_user.id)),
     }
 
     handler = action_handlers.get(action)
@@ -595,6 +645,10 @@ async def bulk_file_action(
                     is_admin=is_admin,
                     force=request.force,
                     reset_retry_count=request.reset_retry_count,
+                    stages=request.stages if request.stages else None,
+                    min_speakers=request.min_speakers,
+                    max_speakers=request.max_speakers,
+                    num_speakers=request.num_speakers,
                 )
                 results.append(result)
             except HTTPException as e:

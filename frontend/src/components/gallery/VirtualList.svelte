@@ -407,6 +407,7 @@
   .list-cell-checkbox {
     width: 40px;
     justify-content: center;
+    position: relative;
   }
 
   .list-cell-checkbox .checkmark {

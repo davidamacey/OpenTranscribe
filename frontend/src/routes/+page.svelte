@@ -8,6 +8,7 @@
   import { galleryStore, galleryState, hasMoreFiles, isLoadingMore, galleryTotalCount, galleryViewMode } from '$stores/gallery';
   import { t } from '$stores/locale';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
+  import SelectiveReprocessModal from '../components/SelectiveReprocessModal.svelte';
   import GalleryCountChip from '$components/gallery/GalleryCountChip.svelte';
   import GallerySortDropdown from '$components/gallery/GallerySortDropdown.svelte';
   import GalleryViewToggle from '$components/gallery/GalleryViewToggle.svelte';
@@ -24,6 +25,11 @@
   let confirmModalTitle = '';
   let confirmModalMessage = '';
   let confirmCallback: (() => void) | null = null;
+
+  // Bulk reprocess modal state
+  let showBulkReprocessModal = false;
+  let bulkReprocessFiles: any[] = [];
+  let bulkReprocessing = false;
 
   // Define types
   interface FilterEvent {
@@ -663,8 +669,8 @@
     }
   }
 
-  // Bulk reprocess selected files
-  async function bulkReprocess() {
+  // Bulk reprocess selected files — opens SelectiveReprocessModal in bulk mode
+  function bulkReprocess() {
     const selected = $galleryState.selectedFiles;
     if (selected.size === 0) return;
 
@@ -674,32 +680,15 @@
       return;
     }
 
-    showConfirmation(
-      $t('gallery.bulk.reprocessConfirmTitle'),
-      $t('gallery.bulk.reprocessConfirmMessage', { count: reprocessable.length }),
-      async () => {
-        try {
-          const response = await axiosInstance.post('/files/management/bulk-action', {
-            file_uuids: reprocessable.map(f => f.uuid),
-            action: 'reprocess'
-          });
-          const results = response.data;
-          const successful = results.filter((r: any) => r.success);
-          const failed = results.filter((r: any) => !r.success);
+    bulkReprocessFiles = reprocessable;
+    showBulkReprocessModal = true;
+  }
 
-          if (successful.length > 0) {
-            toastStore.success($t('gallery.bulk.reprocessStarted', { count: successful.length }));
-          }
-          if (failed.length > 0) {
-            toastStore.error($t('gallery.bulk.reprocessFailed', { count: failed.length }));
-          }
-          clearSelection();
-        } catch (err) {
-          console.error('Bulk reprocess error:', err);
-          toastStore.error($t('gallery.bulk.reprocessFailed', { count: reprocessable.length }));
-        }
-      }
-    );
+  function handleBulkReprocessComplete() {
+    showBulkReprocessModal = false;
+    bulkReprocessFiles = [];
+    bulkReprocessing = false;
+    // Keep selection — user may want to perform additional actions
   }
 
   // Bulk summarize selected files
@@ -735,7 +724,6 @@
       if (failed.length > 0 && !llmNotAvailable) {
         toastStore.error($t('gallery.bulk.summarizeFailed', { count: failed.length }));
       }
-      clearSelection();
     } catch (err) {
       console.error('Bulk summarize error:', err);
       toastStore.error($t('gallery.bulk.summarizeFailed', { count: completed.length }));
@@ -768,14 +756,13 @@
       if (failed.length > 0) {
         toastStore.error($t('gallery.bulk.retryFailedError', { count: failed.length }));
       }
-      clearSelection();
     } catch (err) {
       console.error('Bulk retry error:', err);
       toastStore.error($t('gallery.bulk.retryFailedError', { count: failedFiles.length }));
     }
   }
 
-  // Bulk export selected files
+  // Bulk export selected files as a single ZIP download
   async function bulkExport(format: string) {
     const selected = $galleryState.selectedFiles;
     if (selected.size === 0) return;
@@ -788,47 +775,56 @@
 
     const ext = format === 'webvtt' ? 'vtt' : format;
     const total = completed.length;
-    let exported = 0;
-    let failed = 0;
 
     toastStore.info($t('gallery.bulk.exportStarted', { count: total, format: ext.toUpperCase() }));
 
-    for (const file of completed) {
-      try {
-        const response = await axiosInstance.get(`/files/${file.uuid}/subtitles`, {
-          params: { subtitle_format: format },
-          responseType: 'blob'
-        });
+    let blobUrl = '';
+    try {
+      const response = await axiosInstance.post('/files/bulk-export', {
+        file_uuids: completed.map(f => f.uuid),
+        subtitle_format: format,
+        include_speakers: true,
+      }, {
+        responseType: 'blob',
+        timeout: 120000, // 2 minutes for large batches
+      });
 
-        // Create download link
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-        link.href = url;
-        const baseName = file.filename ? file.filename.replace(/\.[^/.]+$/, '') : file.uuid;
-        link.setAttribute('download', `${baseName}.${ext}`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
-        exported++;
+      const exportedCount = parseInt(response.headers['x-exported-count'] || '0', 10);
+      const skippedCount = parseInt(response.headers['x-skipped-count'] || '0', 10);
 
-        // Delay between downloads to avoid browser "allow multiple downloads" popup
-        if (exported < total) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      } catch (err) {
-        console.error(`Export failed for ${file.filename}:`, err);
-        failed++;
+      // Single ZIP download — no multi-download permission needed
+      blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/zip' }));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', `transcripts_${format}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      // Revoke after browser initiates download
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+      }, 1000);
+
+      if (skippedCount > 0) {
+        toastStore.success($t('gallery.bulk.exportComplete', { count: exportedCount, format: ext.toUpperCase() }));
+        toastStore.warning($t('gallery.bulk.exportSkipped', { count: skippedCount }));
+      } else {
+        toastStore.success($t('gallery.bulk.exportComplete', { count: exportedCount, format: ext.toUpperCase() }));
       }
+    } catch (err: unknown) {
+      if (blobUrl) {
+        window.URL.revokeObjectURL(blobUrl);
+      }
+      const axErr = err as { response?: { status?: number; data?: Blob } };
+      let detail = '';
+      if (axErr.response?.data instanceof Blob) {
+        try { detail = await axErr.response.data.text(); } catch { /* ignore */ }
+      }
+      console.error(`Bulk export failed (HTTP ${axErr.response?.status ?? '?'}):`, detail || err);
+      toastStore.error($t('gallery.bulk.exportFailed', { count: total }));
     }
-
-    if (exported > 0) {
-      toastStore.success($t('gallery.bulk.exportComplete', { count: exported, format: ext.toUpperCase() }));
-    }
-    if (failed > 0) {
-      toastStore.error($t('gallery.bulk.exportFailed', { count: failed }));
-    }
-    clearSelection();
+    // Don't clear selection — user may want to export in multiple formats
   }
 
   // Bulk speaker identification
@@ -861,7 +857,6 @@
       if (failCount > 0) {
         toastStore.error($t('gallery.bulk.speakerIdFailed', { count: failCount }));
       }
-      clearSelection();
     } catch (err) {
       console.error('Bulk speaker ID error:', err);
       toastStore.error($t('gallery.bulk.speakerIdFailed', { count: completed.length }));
@@ -894,7 +889,6 @@
       if (failed.length > 0) {
         toastStore.error($t('gallery.bulk.cancelFailed', { count: failed.length }));
       }
-      clearSelection();
     } catch (err) {
       console.error('Bulk cancel error:', err);
       toastStore.error($t('gallery.bulk.cancelFailed', { count: processing.length }));
@@ -1482,7 +1476,7 @@
               // Only close modal if we're in 'add' mode and actually adding files
               if (selectedFiles.size > 0) {
                 showCollectionsModal = false;
-                clearSelection();
+                // Keep selection — user may want to add to multiple collections or perform other actions
               }
               // In manage mode, keep the modal open for multiple collections
 
@@ -1514,6 +1508,16 @@
   on:confirm={handleConfirmModalConfirm}
   on:cancel={handleConfirmModalCancel}
   on:close={handleConfirmModalCancel}
+/>
+
+<!-- Bulk Selective Reprocess Modal -->
+<SelectiveReprocessModal
+  bind:showModal={showBulkReprocessModal}
+  bind:reprocessing={bulkReprocessing}
+  bulkMode={true}
+  bulkFiles={bulkReprocessFiles}
+  on:reprocess={handleBulkReprocessComplete}
+  on:close={() => { showBulkReprocessModal = false; bulkReprocessFiles = []; }}
 />
 
 <style>

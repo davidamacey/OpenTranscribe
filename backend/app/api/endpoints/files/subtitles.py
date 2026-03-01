@@ -2,11 +2,18 @@
 API endpoints for subtitle generation.
 """
 
+import io
+import logging
+import zipfile
+
 from fastapi import APIRouter
+from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
@@ -17,6 +24,7 @@ from app.services.subtitle_service import SubtitleService
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/{file_uuid}/subtitles", response_class=Response)
@@ -138,6 +146,102 @@ async def validate_subtitles(
         raise HTTPException(
             status_code=500, detail=f"Failed to validate subtitles: {str(e)}"
         ) from e
+
+
+class BulkExportRequest(BaseModel):
+    """Request for bulk subtitle export."""
+
+    file_uuids: list[str]
+    subtitle_format: str = "srt"
+    include_speakers: bool = True
+
+
+@router.post("/bulk-export", response_class=StreamingResponse)
+async def bulk_export_subtitles(
+    request: BulkExportRequest = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Export subtitles for multiple files as a single ZIP download.
+
+    Generates subtitle files for each requested file and bundles them into
+    a ZIP archive. Files that are not completed or not accessible are skipped.
+    """
+    if not request.file_uuids:
+        raise HTTPException(status_code=400, detail="No file UUIDs provided")
+
+    if len(request.file_uuids) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 files per export")
+
+    format_lower = request.subtitle_format.lower()
+    if format_lower not in ("srt", "webvtt", "txt"):
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {format_lower}")
+
+    ext = "vtt" if format_lower == "webvtt" else format_lower
+    zip_buffer = io.BytesIO()
+    exported = 0
+    skipped = 0
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_uuid in request.file_uuids:
+            try:
+                media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+                file_id = int(media_file.id)
+
+                if media_file.status != "completed":
+                    skipped += 1
+                    continue
+
+                if format_lower == "webvtt":
+                    content = SubtitleService.generate_webvtt_content(
+                        db, file_id, request.include_speakers
+                    )
+                elif format_lower == "txt":
+                    content = SubtitleService.generate_txt_content(
+                        db, file_id, request.include_speakers
+                    )
+                else:
+                    content = SubtitleService.generate_srt_content(
+                        db, file_id, request.include_speakers
+                    )
+
+                if not content.strip():
+                    skipped += 1
+                    continue
+
+                base_name = (
+                    media_file.filename.rsplit(".", 1)[0]
+                    if "." in media_file.filename
+                    else media_file.filename
+                )
+                zf.writestr(f"{base_name}.{ext}", content.encode("utf-8"))
+                exported += 1
+
+            except HTTPException:
+                skipped += 1
+            except Exception as e:
+                logger.warning(f"Failed to export subtitles for {file_uuid}: {e}")
+                skipped += 1
+
+    if exported == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="No files could be exported. Ensure files are completed and accessible.",
+        )
+
+    zip_buffer.seek(0)
+    zip_filename = f"transcripts_{format_lower}.zip"
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{zip_filename}"',
+            "Content-Length": str(zip_buffer.getbuffer().nbytes),
+            "X-Exported-Count": str(exported),
+            "X-Skipped-Count": str(skipped),
+        },
+    )
 
 
 @router.get("/supported-formats")

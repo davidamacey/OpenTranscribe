@@ -1794,10 +1794,14 @@
       // Reset notification processing state for reprocessing
       lastProcessedNotificationState = '';
 
-      // Optimistically set file to processing state for immediate UI feedback
+      // Only set processing state for destructive stages that change file status
+      const isDestructive = !stages || stages.includes('transcription') || stages.includes('rediarize');
+
       if (file) {
-        file.status = 'processing';
-        file.progress = 0;
+        if (isDestructive) {
+          file.status = 'processing';
+          file.progress = 0;
+        }
 
         // Only clear transcript data if full transcription is being rerun
         if (!stages || stages.includes('transcription')) {
@@ -1840,10 +1844,14 @@
       // Reset notification processing state for reprocessing
       lastProcessedNotificationState = '';
 
-      // Optimistically set file to processing state for immediate UI feedback
+      // Only set processing state for destructive stages that change file status
+      const isDestructive = stages?.includes('transcription') || stages?.includes('rediarize');
+
       if (file) {
-        file.status = 'processing';
-        file.progress = 0;
+        if (isDestructive) {
+          file.status = 'processing';
+          file.progress = 0;
+        }
 
         // Only clear transcript data if full transcription is being rerun
         if (stages && stages.includes('transcription')) {
@@ -2407,12 +2415,6 @@
                 <div class="spinner-small"></div>
               {/if}
             </button>
-            <SelectiveReprocessModal
-              bind:showModal={showReprocessModal}
-              {file}
-              bind:reprocessing
-              on:reprocess={handleReprocessFromModal}
-            />
           {/if}
           </div>
         </div>
@@ -2536,6 +2538,14 @@
     </div>
   {/if}
 </div>
+
+<!-- Selective Reprocess Modal (outside conditional blocks to prevent flicker) -->
+<SelectiveReprocessModal
+  bind:showModal={showReprocessModal}
+  {file}
+  bind:reprocessing
+  on:reprocess={handleReprocessFromModal}
+/>
 
 <!-- Export Confirmation Modal -->
 <ConfirmationModal

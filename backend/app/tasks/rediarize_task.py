@@ -142,13 +142,18 @@ def _run_diarization(
     return diarize_df, overlap_info, native_embeddings
 
 
-def _dispatch_downstream(downstream_tasks: list[str], file_uuid: str) -> None:
+def _dispatch_downstream(
+    downstream_tasks: list[str],
+    file_uuid: str,
+    file_id: int | None = None,
+    user_id: int | None = None,
+) -> None:
     """Dispatch downstream tasks by stage name after rediarization completes."""
     from app.api.endpoints.files.reprocess import dispatch_task_by_name
 
     for stage in downstream_tasks:
         try:
-            dispatch_task_by_name(stage, file_uuid)
+            dispatch_task_by_name(stage, file_uuid, file_id=file_id, user_id=user_id)
             logger.info(f"Dispatched downstream task '{stage}' for file {file_uuid}")
         except Exception as e:
             logger.warning(f"Failed to dispatch downstream task '{stage}' for {file_uuid}: {e}")
@@ -338,9 +343,27 @@ def rediarize_task(  # noqa: C901
             f"{len(unique_speakers)} speakers"
         )
 
-        # Step 9: Dispatch downstream tasks
+        # Step 9: Dispatch speaker attribute detection (gender/age) → chains to LLM speaker ID.
+        # This mirrors the transcription pipeline flow: attributes are detected first,
+        # then identify_speakers_llm_task is chained automatically by the attribute task.
+        try:
+            from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
+
+            if _is_speaker_attribute_detection_enabled(user_id):
+                from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
+
+                detect_speaker_attributes_task.delay(str(file_uuid), user_id)
+                logger.info(f"Dispatched speaker attribute detection for {file_uuid}")
+        except Exception as e:
+            logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
+
+        # Step 10: Dispatch remaining downstream tasks.
+        # Remove speaker_llm — it's chained from detect_speaker_attributes_task
+        # to ensure gender/age context is available for LLM identification.
         if downstream_tasks:
-            _dispatch_downstream(downstream_tasks, file_uuid)
+            filtered = [s for s in downstream_tasks if s != "speaker_llm"]
+            if filtered:
+                _dispatch_downstream(filtered, file_uuid, file_id=file_id, user_id=user_id)
 
         return {
             "status": "success",

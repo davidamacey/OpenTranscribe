@@ -14,10 +14,12 @@
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
   import WaveformPlayer from '$components/WaveformPlayer.svelte';
+  import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
 
   const PREVIEW_LOAD_TIMEOUT_MS = 15000;
 
   let searchInput = '';
+  let previewMediaUrl = '';
   let showFilters = true;
   let sidebarMounted = false;
 
@@ -40,6 +42,7 @@
   let previewSeeking = false;
   let previewCurrentTime = 0;
   let previewCurrentSpeaker = '';
+  let previewUrlRefresher: { stop: () => void } | null = null;
 
   // Search transcript modal state
   let transcriptModalOpen = false;
@@ -364,6 +367,31 @@
     previewData = null;
     await tick();
 
+    // Stop any existing URL refresher
+    if (previewUrlRefresher) {
+      previewUrlRefresher.stop();
+      previewUrlRefresher = null;
+    }
+
+    // Fetch presigned URL before rendering the media element
+    try {
+      clearMediaUrlCache(data.fileUuid);
+      previewMediaUrl = await getMediaStreamUrl(data.fileUuid, 'video');
+
+      // Set up automatic URL refresh to prevent 401 on long playback
+      previewUrlRefresher = createUrlRefresher(
+        data.fileUuid,
+        (newUrl) => {
+          previewMediaUrl = newUrl;
+        },
+        300 // 5 minute expiration
+      );
+    } catch (err) {
+      console.error('Failed to get media stream URL:', err);
+      previewSeeking = false;
+      return;
+    }
+
     previewData = data;
     activePreview = { fileUuid: data.fileUuid, startTime: data.startTime };
     previewSeeking = true;
@@ -399,7 +427,8 @@
     previewMediaElement.load();
 
     const audioControls = ['play', 'current-time', 'duration', 'progress', 'mute', 'volume', 'settings'];
-    const videoControls = ['play-large', 'play', 'current-time', 'duration', 'progress', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'];
+    // Compact controls for the 400px preview — omit play-large, pip, captions, volume slider
+    const videoControls = ['play', 'current-time', 'duration', 'progress', 'mute', 'settings', 'fullscreen'];
 
     previewPlayer = new Plyr(previewMediaElement, {
       controls: isAudioPreview ? audioControls : videoControls,
@@ -467,6 +496,10 @@
   }
 
   function closePreview() {
+    if (previewUrlRefresher) {
+      previewUrlRefresher.stop();
+      previewUrlRefresher = null;
+    }
     destroyPreviewPlayer();
     previewData = null;
     activePreview = null;
@@ -511,6 +544,10 @@
 
   onDestroy(() => {
     saveState();
+    if (previewUrlRefresher) {
+      previewUrlRefresher.stop();
+      previewUrlRefresher = null;
+    }
     destroyPreviewPlayer();
   });
 </script>
@@ -739,7 +776,7 @@
             bind:this={previewMediaElement}
             preload="auto"
           >
-            <source src="/api/files/{previewData.fileUuid}/simple-video" />
+            <source src={previewMediaUrl} />
           </audio>
           <div class="preview-waveform">
             <WaveformPlayer
@@ -756,7 +793,7 @@
             bind:this={previewMediaElement}
             preload="auto"
           >
-            <source src="/api/files/{previewData.fileUuid}/simple-video" />
+            <source src={previewMediaUrl} />
           </video>
         {/if}
       </div>
@@ -1332,48 +1369,38 @@
 
   .preview-player-container :global(.plyr) {
     border-radius: 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
-  /* Video control hover backgrounds */
-  .preview-player-container :global(.plyr--video .plyr__control:not([data-plyr="settings"]):hover) {
+  /* Compact controls sizing for 400px preview player */
+  .preview-player-container :global(.plyr__control) {
+    padding: 5px !important;
+    margin: 0 1px !important;
+  }
+
+  .preview-player-container :global(.plyr__control svg) {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  /* Video control hover backgrounds — matches file detail page (VideoPlayer.svelte) */
+  .preview-player-container :global(.plyr--video .plyr__control:hover) {
     background: rgba(255, 255, 255, 0.25) !important;
-  }
-
-  .preview-player-container :global(.plyr--video .plyr__control[data-plyr="play"]:hover) {
-    background: rgba(255, 255, 255, 0.25) !important;
-  }
-
-  /* CC button - transparent background */
-  .preview-player-container :global(.plyr--video .plyr__control[data-plyr="captions"]) {
-    background: transparent !important;
-    color: white !important;
-  }
-
-  .preview-player-container :global(.plyr--video .plyr__control[data-plyr="captions"]:hover) {
-    background: rgba(255, 255, 255, 0.25) !important;
-    color: white !important;
-  }
-
-  /* Settings button - transparent background with white icon */
-  .preview-player-container :global(.plyr--video .plyr__control[data-plyr="settings"]) {
-    background: transparent !important;
-    color: white !important;
-  }
-
-  .preview-player-container :global(.plyr--video .plyr__control[data-plyr="settings"]:hover) {
-    background: rgba(255, 255, 255, 0.25) !important;
-    color: white !important;
-  }
-
-  .preview-player-container :global(.plyr--video .plyr__control[data-plyr="settings"] svg) {
-    color: white !important;
-    fill: white !important;
   }
 
   .preview-player-container :global(.plyr--video .plyr__controls__item.plyr__menu) {
     background: transparent !important;
     border: none !important;
+  }
+
+  /* Settings gear button — match default Plyr control hover */
+  .preview-player-container :global(.plyr--video .plyr__menu .plyr__control[aria-expanded]) {
+    background: transparent !important;
+    border-radius: 3px !important;
+  }
+
+  .preview-player-container :global(.plyr--video .plyr__menu .plyr__control[aria-expanded]:hover) {
+    background: rgba(255, 255, 255, 0.25) !important;
   }
 
   /* YouTube-style progress bar positioning - above controls */
@@ -1382,12 +1409,15 @@
     bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    padding-top: 12px !important;
+    padding: 6px 6px 4px !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    overflow: visible !important;
   }
 
   .preview-player-container :global(.plyr--video .plyr__progress) {
     position: absolute !important;
-    top: -8px !important;
+    top: -6px !important;
     left: 0 !important;
     right: 0 !important;
     width: 100% !important;
@@ -1395,6 +1425,11 @@
     margin: 0 !important;
     padding: 0 !important;
     z-index: 10 !important;
+    overflow: visible !important;
+  }
+
+  .preview-player-container :global(.plyr--video .plyr__progress__container) {
+    overflow: visible !important;
   }
 
   .preview-player-container :global(.plyr--video .plyr__progress input[type="range"]) {
@@ -1404,51 +1439,39 @@
   }
 
   .preview-player-container :global(.plyr--video .plyr__progress input[type="range"]::-webkit-slider-track) {
-    height: 4px !important;
+    height: 3px !important;
   }
 
   .preview-player-container :global(.plyr--video .plyr__progress input[type="range"]::-moz-range-track) {
-    height: 4px !important;
+    height: 3px !important;
   }
 
   .preview-player-container :global(.plyr--video .plyr__progress:hover input[type="range"]::-webkit-slider-track) {
-    height: 6px !important;
+    height: 5px !important;
   }
 
   .preview-player-container :global(.plyr--video .plyr__progress:hover input[type="range"]::-moz-range-track) {
-    height: 6px !important;
+    height: 5px !important;
   }
 
-  /* Time display formatting */
+  /* Compact time display */
   .preview-player-container :global(.plyr__time) {
-    margin-left: 8px !important;
+    margin-left: 4px !important;
     margin-right: 2px !important;
-    font-size: 14px !important;
+    font-size: 12px !important;
     color: rgba(255, 255, 255, 0.9) !important;
   }
 
   .preview-player-container :global(.plyr__time--current-time::after) {
     content: " / " !important;
-    color: rgba(255, 255, 255, 0.7) !important;
+    color: rgba(255, 255, 255, 0.6) !important;
   }
 
   .preview-player-container :global(.plyr__time--duration) {
     margin-left: 0 !important;
-    margin-right: 16px !important;
-  }
-
-  .preview-player-container :global(.plyr__control) {
     margin-right: 4px !important;
   }
 
-  /* Volume thumb hover */
-  .preview-player-container :global(.plyr--video .plyr__volume input[type="range"]::-webkit-slider-thumb:hover) {
-    background: #ffffff !important;
-  }
-
-  .preview-player-container :global(.plyr--video .plyr__volume input[type="range"]::-moz-range-thumb:hover) {
-    background: #ffffff !important;
-  }
 
   /* Settings menu styling for dark mode */
   .preview-player-container :global(.plyr--video .plyr__menu) {

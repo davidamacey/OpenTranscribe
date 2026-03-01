@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import { fade, fly, scale } from 'svelte/transition';
+  import { cubicOut, cubicIn } from 'svelte/easing';
   import { t } from '$stores/locale';
   import { isLLMAvailable } from '../stores/llmStatus';
   import axiosInstance from '../lib/axios';
@@ -9,8 +10,14 @@
   export let showModal: boolean = false;
   export let file: any = null;
   export let reprocessing: boolean = false;
+  export let bulkMode: boolean = false;
+  export let bulkFiles: any[] = [];
 
   const dispatch = createEventDispatcher();
+
+  // Wizard state
+  let currentStep = 1;
+  let direction = 1; // 1 = forward, -1 = backward
 
   // Stage selection state
   let selectedStages = new Set<string>();
@@ -21,20 +28,30 @@
   let numSpeakers: number | null = null;
 
   // Computed state
-  $: hasTranscript =
-    file?.status === 'completed' &&
-    (file?.transcript_count > 0 || file?.segments?.length > 0);
-  $: hasWordTimestamps = file?.status === 'completed';
+  // In bulk mode, gallery file objects use the list schema (no transcript_segments/total_segments).
+  // A completed file always has a transcript, so use status as the indicator.
+  // For mixed selections (completed + error), enable stages if ANY file qualifies.
+  $: hasTranscript = bulkMode
+    ? bulkFiles.some((f: any) => f.status === 'completed')
+    : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
+  $: hasWordTimestamps = bulkMode
+    ? bulkFiles.some((f: any) => f.status === 'completed')
+    : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
   $: showSpeakerSettings =
     selectedStages.has('transcription') || selectedStages.has('rediarize');
   $: isValid =
     selectedStages.size > 0 &&
     (!showSpeakerSettings ||
-      !(
-        minSpeakers !== null &&
-        maxSpeakers !== null &&
-        minSpeakers > maxSpeakers
-      ));
+      !(minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers));
+
+  // Step navigation
+  $: needsSettingsStep = showSpeakerSettings;
+  $: stepLabels = needsSettingsStep
+    ? ['reprocess.stepStages', 'reprocess.stepSettings', 'reprocess.stepReview']
+    : ['reprocess.stepStages', 'reprocess.stepReview'];
+  $: totalSteps = stepLabels.length;
+  $: isLastStep = currentStep === totalSteps;
+  $: canGoNext = currentStep === 1 ? selectedStages.size > 0 : true;
 
   // Validation guards
   $: if (minSpeakers !== null && minSpeakers < 1) minSpeakers = 1;
@@ -114,6 +131,8 @@
     },
   ] as StageDefinition[];
 
+  $: allStages = [...coreStages, ...searchStages, ...aiStages];
+
   function toggleStage(stageId: string) {
     const newSet = new Set(selectedStages);
 
@@ -121,8 +140,6 @@
       newSet.delete(stageId);
     } else {
       newSet.add(stageId);
-
-      // Mutual exclusion: transcription <-> rediarize
       if (stageId === 'transcription') {
         newSet.delete('rediarize');
       } else if (stageId === 'rediarize') {
@@ -133,13 +150,40 @@
     selectedStages = newSet;
   }
 
+  function goNext() {
+    if (currentStep < totalSteps && canGoNext) {
+      direction = 1;
+      currentStep += 1;
+    }
+  }
+
+  function goBack() {
+    if (currentStep > 1) {
+      direction = -1;
+      currentStep -= 1;
+    }
+  }
+
+  function getReviewStepNumber(): number {
+    return needsSettingsStep ? 3 : 2;
+  }
+
+  function isOnReviewStep(): boolean {
+    return currentStep === getReviewStepNumber();
+  }
+
+  function isOnSettingsStep(): boolean {
+    return needsSettingsStep && currentStep === 2;
+  }
+
   async function handleSubmit() {
     if (selectedStages.size === 0) return;
 
     try {
       reprocessing = true;
+      const stagesArray = Array.from(selectedStages);
       const requestBody: Record<string, unknown> = {
-        stages: Array.from(selectedStages),
+        stages: stagesArray,
       };
 
       if (showSpeakerSettings) {
@@ -148,28 +192,66 @@
         if (numSpeakers !== null) requestBody.num_speakers = numSpeakers;
       }
 
-      await axiosInstance.post(
-        `/api/files/${file.uuid}/reprocess`,
-        requestBody
-      );
+      if (bulkMode) {
+        // Bulk mode: POST to bulk-action endpoint
+        requestBody.file_uuids = bulkFiles.map((f: any) => f.uuid);
+        requestBody.action = 'reprocess';
 
-      toastStore.success($t('reprocess.startedSuccess'));
-      dispatch('reprocess', {
-        fileId: file.uuid,
-        stages: Array.from(selectedStages),
-      });
+        const response = await axiosInstance.post(
+          '/files/management/bulk-action',
+          requestBody
+        );
+        const results = response.data;
+        const successful = results.filter((r: any) => r.success);
+        const failed = results.filter((r: any) => !r.success);
+
+        if (successful.length > 0) {
+          toastStore.success($t('reprocess.bulkStartedSuccess', { count: successful.length }));
+        }
+        if (failed.length > 0) {
+          toastStore.error($t('reprocess.bulkStartFailed', { count: failed.length }));
+        }
+
+        dispatch('reprocess', { stages: stagesArray, count: successful.length });
+      } else {
+        // Single file mode
+        await axiosInstance.post(
+          `/files/${file.uuid}/reprocess`,
+          requestBody
+        );
+
+        toastStore.success($t('reprocess.startedSuccess'));
+        dispatch('reprocess', {
+          fileId: file.uuid,
+          stages: stagesArray,
+        });
+      }
+
       showModal = false;
-
-      // Reset state
-      selectedStages = new Set();
-      minSpeakers = null;
-      maxSpeakers = null;
-      numSpeakers = null;
     } catch (error) {
-      console.error('Error reprocessing file:', error);
-      toastStore.error($t('reprocess.startFailed'));
+      console.error('Error reprocessing:', error);
+      if (bulkMode) {
+        toastStore.error($t('reprocess.bulkStartFailed', { count: bulkFiles.length }));
+      } else {
+        toastStore.error($t('reprocess.startFailed'));
+      }
       reprocessing = false;
     }
+  }
+
+  function resetState() {
+    selectedStages = new Set();
+    minSpeakers = null;
+    maxSpeakers = null;
+    numSpeakers = null;
+    currentStep = 1;
+    direction = 1;
+    reprocessing = false;
+  }
+
+  // Reset state when modal opens (not on close, to avoid content flash during exit)
+  $: if (showModal) {
+    resetState();
   }
 
   function handleClose() {
@@ -188,6 +270,29 @@
       handleClose();
     }
   }
+
+  function selectAll() {
+    const newSet = new Set<string>();
+    for (const stage of allStages) {
+      if (!stage.disabled) {
+        // Transcription subsumes rediarize — pick transcription
+        if (stage.id === 'rediarize') continue;
+        newSet.add(stage.id);
+      }
+    }
+    selectedStages = newSet;
+  }
+
+  function deselectAll() {
+    selectedStages = new Set();
+  }
+
+  $: allSelected = allStages.filter(s => !s.disabled && s.id !== 'rediarize').every(s => selectedStages.has(s.id));
+
+  function getStageLabelById(id: string): string {
+    const stage = allStages.find(s => s.id === id);
+    return stage ? $t(stage.labelKey) : id;
+  }
 </script>
 
 {#if showModal}
@@ -196,7 +301,8 @@
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
     class="modal-backdrop"
-    transition:fade={{ duration: 200 }}
+    in:fade={{ duration: 200 }}
+    out:fade={{ duration: 150 }}
     on:click={handleBackdropClick}
     on:keydown={handleKeydown}
     tabindex="-1"
@@ -204,12 +310,16 @@
     aria-modal="true"
     aria-labelledby="reprocess-modal-title"
   >
-    <div class="modal-container" transition:fade={{ duration: 200, delay: 100 }}>
+    <div
+      class="modal-container"
+      in:scale={{ start: 0.96, duration: 200, easing: cubicOut }}
+      out:scale={{ start: 0.96, duration: 120, easing: cubicIn }}
+    >
       <div class="modal-content">
         <!-- Header -->
         <div class="modal-header">
           <h2 id="reprocess-modal-title" class="modal-title">
-            {$t('reprocess.modalTitle')}
+            {bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')}
           </h2>
           <button
             class="modal-close-button"
@@ -223,236 +333,409 @@
           </button>
         </div>
 
+        <!-- Step Indicator -->
+        <div class="step-indicator">
+          {#each stepLabels as label, i}
+            {@const stepNum = i + 1}
+            <button
+              class="step-dot"
+              class:active={currentStep === stepNum}
+              class:completed={currentStep > stepNum}
+              on:click={() => { if (stepNum < currentStep) { direction = -1; currentStep = stepNum; } }}
+              disabled={stepNum > currentStep}
+              type="button"
+              aria-label="{$t(label)} (step {stepNum})"
+            >
+              {#if currentStep > stepNum}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+              {:else}
+                <span class="step-number">{stepNum}</span>
+              {/if}
+            </button>
+            <span
+              class="step-label"
+              class:active={currentStep === stepNum}
+              class:completed={currentStep > stepNum}
+            >{$t(label)}</span>
+            {#if i < stepLabels.length - 1}
+              <div class="step-line" class:completed={currentStep > stepNum}></div>
+            {/if}
+          {/each}
+        </div>
+
         <!-- Body -->
         <div class="modal-body">
-          <!-- Core Processing -->
-          <div class="stage-group">
-            <div class="stage-group-header">
-              <span class="stage-group-label">{$t('reprocess.coreProcessing')}</span>
-              <div class="stage-group-line"></div>
-            </div>
-            {#each coreStages as stage (stage.id)}
-              <label
-                class="stage-item"
-                class:disabled={stage.disabled}
-                class:selected={selectedStages.has(stage.id)}
-              >
-                <div class="stage-checkbox-area">
-                  <input
-                    type="checkbox"
-                    checked={selectedStages.has(stage.id)}
-                    disabled={stage.disabled}
-                    on:change={() => toggleStage(stage.id)}
-                    class="stage-checkbox"
-                  />
-                  <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
-                    {#if selectedStages.has(stage.id)}
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    {/if}
-                  </div>
+          {#key currentStep}
+            <div
+              class="step-content"
+              in:fly|local={{ x: direction * 40, duration: 200, easing: cubicOut }}
+            >
+              <!-- Step 1: Select Stages -->
+              {#if currentStep === 1}
+                <div class="step-instruction-row">
+                  <p class="step-instruction">{$t('reprocess.selectStages')}</p>
+                  <button
+                    type="button"
+                    class="select-all-btn"
+                    on:click={() => allSelected ? deselectAll() : selectAll()}
+                  >
+                    {allSelected ? $t('reprocess.deselectAll') : $t('reprocess.selectAll')}
+                  </button>
                 </div>
-                <div class="stage-info">
-                  <span class="stage-label">{$t(stage.labelKey)}</span>
-                  <span class="stage-desc">{$t(stage.descKey)}</span>
-                  {#if stage.disabled && stage.disabledReason}
-                    <span class="stage-disabled-hint">{stage.disabledReason}</span>
+
+                <!-- Core Processing -->
+                <div class="stage-group">
+                  <div class="stage-group-header">
+                    <span class="stage-group-label">{$t('reprocess.coreProcessing')}</span>
+                    <div class="stage-group-line"></div>
+                  </div>
+                  {#each coreStages as stage (stage.id)}
+                    <label
+                      class="stage-item"
+                      class:disabled={stage.disabled}
+                      class:selected={selectedStages.has(stage.id)}
+                    >
+                      <div class="stage-checkbox-area">
+                        <input
+                          type="checkbox"
+                          checked={selectedStages.has(stage.id)}
+                          disabled={stage.disabled}
+                          on:change={() => toggleStage(stage.id)}
+                          class="stage-checkbox"
+                        />
+                        <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
+                          {#if selectedStages.has(stage.id)}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          {/if}
+                        </div>
+                      </div>
+                      <div class="stage-info">
+                        <span class="stage-label">{$t(stage.labelKey)}</span>
+                        <span class="stage-desc">{$t(stage.descKey)}</span>
+                        {#if stage.disabled && stage.disabledReason}
+                          <span class="stage-disabled-hint">{stage.disabledReason}</span>
+                        {/if}
+                      </div>
+                    </label>
+                  {/each}
+                </div>
+
+                <!-- Search & Discovery -->
+                <div class="stage-group">
+                  <div class="stage-group-header">
+                    <span class="stage-group-label">{$t('reprocess.searchDiscovery')}</span>
+                    <div class="stage-group-line"></div>
+                  </div>
+                  {#each searchStages as stage (stage.id)}
+                    <label
+                      class="stage-item"
+                      class:disabled={stage.disabled}
+                      class:selected={selectedStages.has(stage.id)}
+                    >
+                      <div class="stage-checkbox-area">
+                        <input
+                          type="checkbox"
+                          checked={selectedStages.has(stage.id)}
+                          disabled={stage.disabled}
+                          on:change={() => toggleStage(stage.id)}
+                          class="stage-checkbox"
+                        />
+                        <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
+                          {#if selectedStages.has(stage.id)}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          {/if}
+                        </div>
+                      </div>
+                      <div class="stage-info">
+                        <span class="stage-label">{$t(stage.labelKey)}</span>
+                        <span class="stage-desc">{$t(stage.descKey)}</span>
+                        {#if stage.disabled && stage.disabledReason}
+                          <span class="stage-disabled-hint">{stage.disabledReason}</span>
+                        {/if}
+                      </div>
+                    </label>
+                  {/each}
+                </div>
+
+                <!-- AI Features -->
+                <div class="stage-group">
+                  <div class="stage-group-header">
+                    <span class="stage-group-label">{$t('reprocess.aiFeatures')}</span>
+                    <div class="stage-group-line"></div>
+                  </div>
+                  {#each aiStages as stage (stage.id)}
+                    <label
+                      class="stage-item"
+                      class:disabled={stage.disabled}
+                      class:selected={selectedStages.has(stage.id)}
+                    >
+                      <div class="stage-checkbox-area">
+                        <input
+                          type="checkbox"
+                          checked={selectedStages.has(stage.id)}
+                          disabled={stage.disabled}
+                          on:change={() => toggleStage(stage.id)}
+                          class="stage-checkbox"
+                        />
+                        <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
+                          {#if selectedStages.has(stage.id)}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          {/if}
+                        </div>
+                      </div>
+                      <div class="stage-info">
+                        <span class="stage-label">{$t(stage.labelKey)}</span>
+                        <span class="stage-desc">{$t(stage.descKey)}</span>
+                        {#if stage.disabled && stage.disabledReason}
+                          <span class="stage-disabled-hint">{stage.disabledReason}</span>
+                        {/if}
+                      </div>
+                    </label>
+                  {/each}
+                </div>
+
+              <!-- Step 2: Settings (only when needsSettingsStep && currentStep === 2) -->
+              {:else if isOnSettingsStep()}
+                <div class="speaker-settings-section">
+                  <div class="stage-group-header">
+                    <span class="stage-group-label">{$t('reprocess.speakerSettings')}</span>
+                    <div class="stage-group-line"></div>
+                  </div>
+
+                  <div class="settings-row">
+                    <div class="setting-field">
+                      <label for="modal-min-speakers">{$t('reprocess.minSpeakers')}</label>
+                      <input
+                        id="modal-min-speakers"
+                        type="number"
+                        min="1"
+                        placeholder={$t('reprocess.defaultPlaceholder')}
+                        bind:value={minSpeakers}
+                        disabled={numSpeakers !== null}
+                      />
+                    </div>
+
+                    <div class="setting-field">
+                      <label for="modal-max-speakers">{$t('reprocess.maxSpeakers')}</label>
+                      <input
+                        id="modal-max-speakers"
+                        type="number"
+                        min="1"
+                        placeholder={$t('reprocess.defaultPlaceholder')}
+                        bind:value={maxSpeakers}
+                        disabled={numSpeakers !== null}
+                      />
+                    </div>
+                  </div>
+
+                  <div class="setting-field">
+                    <label for="modal-num-speakers">
+                      {$t('reprocess.fixedCount')}
+                      <span class="hint">{$t('reprocess.fixedCountHint')}</span>
+                    </label>
+                    <input
+                      id="modal-num-speakers"
+                      type="number"
+                      min="1"
+                      placeholder={$t('reprocess.autoPlaceholder')}
+                      bind:value={numSpeakers}
+                    />
+                  </div>
+
+                  {#if minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers}
+                    <div class="validation-error">
+                      {$t('reprocess.validationError')}
+                    </div>
+                  {/if}
+
+                  <!-- V4 Info Card -->
+                  {#if selectedStages.has('transcription') || selectedStages.has('rediarize')}
+                    <div class="v4-info-card">
+                      <div class="v4-info-header">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="12" y1="16" x2="12" y2="12"></line>
+                          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        <span>{$t('reprocess.v4InfoTitle')}</span>
+                      </div>
+                      {#if selectedStages.has('transcription')}
+                        <div class="v4-path">
+                          <strong>{$t('reprocess.v4PathTranscription')}</strong>
+                          <span>{$t('reprocess.v4PathTranscriptionDesc')}</span>
+                        </div>
+                      {:else}
+                        <div class="v4-path">
+                          <strong>{$t('reprocess.v4PathRediarize')}</strong>
+                          <span>{$t('reprocess.v4PathRediarizeDesc')}</span>
+                        </div>
+                      {/if}
+                    </div>
                   {/if}
                 </div>
-              </label>
-            {/each}
-          </div>
 
-          <!-- Search & Discovery -->
-          <div class="stage-group">
-            <div class="stage-group-header">
-              <span class="stage-group-label">{$t('reprocess.searchDiscovery')}</span>
-              <div class="stage-group-line"></div>
-            </div>
-            {#each searchStages as stage (stage.id)}
-              <label
-                class="stage-item"
-                class:disabled={stage.disabled}
-                class:selected={selectedStages.has(stage.id)}
-              >
-                <div class="stage-checkbox-area">
-                  <input
-                    type="checkbox"
-                    checked={selectedStages.has(stage.id)}
-                    disabled={stage.disabled}
-                    on:change={() => toggleStage(stage.id)}
-                    class="stage-checkbox"
-                  />
-                  <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
-                    {#if selectedStages.has(stage.id)}
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                      </svg>
-                    {/if}
+              <!-- Step 3 (or Step 2 when no settings): Review -->
+              {:else if isOnReviewStep()}
+                <p class="step-instruction">{$t('reprocess.reviewTitle')}</p>
+
+                <!-- Bulk info banner -->
+                {#if bulkMode}
+                  <div class="warning-banner warning-info" style="margin-top: 0; margin-bottom: 0.75rem;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>{$t('reprocess.bulkInfoMessage', { count: bulkFiles.length })}</span>
+                  </div>
+                {/if}
+
+                <!-- Selected stages -->
+                <div class="review-section">
+                  <span class="review-label">{$t('reprocess.reviewStages')}</span>
+                  <div class="review-pills">
+                    {#each Array.from(selectedStages) as stageId}
+                      <span class="stage-pill">{getStageLabelById(stageId)}</span>
+                    {/each}
                   </div>
                 </div>
-                <div class="stage-info">
-                  <span class="stage-label">{$t(stage.labelKey)}</span>
-                  <span class="stage-desc">{$t(stage.descKey)}</span>
-                  {#if stage.disabled && stage.disabledReason}
-                    <span class="stage-disabled-hint">{stage.disabledReason}</span>
-                  {/if}
-                </div>
-              </label>
-            {/each}
-          </div>
 
-          <!-- AI Features -->
-          <div class="stage-group">
-            <div class="stage-group-header">
-              <span class="stage-group-label">{$t('reprocess.aiFeatures')}</span>
-              <div class="stage-group-line"></div>
-            </div>
-            {#each aiStages as stage (stage.id)}
-              <label
-                class="stage-item"
-                class:disabled={stage.disabled}
-                class:selected={selectedStages.has(stage.id)}
-              >
-                <div class="stage-checkbox-area">
-                  <input
-                    type="checkbox"
-                    checked={selectedStages.has(stage.id)}
-                    disabled={stage.disabled}
-                    on:change={() => toggleStage(stage.id)}
-                    class="stage-checkbox"
-                  />
-                  <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
-                    {#if selectedStages.has(stage.id)}
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"></polyline>
+                <!-- Speaker settings summary -->
+                {#if showSpeakerSettings}
+                  <div class="review-section">
+                    <span class="review-label">{$t('reprocess.reviewSpeakerSettings')}</span>
+                    <div class="review-settings">
+                      {#if numSpeakers !== null}
+                        <span class="review-setting">{$t('reprocess.reviewFixedSpeakers', { count: numSpeakers })}</span>
+                      {:else if minSpeakers !== null || maxSpeakers !== null}
+                        {#if minSpeakers !== null}
+                          <span class="review-setting">{$t('reprocess.reviewMinSpeakers', { min: minSpeakers })}</span>
+                        {/if}
+                        {#if maxSpeakers !== null}
+                          <span class="review-setting">{$t('reprocess.reviewMaxSpeakers', { max: maxSpeakers })}</span>
+                        {/if}
+                      {:else}
+                        <span class="review-setting muted">{$t('reprocess.reviewDefaultSettings')}</span>
+                      {/if}
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- V4 info card on review (if no settings step was shown) -->
+                {#if !needsSettingsStep && (selectedStages.has('transcription') || selectedStages.has('rediarize'))}
+                  <div class="v4-info-card">
+                    <div class="v4-info-header">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
                       </svg>
+                      <span>{$t('reprocess.v4InfoTitle')}</span>
+                    </div>
+                    {#if selectedStages.has('transcription')}
+                      <div class="v4-path">
+                        <strong>{$t('reprocess.v4PathTranscription')}</strong>
+                        <span>{$t('reprocess.v4PathTranscriptionDesc')}</span>
+                      </div>
+                    {:else}
+                      <div class="v4-path">
+                        <strong>{$t('reprocess.v4PathRediarize')}</strong>
+                        <span>{$t('reprocess.v4PathRediarizeDesc')}</span>
+                      </div>
                     {/if}
                   </div>
-                </div>
-                <div class="stage-info">
-                  <span class="stage-label">{$t(stage.labelKey)}</span>
-                  <span class="stage-desc">{$t(stage.descKey)}</span>
-                  {#if stage.disabled && stage.disabledReason}
-                    <span class="stage-disabled-hint">{stage.disabledReason}</span>
-                  {/if}
-                </div>
-              </label>
-            {/each}
-          </div>
+                {/if}
 
-          <!-- Warning banners -->
-          {#if selectedStages.has('transcription')}
-            <div class="warning-banner warning-destructive">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
-              <span>{$t('reprocess.warningDataLoss')}</span>
-            </div>
-          {/if}
+                <!-- Warnings -->
+                {#if selectedStages.has('transcription')}
+                  <div class="warning-banner warning-destructive">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <span>
+                      {bulkMode
+                        ? $t('reprocess.bulkWarningDataLoss', { count: bulkFiles.length })
+                        : $t('reprocess.warningDataLoss')}
+                    </span>
+                  </div>
+                {/if}
 
-          {#if selectedStages.has('rediarize')}
-            <div class="warning-banner warning-caution">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-              <span>{$t('reprocess.warningRediarize')}</span>
-            </div>
-          {/if}
-
-          {#if selectedStages.has('transcription') || selectedStages.has('rediarize')}
-            <div class="warning-banner warning-info">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-              <span>{$t('reprocess.warningV4Migration')}</span>
-            </div>
-          {/if}
-
-          <!-- Speaker Settings (conditional) -->
-          {#if showSpeakerSettings}
-            <div class="speaker-settings-section">
-              <div class="stage-group-header">
-                <span class="stage-group-label">{$t('reprocess.speakerSettings')}</span>
-                <div class="stage-group-line"></div>
-              </div>
-
-              <div class="settings-row">
-                <div class="setting-field">
-                  <label for="modal-min-speakers">{$t('reprocess.minSpeakers')}</label>
-                  <input
-                    id="modal-min-speakers"
-                    type="number"
-                    min="1"
-                    placeholder={$t('reprocess.defaultPlaceholder')}
-                    bind:value={minSpeakers}
-                    disabled={numSpeakers !== null}
-                  />
-                </div>
-
-                <div class="setting-field">
-                  <label for="modal-max-speakers">{$t('reprocess.maxSpeakers')}</label>
-                  <input
-                    id="modal-max-speakers"
-                    type="number"
-                    min="1"
-                    placeholder={$t('reprocess.defaultPlaceholder')}
-                    bind:value={maxSpeakers}
-                    disabled={numSpeakers !== null}
-                  />
-                </div>
-              </div>
-
-              <div class="setting-field">
-                <label for="modal-num-speakers">
-                  {$t('reprocess.fixedCount')}
-                  <span class="hint">{$t('reprocess.fixedCountHint')}</span>
-                </label>
-                <input
-                  id="modal-num-speakers"
-                  type="number"
-                  min="1"
-                  placeholder={$t('reprocess.autoPlaceholder')}
-                  bind:value={numSpeakers}
-                />
-              </div>
-
-              {#if minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers}
-                <div class="validation-error">
-                  {$t('reprocess.validationError')}
-                </div>
+                {#if selectedStages.has('rediarize')}
+                  <div class="warning-banner warning-caution">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>{$t('reprocess.warningRediarize')}</span>
+                  </div>
+                {/if}
               {/if}
             </div>
-          {/if}
+          {/key}
         </div>
 
         <!-- Footer -->
         <div class="modal-footer">
-          <button
-            class="modal-button cancel-button"
-            on:click={handleClose}
-            type="button"
-          >
-            {$t('reprocess.cancel')}
-          </button>
-          <button
-            class="modal-button primary-button"
-            on:click={handleSubmit}
-            disabled={!isValid || reprocessing}
-            type="button"
-          >
-            {#if reprocessing}
-              <div class="spinner-small"></div>
-            {/if}
-            {reprocessing ? $t('reprocess.buttonLabelProcessing') : $t('reprocess.startReprocessing')}
-          </button>
+          {#if currentStep > 1}
+            <button
+              class="modal-button cancel-button"
+              on:click={goBack}
+              type="button"
+            >
+              {$t('reprocess.back')}
+            </button>
+          {:else}
+            <button
+              class="modal-button cancel-button"
+              on:click={handleClose}
+              type="button"
+            >
+              {$t('reprocess.cancel')}
+            </button>
+          {/if}
+
+          {#if isLastStep}
+            <button
+              class="modal-button primary-button"
+              on:click={handleSubmit}
+              disabled={!isValid || reprocessing}
+              type="button"
+            >
+              {#if reprocessing}
+                <div class="spinner-small"></div>
+              {/if}
+              {#if reprocessing}
+                {$t('reprocess.buttonLabelProcessing')}
+              {:else if bulkMode}
+                {$t('reprocess.bulkStartReprocessing', { count: bulkFiles.length })}
+              {:else}
+                {$t('reprocess.startReprocessing')}
+              {/if}
+            </button>
+          {:else}
+            <button
+              class="modal-button primary-button"
+              on:click={goNext}
+              disabled={!canGoNext}
+              type="button"
+            >
+              {$t('reprocess.next')}
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          {/if}
         </div>
       </div>
     </div>
@@ -479,7 +762,7 @@
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    max-width: 520px;
+    max-width: 540px;
     width: 100%;
     max-height: 85vh;
     display: flex;
@@ -487,18 +770,6 @@
     overflow: hidden;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1),
       0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    animation: slideIn 0.2s ease-out;
-  }
-
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-20px) scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
   }
 
   .modal-content {
@@ -543,11 +814,138 @@
     background: var(--button-hover);
   }
 
+  /* Step Indicator */
+  .step-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 1.5rem;
+    gap: 0;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .step-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 2px solid var(--border-color);
+    background: var(--background-color);
+    color: var(--text-secondary);
+    cursor: default;
+    transition: all 0.25s ease;
+    flex-shrink: 0;
+    padding: 0;
+  }
+
+  .step-dot.active {
+    border-color: var(--primary-color, #3b82f6);
+    background: var(--primary-color, #3b82f6);
+    color: white;
+  }
+
+  .step-dot.completed {
+    border-color: var(--primary-color, #3b82f6);
+    background: var(--primary-color, #3b82f6);
+    color: white;
+    cursor: pointer;
+  }
+
+  .step-dot.completed:hover {
+    opacity: 0.85;
+  }
+
+  .step-dot:disabled:not(.completed):not(.active) {
+    cursor: default;
+  }
+
+  .step-number {
+    line-height: 1;
+  }
+
+  .step-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-left: 0.35rem;
+    white-space: nowrap;
+    transition: color 0.2s ease;
+  }
+
+  .step-label.active {
+    color: var(--primary-color, #3b82f6);
+    font-weight: 600;
+  }
+
+  .step-label.completed {
+    color: var(--primary-color, #3b82f6);
+  }
+
+  .step-line {
+    flex: 1;
+    height: 2px;
+    background: var(--border-color);
+    margin: 0 0.5rem;
+    min-width: 20px;
+    max-width: 60px;
+    transition: background 0.25s ease;
+  }
+
+  .step-line.completed {
+    background: var(--primary-color, #3b82f6);
+  }
+
   /* Body */
   .modal-body {
     padding: 1rem 1.5rem 1.25rem;
     overflow-y: auto;
+    overflow-x: hidden;
     flex: 1;
+    min-height: 200px;
+    position: relative;
+  }
+
+  .step-content {
+    position: relative;
+  }
+
+  .step-instruction-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .step-instruction-row .step-instruction {
+    margin: 0;
+  }
+
+  .step-instruction {
+    margin: 0 0 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  .select-all-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--primary-color);
+    font-size: 0.75rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+
+  .select-all-btn:hover {
+    background-color: var(--surface-color);
+    border-color: var(--primary-color);
   }
 
   /* Stage Groups */
@@ -556,7 +954,7 @@
   }
 
   .stage-group:last-of-type {
-    margin-bottom: 0.75rem;
+    margin-bottom: 0;
   }
 
   .stage-group-header {
@@ -681,6 +1079,98 @@
     line-height: 1.3;
   }
 
+  /* Review step */
+  .review-section {
+    margin-bottom: 1rem;
+  }
+
+  .review-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .review-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .stage-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.7rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--primary-color, #3b82f6);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+  }
+
+  .review-settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .review-setting {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+  }
+
+  .review-setting.muted {
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
+  /* V4 Info Card */
+  .v4-info-card {
+    margin-top: 1rem;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(59, 130, 246, 0.03);
+  }
+
+  .v4-info-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--primary-color, #3b82f6);
+    background: rgba(59, 130, 246, 0.06);
+    border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+  }
+
+  .v4-info-header svg {
+    flex-shrink: 0;
+  }
+
+  .v4-path {
+    padding: 0.6rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .v4-path strong {
+    font-size: 0.82rem;
+    color: var(--text-primary);
+  }
+
+  .v4-path span {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
   /* Warning banners */
   .warning-banner {
     display: flex;
@@ -730,7 +1220,7 @@
 
   /* Speaker Settings */
   .speaker-settings-section {
-    margin-top: 1rem;
+    margin-top: 0;
   }
 
   .settings-row {
@@ -798,7 +1288,7 @@
     display: flex;
     gap: 0.75rem;
     padding: 1rem 1.5rem 1.25rem;
-    justify-content: flex-end;
+    justify-content: space-between;
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
   }
@@ -905,6 +1395,10 @@
     color: #f87171;
   }
 
+  :global([data-theme='dark']) .stage-pill {
+    background: rgba(59, 130, 246, 0.15);
+  }
+
   /* Responsive design */
   @media (max-width: 480px) {
     .modal-container {
@@ -924,6 +1418,14 @@
     .settings-row {
       grid-template-columns: 1fr;
     }
+
+    .step-label {
+      display: none;
+    }
+
+    .step-line {
+      min-width: 30px;
+    }
   }
 
   /* Reduced motion support */
@@ -934,7 +1436,8 @@
 
     .modal-button,
     .stage-item,
-    .stage-check-custom {
+    .stage-check-custom,
+    .step-dot {
       transition: none;
     }
   }

@@ -905,17 +905,22 @@ def _process_transcription_result(
     )
     trigger_automatic_summarization(ctx.file_id, ctx.file_uuid, tasks_to_run=downstream_tasks)
 
-    # Dispatch speaker attribute detection (fire-and-forget, CPU queue)
-    try:
-        from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
+    # Dispatch speaker attribute detection (fire-and-forget, CPU queue).
+    # When speaker_llm is explicitly in downstream_tasks, it's dispatched directly
+    # by trigger_automatic_summarization — skip attribute detection chain to avoid
+    # double dispatch of speaker_llm.
+    speaker_llm_explicit = downstream_tasks is not None and "speaker_llm" in downstream_tasks
+    if not speaker_llm_explicit:
+        try:
+            from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
 
-        if _is_speaker_attribute_detection_enabled(ctx.user_id):
-            from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
+            if _is_speaker_attribute_detection_enabled(ctx.user_id):
+                from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
 
-            detect_speaker_attributes_task.delay(str(ctx.file_uuid), ctx.user_id)
-            logger.info(f"Dispatched speaker attribute detection for {ctx.file_uuid}")
-    except Exception as e:
-        logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
+                detect_speaker_attributes_task.delay(str(ctx.file_uuid), ctx.user_id)
+                logger.info(f"Dispatched speaker attribute detection for {ctx.file_uuid}")
+        except Exception as e:
+            logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 
     return {"status": "success", "file_id": ctx.file_id, "segments": len(processed_segments)}
 
@@ -1019,16 +1024,20 @@ def trigger_automatic_summarization(
                 f"Automatic analytics computation task {analytics_task.id} started for file {file_id}"
             )
 
-        # Speaker LLM identification: In default flow (tasks_to_run=None),
-        # this is dispatched by detect_speaker_attributes_task after gender
-        # detection completes. For selective reprocessing, dispatch directly.
+        # Speaker LLM identification: In the default full pipeline (tasks_to_run=None),
+        # this is chained from detect_speaker_attributes_task (dispatched after
+        # transcription completes) to ensure gender/age context is available.
+        # When explicitly requested via selective reprocessing, dispatch directly.
         if tasks_to_run is not None and "speaker_llm" in tasks_to_run:
             from app.tasks.speaker_tasks import identify_speakers_llm_task
 
             speaker_task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
             logger.info(
-                f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
+                f"Selective speaker LLM identification task {speaker_task.id} started for file {file_id}"
             )
+
+        # Note: search_indexing is dispatched in _process_transcription_result (always
+        # runs during transcription). No need to dispatch it here to avoid double dispatch.
 
         # Look up collection default prompt for this file
         collection_prompt_uuid = _get_collection_prompt_uuid(file_id)

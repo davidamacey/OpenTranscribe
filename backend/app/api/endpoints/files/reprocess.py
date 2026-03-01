@@ -100,6 +100,7 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
     """Clear data only for selected pipeline stages."""
     from app.models.media import Analytics
     from app.models.media import Speaker
+    from app.models.media import TranscriptSegment
 
     try:
         if "transcription" in stages:
@@ -108,7 +109,12 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
             return  # Already clears everything
 
         if "rediarize" in stages:
-            # Clear speakers and analytics but preserve transcript text/words
+            # Null out speaker_id on segments first to avoid FK constraint violations,
+            # then delete speakers. Transcript text/words are preserved.
+            db.query(TranscriptSegment).filter(
+                TranscriptSegment.media_file_id == media_file.id
+            ).update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
+
             existing_speakers = (
                 db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
             )
@@ -162,8 +168,20 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
         raise
 
 
-def dispatch_task_by_name(stage: str, file_uuid: str) -> None:
-    """Dispatch a single pipeline task by stage name."""
+def dispatch_task_by_name(
+    stage: str,
+    file_uuid: str,
+    file_id: int | None = None,
+    user_id: int | None = None,
+) -> None:
+    """Dispatch a single pipeline task by stage name.
+
+    Args:
+        stage: Pipeline stage name.
+        file_uuid: File UUID string.
+        file_id: Internal file ID (required for search_indexing).
+        user_id: Owner user ID (required for search_indexing).
+    """
     import os
 
     if os.environ.get("SKIP_CELERY", "False").lower() == "true":
@@ -173,7 +191,17 @@ def dispatch_task_by_name(stage: str, file_uuid: str) -> None:
     if stage == "search_indexing":
         from app.tasks.search_indexing_task import index_transcript_search_task
 
-        index_transcript_search_task.delay(file_uuid=file_uuid)
+        # Resolve file_id and user_id from DB if not provided
+        if file_id is None or user_id is None:
+            from app.db.session_utils import session_scope
+            from app.utils.uuid_helpers import get_file_by_uuid
+
+            with session_scope() as db:
+                media_file = get_file_by_uuid(db, file_uuid)
+                file_id = int(media_file.id)
+                user_id = int(media_file.user_id)
+
+        index_transcript_search_task.delay(file_id=file_id, file_uuid=file_uuid, user_id=user_id)
     elif stage == "analytics":
         from app.tasks.analytics import analyze_transcript_task
 
@@ -200,8 +228,20 @@ def dispatch_selective_tasks(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    file_id: int | None = None,
+    user_id: int | None = None,
 ) -> None:
-    """Dispatch Celery tasks for selected pipeline stages."""
+    """Dispatch Celery tasks for selected pipeline stages.
+
+    Args:
+        file_uuid: File UUID string.
+        stages: List of pipeline stage names to dispatch.
+        min_speakers: Optional minimum speakers for diarization.
+        max_speakers: Optional maximum speakers for diarization.
+        num_speakers: Optional fixed speaker count for diarization.
+        file_id: Internal file ID (passed to tasks that need it).
+        user_id: Owner user ID (passed to tasks that need it).
+    """
     import os
 
     if os.environ.get("SKIP_CELERY", "False").lower() == "true":
@@ -232,7 +272,7 @@ def dispatch_selective_tasks(
     else:
         # Pure downstream tasks - dispatch each directly
         for stage in stages:
-            dispatch_task_by_name(stage, file_uuid)
+            dispatch_task_by_name(stage, file_uuid, file_id=file_id, user_id=user_id)
 
 
 async def process_file_reprocess(
@@ -326,7 +366,15 @@ async def process_file_reprocess(
             db.refresh(media_file)
 
             # Dispatch tasks for selected stages
-            dispatch_selective_tasks(file_uuid, stages, min_speakers, max_speakers, num_speakers)
+            dispatch_selective_tasks(
+                file_uuid,
+                stages,
+                min_speakers,
+                max_speakers,
+                num_speakers,
+                file_id=file_id,
+                user_id=int(current_user.id),
+            )
 
             logger.info(
                 f"Selective reprocessing tasks dispatched for file {file_uuid} "

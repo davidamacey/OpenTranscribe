@@ -5,7 +5,9 @@ PyAnnote v4 API usage. No monkey-patching needed since we don't go
 through WhisperX's diarization path.
 """
 
+import gc
 import logging
+import os
 import time
 from typing import NoReturn
 
@@ -18,6 +20,9 @@ from app.utils.pyannote_compat import build_native_embeddings
 from app.utils.pyannote_compat import extract_overlap_regions
 
 logger = logging.getLogger(__name__)
+
+# Retry sequence for segmentation batch_size on OOM
+_BATCH_SIZE_RETRY_SEQUENCE = [16, 8, 4, 2, 1]
 
 PYANNOTE_V4_MODEL = "pyannote/speaker-diarization-community-1"
 PYANNOTE_V3_FALLBACK = "pyannote/speaker-diarization-3.1"
@@ -102,8 +107,65 @@ class SpeakerDiarizer:
         device = torch.device(self.config.device)
         self._pipeline = self._pipeline.to(device)  # type: ignore[attr-defined]
 
+        # Configure segmentation batch_size based on GPU VRAM or env override.
+        # PyAnnote defaults to 32 which causes OOM on GPUs with ≤12GB VRAM.
+        self._configure_segmentation_batch_size()
+
         elapsed = time.perf_counter() - step_start
         logger.info(f"TIMING: diarizer model loaded in {elapsed:.3f}s on {device}")
+
+    def _configure_segmentation_batch_size(self) -> None:
+        """Set PyAnnote's segmentation batch_size based on GPU VRAM or env override.
+
+        PyAnnote's pretrained pipeline defaults to batch_size=32 for the internal
+        segmentation model. This causes OOM on GPUs with limited VRAM, especially
+        when the WhisperX model is still resident in memory.
+        """
+        if self._pipeline is None:
+            return
+
+        # Check env override first
+        env_batch = os.getenv("DIARIZATION_BATCH_SIZE")
+        if env_batch is not None:
+            try:
+                batch_size = int(env_batch)
+                self._pipeline.segmentation_batch_size = batch_size
+                logger.info(f"Diarization segmentation batch_size set to {batch_size} (from env)")
+                return
+            except ValueError:
+                logger.warning(
+                    f"Invalid DIARIZATION_BATCH_SIZE='{env_batch}', using auto-detection"
+                )
+
+        # Auto-detect based on GPU VRAM
+        if self.config.device == "cuda" and torch.cuda.is_available():
+            total_memory = torch.cuda.get_device_properties(0).total_memory
+            memory_gb = total_memory / (1024**3)
+
+            if memory_gb >= 40:
+                batch_size = 32  # A6000/A100 — keep default
+            elif memory_gb >= 24:
+                batch_size = 24
+            elif memory_gb >= 16:
+                batch_size = 16
+            elif memory_gb >= 12:
+                batch_size = 8  # RTX 3080 Ti — conservative, WhisperX still in memory
+            else:
+                batch_size = 4
+        elif self.config.device == "mps":
+            batch_size = 8
+        else:
+            batch_size = 4  # CPU
+
+        current = self._pipeline.segmentation_batch_size
+        if batch_size != current:
+            self._pipeline.segmentation_batch_size = batch_size
+            logger.info(
+                f"Diarization segmentation batch_size: {current} → {batch_size} "
+                f"(auto-detected for {self.config.device})"
+            )
+        else:
+            logger.info(f"Diarization segmentation batch_size: {batch_size} (default OK)")
 
     def diarize(self, audio: np.ndarray) -> tuple[pd.DataFrame, dict, dict[str, np.ndarray] | None]:
         """Run speaker diarization on audio.
@@ -144,16 +206,10 @@ class SpeakerDiarizer:
 
         logger.info(f"Running diarization with kwargs: {pipeline_kwargs}")
 
-        try:
-            assert self._pipeline is not None, "Pipeline not initialized"
-            raw_output = self._pipeline(audio_input, **pipeline_kwargs)  # type: ignore[misc]
+        raw_output = self._run_pipeline_with_oom_retry(audio_input, pipeline_kwargs)
 
-            # PyAnnote v4 returns DiarizeOutput dataclass with speaker_embeddings attribute
-            # (centroids are always computed internally, no need for return_embeddings kwarg)
-            centroids = getattr(raw_output, "speaker_embeddings", None)
-            output = raw_output
-        except Exception as e:
-            self._handle_diarization_error(e)
+        centroids = getattr(raw_output, "speaker_embeddings", None)
+        output = raw_output
 
         # Extract diarization results (handles v4 output format)
         exclusive = self._extract_diarization(output, prefer_exclusive=True)
@@ -205,6 +261,58 @@ class SpeakerDiarizer:
 
         return diarize_df, overlap_info, native_embeddings
 
+    def _run_pipeline_with_oom_retry(self, audio_input: dict, pipeline_kwargs: dict):
+        """Run the diarization pipeline with automatic batch_size reduction on OOM.
+
+        If the segmentation model hits an OOM error due to batch_size being too
+        large, this method halves the batch_size and retries, down to batch_size=1.
+        """
+        assert self._pipeline is not None, "Pipeline not initialized"
+
+        current_batch = self._pipeline.segmentation_batch_size
+
+        # Build retry sequence: current value, then smaller values from the predefined list
+        retry_sizes = [current_batch] + [s for s in _BATCH_SIZE_RETRY_SEQUENCE if s < current_batch]
+
+        last_error: Exception | None = None
+        for batch_size in retry_sizes:
+            try:
+                self._pipeline.segmentation_batch_size = batch_size
+                raw_output = self._pipeline(audio_input, **pipeline_kwargs)  # type: ignore[misc]
+                if batch_size != current_batch:
+                    logger.info(
+                        f"Diarization succeeded with reduced batch_size={batch_size} "
+                        f"(original: {current_batch})"
+                    )
+                return raw_output
+            except Exception as e:
+                if self._is_oom_error(e):
+                    last_error = e
+                    logger.warning(
+                        f"Diarization OOM with batch_size={batch_size}, reducing and retrying..."
+                    )
+                    # Free GPU memory before retry
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    continue
+                # Non-OOM error — don't retry
+                self._handle_diarization_error(e)
+
+        # All retries exhausted
+        assert last_error is not None
+        self._handle_diarization_error(last_error)
+
+    @staticmethod
+    def _is_oom_error(e: Exception) -> bool:
+        """Check if an exception is a GPU out-of-memory error."""
+        error_msg = str(e).lower()
+        return (
+            ("batch_size" in error_msg and "too large" in error_msg)
+            or "out of memory" in error_msg
+            or isinstance(e, torch.cuda.OutOfMemoryError)
+        )
+
     def unload_model(self) -> None:
         """Release model memory."""
         if self._pipeline is not None:
@@ -226,6 +334,13 @@ class SpeakerDiarizer:
     def _handle_diarization_error(self, e: Exception) -> NoReturn:
         """Convert diarization errors to user-friendly messages."""
         error_msg = str(e)
+
+        if self._is_oom_error(e):
+            raise RuntimeError(
+                "Speaker diarization ran out of GPU memory even at minimum batch size. "
+                "This audio file may be too long for the available VRAM. "
+                "Try setting DIARIZATION_BATCH_SIZE=1 in .env, or process shorter audio."
+            ) from e
 
         if "401" in error_msg or "unauthorized" in error_msg.lower():
             raise PermissionError(

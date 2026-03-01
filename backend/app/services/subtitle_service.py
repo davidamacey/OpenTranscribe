@@ -223,8 +223,10 @@ class SubtitleService:
         format_type: str = "srt",
     ) -> list[tuple[float, float, str]]:
         """Split long transcript segments into properly timed subtitle chunks with speaker continuity."""
-        text = str(segment.text).strip()
-        duration = float(segment.end_time) - float(segment.start_time)
+        text = str(segment.text or "").strip()
+        start = float(segment.start_time or 0.0)
+        end = float(segment.end_time or start)
+        duration = end - start
 
         # Format text and handle multi-part subtitles
         formatted_subtitles = SubtitleService.format_text_for_subtitles(
@@ -237,8 +239,8 @@ class SubtitleService:
             actual_duration = min(duration, optimal_duration)
             return [
                 (
-                    float(segment.start_time),
-                    float(segment.start_time) + actual_duration,
+                    start,
+                    start + actual_duration,
                     formatted_subtitles[0],
                 )
             ]
@@ -247,8 +249,8 @@ class SubtitleService:
         subtitle_parts: list[tuple[float, float, str]] = []
         total_chars = sum(len(subtitle) for subtitle in formatted_subtitles)
 
-        current_time = float(segment.start_time)
-        segment_end_time = float(segment.end_time)
+        current_time = start
+        segment_end_time = end
         for i, subtitle_text in enumerate(formatted_subtitles):
             # Calculate time allocation based on text length (proportional distribution)
             text_ratio = len(subtitle_text) / total_chars
