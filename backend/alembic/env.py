@@ -12,8 +12,7 @@ from sqlalchemy import pool
 from alembic import context  # type: ignore[attr-defined]
 from app.db.base import Base
 
-# NOTE: Alembic is the sole authority for database schema creation and upgrades
-# until the application reaches releases. After that, we will use Alembic migrations.
+# NOTE: Alembic is the sole authority for database schema creation and upgrades.
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
