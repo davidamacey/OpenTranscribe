@@ -67,6 +67,8 @@ triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 # PyAnnote v4 - aligned with WhisperX 3.8.1's own pyannote-audio>=4.0.0 requirement
 # Provides VBx clustering, WeSpeaker embeddings, and overlap detection
 pyannote.audio>=4.0.0
+# Required by pyannote/embedding model checkpoint (pickle dependency)
+omegaconf>=2.3.0
 
 # NOTE: whisperx==3.8.1 is installed separately in Dockerfile with --no-deps
 # to keep our version pins in requirements.txt authoritative

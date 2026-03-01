@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Optional
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -5,14 +8,18 @@ from fastapi import Query
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import defer
 from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import selectinload
 
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.files.crud import set_file_urls
+from app.api.endpoints.files.filtering import apply_all_filters
 from app.db.base import get_db
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
+from app.models.media import Speaker
 from app.models.prompt import SummaryPrompt
 from app.models.user import User
 from app.schemas.media import Collection as CollectionSchema
@@ -22,7 +29,7 @@ from app.schemas.media import CollectionMemberRemove
 from app.schemas.media import CollectionResponse
 from app.schemas.media import CollectionUpdate
 from app.schemas.media import CollectionWithCount
-from app.schemas.media import MediaFile as MediaFileSchema
+from app.schemas.media import PaginatedMediaFileResponse
 from app.services.formatting_service import FormattingService
 from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
 from app.utils.uuid_helpers import validate_uuids
@@ -370,44 +377,123 @@ async def remove_media_from_collection(
     }
 
 
-@router.get("/{collection_uuid}/media", response_model=list[MediaFileSchema])
+@router.get("/{collection_uuid}/media", response_model=PaginatedMediaFileResponse)
 async def get_collection_media(
     collection_uuid: str,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    # Pagination parameters
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    # Filters
+    search: Optional[str] = None,
+    tag: Optional[list[str]] = Query(None),
+    speaker: Optional[list[str]] = Query(None),
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
+    min_duration: Optional[float] = None,
+    max_duration: Optional[float] = None,
+    min_file_size: Optional[int] = None,
+    max_file_size: Optional[int] = None,
+    file_type: Optional[list[str]] = Query(None),
+    status: Optional[list[str]] = Query(None),
+    transcript_search: Optional[str] = None,
+    # Sort parameters
+    sort_by: str = Query(
+        "upload_time",
+        description="Field to sort by: upload_time, completed_at, filename, duration, file_size",
+    ),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    # Dependencies
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get media files in a collection"""
+    """Get media files in a collection with filtering, sorting, and pagination."""
     # Verify collection exists and belongs to user
     collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
     collection_id = collection.id
 
-    # Get media files
-    media_files = (
+    # Eager-loading strategy matching the main list endpoint
+    list_options = [
+        joinedload(MediaFile.user),
+        selectinload(MediaFile.speakers).load_only(
+            Speaker.uuid,  # type: ignore[arg-type]
+            Speaker.name,  # type: ignore[arg-type]
+            Speaker.display_name,  # type: ignore[arg-type]
+        ),
+        defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
+        defer(MediaFile.waveform_data),  # type: ignore[arg-type]
+    ]
+
+    # Build base query scoped to this collection
+    base_query = (
         db.query(MediaFile)
-        .join(CollectionMember)
+        .options(*list_options)
+        .join(CollectionMember, CollectionMember.media_file_id == MediaFile.id)
         .filter(CollectionMember.collection_id == collection_id)
-        .order_by(CollectionMember.added_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
     )
+
+    # Non-admin users can only see their own files
+    if current_user.role != "admin":
+        base_query = base_query.filter(MediaFile.user_id == current_user.id)
+
+    # Prepare filters dictionary
+    filters = {
+        "search": search,
+        "tag": tag,
+        "speaker": speaker,
+        "from_date": from_date,
+        "to_date": to_date,
+        "min_duration": min_duration,
+        "max_duration": max_duration,
+        "min_file_size": min_file_size,
+        "max_file_size": max_file_size,
+        "file_type": file_type,
+        "status": status,
+        "transcript_search": transcript_search,
+        "user_id": int(current_user.id) if current_user.role != "admin" else None,
+    }
+
+    # Apply all filters
+    filtered_query = apply_all_filters(base_query, filters)
+
+    # Sorting field mapping
+    sort_field_mapping = {
+        "upload_time": MediaFile.upload_time,
+        "completed_at": MediaFile.completed_at,
+        "filename": MediaFile.filename,
+        "duration": MediaFile.duration,
+        "file_size": MediaFile.file_size,
+    }
+    sort_field = sort_field_mapping.get(sort_by, MediaFile.upload_time)
+
+    # Get total count before sorting/pagination
+    total_count = (filtered_query.with_entities(func.count(MediaFile.id)).scalar()) or 0
+
+    # Apply sort order
+    if sort_order.lower() == "asc":
+        filtered_query = filtered_query.order_by(sort_field.asc())  # type: ignore[attr-defined]
+    else:
+        filtered_query = filtered_query.order_by(sort_field.desc())  # type: ignore[attr-defined]
+
+    # Apply pagination
+    offset = (page - 1) * page_size
+    result = filtered_query.offset(offset).limit(page_size).all()
 
     # Format each file with URLs and formatted fields
     formatted_files = []
-    for file in media_files:
+    for file in result:
         set_file_urls(file)
+        formatted_file = FormattingService.format_media_file(file, file.speakers)
+        formatted_files.append(formatted_file)
 
-        # Convert to schema and add formatted fields
-        file_schema = MediaFileSchema.model_validate(file)
-        file_schema.formatted_duration = FormattingService.format_duration(
-            float(file.duration) if file.duration is not None else None
-        )
-        file_schema.formatted_upload_date = FormattingService.format_upload_date(file.upload_time)  # type: ignore[arg-type]
-        file_schema.display_status = FormattingService.format_status(file.status)  # type: ignore[arg-type]
-        file_schema.status_badge_class = FormattingService.get_status_badge_class(file.status.value)  # type: ignore[union-attr]
+    # Calculate pagination metadata
+    total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+    has_more = page < total_pages
 
-        formatted_files.append(file_schema)
-
-    return formatted_files
+    return PaginatedMediaFileResponse(
+        items=formatted_files,
+        total=total_count,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_more=has_more,
+    )

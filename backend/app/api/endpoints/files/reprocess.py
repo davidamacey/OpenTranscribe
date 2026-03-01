@@ -69,6 +69,7 @@ def start_reprocessing_task(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    downstream_tasks: list[str] | None = None,
 ) -> None:
     """
     Start the background reprocessing task.
@@ -78,6 +79,7 @@ def start_reprocessing_task(
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
+        downstream_tasks: Optional list of downstream pipeline stage names to run after transcription
     """
     import os
 
@@ -88,9 +90,189 @@ def start_reprocessing_task(
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             num_speakers=num_speakers,
+            downstream_tasks=downstream_tasks,
         )
     else:
         logger.info("Skipping Celery task in test environment")
+
+
+def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) -> None:
+    """Clear data only for selected pipeline stages."""
+    from app.models.media import Analytics
+    from app.models.media import Speaker
+    from app.models.media import TranscriptSegment
+
+    try:
+        if "transcription" in stages:
+            # Full transcription clear - use existing function
+            clear_existing_transcription_data(db, media_file)
+            return  # Already clears everything
+
+        if "rediarize" in stages:
+            # Null out speaker_id on segments first to avoid FK constraint violations,
+            # then delete speakers. Transcript text/words are preserved.
+            db.query(TranscriptSegment).filter(
+                TranscriptSegment.media_file_id == media_file.id
+            ).update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
+
+            existing_speakers = (
+                db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
+            )
+            for speaker in existing_speakers:
+                db.delete(speaker)
+            # Also clear analytics since speaker stats change
+            existing_analytics = (
+                db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
+            )
+            if existing_analytics:
+                db.delete(existing_analytics)
+
+        if "analytics" in stages:
+            existing_analytics = (
+                db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
+            )
+            if existing_analytics:
+                db.delete(existing_analytics)
+
+        if "speaker_llm" in stages:
+            # Reset suggested names on speakers
+            existing_speakers = (
+                db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
+            )
+            for speaker in existing_speakers:
+                speaker.suggested_name = None
+                speaker.confidence = None
+
+        if "summarization" in stages:
+            media_file.summary_data = None
+            media_file.summary_opensearch_id = None
+            media_file.summary_status = "pending"
+
+        if "topic_extraction" in stages:
+            # Clear AI-generated topic suggestions
+            from app.models.topic import TopicSuggestion
+
+            existing_suggestions = (
+                db.query(TopicSuggestion)
+                .filter(TopicSuggestion.media_file_id == media_file.id)
+                .all()
+            )
+            for suggestion in existing_suggestions:
+                db.delete(suggestion)
+
+        db.commit()
+        logger.info(f"Cleared selective data for stages {stages} on file {media_file.id}")
+    except Exception as e:
+        logger.error(f"Error clearing selective data for file {media_file.id}: {e}")
+        db.rollback()
+        raise
+
+
+def dispatch_task_by_name(
+    stage: str,
+    file_uuid: str,
+    file_id: int | None = None,
+    user_id: int | None = None,
+) -> None:
+    """Dispatch a single pipeline task by stage name.
+
+    Args:
+        stage: Pipeline stage name.
+        file_uuid: File UUID string.
+        file_id: Internal file ID (required for search_indexing).
+        user_id: Owner user ID (required for search_indexing).
+    """
+    import os
+
+    if os.environ.get("SKIP_CELERY", "False").lower() == "true":
+        logger.info("Skipping Celery task in test environment")
+        return
+
+    if stage == "search_indexing":
+        from app.tasks.search_indexing_task import index_transcript_search_task
+
+        # Resolve file_id and user_id from DB if not provided
+        if file_id is None or user_id is None:
+            from app.db.session_utils import session_scope
+            from app.utils.uuid_helpers import get_file_by_uuid
+
+            with session_scope() as db:
+                media_file = get_file_by_uuid(db, file_uuid)
+                file_id = int(media_file.id)
+                user_id = int(media_file.user_id)
+
+        index_transcript_search_task.delay(file_id=file_id, file_uuid=file_uuid, user_id=user_id)
+    elif stage == "analytics":
+        from app.tasks.analytics import analyze_transcript_task
+
+        analyze_transcript_task.delay(file_uuid=file_uuid)
+    elif stage == "speaker_llm":
+        from app.tasks.speaker_tasks import identify_speakers_llm_task
+
+        identify_speakers_llm_task.delay(file_uuid=file_uuid)
+    elif stage == "summarization":
+        from app.tasks.summarization import summarize_transcript_task
+
+        summarize_transcript_task.delay(file_uuid=file_uuid)
+    elif stage == "topic_extraction":
+        from app.tasks.topic_extraction import extract_topics_task
+
+        extract_topics_task.delay(file_uuid=file_uuid, force_regenerate=True)
+    else:
+        logger.warning(f"Unknown stage '{stage}' for dispatch")
+
+
+def dispatch_selective_tasks(
+    file_uuid: str,
+    stages: list[str],
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
+    num_speakers: int | None = None,
+    file_id: int | None = None,
+    user_id: int | None = None,
+) -> None:
+    """Dispatch Celery tasks for selected pipeline stages.
+
+    Args:
+        file_uuid: File UUID string.
+        stages: List of pipeline stage names to dispatch.
+        min_speakers: Optional minimum speakers for diarization.
+        max_speakers: Optional maximum speakers for diarization.
+        num_speakers: Optional fixed speaker count for diarization.
+        file_id: Internal file ID (passed to tasks that need it).
+        user_id: Owner user ID (passed to tasks that need it).
+    """
+    import os
+
+    if os.environ.get("SKIP_CELERY", "False").lower() == "true":
+        logger.info("Skipping Celery tasks in test environment")
+        return
+
+    if "transcription" in stages:
+        # Transcription subsumes rediarize
+        downstream = [s for s in stages if s not in ("transcription", "rediarize")]
+        start_reprocessing_task(
+            file_uuid,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
+            downstream_tasks=downstream if downstream else None,
+        )
+    elif "rediarize" in stages:
+        from app.tasks.rediarize_task import rediarize_task
+
+        other_stages = [s for s in stages if s != "rediarize"]
+        rediarize_task.delay(
+            file_uuid,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
+            downstream_tasks=other_stages if other_stages else None,
+        )
+    else:
+        # Pure downstream tasks - dispatch each directly
+        for stage in stages:
+            dispatch_task_by_name(stage, file_uuid, file_id=file_id, user_id=user_id)
 
 
 async def process_file_reprocess(
@@ -100,6 +282,7 @@ async def process_file_reprocess(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    stages: list[str] | None = None,
 ) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
@@ -111,6 +294,7 @@ async def process_file_reprocess(
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
+        stages: Optional list of pipeline stages to re-run. Empty/None = full reprocess.
 
     Returns:
         Updated MediaFile object
@@ -162,23 +346,58 @@ async def process_file_reprocess(
             f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}"
         )
 
-        # Use the enhanced retry logic
-        success = reset_file_for_retry(db, int(file_id), reset_retry_count=False)
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to reset file for reprocessing",
+        if stages:
+            # Selective pipeline reprocessing
+            logger.info(f"Selective reprocessing stages: {stages}")
+
+            # Only reset file status for transcription stage (full reprocess behavior)
+            if "transcription" in stages:
+                success = reset_file_for_retry(db, int(file_id), reset_retry_count=False)
+                if not success:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to reset file for reprocessing",
+                    )
+
+            # Clear data for selected stages
+            clear_selective_data(db, media_file, stages)
+
+            # Refresh the file object
+            db.refresh(media_file)
+
+            # Dispatch tasks for selected stages
+            dispatch_selective_tasks(
+                file_uuid,
+                stages,
+                min_speakers,
+                max_speakers,
+                num_speakers,
+                file_id=file_id,
+                user_id=int(current_user.id),
             )
 
-        # Refresh the file object
-        db.refresh(media_file)
+            logger.info(
+                f"Selective reprocessing tasks dispatched for file {file_uuid} "
+                f"(id: {file_id}, stages: {stages})"
+            )
+        else:
+            # Full reprocess (backward compatible)
+            success = reset_file_for_retry(db, int(file_id), reset_retry_count=False)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to reset file for reprocessing",
+                )
 
-        # Start background reprocessing task with speaker parameters
-        start_reprocessing_task(file_uuid, min_speakers, max_speakers, num_speakers)
+            # Refresh the file object
+            db.refresh(media_file)
 
-        logger.info(
-            f"Reprocessing task started for file {file_uuid} (id: {file_id}, attempt {media_file.retry_count})"
-        )
+            # Start background reprocessing task with speaker parameters
+            start_reprocessing_task(file_uuid, min_speakers, max_speakers, num_speakers)
+
+            logger.info(
+                f"Reprocessing task started for file {file_uuid} (id: {file_id}, attempt {media_file.retry_count})"
+            )
 
         return media_file
 

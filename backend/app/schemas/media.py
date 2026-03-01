@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Any
+from typing import Literal
 from typing import Optional
 from uuid import UUID
 
@@ -36,10 +37,26 @@ class ReprocessRequest(BaseModel):
     """Request schema for reprocessing a file with optional speaker diarization settings.
 
     Attributes:
+        stages: Pipeline stages to re-run. Empty list = full reprocess (backward compatible).
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization (overrides min/max)
     """
+
+    stages: list[
+        Literal[
+            "transcription",
+            "rediarize",
+            "search_indexing",
+            "analytics",
+            "speaker_llm",
+            "summarization",
+            "topic_extraction",
+        ]
+    ] = Field(
+        default_factory=list,
+        description="Pipeline stages to re-run. Empty list = full reprocess (backward compatible)",
+    )
 
     min_speakers: Optional[int] = Field(
         None, description="Minimum number of speakers for diarization (positive integer)"

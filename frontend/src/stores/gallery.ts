@@ -380,6 +380,8 @@ function createGalleryStore() {
       return exportTrigger.subscribe((value) => {
         if (hasInitialized && value !== '') {
           callback(value);
+          // Reset so the same format can be triggered again
+          exportTrigger.set('');
         }
         hasInitialized = true;
       });

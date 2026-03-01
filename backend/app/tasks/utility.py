@@ -109,7 +109,7 @@ def update_gpu_stats(self):
         redis_client = celery_app.backend.client
         redis_client.setex(
             "gpu_stats",
-            300,  # Expire after 5 minutes
+            600,  # Expire after 10 minutes (beat runs every 5)
             json.dumps(gpu_stats),
         )
 

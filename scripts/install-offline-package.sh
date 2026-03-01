@@ -279,7 +279,6 @@ install_files() {
         print_info "  Copied docker-compose.gpu-scale.yml (multi-GPU support)"
     fi
 
-    cp "$SCRIPT_DIR/database/init_db.sql" "$INSTALL_DIR/database/"
     cp "$SCRIPT_DIR/config/nginx.conf" "$INSTALL_DIR/config/"
 
     # Copy scripts
@@ -507,8 +506,7 @@ create_env_file() {
     # Enable offline mode for HuggingFace (uncomment the line)
     sed -i "s|^#.*HF_HUB_OFFLINE=.*|HF_HUB_OFFLINE=1|g" "$INSTALL_DIR/.env"
 
-    # Note: INIT_DB_PATH uses default ./database/init_db.sql from .env.example
-    # No need to override - all deployment methods use the same path
+    # Note: Database schema is managed by Alembic migrations on backend startup
 
     print_success "Environment configuration created (using .env.example template)"
     print_info "✓ Secure credentials auto-generated (64-char JWT/encryption, 32-char passwords)"

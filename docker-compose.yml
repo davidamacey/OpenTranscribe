@@ -28,7 +28,6 @@ services:
       -c default_statistics_target=100
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-      - ${INIT_DB_PATH:-./database/init_db.sql}:/docker-entrypoint-initdb.d/init_db.sql:ro
     ports:
       - "${POSTGRES_PORT:-5176}:5432"
     healthcheck:

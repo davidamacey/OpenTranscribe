@@ -13,8 +13,9 @@
     verified: boolean;
     confidence?: number;
     predicted_gender?: string;
-    predicted_age_range?: string;
-    attribute_confidence?: Record<string, number>;
+    attribute_confidence?: Record<string, number | string>;
+    gender_alignment?: string;
+    gender_alignment_hint?: string;
   };
   export let suggestions: {
     profile_id?: string;  // UUID
@@ -196,10 +197,30 @@
                 {/if}
 
                 {#if speaker?.predicted_gender && speaker.predicted_gender !== 'unknown'}
-                  <span class="attribute-alignment-badge match">
-                    {speaker.predicted_gender === 'male' ? '\u2642' : '\u2640'}
-                    {$t('speakerVerification.genderPredicted')}
-                  </span>
+                  <div class="gender-attribute-row">
+                    <span class="gender-badge-inline">
+                      {speaker.predicted_gender === 'male' ? '♂' : '♀'}
+                      {speaker.predicted_gender === 'male' ? 'Male' : 'Female'}
+                      {#if speaker.attribute_confidence?.gender}
+                        <span class="gender-confidence">({Math.round((speaker.attribute_confidence.gender as number) * 100)}%)</span>
+                      {/if}
+                    </span>
+                    {#if speaker.gender_alignment === 'match' && speaker.gender_alignment_hint}
+                      <span
+                        class="alignment-badge match"
+                        title={$t('speakerVerification.genderMatchHint', { name: speaker.gender_alignment_hint })}
+                      >
+                        ✓ {speaker.gender_alignment_hint}
+                      </span>
+                    {:else if speaker.gender_alignment === 'mismatch' && speaker.gender_alignment_hint}
+                      <span
+                        class="alignment-badge mismatch"
+                        title={$t('speakerVerification.genderMismatchHint', { name: speaker.gender_alignment_hint })}
+                      >
+                        ⚠ {speaker.gender_alignment_hint}
+                      </span>
+                    {/if}
+                  </div>
                 {/if}
               </div>
 
@@ -878,6 +899,49 @@
   .attribute-alignment-badge.mismatch {
     background: rgba(255, 193, 7, 0.15);
     color: var(--warning-color, #ffc107);
+  }
+
+  .gender-attribute-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .gender-badge-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary, #888);
+  }
+
+  .gender-confidence {
+    font-size: 0.7rem;
+    opacity: 0.8;
+  }
+
+  .alignment-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .alignment-badge.match {
+    background: rgba(81, 207, 102, 0.15);
+    color: var(--success-color, #51cf66);
+    border: 1px solid rgba(81, 207, 102, 0.3);
+  }
+
+  .alignment-badge.mismatch {
+    background: rgba(255, 193, 7, 0.15);
+    color: var(--warning-color, #ffc107);
+    border: 1px solid rgba(255, 193, 7, 0.3);
   }
 
   /* Suggestion Metadata */

@@ -50,6 +50,26 @@ def _is_speaker_attribute_detection_enabled(user_id: int) -> bool:
     return system_enabled
 
 
+def _dispatch_llm_speaker_identification(file_uuid: str) -> None:
+    """Dispatch the LLM speaker identification task for a media file.
+
+    Called at the end of detect_speaker_attributes_task (or its early-exit paths)
+    so that the LLM always runs after gender attributes have been written to the DB.
+
+    Args:
+        file_uuid: UUID of the MediaFile to identify speakers for.
+    """
+    try:
+        from app.tasks.speaker_tasks import identify_speakers_llm_task
+
+        identify_speakers_llm_task.delay(file_uuid=file_uuid)
+        logger.info(
+            f"Dispatched LLM speaker identification for {file_uuid} (gender attributes ready)"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to dispatch LLM speaker identification: {e}")
+
+
 @celery_app.task(bind=True, name="detect_speaker_attributes", queue="cpu")
 def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     """Predict gender/age for all speakers in a media file.
@@ -74,6 +94,8 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
         # Check if feature is enabled
         if not _is_speaker_attribute_detection_enabled(user_id):
             logger.info("Speaker attribute detection disabled, skipping")
+            # Still dispatch LLM identification even when attribute detection is disabled
+            _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "disabled"}
 
         media_file = get_file_by_uuid(db, file_uuid)
@@ -90,6 +112,8 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
         speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
         if not speakers:
             logger.info(f"No speakers found for file {file_id}, skipping attribute detection")
+            # Still dispatch LLM identification even with no speakers (it handles the no-speaker case)
+            _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "no_speakers"}
 
         speaker_mapping = {str(s.name): int(s.id) for s in speakers}
@@ -103,6 +127,7 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
         )
 
         if not segments:
+            _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "no_segments"}
 
         processed_segments = [
@@ -160,6 +185,9 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
         if updated_count > 0:
             _send_speaker_attributes_notification(user_id, file_uuid, updated_count)
 
+        # Dispatch LLM speaker identification now that gender attributes are in the DB
+        _dispatch_llm_speaker_identification(file_uuid)
+
         return {
             "status": "success",
             "file_uuid": file_uuid,
@@ -170,6 +198,8 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     except Exception as e:
         logger.error(f"Speaker attribute detection failed for {file_uuid}: {e}")
         logger.error("Full traceback:", exc_info=True)
+        # Attempt to dispatch LLM identification even on failure so speaker ID is not lost
+        _dispatch_llm_speaker_identification(file_uuid)
         return {"status": "error", "message": str(e)}
 
     finally:

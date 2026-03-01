@@ -4,13 +4,13 @@
   # Database Schema & Initialization
 </div>
 
-This directory contains the database schema initialization scripts and documentation for OpenTranscribe.
+This directory contains legacy database schema references for OpenTranscribe. The **Alembic migration chain** in `backend/alembic/versions/` is now the sole authority for the database schema.
 
 ## 📁 Contents
 
 ```
 database/
-├── init_db.sql    # Complete database schema definition
+├── init_db.sql    # Legacy reference only (schema defined by Alembic migrations)
 └── README.md      # This documentation
 ```
 
@@ -59,7 +59,7 @@ OpenTranscribe uses PostgreSQL as its primary database with a comprehensive sche
 
 ### Development Setup
 
-The database is initialized using the `init_db.sql` script during development:
+The database is initialized by running the full Alembic migration chain (`alembic upgrade head`):
 
 ```bash
 # Reset and initialize development database
@@ -70,15 +70,10 @@ The database is initialized using the `init_db.sql` script during development:
 
 ### Schema Management Approach
 
-#### Development Phase (Current)
-- **Source of Truth**: `database/init_db.sql` contains the complete schema
-- **Rapid Iteration**: Direct SQL modification for fast development cycles
-- **Easy Reset**: Simple database recreation for testing and development
-
-#### Production Phase (Future)
-- **Migration-Based**: Alembic migrations for version control and deployment
-- **Backward Compatibility**: Incremental schema changes with rollback support
-- **Production Safety**: Tested migrations with backup and recovery procedures
+- **Source of Truth**: Alembic migrations in `backend/alembic/versions/` define the complete schema
+- **Bootstrap Migration**: `v000_bootstrap.py` creates all tables from scratch on empty databases
+- **Incremental Migrations**: Subsequent migrations handle schema evolution with rollback support
+- **Reset**: `./opentr.sh reset dev` drops the database and runs the full migration chain
 
 ## 📊 Schema Details
 
@@ -233,14 +228,14 @@ alembic upgrade head
 
 ## 🚨 Migration Strategy
 
-### Transition to Production
+### Migration-Based Schema Management
 
-When moving to production deployment:
+The project now uses Alembic migrations for all environments:
 
-1. **Schema Finalization**: Ensure `init_db.sql` represents final development schema
-2. **Base Migration Creation**: Generate Alembic migration matching current schema
-3. **Production Deployment**: Apply base migration to production database
-4. **Future Changes**: Use Alembic migrations for all subsequent schema modifications
+1. **Bootstrap Migration**: `v000_bootstrap.py` creates the full schema from scratch
+2. **Incremental Migrations**: Each `v0XX_*.py` file handles one schema evolution step
+3. **Automatic Startup**: Backend runs `alembic upgrade head` on startup
+4. **Future Changes**: All schema changes go through new Alembic migration files
 
 ### Migration Best Practices
 - **Review Generated Migrations**: Always verify auto-generated migration scripts
@@ -254,11 +249,12 @@ When moving to production deployment:
 
 When modifying the database schema:
 
-1. **Update `init_db.sql`**: Make changes to the master schema file
+1. **Create Alembic Migration**: Add a new migration in `backend/alembic/versions/`
 2. **Update SQLAlchemy Models**: Modify corresponding models in `backend/app/models/`
 3. **Update Pydantic Schemas**: Adjust validation schemas in `backend/app/schemas/`
-4. **Reset Development Database**: Run `./opentr.sh reset dev` to apply changes
-5. **Test Thoroughly**: Verify all functionality works with new schema
+4. **Update Migration Detection**: Update `backend/app/db/migrations.py` for the new version
+5. **Test**: Run `./opentr.sh reset dev` to verify the full migration chain
+6. **Test Thoroughly**: Verify all functionality works with new schema
 
 ### Best Practices
 - **Keep Schemas in Sync**: Ensure SQL, SQLAlchemy, and Pydantic schemas match

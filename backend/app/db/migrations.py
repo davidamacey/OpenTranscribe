@@ -2,7 +2,8 @@
 Database migration utilities.
 
 Runs Alembic migrations automatically on application startup.
-Handles both fresh installs and upgrades from previous versions.
+Alembic is the sole authority for database schema creation and upgrades.
+Handles empty databases, existing untracked databases, and tracked databases.
 """
 
 import logging
@@ -127,7 +128,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'collection' AND column_name = 'default_summary_prompt_id')"
     )
 
+    has_refresh_token_jti = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='refresh_token' AND column_name='jti')"
+    )
+    has_mfa_uuid = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='user_mfa' AND column_name='uuid')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v200: schema reconciliation (jti on refresh_token + uuid on user_mfa)
+    if has_collection_default_prompt and has_refresh_token_jti and has_mfa_uuid:
+        return "v200_schema_reconciliation"
     # v190: default_summary_prompt_id column on collection table
     if has_collection_default_prompt:
         return "v190_add_collection_default_prompt"
@@ -185,9 +198,9 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
 def run_migrations() -> None:
     """Run database migrations on startup.
 
-    Handles three scenarios:
-    1. Fresh install: Tables exist from init_db.sql, stamp current version
-    2. Existing v0.1.0+: Stamp detected version, apply new migrations
+    Alembic is the sole authority for database schema. Handles:
+    1. Empty database: Run all migrations from scratch (alembic upgrade head)
+    2. Existing untracked DB: Detect version, stamp, then upgrade
     3. Already tracked: Apply any pending migrations
 
     Uses a PostgreSQL advisory lock to prevent concurrent migration runs
@@ -245,7 +258,7 @@ def run_migrations() -> None:
                 logger.info("Applying migrations to upgrade to current version...")
                 command.upgrade(config, "head")
         elif tables:
-            logger.info("Fresh database detected, stamping current version...")
+            logger.info("Existing untracked database detected, stamping current version...")
             command.stamp(config, "head")
         else:
             logger.info("Empty database detected, running full migration...")

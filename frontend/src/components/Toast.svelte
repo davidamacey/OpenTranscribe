@@ -92,6 +92,10 @@
     font-size: 14px;
     color: var(--text-primary);
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
 
   :global(.dark) .toast-message {

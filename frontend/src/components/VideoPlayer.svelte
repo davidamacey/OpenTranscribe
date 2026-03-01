@@ -448,48 +448,54 @@
 
   :global(.plyr) {
     border-radius: 8px;
-    overflow: hidden;
+    overflow: visible;
+  }
+
+  /* Round the video wrapper corners instead — visible overflow on .plyr
+     allows the progress bar thumb to extend above the controls without clipping */
+  :global(.plyr--video) {
+    overflow: visible !important;
   }
 
   :global(.plyr__video-wrapper) {
     border-radius: 8px;
   }
 
-  :global(.plyr--video .plyr__control:not([data-plyr="settings"]):hover) {
+  /* Uniform hover for all video controls — same translucent white */
+  :global(.plyr--video .plyr__control:hover) {
     background: rgba(255, 255, 255, 0.25) !important;
   }
 
-  /* CC button - transparent background like other video icons */
-  :global(.plyr--video .plyr__control[data-plyr="captions"]) {
+  /* All video control buttons — transparent default, white icon */
+  :global(.plyr--video .plyr__control) {
     background: transparent !important;
     color: white !important;
+  }
+
+  /* Captions (CC) button — override Plyr's pressed/active background */
+  :global(.plyr--video .plyr__control[data-plyr="captions"]) {
+    background: transparent !important;
   }
 
   :global(.plyr--video .plyr__control[data-plyr="captions"]:hover) {
     background: rgba(255, 255, 255, 0.25) !important;
-    color: white !important;
   }
 
-
-  :global(.plyr--video .plyr__control[data-plyr="play"]:hover) {
-    background: rgba(255, 255, 255, 0.25) !important;
-  }
-
-  /* Settings button for video - transparent background with white icon like CC */
-  :global(.plyr--video .plyr__control[data-plyr="settings"]) {
+  :global(.plyr--video .plyr__control[data-plyr="captions"].plyr__control--pressed) {
     background: transparent !important;
-    color: white !important;
   }
 
-  :global(.plyr--video .plyr__control[data-plyr="settings"]:hover) {
+  :global(.plyr--video .plyr__control[data-plyr="captions"].plyr__control--pressed:hover) {
     background: rgba(255, 255, 255, 0.25) !important;
-    color: white !important;
   }
 
-  /* Settings button SVG styling */
-  :global(.plyr--video .plyr__control[data-plyr="settings"] svg) {
-    color: white !important;
-    fill: white !important;
+  /* Settings gear inside .plyr__menu — ensure same hover as other controls */
+  :global(.plyr--video .plyr__menu .plyr__control[aria-expanded]) {
+    background: transparent !important;
+  }
+
+  :global(.plyr--video .plyr__menu .plyr__control[aria-expanded]:hover) {
+    background: rgba(255, 255, 255, 0.25) !important;
   }
 
   /* Settings menu container - transparent background */
@@ -513,6 +519,7 @@
     left: 0 !important;
     right: 0 !important;
     padding-top: 12px !important; /* Increased spacing to prevent overlap */
+    overflow: visible !important;
   }
 
   /* Position progress bar above controls at full player width - moved up - VIDEO ONLY */
@@ -526,12 +533,20 @@
     margin: 0 !important;
     padding: 0 !important;
     z-index: 10 !important;
+    overflow: visible !important;
   }
 
-  /* Ensure progress bar input takes full width - VIDEO ONLY */
-  :global(.plyr--video .plyr__progress input[type="range"]) {
+  :global(.plyr--video .plyr__progress__container) {
+    overflow: visible !important;
+  }
+
+  /* Reset Plyr's default negative margins and calc(100% + 13px) width on the
+     range input and buffer that cause them to extend past the player edges. */
+  :global(.plyr--video .plyr__progress input[type="range"]),
+  :global(.plyr--video .plyr__progress__buffer) {
     width: 100% !important;
-    margin: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
     padding: 0 !important;
   }
 

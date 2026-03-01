@@ -223,8 +223,10 @@ class SubtitleService:
         format_type: str = "srt",
     ) -> list[tuple[float, float, str]]:
         """Split long transcript segments into properly timed subtitle chunks with speaker continuity."""
-        text = str(segment.text).strip()
-        duration = float(segment.end_time) - float(segment.start_time)
+        text = str(segment.text or "").strip()
+        start = float(segment.start_time or 0.0)
+        end = float(segment.end_time or start)
+        duration = end - start
 
         # Format text and handle multi-part subtitles
         formatted_subtitles = SubtitleService.format_text_for_subtitles(
@@ -237,8 +239,8 @@ class SubtitleService:
             actual_duration = min(duration, optimal_duration)
             return [
                 (
-                    float(segment.start_time),
-                    float(segment.start_time) + actual_duration,
+                    start,
+                    start + actual_duration,
                     formatted_subtitles[0],
                 )
             ]
@@ -247,8 +249,8 @@ class SubtitleService:
         subtitle_parts: list[tuple[float, float, str]] = []
         total_chars = sum(len(subtitle) for subtitle in formatted_subtitles)
 
-        current_time = float(segment.start_time)
-        segment_end_time = float(segment.end_time)
+        current_time = start
+        segment_end_time = end
         for i, subtitle_text in enumerate(formatted_subtitles):
             # Calculate time allocation based on text length (proportional distribution)
             text_ratio = len(subtitle_text) / total_chars
@@ -484,21 +486,17 @@ class SubtitleService:
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)
 
-        txt_lines = []
-
+        # Flatten segment groups into a list of (speaker_id, segment) tuples,
+        # preserving overlap groups as special entries
+        flat_entries: list[dict] = []
         for group in segment_groups:
             if len(group) > 1:
-                # Overlapping segments - format as special block
+                # Overlapping segments - keep as special block (not combinable)
                 group_start = min(float(s.start_time) for s in group)
                 group_end = max(float(s.end_time) for s in group)
-
-                start_ts = SubtitleService.format_timestamp_simple(group_start)
-                end_ts = SubtitleService.format_timestamp_simple(group_end)
-
-                txt_lines.append(f"[{start_ts} - {end_ts}] OVERLAPPING SPEECH:")
-
+                lines = []
                 for segment in sorted(group, key=lambda s: float(s.start_time)):
-                    speaker_name = (
+                    s_name = (
                         speaker_map.get(segment.speaker_id, "Unknown")  # type: ignore[call-overload]
                         if segment.speaker_id
                         else "Unknown"
@@ -506,31 +504,73 @@ class SubtitleService:
                     seg_start = SubtitleService.format_timestamp_simple(float(segment.start_time))
                     seg_end = SubtitleService.format_timestamp_simple(float(segment.end_time))
                     text = str(segment.text).strip()
-
                     if include_speakers:
-                        txt_lines.append(f"  {speaker_name} ({seg_start} - {seg_end}): {text}")
+                        lines.append(f"  {s_name} ({seg_start} - {seg_end}): {text}")
                     else:
-                        txt_lines.append(f"  ({seg_start} - {seg_end}): {text}")
-
-                txt_lines.append("")  # Empty line after overlap block
-            else:
-                # Single segment
-                segment = group[0]
-                speaker_name = (
-                    speaker_map.get(segment.speaker_id, "Unknown")  # type: ignore[call-overload]
-                    if segment.speaker_id
-                    else "Unknown"
+                        lines.append(f"  ({seg_start} - {seg_end}): {text}")
+                start_ts = SubtitleService.format_timestamp_simple(group_start)
+                end_ts = SubtitleService.format_timestamp_simple(group_end)
+                flat_entries.append(
+                    {
+                        "type": "overlap",
+                        "text": f"[{start_ts} - {end_ts}] OVERLAPPING SPEECH:\n" + "\n".join(lines),
+                    }
                 )
-                start_ts = SubtitleService.format_timestamp_simple(float(segment.start_time))
-                end_ts = SubtitleService.format_timestamp_simple(float(segment.end_time))
-                text = str(segment.text).strip()
+            else:
+                segment = group[0]
+                flat_entries.append(
+                    {
+                        "type": "single",
+                        "speaker_id": segment.speaker_id,
+                        "start_time": float(segment.start_time),
+                        "end_time": float(segment.end_time),
+                        "text": str(segment.text).strip(),
+                    }
+                )
 
-                if include_speakers:
-                    txt_lines.append(f"[{start_ts} - {end_ts}] {speaker_name}: {text}")
-                else:
-                    txt_lines.append(f"[{start_ts} - {end_ts}] {text}")
+        # Combine consecutive single segments from the same speaker
+        txt_lines = []
+        i = 0
+        while i < len(flat_entries):
+            entry = flat_entries[i]
+            if entry["type"] == "overlap":
+                txt_lines.append(entry["text"])
+                i += 1
+                continue
 
-        return "\n".join(txt_lines)
+            # Start a new speaker group
+            speaker_id = entry["speaker_id"]
+            group_start = entry["start_time"]
+            group_end = entry["end_time"]
+            texts = [entry["text"]]
+
+            # Merge consecutive single segments with the same speaker
+            j = i + 1
+            while j < len(flat_entries):
+                next_entry = flat_entries[j]
+                if next_entry["type"] != "single" or next_entry["speaker_id"] != speaker_id:
+                    break
+                group_end = next_entry["end_time"]
+                texts.append(next_entry["text"])
+                j += 1
+
+            speaker_name = (
+                speaker_map.get(speaker_id, "Unknown")  # type: ignore[call-overload]
+                if speaker_id
+                else "Unknown"
+            )
+            start_ts = SubtitleService.format_timestamp_simple(group_start)
+            end_ts = SubtitleService.format_timestamp_simple(group_end)
+            combined_text = " ".join(texts)
+
+            if include_speakers:
+                txt_lines.append(f"[{start_ts} - {end_ts}] {speaker_name}:\n{combined_text}")
+            else:
+                txt_lines.append(f"[{start_ts} - {end_ts}]\n{combined_text}")
+
+            i = j
+
+        return "\n\n".join(txt_lines)
 
     @staticmethod
     def validate_subtitle_timing(db: Session, media_file_id: int) -> list[str]:

@@ -1291,8 +1291,13 @@ class HybridSearchService:
         self,
         inner_hit_list: list[dict[str, Any]],
         outer_score: float,
+        query: str = "",
     ) -> tuple[list[SearchOccurrence], str, list[str], int, int, float]:
         """Convert inner hits into SearchOccurrence objects.
+
+        Handles the case where OpenSearch hybrid queries with RRF normalization
+        + collapse produce inner hits with score=0.0 and no highlights. In this
+        case, query terms are checked against content text manually.
 
         Returns:
             Tuple of (occurrences, title_highlighted, match_sources,
@@ -1305,11 +1310,34 @@ class HybridSearchService:
         match_sources: list[str] = []
         best_score = outer_score
 
+        # Pre-compute query words for manual keyword detection (hybrid fallback)
+        query_words = [w.lower() for w in query.split() if len(w) >= 2] if query else []
+
         for inner_hit in inner_hit_list:
             inner_source = inner_hit.get("_source", {})
             inner_score = inner_hit.get("_score", 0.0) or 0.0
             highlight = inner_hit.get("highlight", {})
             has_keyword_match = bool(highlight)
+
+            # Hybrid + collapse fallback: when inner hits lose scores and
+            # highlights (OpenSearch RRF limitation), manually check if query
+            # terms appear in the content/title/speaker text.
+            if not has_keyword_match and inner_score == 0.0 and query_words and outer_score > 0:
+                content_lower = inner_source.get("content", "").lower()
+                title_lower = inner_source.get("title", "").lower()
+                speaker_lower = inner_source.get("speaker", "").lower()
+                for qw in query_words:
+                    if qw in content_lower or qw in title_lower or qw in speaker_lower:
+                        has_keyword_match = True
+                        # Use outer score as fallback since inner score is lost
+                        inner_score = outer_score
+                        if qw in content_lower and "content" not in match_sources:
+                            match_sources.append("content")
+                        if qw in title_lower and "title" not in match_sources:
+                            match_sources.append("title")
+                        if qw in speaker_lower and "speaker" not in match_sources:
+                            match_sources.append("speaker")
+                        break
 
             snippet, match_type = _extract_snippet_and_match_type(inner_source, highlight)
             speaker_highlighted = _extract_highlighted_field(highlight, "speaker")
@@ -1317,7 +1345,7 @@ class HybridSearchService:
             if not title_highlighted:
                 title_highlighted = _extract_highlighted_field(highlight, "title")
 
-            # Track match sources
+            # Track match sources from OpenSearch highlights
             if (
                 "content" in highlight or "content.exact" in highlight
             ) and "content" not in match_sources:
@@ -1429,7 +1457,7 @@ class HybridSearchService:
                 keyword_count,
                 semantic_count,
                 best_score,
-            ) = self._process_inner_hits(inner_hits_data.get("hits", []), outer_score)
+            ) = self._process_inner_hits(inner_hits_data.get("hits", []), outer_score, query)
 
             if not occurrences:
                 continue
