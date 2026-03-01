@@ -14,6 +14,8 @@ from typing import TypedDict
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.constants import DEFAULT_AUDIO_QUALITY
+from app.core.constants import DEFAULT_VIDEO_QUALITY
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -42,6 +44,66 @@ def _get_notification_redis():
 
         _notification_redis_client = sync_redis.from_url(settings.REDIS_URL)
     return _notification_redis_client
+
+
+def _get_user_download_settings(db, user_id: int) -> dict[str, str | bool]:
+    """Look up user's saved download quality preferences from the database.
+
+    Args:
+        db: Database session.
+        user_id: User ID.
+
+    Returns:
+        Dict with video_quality, audio_only, and audio_quality values.
+    """
+    from app.models.prompt import UserSetting
+
+    rows = (
+        db.query(UserSetting)
+        .filter(
+            UserSetting.user_id == user_id,
+            UserSetting.setting_key.in_(
+                ["download_video_quality", "download_audio_only", "download_audio_quality"]
+            ),
+        )
+        .all()
+    )
+    settings_map = {str(row.setting_key): str(row.setting_value) for row in rows}
+    return {
+        "video_quality": settings_map.get("download_video_quality", DEFAULT_VIDEO_QUALITY),
+        "audio_only": settings_map.get("download_audio_only", "false").lower() == "true",
+        "audio_quality": settings_map.get("download_audio_quality", DEFAULT_AUDIO_QUALITY),
+    }
+
+
+def _resolve_download_quality(
+    db,
+    user_id: int,
+    video_quality: str | None,
+    audio_only: bool | None,
+    audio_quality: str | None,
+) -> tuple[str, bool, str]:
+    """Resolve download quality: explicit overrides → user DB prefs → system defaults.
+
+    Args:
+        db: Database session.
+        user_id: User ID.
+        video_quality: Optional per-download override.
+        audio_only: Optional per-download override.
+        audio_quality: Optional per-download override.
+
+    Returns:
+        Tuple of (video_quality, audio_only, audio_quality) with all values resolved.
+    """
+    if video_quality is not None and audio_only is not None and audio_quality is not None:
+        return video_quality, audio_only, audio_quality
+
+    prefs = _get_user_download_settings(db, user_id)
+    return (
+        video_quality if video_quality is not None else str(prefs["video_quality"]),
+        audio_only if audio_only is not None else bool(prefs["audio_only"]),
+        audio_quality if audio_quality is not None else str(prefs["audio_quality"]),
+    )
 
 
 def send_youtube_notification_via_redis(
@@ -119,17 +181,33 @@ def process_youtube_url_task(
     media_password: str | None = None,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
+    video_quality: str | None = None,
+    audio_only: bool | None = None,
+    audio_quality: str | None = None,
 ) -> YouTubeProcessingResult:
     """Background task to process YouTube URL by downloading and creating media file.
 
     This task handles asynchronous YouTube video processing to prevent UI blocking.
     It downloads the video, updates the media file record, and starts transcription.
 
+    Quality settings are resolved in this order:
+    1. Explicit per-download overrides (if provided by the frontend)
+    2. User's saved preferences from the database
+    3. System defaults (best quality)
+
     Args:
         self: Celery task instance (automatically passed when bind=True).
         url: YouTube URL to process.
         user_id: ID of the user who initiated the request.
         file_uuid: UUID of the MediaFile record to update.
+        media_username: Optional username for authenticated media downloads.
+        media_password: Optional password for authenticated media downloads.
+        video_quality: Optional video quality override (e.g., "best", "1080p", "720p").
+            If None, uses user's saved preference from the database.
+        audio_only: Optional override to download only audio (no video stream).
+            If None, uses user's saved preference from the database.
+        audio_quality: Optional audio quality override (e.g., "best", "192", "128").
+            If None, uses user's saved preference from the database.
 
     Returns:
         Dict: Processing result containing status, message, and file_id.
@@ -181,6 +259,15 @@ def process_youtube_url_task(
             user = db.query(User).filter(User.id == user_id).first()
             media_file = get_refreshed_object(db, MediaFile, file_id)
 
+            # Resolve download quality: explicit overrides → user DB prefs → defaults
+            video_quality, audio_only, audio_quality = _resolve_download_quality(
+                db,
+                user_id,
+                video_quality,
+                audio_only,
+                audio_quality,
+            )
+
             if not user or not media_file:
                 logger.error(f"User {user_id} or MediaFile {file_id} not found")
                 send_youtube_notification_via_redis(
@@ -223,6 +310,9 @@ def process_youtube_url_task(
                     progress_callback=progress_callback,
                     media_username=media_username,
                     media_password=media_password,
+                    video_quality=video_quality,
+                    audio_only=audio_only,
+                    audio_quality=audio_quality,
                 )
 
                 # Update status to pending for transcription
@@ -522,6 +612,9 @@ def _dispatch_video_task(
     countdown: int = 0,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
+    video_quality: str | None = None,
+    audio_only: bool | None = None,
+    audio_quality: str | None = None,
 ) -> bool:
     """Dispatch processing task for a single video.
 
@@ -532,6 +625,9 @@ def _dispatch_video_task(
         countdown: Delay in seconds before task starts (default: 0).
         collection_ids: Optional collection UUIDs to assign after processing.
         tag_names: Optional tag names to apply after processing.
+        video_quality: Optional video quality override for this download.
+        audio_only: Optional override to download only audio.
+        audio_quality: Optional audio bitrate override for this download.
 
     Returns:
         True if task was dispatched successfully, False otherwise.
@@ -539,10 +635,18 @@ def _dispatch_video_task(
     try:
         video_url = str(media_file.source_url)
 
+        kwargs: dict = {"collection_ids": collection_ids, "tag_names": tag_names}
+        if video_quality is not None:
+            kwargs["video_quality"] = video_quality
+        if audio_only is not None:
+            kwargs["audio_only"] = audio_only
+        if audio_quality is not None:
+            kwargs["audio_quality"] = audio_quality
+
         # Use apply_async to support countdown parameter
         process_youtube_url_task.apply_async(
             args=[video_url, user_id, str(media_file.uuid)],
-            kwargs={"collection_ids": collection_ids, "tag_names": tag_names},
+            kwargs=kwargs,
             countdown=countdown,
         )
 
@@ -565,6 +669,9 @@ def process_youtube_playlist_task(
     user_id: int,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
+    video_quality: str | None = None,
+    audio_only: bool | None = None,
+    audio_quality: str | None = None,
 ) -> YouTubePlaylistProcessingResult:
     """Background task to process YouTube playlist by extracting videos and dispatching individual tasks.
 
@@ -580,6 +687,9 @@ def process_youtube_playlist_task(
         user_id: ID of the user who initiated the request.
         collection_ids: Optional collection UUIDs to assign to each video.
         tag_names: Optional tag names to apply to each video.
+        video_quality: Optional video quality override for playlist downloads.
+        audio_only: Optional override to download only audio.
+        audio_quality: Optional audio bitrate override for playlist downloads.
 
     Returns:
         Dict: Processing result containing status, message, and video counts.
@@ -593,7 +703,9 @@ def process_youtube_playlist_task(
     _send_playlist_notification(user_id, "processing", "Extracting playlist information...", 5)
 
     try:
-        return _process_playlist_with_db(url, user_id, collection_ids, tag_names)
+        return _process_playlist_with_db(
+            url, user_id, collection_ids, tag_names, video_quality, audio_only, audio_quality
+        )
     except Exception as e:
         logger.error(f"Unexpected error in YouTube playlist processing task: {e}")
         _send_playlist_notification(user_id, "error", f"Unexpected error: {str(e)}", 0)
@@ -605,6 +717,9 @@ def _process_playlist_with_db(
     user_id: int,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
+    video_quality: str | None = None,
+    audio_only: bool | None = None,
+    audio_quality: str | None = None,
 ) -> YouTubePlaylistProcessingResult:
     """Process playlist within a database session.
 
@@ -613,6 +728,9 @@ def _process_playlist_with_db(
         user_id: User ID.
         collection_ids: Optional collection UUIDs to assign to each video.
         tag_names: Optional tag names to apply to each video.
+        video_quality: Optional video quality override for playlist downloads.
+        audio_only: Optional override to download only audio.
+        audio_quality: Optional audio bitrate override for playlist downloads.
 
     Returns:
         YouTubePlaylistProcessingResult with processing outcome.
@@ -631,7 +749,16 @@ def _process_playlist_with_db(
             result = MediaDownloadService().process_youtube_playlist_sync(
                 url=url, db=db, user=user, progress_callback=progress_callback
             )
-            return _handle_playlist_result(result, user_id, db, collection_ids, tag_names)
+            return _handle_playlist_result(
+                result,
+                user_id,
+                db,
+                collection_ids,
+                tag_names,
+                video_quality,
+                audio_only,
+                audio_quality,
+            )
         except Exception as e:
             logger.error(f"Error processing YouTube playlist {url}: {e}")
             _send_playlist_notification(
@@ -646,6 +773,9 @@ def _handle_playlist_result(
     db,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
+    video_quality: str | None = None,
+    audio_only: bool | None = None,
+    audio_quality: str | None = None,
 ) -> YouTubePlaylistProcessingResult:
     """Handle successful playlist extraction result.
 
@@ -655,6 +785,9 @@ def _handle_playlist_result(
         db: Database session.
         collection_ids: Optional collection UUIDs to assign to each video.
         tag_names: Optional tag names to apply to each video.
+        video_quality: Optional video quality override for playlist downloads.
+        audio_only: Optional override to download only audio.
+        audio_quality: Optional audio bitrate override for playlist downloads.
 
     Returns:
         YouTubePlaylistProcessingResult with success outcome.
@@ -709,6 +842,9 @@ def _handle_playlist_result(
             countdown=countdown,
             collection_ids=collection_ids,
             tag_names=tag_names,
+            video_quality=video_quality,
+            audio_only=audio_only,
+            audio_quality=audio_quality,
         ):
             dispatched_count += 1
             logger.info(

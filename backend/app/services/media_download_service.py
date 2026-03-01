@@ -546,6 +546,55 @@ def _update_media_file_with_download_data(
     media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")  # type: ignore[assignment]
 
 
+def _build_yt_dlp_format_string(
+    video_quality: str = "best",
+    audio_only: bool = False,
+    audio_quality: str = "best",
+) -> str:
+    """Build yt-dlp format string based on quality settings.
+
+    yt-dlp's format selection automatically falls back to the next best option
+    when the preferred format isn't available. The "/" separator means "or".
+
+    Args:
+        video_quality: Video quality preference (best, 2160p, 1440p, 1080p, 720p, 480p, 360p)
+        audio_only: If True, download only audio track
+        audio_quality: Audio bitrate preference (best, 320, 192, 128)
+
+    Returns:
+        yt-dlp format selection string
+    """
+    if audio_only:
+        if audio_quality == "best":
+            return "bestaudio[ext=m4a]/bestaudio/best"
+        return f"bestaudio[abr<={audio_quality}][ext=m4a]/bestaudio[ext=m4a]/bestaudio/best"
+
+    if video_quality == "best":
+        return (
+            "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[vcodec*=h264][ext=mp4]+bestaudio[ext=m4a]/"
+            "best[ext=mp4]/best"
+        )
+
+    height_map = {
+        "2160p": 2160,
+        "1440p": 1440,
+        "1080p": 1080,
+        "720p": 720,
+        "480p": 480,
+        "360p": 360,
+    }
+    height = height_map.get(video_quality, 1080)
+
+    return (
+        f"bestvideo[height<={height}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+        f"bestvideo[height<={height}][vcodec*=h264][ext=mp4]+bestaudio[ext=m4a]/"
+        f"bestvideo[height<={height}][ext=mp4]+bestaudio/"
+        f"best[height<={height}][ext=mp4]/"
+        f"best[ext=mp4]/best"
+    )
+
+
 class MediaDownloadService:
     """Service for processing media from various platforms.
 
@@ -735,6 +784,9 @@ class MediaDownloadService:
         progress_callback: Callable[[int, str], None] | None = None,
         media_username: str | None = None,
         media_password: str | None = None,
+        video_quality: str = "best",
+        audio_only: bool = False,
+        audio_quality: str = "best",
     ) -> dict[str, Any]:
         """
         Download video from media URL.
@@ -782,7 +834,7 @@ class MediaDownloadService:
         ydl_opts = {
             # Download best H.264 quality for maximum browser compatibility
             # Prefer H.264 video codec over AV1 to ensure playback works across all browsers
-            "format": "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[vcodec*=h264][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "format": _build_yt_dlp_format_string(video_quality, audio_only, audio_quality),
             "outtmpl": os.path.join(output_path, "%(title)s.%(ext)s"),
             "restrictfilenames": True,  # Avoid special characters in filename
             "no_warnings": False,
@@ -821,6 +873,16 @@ class MediaDownloadService:
                 }
             ],
         }
+
+        # Audio-only mode adjustments
+        if audio_only:
+            ydl_opts["merge_output_format"] = "m4a"
+            ydl_opts["postprocessors"] = [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "m4a",
+                }
+            ]
 
         # Add progress hook if callback is provided
         if progress_callback:
@@ -1129,6 +1191,9 @@ class MediaDownloadService:
         progress_callback: Callable[[int, str], None] | None = None,
         media_username: str | None = None,
         media_password: str | None = None,
+        video_quality: str = "best",
+        audio_only: bool = False,
+        audio_quality: str = "best",
     ) -> MediaFile:
         """
         Process a media URL by downloading the video and updating the MediaFile record (synchronous).
@@ -1180,6 +1245,9 @@ class MediaDownloadService:
                 progress_callback=progress_callback,
                 media_username=media_username,
                 media_password=media_password,
+                video_quality=video_quality,
+                audio_only=audio_only,
+                audio_quality=audio_quality,
             )
 
             if progress_callback:

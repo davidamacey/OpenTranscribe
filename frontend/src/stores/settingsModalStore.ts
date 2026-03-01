@@ -10,6 +10,7 @@ export type SettingsSection =
   | 'transcription'
   | 'organization-context'
   | 'speaker-attributes'
+  | 'download'
   | 'ai-prompts'
   | 'llm-provider'
   | 'search-indexing'
@@ -44,6 +45,7 @@ const initialState: SettingsModalState = {
     transcription: false,
     'organization-context': false,
     'speaker-attributes': false,
+    download: false,
     'ai-prompts': false,
     'llm-provider': false,
     'search-indexing': false,

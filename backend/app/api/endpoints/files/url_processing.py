@@ -16,11 +16,14 @@ from fastapi import HTTPException
 from fastapi import status
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.core.config import settings
+from app.core.constants import VALID_AUDIO_QUALITIES
+from app.core.constants import VALID_VIDEO_QUALITIES
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -74,6 +77,35 @@ class URLProcessingRequest(BaseModel):
         default=None,
         description="Tag names to apply to the file after creation",
     )
+
+    video_quality: str | None = Field(
+        default=None,
+        description="Video quality override for this download (e.g., 'best', '1080p', '720p')",
+    )
+    audio_only: bool | None = Field(
+        default=None,
+        description="Override to download only audio (no video) for this request",
+    )
+    audio_quality: str | None = Field(
+        default=None,
+        description="Audio bitrate override for this download (e.g., 'best', '320', '192', '128')",
+    )
+
+    @field_validator("video_quality")
+    @classmethod
+    def validate_video_quality(cls, v: str | None) -> str | None:
+        """Validate video_quality against allowed options."""
+        if v is not None and v not in VALID_VIDEO_QUALITIES:
+            raise ValueError(f"video_quality must be one of: {VALID_VIDEO_QUALITIES}")
+        return v
+
+    @field_validator("audio_quality")
+    @classmethod
+    def validate_audio_quality(cls, v: str | None) -> str | None:
+        """Validate audio_quality against allowed options."""
+        if v is not None and v not in VALID_AUDIO_QUALITIES:
+            raise ValueError(f"audio_quality must be one of: {VALID_AUDIO_QUALITIES}")
+        return v
 
 
 # Response models for URL processing
@@ -200,6 +232,9 @@ def _handle_playlist_processing(
     user_id: int,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
+    video_quality: str | None = None,
+    audio_only: bool | None = None,
+    audio_quality: str | None = None,
 ) -> PlaylistProcessingResponse:
     """Handle playlist URL processing by dispatching a background task.
 
@@ -208,6 +243,9 @@ def _handle_playlist_processing(
         user_id: ID of the user requesting processing.
         collection_ids: Optional collection UUIDs to assign to each video.
         tag_names: Optional tag names to apply to each video.
+        video_quality: Optional video quality override for playlist downloads.
+        audio_only: Optional override to download only audio.
+        audio_quality: Optional audio bitrate override for playlist downloads.
 
     Returns:
         PlaylistProcessingResponse with processing status.
@@ -223,6 +261,9 @@ def _handle_playlist_processing(
             user_id=user_id,
             collection_ids=collection_ids,
             tag_names=tag_names,
+            video_quality=video_quality,
+            audio_only=audio_only,
+            audio_quality=audio_quality,
         )
         logger.info(
             f"Dispatched YouTube playlist processing task {task_result.id} for user {user_id}"
@@ -449,6 +490,9 @@ def _dispatch_video_task(
     media_password: str | None = None,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
+    video_quality: str | None = None,
+    audio_only: bool | None = None,
+    audio_quality: str | None = None,
 ) -> None:
     """Dispatch the video processing background task.
 
@@ -457,8 +501,13 @@ def _dispatch_video_task(
         media_file: MediaFile record to process.
         normalized_url: Normalized media URL.
         user_id: User ID.
+        media_username: Optional username for authenticated downloads.
+        media_password: Optional password for authenticated downloads.
         collection_ids: Optional collection UUIDs to assign after processing.
         tag_names: Optional tag names to apply after processing.
+        video_quality: Optional video quality override for this download.
+        audio_only: Optional override to download only audio.
+        audio_quality: Optional audio bitrate override for this download.
 
     Raises:
         HTTPException: If task dispatch fails.
@@ -472,6 +521,9 @@ def _dispatch_video_task(
             media_password=media_password,
             collection_ids=collection_ids,
             tag_names=tag_names,
+            video_quality=video_quality,
+            audio_only=audio_only,
+            audio_quality=audio_quality,
         )
         logger.info(
             f"Dispatched media processing task {task_result.id} for MediaFile {media_file.id}"
@@ -588,6 +640,9 @@ async def process_media_url(
                 int(current_user.id),
                 collection_ids=request_data.collection_ids,
                 tag_names=request_data.tag_names,
+                video_quality=request_data.video_quality,
+                audio_only=request_data.audio_only,
+                audio_quality=request_data.audio_quality,
             )
 
         # Extract video info
@@ -634,6 +689,9 @@ async def process_media_url(
             media_password=request_data.media_password,
             collection_ids=request_data.collection_ids,
             tag_names=request_data.tag_names,
+            video_quality=request_data.video_quality,
+            audio_only=request_data.audio_only,
+            audio_quality=request_data.audio_quality,
         )
 
         # Send WebSocket notification
