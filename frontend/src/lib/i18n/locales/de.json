@@ -1549,7 +1549,7 @@
   "settings.transcription.repetitionPenaltyHint": "1.0 = aus (Standard). 1.1-1.3 = empfohlen bei Wiederholung. Über 1.5 kann die Qualität beeinträchtigen.",
   "settings.transcription.advancedDefaults": "Systemstandards:",
   "settings.transcription.wordTimestampsAvailable": "* = Zeitstempel auf Wortebene verfügbar",
-  "settings.download.title": "Download",
+  "settings.download.title": "Media Download",
   "settings.download.description": "Standard-Video- und Audioqualität für URL-Downloads konfigurieren.",
   "settings.download.loading": "Download-Einstellungen werden geladen...",
   "settings.download.videoQuality": "Videoqualität",

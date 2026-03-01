@@ -1549,7 +1549,7 @@
   "settings.transcription.repetitionPenaltyHint": "1.0 = オフ（デフォルト）。1.1-1.3 = 繰り返しがある場合に推奨。1.5以上は品質に影響する可能性あり。",
   "settings.transcription.advancedDefaults": "システムデフォルト:",
   "settings.transcription.wordTimestampsAvailable": "* = 単語レベルのタイムスタンプ利用可能",
-  "settings.download.title": "ダウンロード",
+  "settings.download.title": "メディアダウンロード",
   "settings.download.description": "URLダウンロードのデフォルトのビデオとオーディオの品質を設定します。",
   "settings.download.loading": "ダウンロード設定を読み込み中...",
   "settings.download.videoQuality": "ビデオ品質",

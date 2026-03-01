@@ -1549,7 +1549,7 @@
   "settings.transcription.repetitionPenaltyHint": "1.0 = 关闭（默认）。1.1-1.3 = 出现重复时推荐。超过1.5可能影响质量。",
   "settings.transcription.advancedDefaults": "系统默认值:",
   "settings.transcription.wordTimestampsAvailable": "* = 支持词级时间戳",
-  "settings.download.title": "下载",
+  "settings.download.title": "媒体下载",
   "settings.download.description": "配置URL下载的默认视频和音频质量。",
   "settings.download.loading": "正在加载下载设置...",
   "settings.download.videoQuality": "视频质量",

@@ -1549,7 +1549,7 @@
   "settings.transcription.repetitionPenaltyHint": "1.0 = desactivado (predeterminado). 1.1-1.3 = recomendado si hay repetición. Superior a 1.5 puede afectar la calidad.",
   "settings.transcription.advancedDefaults": "Valores predeterminados del sistema:",
   "settings.transcription.wordTimestampsAvailable": "* = Marcas de tiempo a nivel de palabra disponibles",
-  "settings.download.title": "Descarga",
+  "settings.download.title": "Descarga de medios",
   "settings.download.description": "Configurar la calidad predeterminada de video y audio para descargas de URL.",
   "settings.download.loading": "Cargando configuración de descarga...",
   "settings.download.videoQuality": "Calidad de Video",
