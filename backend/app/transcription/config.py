@@ -12,6 +12,13 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 
+def _parse_optional_float(value: str) -> float | None:
+    """Parse a string to float, returning None for empty/whitespace."""
+    if not value or not value.strip():
+        return None
+    return float(value.strip())
+
+
 @dataclass
 class TranscriptionConfig:
     """Configuration for the transcription pipeline."""
@@ -32,6 +39,16 @@ class TranscriptionConfig:
     enable_native_embeddings: bool = True
     enable_overlap_detection: bool = True
     overlap_min_duration: float = 0.25
+
+    # VAD settings (Silero VAD used by faster-whisper BatchedInferencePipeline)
+    vad_threshold: float = 0.5
+    vad_min_silence_ms: int = 2000
+    vad_min_speech_ms: int = 250
+    vad_speech_pad_ms: int = 400
+
+    # Accuracy settings
+    hallucination_silence_threshold: float | None = None
+    repetition_penalty: float = 1.0
 
     def config_hash(self) -> str:
         """Hash of model-loading-relevant config for cache invalidation."""
@@ -73,11 +90,22 @@ class TranscriptionConfig:
             enable_overlap_detection=os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower()
             == "true",
             overlap_min_duration=float(os.getenv("OVERLAP_MIN_DURATION", "0.25")),
+            # VAD settings
+            vad_threshold=float(os.getenv("VAD_THRESHOLD", "0.5")),
+            vad_min_silence_ms=int(os.getenv("VAD_MIN_SILENCE_MS", "2000")),
+            vad_min_speech_ms=int(os.getenv("VAD_MIN_SPEECH_MS", "250")),
+            vad_speech_pad_ms=int(os.getenv("VAD_SPEECH_PAD_MS", "400")),
+            # Accuracy settings
+            hallucination_silence_threshold=_parse_optional_float(
+                os.getenv("WHISPER_HALLUCINATION_THRESHOLD", "")
+            ),
+            repetition_penalty=float(os.getenv("WHISPER_REPETITION_PENALTY", "1.0")),
         )
 
-        # Apply task-level overrides
+        # Apply task-level overrides (all overrides are intentional, including None
+        # values like hallucination_silence_threshold=None meaning "disabled")
         for key, value in overrides.items():
-            if value is not None and hasattr(config, key):
+            if hasattr(config, key):
                 setattr(config, key, value)
 
         logger.info(

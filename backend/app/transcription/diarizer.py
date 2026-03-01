@@ -1,8 +1,7 @@
-"""PyAnnote v4 speaker diarization — no WhisperX wrapper.
+"""PyAnnote v4 speaker diarization.
 
-Extracted from pyannote_compat.py's DiarizationPipelineV4 with direct
-PyAnnote v4 API usage. No monkey-patching needed since we don't go
-through WhisperX's diarization path.
+Direct PyAnnote v4 API usage for speaker diarization with configurable
+speaker count parameters.
 """
 
 import gc
@@ -16,8 +15,8 @@ import pandas as pd
 import torch
 
 from app.transcription.config import TranscriptionConfig
-from app.utils.pyannote_compat import build_native_embeddings
-from app.utils.pyannote_compat import extract_overlap_regions
+from app.utils.pyannote_utils import build_native_embeddings
+from app.utils.pyannote_utils import extract_overlap_regions
 
 logger = logging.getLogger(__name__)
 

@@ -84,8 +84,7 @@
     speakers: { total: 0, avg_per_file: 0 },
     models: {
       whisper: { name: 'N/A', description: 'N/A', purpose: 'N/A' },
-      diarization: { name: 'N/A', description: 'N/A', purpose: 'N/A' },
-      alignment: { name: 'N/A', description: 'N/A', purpose: 'N/A' }
+      diarization: { name: 'N/A', description: 'N/A', purpose: 'N/A' }
     },
     system: {
       cpu: { total_percent: '0%', per_cpu: [], logical_cores: 0, physical_cores: 0 },
@@ -1242,10 +1241,6 @@
                         <div class="model-item">
                           <span class="model-label">{$t('settings.statistics.diarization')}:</span>
                           <span class="model-value">{stats.models.diarization?.name || 'N/A'}</span>
-                        </div>
-                        <div class="model-item">
-                          <span class="model-label">{$t('settings.statistics.alignment')}:</span>
-                          <span class="model-value">{stats.models.alignment?.name || 'N/A'}</span>
                         </div>
                         {#if stats.models.search_embedding}
                           <div class="model-item">

@@ -98,12 +98,12 @@ class HardwareConfig:
         import torch
 
         if self.device == "cuda":
-            # Check for bfloat16 support (newer GPUs)
-            if torch.cuda.is_bf16_supported():
-                return "float16"
-            # Check CUDA capability for half precision
             capability = torch.cuda.get_device_capability()
-            if capability[0] >= 7:  # Volta and newer
+            if capability[0] >= 8 or (capability[0] == 7 and capability[1] >= 5):
+                # Turing+ (7.5+): INT8 Tensor Cores — ~20% faster, <0.1 WER impact
+                return "int8_float16"
+            elif capability[0] >= 7:
+                # Volta (7.0): FP16 Tensor Cores only
                 return "float16"
             else:
                 return "float32"
@@ -120,7 +120,7 @@ class HardwareConfig:
         """Get optimal batch size based on device and available memory.
 
         Batch sizes are optimized for large-v3-turbo (~6GB VRAM) which is the default model.
-        This leaves headroom for the alignment and diarization stages that follow.
+        This leaves headroom for the diarization stage that follows.
         Users with large-v2/large-v3 (~10GB VRAM) can override via BATCH_SIZE env var.
         """
         if self.device == "cuda":

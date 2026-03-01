@@ -37,9 +37,22 @@ from .storage import update_media_file_transcription_status
 logger = logging.getLogger(__name__)
 
 
-def _get_transcription_engine() -> str:
-    """Get the configured transcription engine (native or whisperx)."""
-    return os.getenv("TRANSCRIPTION_ENGINE", "native").lower()
+# Deprecation warning for legacy TRANSCRIPTION_ENGINE env var
+_engine = os.getenv("TRANSCRIPTION_ENGINE", "")
+if _engine and _engine.lower() != "native":
+    logger.warning(
+        f"TRANSCRIPTION_ENGINE={_engine} is deprecated and ignored. "
+        "The unified pipeline is now used for all transcription."
+    )
+
+# Deprecation warning for legacy ENABLE_ALIGNMENT env var
+_align = os.getenv("ENABLE_ALIGNMENT", "")
+if _align:
+    logger.warning(
+        "ENABLE_ALIGNMENT is deprecated and ignored. "
+        "Word-level timestamps are now provided natively by faster-whisper "
+        "for all 100+ languages without a separate alignment model."
+    )
 
 
 def _get_user_language_settings(db, user_id: int) -> dict:
@@ -56,7 +69,7 @@ def _get_user_language_settings(db, user_id: int) -> dict:
     from app import models
     from app.core.constants import DEFAULT_SOURCE_LANGUAGE
 
-    settings = (
+    user_settings = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.user_id == user_id,
@@ -70,7 +83,7 @@ def _get_user_language_settings(db, user_id: int) -> dict:
         .all()
     )
 
-    settings_map = {s.setting_key: s.setting_value for s in settings}
+    settings_map = {s.setting_key: s.setting_value for s in user_settings}
 
     return {
         "source_language": settings_map.get(
@@ -80,6 +93,57 @@ def _get_user_language_settings(db, user_id: int) -> dict:
             "transcription_translate_to_english", "false"
         ).lower()
         == "true",
+    }
+
+
+def _get_user_transcription_settings(db, user_id: int) -> dict:
+    """Retrieve user's transcription tuning settings from the database."""
+    from app import models
+    from app.core.constants import DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
+    from app.core.constants import DEFAULT_REPETITION_PENALTY
+    from app.core.constants import DEFAULT_VAD_MIN_SILENCE_MS
+    from app.core.constants import DEFAULT_VAD_MIN_SPEECH_MS
+    from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
+    from app.core.constants import DEFAULT_VAD_THRESHOLD
+
+    setting_keys = [
+        "transcription_vad_threshold",
+        "transcription_vad_min_silence_ms",
+        "transcription_vad_min_speech_ms",
+        "transcription_vad_speech_pad_ms",
+        "transcription_hallucination_silence_threshold",
+        "transcription_repetition_penalty",
+    ]
+    user_settings = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key.in_(setting_keys),
+        )
+        .all()
+    )
+    settings_map = {s.setting_key: s.setting_value for s in user_settings}
+
+    hal_raw = settings_map.get("transcription_hallucination_silence_threshold", "")
+    hal_value = float(hal_raw) if hal_raw else DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
+
+    return {
+        "vad_threshold": float(
+            settings_map.get("transcription_vad_threshold", str(DEFAULT_VAD_THRESHOLD))
+        ),
+        "vad_min_silence_ms": int(
+            settings_map.get("transcription_vad_min_silence_ms", str(DEFAULT_VAD_MIN_SILENCE_MS))
+        ),
+        "vad_min_speech_ms": int(
+            settings_map.get("transcription_vad_min_speech_ms", str(DEFAULT_VAD_MIN_SPEECH_MS))
+        ),
+        "vad_speech_pad_ms": int(
+            settings_map.get("transcription_vad_speech_pad_ms", str(DEFAULT_VAD_SPEECH_PAD_MS))
+        ),
+        "hallucination_silence_threshold": hal_value,
+        "repetition_penalty": float(
+            settings_map.get("transcription_repetition_penalty", str(DEFAULT_REPETITION_PENALTY))
+        ),
     }
 
 
@@ -630,18 +694,31 @@ def _resolve_language_settings(
     return resolved_lang, resolved_translate
 
 
-def _run_native_pipeline(
+def _run_transcription_pipeline(
     ctx: TranscriptionContext,
     audio_file_path: str,
     min_speakers: int | None,
     max_speakers: int | None,
     num_speakers: int | None,
-    source_language: str,
-    translate_to_english: bool,
+    source_language: str | None = None,
+    translate_to_english: bool | None = None,
 ) -> dict:
-    """Run the native faster-whisper + PyAnnote v4 transcription pipeline."""
+    """Run the unified transcription pipeline."""
     from app.transcription import TranscriptionConfig
     from app.transcription import TranscriptionPipeline
+
+    source_language, translate_to_english = _resolve_language_settings(
+        ctx, source_language, translate_to_english
+    )
+
+    logger.info(
+        f"Language settings for file {ctx.file_id}: "
+        f"source_language={source_language}, translate_to_english={translate_to_english}"
+    )
+
+    # Get user's transcription tuning settings from DB
+    with session_scope() as db:
+        user_settings = _get_user_transcription_settings(db, ctx.user_id)
 
     config = TranscriptionConfig.from_environment(
         source_language=source_language,
@@ -650,6 +727,12 @@ def _run_native_pipeline(
         max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
         num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
         hf_token=settings.HUGGINGFACE_TOKEN,
+        vad_threshold=user_settings["vad_threshold"],
+        vad_min_silence_ms=user_settings["vad_min_silence_ms"],
+        vad_min_speech_ms=user_settings["vad_min_speech_ms"],
+        vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
+        hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
+        repetition_penalty=user_settings["repetition_penalty"],
     )
 
     with session_scope() as db:
@@ -664,90 +747,6 @@ def _run_native_pipeline(
 
     pipeline = TranscriptionPipeline(config)
     return pipeline.process(audio_file_path, progress_callback=progress_callback)
-
-
-def _run_whisperx_pipeline(
-    ctx: TranscriptionContext,
-    audio_file_path: str,
-    min_speakers: int | None,
-    max_speakers: int | None,
-    num_speakers: int | None,
-    source_language: str,
-    translate_to_english: bool,
-) -> dict:
-    """Run the legacy WhisperX transcription pipeline (fallback)."""
-    from .whisperx_service import WhisperXService
-
-    whisperx_service = WhisperXService(
-        model_name=os.getenv("WHISPER_MODEL", "large-v2"),
-        models_dir=str(settings.MODEL_BASE_DIR),
-        source_language=source_language,
-        translate_to_english=translate_to_english,
-    )
-
-    with session_scope() as db:
-        update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
-
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.4, "Running AI transcription")
-
-    def whisperx_progress_callback(progress, message):
-        with session_scope() as db:
-            update_task_status(db, ctx.task_id, "in_progress", progress=progress)
-        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
-
-    return whisperx_service.process_full_pipeline(
-        audio_file_path,
-        settings.HUGGINGFACE_TOKEN,
-        progress_callback=whisperx_progress_callback,
-        min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
-        max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
-    )
-
-
-def _run_transcription_pipeline(
-    ctx: TranscriptionContext,
-    audio_file_path: str,
-    min_speakers: int | None,
-    max_speakers: int | None,
-    num_speakers: int | None,
-    source_language: str | None = None,
-    translate_to_english: bool | None = None,
-) -> dict:
-    """Run the transcription pipeline using the configured engine."""
-    source_language, translate_to_english = _resolve_language_settings(
-        ctx, source_language, translate_to_english
-    )
-
-    logger.info(
-        f"Language settings for file {ctx.file_id}: "
-        f"source_language={source_language}, translate_to_english={translate_to_english}"
-    )
-
-    engine = _get_transcription_engine()
-
-    if engine == "native":
-        logger.info(f"Using NATIVE transcription engine for file {ctx.file_id}")
-        return _run_native_pipeline(
-            ctx,
-            audio_file_path,
-            min_speakers,
-            max_speakers,
-            num_speakers,
-            source_language,
-            translate_to_english,
-        )
-    else:
-        logger.info(f"Using WHISPERX transcription engine for file {ctx.file_id}")
-        return _run_whisperx_pipeline(
-            ctx,
-            audio_file_path,
-            min_speakers,
-            max_speakers,
-            num_speakers,
-            source_language,
-            translate_to_english,
-        )
 
 
 def _process_transcription_result(
@@ -822,11 +821,7 @@ def _process_transcription_result(
     step_start = time.perf_counter()
     # Determine model info for tracking
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
-    engine = _get_transcription_engine()
-    if engine == "native":
-        diarization_model = "pyannote/speaker-diarization-3.1"
-    else:
-        diarization_model = "pyannote/speaker-diarization"
+    diarization_model = "pyannote/speaker-diarization-3.1"
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 
@@ -1121,7 +1116,7 @@ def _process_file_in_temp_dir(
         progress_callback=audio_extraction_progress_callback,
     )
 
-    # Run transcription pipeline (native or whisperx based on TRANSCRIPTION_ENGINE)
+    # Run transcription pipeline
     result = _run_transcription_pipeline(
         ctx, audio_file_path, min_speakers, max_speakers, num_speakers
     )
@@ -1174,8 +1169,8 @@ def transcribe_audio_task(
 ):
     """Process an audio/video file for transcription and speaker diarization.
 
-    Uses the native faster-whisper + PyAnnote v4 pipeline by default,
-    or falls back to WhisperX when TRANSCRIPTION_ENGINE=whisperx.
+    Uses the unified faster-whisper + PyAnnote v4 pipeline with
+    user-configurable VAD and accuracy settings.
 
     Args:
         file_uuid: UUID of the MediaFile to transcribe.

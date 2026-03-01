@@ -58,7 +58,7 @@ def reprocess(
     enable_dedup: bool = True,
 ) -> dict:
     """Run post-processing on saved intermediate data."""
-    from app.utils.fast_speaker_assignment import assign_word_speakers_fast
+    from app.transcription.speaker_assigner import assign_speakers
     from app.utils.segment_dedup import clean_segments
 
     result: dict[str, Any] = {
@@ -78,7 +78,7 @@ def reprocess(
 
     # Step 2: Speaker assignment
     step_start = time.perf_counter()
-    result = assign_word_speakers_fast(diarize_df, result, fill_nearest=True)
+    result = assign_speakers(diarize_df, result)
 
     assigned = sum(1 for s in result["segments"] if s.get("speaker"))
     total = len(result["segments"])

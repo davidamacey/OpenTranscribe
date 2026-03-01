@@ -28,6 +28,14 @@
   let sourceLanguage = 'auto';
   let translateToEnglish = false;
   let llmOutputLanguage = 'en';
+  let vadThreshold = 0.5;
+  let vadMinSilenceMs = 2000;
+  let vadMinSpeechMs = 250;
+  let vadSpeechPadMs = 400;
+  let hallucinationSilenceThreshold: number | null = null;
+  let hallucinationEnabled = false;
+  let hallucinationValue = 2.0;
+  let repetitionPenalty = 1.0;
 
   // Original values for change tracking
   let originalMinSpeakers = 1;
@@ -38,6 +46,16 @@
   let originalSourceLanguage = 'auto';
   let originalTranslateToEnglish = false;
   let originalLlmOutputLanguage = 'en';
+  let originalVadThreshold = 0.5;
+  let originalVadMinSilenceMs = 2000;
+  let originalVadMinSpeechMs = 250;
+  let originalVadSpeechPadMs = 400;
+  let originalHallucinationEnabled = false;
+  let originalHallucinationValue = 2.0;
+  let originalRepetitionPenalty = 1.0;
+
+  // Advanced section collapsed state
+  let advancedExpanded = false;
 
   // System defaults
   let systemDefaults: TranscriptionSystemDefaults | null = null;
@@ -45,8 +63,6 @@
   // Grouped languages for dropdowns
   let sourceLanguageGroups: { common: LanguageOption[]; other: LanguageOption[] } = { common: [], other: [] };
   let llmLanguageOptions: LanguageOption[] = [];
-  let languagesWithAlignment: Set<string> = new Set();
-
   // Loading states
   let loading = true;
   let saving = false;
@@ -54,6 +70,9 @@
 
   // Validation
   let validationError = '';
+
+  // Sync hallucination toggle/value with the nullable threshold
+  $: hallucinationSilenceThreshold = hallucinationEnabled ? hallucinationValue : null;
 
   // Track if settings have changed
   $: settingsChanged =
@@ -64,7 +83,14 @@
     garbageCleanupThreshold !== originalGarbageCleanupThreshold ||
     sourceLanguage !== originalSourceLanguage ||
     translateToEnglish !== originalTranslateToEnglish ||
-    llmOutputLanguage !== originalLlmOutputLanguage;
+    llmOutputLanguage !== originalLlmOutputLanguage ||
+    vadThreshold !== originalVadThreshold ||
+    vadMinSilenceMs !== originalVadMinSilenceMs ||
+    vadMinSpeechMs !== originalVadMinSpeechMs ||
+    vadSpeechPadMs !== originalVadSpeechPadMs ||
+    hallucinationEnabled !== originalHallucinationEnabled ||
+    (hallucinationEnabled && hallucinationValue !== originalHallucinationValue) ||
+    repetitionPenalty !== originalRepetitionPenalty;
 
   // Update dirty state in store
   $: {
@@ -72,7 +98,7 @@
     dispatch('change', { hasChanges: settingsChanged });
   }
 
-  // Validate min/max speakers
+  // Validate all settings
   $: {
     if (minSpeakers > maxSpeakers) {
       validationError = $t('settings.transcription.validationMinMax');
@@ -82,6 +108,18 @@
       validationError = $t('settings.transcription.validationMaxRange');
     } else if (garbageCleanupThreshold < 20 || garbageCleanupThreshold > 200) {
       validationError = $t('settings.transcription.validationThresholdRange');
+    } else if (vadThreshold < 0.1 || vadThreshold > 0.95) {
+      validationError = $t('settings.transcription.validationVadThreshold');
+    } else if (vadMinSilenceMs < 100 || vadMinSilenceMs > 5000) {
+      validationError = $t('settings.transcription.validationVadSilence');
+    } else if (vadMinSpeechMs < 50 || vadMinSpeechMs > 5000) {
+      validationError = $t('settings.transcription.validationVadSpeech');
+    } else if (vadSpeechPadMs < 0 || vadSpeechPadMs > 2000) {
+      validationError = $t('settings.transcription.validationVadPad');
+    } else if (hallucinationEnabled && (hallucinationValue < 0.5 || hallucinationValue > 10.0)) {
+      validationError = $t('settings.transcription.validationHallucination');
+    } else if (repetitionPenalty < 1.0 || repetitionPenalty > 2.0) {
+      validationError = $t('settings.transcription.validationRepetition');
     } else {
       validationError = '';
     }
@@ -126,7 +164,6 @@
         llmLanguageOptions = Object.entries(systemDefaults.available_llm_output_languages)
           .map(([code, name]) => ({ code, name }));
 
-        languagesWithAlignment = new Set(systemDefaults.languages_with_alignment);
       }
     } catch (err) {
       console.error('Failed to load system defaults:', err);
@@ -143,6 +180,13 @@
     sourceLanguage = settings.source_language;
     translateToEnglish = settings.translate_to_english;
     llmOutputLanguage = settings.llm_output_language;
+    vadThreshold = settings.vad_threshold;
+    vadMinSilenceMs = settings.vad_min_silence_ms;
+    vadMinSpeechMs = settings.vad_min_speech_ms;
+    vadSpeechPadMs = settings.vad_speech_pad_ms;
+    hallucinationEnabled = settings.hallucination_silence_threshold !== null;
+    hallucinationValue = settings.hallucination_silence_threshold ?? 2.0;
+    repetitionPenalty = settings.repetition_penalty;
   }
 
   function storeOriginalValues(settings: TranscriptionSettings) {
@@ -154,6 +198,13 @@
     originalSourceLanguage = settings.source_language;
     originalTranslateToEnglish = settings.translate_to_english;
     originalLlmOutputLanguage = settings.llm_output_language;
+    originalVadThreshold = settings.vad_threshold;
+    originalVadMinSilenceMs = settings.vad_min_silence_ms;
+    originalVadMinSpeechMs = settings.vad_min_speech_ms;
+    originalVadSpeechPadMs = settings.vad_speech_pad_ms;
+    originalHallucinationEnabled = settings.hallucination_silence_threshold !== null;
+    originalHallucinationValue = settings.hallucination_silence_threshold ?? 2.0;
+    originalRepetitionPenalty = settings.repetition_penalty;
   }
 
   async function saveSettings() {
@@ -172,7 +223,13 @@
         garbage_cleanup_threshold: garbageCleanupThreshold,
         source_language: sourceLanguage,
         translate_to_english: translateToEnglish,
-        llm_output_language: llmOutputLanguage
+        llm_output_language: llmOutputLanguage,
+        vad_threshold: vadThreshold,
+        vad_min_silence_ms: vadMinSilenceMs,
+        vad_min_speech_ms: vadMinSpeechMs,
+        vad_speech_pad_ms: vadSpeechPadMs,
+        hallucination_silence_threshold: hallucinationSilenceThreshold,
+        repetition_penalty: repetitionPenalty
       });
 
       storeOriginalValues(updatedSettings);
@@ -379,19 +436,18 @@
             <optgroup label={$t('settings.transcription.commonLanguages')}>
               {#each sourceLanguageGroups.common as lang}
                 <option value={lang.code}>
-                  {lang.name}{languagesWithAlignment.has(lang.code) ? ' *' : ''}
+                  {lang.name}
                 </option>
               {/each}
             </optgroup>
             <optgroup label={$t('settings.transcription.allLanguages')}>
               {#each sourceLanguageGroups.other as lang}
                 <option value={lang.code}>
-                  {lang.name}{languagesWithAlignment.has(lang.code) ? ' *' : ''}
+                  {lang.name}
                 </option>
               {/each}
             </optgroup>
           </select>
-          <p class="input-hint">{$t('settings.transcription.wordTimestampsAvailable')}</p>
         </div>
 
         <!-- Translate to English -->
@@ -439,6 +495,248 @@
           <span class="defaults-label">{$t('settings.transcription.defaults')}</span>
           <span class="defaults-value">{$t('settings.transcription.defaultsValue')}</span>
         </div>
+      </div>
+
+      <!-- Advanced Transcription Settings (collapsible) -->
+      <div class="settings-section">
+        <button
+          type="button"
+          class="collapsible-header"
+          on:click={() => advancedExpanded = !advancedExpanded}
+        >
+          <div class="title-row">
+            <h3 class="section-title">{$t('settings.transcription.advancedSettings')}</h3>
+            <span class="info-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span class="tooltip">{$t('settings.transcription.advancedSettingsTooltip')}</span>
+            </span>
+          </div>
+          <svg
+            class="chevron"
+            class:expanded={advancedExpanded}
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+        <p class="section-desc">{$t('settings.transcription.advancedSettingsDesc')}</p>
+
+        {#if advancedExpanded}
+          <div class="advanced-content">
+            <!-- Voice Activity Detection (VAD) -->
+            <div class="subsection">
+              <h4 class="subsection-title">{$t('settings.transcription.vadTitle')}</h4>
+              <p class="subsection-desc">{$t('settings.transcription.vadDesc')}</p>
+
+              <!-- VAD Threshold (slider) -->
+              <div class="form-group">
+                <label for="vad-threshold" class="form-label">
+                  {$t('settings.transcription.vadThreshold')}
+                  <span class="inline-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span class="inline-tooltip">{$t('settings.transcription.vadThresholdTooltip')}</span>
+                  </span>
+                </label>
+                <div class="slider-row">
+                  <input
+                    id="vad-threshold"
+                    type="range"
+                    min="0.1"
+                    max="0.95"
+                    step="0.05"
+                    class="form-slider"
+                    bind:value={vadThreshold}
+                  />
+                  <span class="slider-value">{vadThreshold.toFixed(2)}</span>
+                </div>
+                <p class="input-hint">{$t('settings.transcription.vadThresholdHint')}</p>
+              </div>
+
+              <!-- Min Silence Duration -->
+              <div class="form-group">
+                <label for="vad-min-silence" class="form-label">
+                  {$t('settings.transcription.vadMinSilence')}
+                  <span class="inline-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span class="inline-tooltip">{$t('settings.transcription.vadMinSilenceTooltip')}</span>
+                  </span>
+                </label>
+                <div class="inline-input">
+                  <input
+                    id="vad-min-silence"
+                    type="number"
+                    min="100"
+                    max="5000"
+                    step="100"
+                    class="form-input number-input-wide"
+                    bind:value={vadMinSilenceMs}
+                  />
+                  <span class="input-suffix">ms</span>
+                </div>
+                <p class="input-hint">{$t('settings.transcription.vadMinSilenceHint')}</p>
+              </div>
+
+              <!-- Min Speech Duration -->
+              <div class="form-group">
+                <label for="vad-min-speech" class="form-label">
+                  {$t('settings.transcription.vadMinSpeech')}
+                  <span class="inline-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span class="inline-tooltip">{$t('settings.transcription.vadMinSpeechTooltip')}</span>
+                  </span>
+                </label>
+                <div class="inline-input">
+                  <input
+                    id="vad-min-speech"
+                    type="number"
+                    min="50"
+                    max="5000"
+                    step="50"
+                    class="form-input number-input-wide"
+                    bind:value={vadMinSpeechMs}
+                  />
+                  <span class="input-suffix">ms</span>
+                </div>
+                <p class="input-hint">{$t('settings.transcription.vadMinSpeechHint')}</p>
+              </div>
+
+              <!-- Speech Padding -->
+              <div class="form-group">
+                <label for="vad-speech-pad" class="form-label">
+                  {$t('settings.transcription.vadSpeechPad')}
+                  <span class="inline-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span class="inline-tooltip">{$t('settings.transcription.vadSpeechPadTooltip')}</span>
+                  </span>
+                </label>
+                <div class="inline-input">
+                  <input
+                    id="vad-speech-pad"
+                    type="number"
+                    min="0"
+                    max="2000"
+                    step="50"
+                    class="form-input number-input-wide"
+                    bind:value={vadSpeechPadMs}
+                  />
+                  <span class="input-suffix">ms</span>
+                </div>
+                <p class="input-hint">{$t('settings.transcription.vadSpeechPadHint')}</p>
+              </div>
+            </div>
+
+            <!-- Accuracy Settings -->
+            <div class="subsection">
+              <h4 class="subsection-title">{$t('settings.transcription.accuracyTitle')}</h4>
+              <p class="subsection-desc">{$t('settings.transcription.accuracyDesc')}</p>
+
+              <!-- Hallucination Filter -->
+              <div class="form-group">
+                <label for="hallucination-toggle" class="form-label">
+                  {$t('settings.transcription.hallucinationFilter')}
+                  <span class="inline-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span class="inline-tooltip">{$t('settings.transcription.hallucinationFilterTooltip')}</span>
+                  </span>
+                </label>
+                <div class="setting-row">
+                  <div class="setting-controls">
+                    <label class="toggle-label">
+                      <input id="hallucination-toggle" type="checkbox" bind:checked={hallucinationEnabled} class="toggle-input" />
+                      <span class="toggle-switch"></span>
+                      <span class="toggle-text">{$t('settings.transcription.hallucinationEnable')}</span>
+                    </label>
+                    {#if hallucinationEnabled}
+                      <div class="inline-input">
+                        <span class="input-label">{$t('settings.transcription.hallucinationThresholdLabel')}</span>
+                        <input
+                          type="number"
+                          min="0.5"
+                          max="10"
+                          step="0.5"
+                          class="form-input number-input-wide"
+                          bind:value={hallucinationValue}
+                        />
+                        <span class="input-suffix">s</span>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+                <p class="input-hint">{$t('settings.transcription.hallucinationHint')}</p>
+              </div>
+
+              <!-- Repetition Penalty -->
+              <div class="form-group">
+                <label for="repetition-penalty" class="form-label">
+                  {$t('settings.transcription.repetitionPenalty')}
+                  <span class="inline-info-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span class="inline-tooltip">{$t('settings.transcription.repetitionPenaltyTooltip')}</span>
+                  </span>
+                </label>
+                <div class="slider-row">
+                  <input
+                    id="repetition-penalty"
+                    type="range"
+                    min="1.0"
+                    max="2.0"
+                    step="0.05"
+                    class="form-slider"
+                    bind:value={repetitionPenalty}
+                  />
+                  <span class="slider-value">{repetitionPenalty.toFixed(2)}</span>
+                </div>
+                <p class="input-hint">{$t('settings.transcription.repetitionPenaltyHint')}</p>
+              </div>
+            </div>
+
+            <!-- System Defaults for Advanced -->
+            {#if systemDefaults}
+              <div class="defaults-info">
+                <span class="defaults-label">{$t('settings.transcription.advancedDefaults')}</span>
+                <span class="defaults-value">
+                  VAD: {systemDefaults.vad_threshold}, Silence: {systemDefaults.vad_min_silence_ms}ms, Speech: {systemDefaults.vad_min_speech_ms}ms, Pad: {systemDefaults.vad_speech_pad_ms}ms, Repetition: {systemDefaults.repetition_penalty}
+                </span>
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
 
       <!-- Validation Error -->
@@ -837,6 +1135,113 @@
 
   .btn-secondary:hover:not(:disabled) {
     background-color: var(--background-secondary);
+  }
+
+  /* Collapsible header */
+  .collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--text-color);
+  }
+
+  .collapsible-header:hover {
+    opacity: 0.8;
+  }
+
+  .chevron {
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .chevron.expanded {
+    transform: rotate(180deg);
+  }
+
+  .advanced-content {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .subsection {
+    padding: 1rem;
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+  }
+
+  .subsection-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin: 0 0 0.25rem 0;
+    color: var(--text-color);
+  }
+
+  .subsection-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0 0 1rem 0;
+  }
+
+  /* Slider */
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .form-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
+    outline: none;
+  }
+
+  .form-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  .form-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  .slider-value {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-color);
+    font-family: 'Courier New', Courier, monospace;
+    min-width: 3rem;
+    text-align: right;
+  }
+
+  .number-input-wide {
+    width: 100px;
+    text-align: center;
   }
 
   /* Responsive */

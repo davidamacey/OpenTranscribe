@@ -23,11 +23,10 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 🎧 **Advanced Transcription**
 - **High-Accuracy Speech Recognition**: Powered by WhisperX with faster-whisper backend
 - **Ultra-Fast Default Model**: large-v3-turbo model (6x faster than large-v3, excellent accuracy for English)
-- **Word-Level Timestamps**: Precise timing for every word using WAV2VEC2 alignment
+- **Word-Level Timestamps**: Native word-level timing for all 100+ languages via batched inference
 - **100+ Language Support**: Transcribe in 100+ languages with optional English translation
 - **Configurable Source Language**: Auto-detect or specify source language for improved accuracy
 - **Translation Toggle**: Choose to keep original language or translate non-English audio to English
-- **Language-Aware Alignment**: Indicators show which languages support word-level timestamps (~42 languages)
 - **Batch Processing**: 70x realtime speed with large-v2 model on GPU
 - **Pagination for Large Transcripts**: Efficient display of long transcripts without browser hanging
 - **Audio Waveform Visualization**: Interactive waveform player with precise timing and click-to-seek
@@ -671,7 +670,6 @@ OpenTranscribe automatically downloads and caches AI models for optimal performa
 │   ├── hub/             # WhisperX transcription models (~1.5GB)
 │   └── transformers/    # PyAnnote transformer models
 └── torch/               # PyTorch cache
-    ├── hub/checkpoints/ # Wav2Vec2 alignment model (~360MB)
     └── pyannote/        # PyAnnote diarization models (~500MB)
 ```
 
@@ -689,8 +687,7 @@ MODEL_CACHE_DIR=./cache              # Project subdirectory
 **Storage Requirements:**
 - **WhisperX Models**: ~1.5GB (depends on model size)
 - **PyAnnote Models**: ~500MB (diarization + embedding)
-- **Alignment Model**: ~360MB (Wav2Vec2)
-- **Total**: ~2.9GB for complete setup```
+- **Total**: ~2.5GB for complete setup```
 
 ### **🔑 HuggingFace Token Setup**
 
@@ -1029,7 +1026,7 @@ The AGPL-3.0 license ensures that:
 ## 🙏 Acknowledgments
 
 - **OpenAI Whisper** - Foundation speech recognition model
-- **WhisperX** - Enhanced alignment and diarization
+- **WhisperX / faster-whisper** - Batched transcription with native word timestamps
 - **PyAnnote.audio** - Speaker diarization capabilities
 - **FastAPI** - Modern Python web framework
 - **Svelte** - Reactive frontend framework

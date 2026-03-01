@@ -436,11 +436,6 @@ def get_models_info() -> dict[str, dict[str, str]]:
             "description": diarization_desc,
             "purpose": "Speaker Identification & Segmentation",
         },
-        "alignment": {
-            "name": "Wav2Vec2 (Language-Adaptive)",
-            "description": "WhisperX Alignment Model",
-            "purpose": "Word-Level Timestamp Alignment",
-        },
     }
 
     # Search/embedding model

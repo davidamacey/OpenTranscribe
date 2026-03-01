@@ -100,17 +100,48 @@ class SpeakerEmbeddingService:
             raise
 
     @staticmethod
-    def _load_audio(audio_path: str) -> tuple[torch.Tensor, int]:
-        """Load audio file as a torch tensor, with fallback for missing torchaudio backends.
+    def _load_audio(audio_path: str, target_sr: int = 16000) -> tuple[torch.Tensor, int]:
+        """Load audio file as a torch tensor with multi-backend fallback.
 
-        torchaudio 2.8+ deprecated its backend system and may have zero backends
-        available (sox, soundfile, ffmpeg). When that happens, fall back to
-        scipy.io.wavfile which is always available in the container.
+        Tries in order: FFmpeg (handles all formats), torchaudio, scipy.
+        FFmpeg is preferred because torchaudio 2.8+ may have zero backends
+        and scipy only handles WAV files.
 
         Returns:
-            Tuple of (waveform tensor [channels, samples], sample_rate).
+            Tuple of (waveform tensor [1, samples], sample_rate).
         """
-        # Try torchaudio first (preferred when backends are available)
+        # 1. FFmpeg: handles any audio format reliably
+        try:
+            import subprocess
+
+            cmd = [
+                "ffmpeg",
+                "-i",
+                audio_path,
+                "-f",
+                "f32le",
+                "-acodec",
+                "pcm_f32le",
+                "-ac",
+                "1",
+                "-ar",
+                str(target_sr),
+                "-v",
+                "quiet",
+                "-",
+            ]
+            proc = subprocess.run(cmd, capture_output=True, timeout=120)  # noqa: S603  # nosec B603
+            if proc.returncode == 0 and len(proc.stdout) > 0:
+                audio = np.frombuffer(proc.stdout, dtype=np.float32)
+                waveform = torch.from_numpy(audio).unsqueeze(0)  # [1, samples]
+                return waveform, target_sr
+            logger.debug(f"FFmpeg returned code {proc.returncode}, trying torchaudio")
+        except FileNotFoundError:
+            logger.debug("FFmpeg not found, trying torchaudio")
+        except Exception as ffmpeg_err:
+            logger.debug(f"FFmpeg failed ({ffmpeg_err}), trying torchaudio")
+
+        # 2. torchaudio (when backends are available)
         try:
             import torchaudio
 
@@ -118,18 +149,16 @@ class SpeakerEmbeddingService:
             return waveform, int(sr)
         except Exception as ta_err:
             if "backend" not in str(ta_err).lower() and "already_closed" not in str(ta_err).lower():
-                raise  # Re-raise non-backend errors
-            logger.debug(f"torchaudio.load failed ({ta_err}), falling back to scipy")
+                raise
+            logger.debug(f"torchaudio failed ({ta_err}), trying scipy")
 
-        # Fallback: scipy.io.wavfile → torch tensor
+        # 3. scipy (WAV files only)
         from scipy.io import wavfile
 
         sr, data = wavfile.read(audio_path)
-        # scipy returns int16 or float32 depending on the file
         audio = data.astype(np.float32)
         if np.issubdtype(data.dtype, np.integer):
             audio = audio / np.float32(np.iinfo(data.dtype).max)
-        # Ensure shape is [channels, samples]
         audio = audio[np.newaxis, :] if audio.ndim == 1 else audio.T
         return torch.from_numpy(audio), sr
 

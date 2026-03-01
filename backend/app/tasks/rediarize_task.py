@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def _load_segments_as_transcript(file_id: int) -> dict:
     """Load existing transcript segments from DB in the pipeline result format.
 
-    Reconstructs the dict format expected by assign_word_speakers_fast:
+    Reconstructs the dict format expected by assign_speakers:
     {"segments": [{"text": ..., "start": ..., "end": ..., "words": [...]}]}
 
     Args:
@@ -244,11 +244,11 @@ def rediarize_task(  # noqa: C901
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.60)
 
-        # Step 4: Reassign speakers using fast speaker assignment
+        # Step 4: Reassign speakers using WhisperX speaker assignment
         send_progress_notification(user_id, file_id, 0.60, "Reassigning speakers")
-        from app.utils.fast_speaker_assignment import assign_word_speakers_fast
+        from app.transcription.speaker_assigner import assign_speakers
 
-        result = assign_word_speakers_fast(diarize_df, transcript, fill_nearest=True)
+        result = assign_speakers(diarize_df, transcript)
 
         # Step 5: Process speakers and update DB
         send_progress_notification(user_id, file_id, 0.70, "Updating speaker database")

@@ -204,7 +204,12 @@
           available_source_languages: { auto: 'Auto-detect', en: 'English' },
           available_llm_output_languages: { en: 'English' },
           common_languages: ['auto', 'en'],
-          languages_with_alignment: ['en']
+          vad_threshold: 0.5,
+          vad_min_silence_ms: 2000,
+          vad_min_speech_ms: 250,
+          vad_speech_pad_ms: 400,
+          hallucination_silence_threshold: null,
+          repetition_penalty: 1.0
         };
       }
     })();

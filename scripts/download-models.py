@@ -5,7 +5,6 @@ Download all required AI models for OpenTranscribe offline packaging.
 This script downloads:
 - WhisperX models
 - PyAnnote speaker diarization models
-- Wav2Vec2 alignment models
 - NLTK data files (punkt_tab tokenizer)
 - Sentence-Transformers models (all-MiniLM-L6-v2)
 - wav2vec2 gender classifier (speaker attribute detection)
@@ -287,11 +286,11 @@ def download_pyannote_models():
         print_success("  Synthetic audio created")
 
         # Use WhisperX full pipeline (same as backend)
-        print_info("Step 1/4: Audio ready...")
+        print_info("Step 1/3: Audio ready...")
         print_success("  Audio prepared")
 
         # Step 2: Transcribe (same as backend)
-        print_info("Step 2/4: Running WhisperX transcription...")
+        print_info("Step 2/3: Running WhisperX transcription...")
         model = whisperx.load_model(
             os.environ.get("WHISPER_MODEL", "base"),
             device=device,
@@ -302,25 +301,8 @@ def download_pyannote_models():
         del model
         torch.cuda.empty_cache() if device == "cuda" else None
 
-        # Step 3: Align (same as backend - downloads wav2vec2)
-        print_info("Step 3/4: Aligning transcription (downloads wav2vec2)...")
-        model_a, metadata = whisperx.load_align_model(
-            language_code="en",
-            device=device
-        )
-        result = whisperx.align(
-            result["segments"],
-            model_a,
-            metadata,
-            audio,
-            device=device
-        )
-        print_success("  Alignment completed")
-        del model_a
-        torch.cuda.empty_cache() if device == "cuda" else None
-
-        # Step 4: Diarize (same as backend - downloads PyAnnote models)
-        print_info("Step 4/4: Running speaker diarization (downloads PyAnnote models)...")
+        # Step 3: Diarize (same as backend - downloads PyAnnote models)
+        print_info("Step 3/3: Running speaker diarization (downloads PyAnnote models)...")
         print_info("  This downloads: segmentation-3.0, embedding, wespeaker-voxceleb...")
 
         diarize_model = whisperx.diarize.DiarizationPipeline(
@@ -407,38 +389,6 @@ def download_pyannote_models():
             print_error("=" * 70)
 
         return {"pyannote": {"status": "failed", "error": str(e)}}
-
-def download_alignment_models():
-    """Download Wav2Vec2 alignment models"""
-    print_header("Downloading Alignment Models")
-
-    try:
-        import torch
-        from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
-
-        model_name = "facebook/wav2vec2-large-960h-lv60-self"
-
-        print_info(f"Model: {model_name}")
-        print_info("Loading Wav2Vec2 model (this will download if needed)...")
-
-        processor = Wav2Vec2Processor.from_pretrained(model_name)
-        model = Wav2Vec2ForCTC.from_pretrained(model_name)
-
-        print_success(f"Alignment model '{model_name}' downloaded successfully")
-
-        # Clean up
-        del processor, model
-
-        return {
-            "alignment": {
-                "model": model_name,
-                "status": "downloaded"
-            }
-        }
-
-    except Exception as e:
-        print_error(f"Failed to download alignment models: {e}")
-        return {"alignment": {"status": "failed", "error": str(e)}}
 
 def download_nltk_data():
     """Download NLTK data files required by transformers/whisperx"""
@@ -897,7 +847,6 @@ def main():
     # Download all models
     results.update(download_whisperx_models())
     results.update(download_pyannote_models())
-    results.update(download_alignment_models())
     results.update(download_nltk_data())
     results.update(download_sentence_transformers())
     results.update(download_speaker_attribute_models())

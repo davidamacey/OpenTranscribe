@@ -19,6 +19,10 @@ from app.core.constants import DEFAULT_SPEAKER_PROMPT_BEHAVIOR
 from app.core.constants import DEFAULT_TRANSCRIPTION_MAX_SPEAKERS
 from app.core.constants import DEFAULT_TRANSCRIPTION_MIN_SPEAKERS
 from app.core.constants import DEFAULT_TRANSLATE_TO_ENGLISH
+from app.core.constants import DEFAULT_VAD_MIN_SILENCE_MS
+from app.core.constants import DEFAULT_VAD_MIN_SPEECH_MS
+from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
+from app.core.constants import DEFAULT_VAD_THRESHOLD
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
 
 # Type alias for speaker prompt behavior
@@ -70,6 +74,42 @@ class TranscriptionSettings(BaseModel):
         default=DEFAULT_LLM_OUTPUT_LANGUAGE,
         description="Language for LLM-generated summaries and analysis (ISO 639-1 code)",
     )
+    # VAD settings
+    vad_threshold: float = Field(
+        default=DEFAULT_VAD_THRESHOLD,
+        ge=0.1,
+        le=0.95,
+        description="Speech detection sensitivity (lower=more speech detected)",
+    )
+    vad_min_silence_ms: int = Field(
+        default=DEFAULT_VAD_MIN_SILENCE_MS,
+        ge=100,
+        le=5000,
+        description="Minimum silence duration (ms) to split segments",
+    )
+    vad_min_speech_ms: int = Field(
+        default=DEFAULT_VAD_MIN_SPEECH_MS,
+        ge=50,
+        le=5000,
+        description="Minimum speech duration (ms) to keep a segment",
+    )
+    vad_speech_pad_ms: int = Field(
+        default=DEFAULT_VAD_SPEECH_PAD_MS,
+        ge=0,
+        le=2000,
+        description="Padding (ms) around detected speech segments",
+    )
+    # Accuracy settings
+    hallucination_silence_threshold: float | None = Field(
+        default=None,
+        description="Skip hallucinated text during silence gaps >= N seconds (null=disabled)",
+    )
+    repetition_penalty: float = Field(
+        default=1.0,
+        ge=1.0,
+        le=2.0,
+        description="Penalize repetitive output (1.0=off, 1.1-1.3=recommended)",
+    )
 
     class Config:
         json_schema_extra = {
@@ -82,6 +122,12 @@ class TranscriptionSettings(BaseModel):
                 "source_language": "auto",
                 "translate_to_english": False,
                 "llm_output_language": "en",
+                "vad_threshold": 0.5,
+                "vad_min_silence_ms": 2000,
+                "vad_min_speech_ms": 250,
+                "vad_speech_pad_ms": 400,
+                "hallucination_silence_threshold": None,
+                "repetition_penalty": 1.0,
             }
         }
 
@@ -131,6 +177,26 @@ class TranscriptionSettingsUpdate(BaseModel):
         default=None,
         description="Language for LLM-generated summaries and analysis (ISO 639-1 code)",
     )
+    # VAD settings
+    vad_threshold: Optional[float] = Field(
+        default=None, ge=0.1, le=0.95, description="Speech detection sensitivity"
+    )
+    vad_min_silence_ms: Optional[int] = Field(
+        default=None, ge=100, le=5000, description="Min silence (ms) to split segments"
+    )
+    vad_min_speech_ms: Optional[int] = Field(
+        default=None, ge=50, le=5000, description="Min speech (ms) to keep a segment"
+    )
+    vad_speech_pad_ms: Optional[int] = Field(
+        default=None, ge=0, le=2000, description="Padding (ms) around speech"
+    )
+    # Accuracy settings
+    hallucination_silence_threshold: Optional[float] = Field(
+        default=None, ge=0.5, le=10.0, description="Skip hallucinated text during silence >= Ns"
+    )
+    repetition_penalty: Optional[float] = Field(
+        default=None, ge=1.0, le=2.0, description="Penalize repetitive output"
+    )
 
     class Config:
         json_schema_extra = {
@@ -143,6 +209,8 @@ class TranscriptionSettingsUpdate(BaseModel):
                 "source_language": "es",
                 "translate_to_english": False,
                 "llm_output_language": "es",
+                "vad_threshold": 0.3,
+                "repetition_penalty": 1.2,
             }
         }
 
@@ -181,9 +249,16 @@ class TranscriptionSystemDefaults(BaseModel):
     common_languages: list[str] = Field(
         description="List of common language codes for UI grouping",
     )
-    languages_with_alignment: list[str] = Field(
-        description="Languages that support word-level alignment timestamps",
+    # VAD defaults
+    vad_threshold: float = Field(description="System default VAD threshold")
+    vad_min_silence_ms: int = Field(description="System default min silence (ms)")
+    vad_min_speech_ms: int = Field(description="System default min speech (ms)")
+    vad_speech_pad_ms: int = Field(description="System default speech padding (ms)")
+    # Accuracy defaults
+    hallucination_silence_threshold: float | None = Field(
+        description="System default hallucination threshold (null=disabled)"
     )
+    repetition_penalty: float = Field(description="System default repetition penalty")
 
     class Config:
         json_schema_extra = {
@@ -200,6 +275,5 @@ class TranscriptionSystemDefaults(BaseModel):
                 "available_source_languages": {"auto": "Auto-detect", "en": "English"},
                 "available_llm_output_languages": {"en": "English", "es": "Spanish"},
                 "common_languages": ["auto", "en", "es", "fr", "de"],
-                "languages_with_alignment": ["en", "es", "fr", "de", "it"],
             }
         }

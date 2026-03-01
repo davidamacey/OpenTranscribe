@@ -134,9 +134,9 @@ Each concern from the WhisperX paper is mapped to OpenTranscribe's specific miti
 |------------------------|---------------------------|----------------|
 | **Cumulative sequential drift** | VAD pre-segments audio; batched inference processes segments independently in parallel | `transcriber.py:80-88` — `BatchedInferencePipeline.transcribe(vad_filter=True)` |
 | **Hallucination/repetition loops** | Independent segment processing prevents loop propagation; Silero VAD excludes non-speech regions | Silero VAD built into faster-whisper's pipeline |
-| **Inaccurate word timestamps** | Accept ~5% reduced precision for 2-3x speed gain; word timestamps are sufficient for speaker assignment (needs ~0.5-1.0s accuracy, not 200ms) | `transcriber.py:83` — `word_timestamps=True` |
+| **Inaccurate word timestamps** | Accept ~5% reduced precision for 2-3x speed gain; word timestamps are sufficient for speaker assignment (needs ~0.5-1.0s accuracy, not 200ms). Low-confidence words (probability < 0.3) have timestamps interpolated from reliable neighbors. | `transcriber.py` — `word_timestamps=True` + `_interpolate_low_confidence_words()` |
 | **wav2vec2 language limitation** | Bypass entirely — native word timestamps work for all 100+ Whisper languages vs. ~42 for wav2vec2 | No alignment model loaded or needed |
-| **VAD over-splitting (PR #103)** | Silero VAD with its own silence thresholds; NLTK sentence splitting in post-processing recovers sentence boundaries | `segment_dedup.py:279-386` — `split_sentences_nltk()` |
+| **VAD over-splitting (PR #103)** | Silero VAD with user-configurable thresholds (`vad_threshold`, `min_silence_ms`, `min_speech_ms`, `speech_pad_ms`); NLTK sentence splitting in post-processing recovers sentence boundaries | `config.py` — VAD params, `segment_dedup.py` — `split_sentences_nltk()` |
 | **MP3 encoding drift** | Audio decoded to raw PCM (16kHz mono float32) via FFmpeg before any processing | `audio.py:28` — `decode_audio(file_path, sampling_rate=16000)` |
 | **Sequential Whisper processing** | Batched inference via `BatchedInferencePipeline` — single forward pass per batch, no inter-segment conditioning | `transcriber.py:49` — `BatchedInferencePipeline(model=self._model)` |
 
@@ -155,42 +155,41 @@ The WhisperX paper's accuracy metrics (78.9% vs 84.1% precision at **200ms toler
 
 - **PyAnnote diarization segments** are typically 2-30 seconds long
 - **Speaker transitions** are at natural conversation boundaries (sentence ends, pauses)
-- **The interval tree algorithm** matches words to the speaker segment with **maximum time overlap**
+- **WhisperX's `assign_word_speakers()`** matches words to the speaker segment with **maximum time overlap** using pandas vectorized operations
 - A word timestamp off by 200ms still falls within the correct multi-second diarization segment in >95% of cases
 
 The practical proof: OpenTranscribe achieves **95% speaker assignment accuracy** without alignment, vs. ~96% with wav2vec2 alignment. The 1% difference is within measurement noise for real-world transcription.
 
 ### Post-Processing Pipeline: Compensating for No Alignment
 
-Without wav2vec2 alignment, the raw segments from Whisper's batched pipeline need post-processing to match the quality of aligned output. OpenTranscribe handles this through three stages:
+Without wav2vec2 alignment, the raw segments from Whisper's batched pipeline need post-processing to match the quality of aligned output. OpenTranscribe handles this through four stages:
 
-**Stage 1: NLTK Sentence Splitting** (`segment_dedup.py:279-386`)
+**Stage 0: Word Timestamp Validation** (`transcriber.py`)
+- Enforces monotonically increasing timestamps within each segment
+- Caps implausible word durations (>5 seconds for a single word)
+- Interpolates timestamps for low-confidence words (probability < 0.3) from reliable neighbors
+- Result: clean, reliable word timestamps before any downstream processing
+
+**Stage 1: NLTK Sentence Splitting** (`segment_dedup.py`)
 - Batched inference produces coarse 10-30 second VAD chunks
 - `split_sentences_nltk()` breaks these into individual sentences
 - Uses word timestamps for precise sentence boundary timing
 - Result: ~3-5 second sentence-level segments, matching what alignment produces
 
-**Stage 2: Segment Deduplication** (`segment_dedup.py:22-184`)
+**Stage 2: Segment Deduplication** (`segment_dedup.py`)
 - Removes coarse "parent" segments that are fully covered by fine-grained children
 - Eliminates exact text duplicates from Whisper's non-deterministic output
 - Merges time-overlapping segments with similar text
 - Vectorized NumPy operations: <0.2s for 3000+ segments
 
-**Stage 3: Timestamp Clamping** (`segment_dedup.py:389-420`)
+**Stage 3: Timestamp Clamping** (`segment_dedup.py`)
 - Adjacent segments can overlap by 50-220ms due to imprecise word boundaries
 - `_clamp_overlapping_timestamps()` sets each segment's start to `max(start, prev_end)`
 - Ensures segments tile cleanly without gaps or overlaps
 
-### Speaker Assignment: 273x Faster Than WhisperX
+### Speaker Assignment: WhisperX's Optimized Implementation
 
-The interval tree algorithm (`fast_speaker_assignment.py`) replaces WhisperX's O(n) linear scan with O(log n) binary search:
-
-```
-WhisperX: 10.2s for 150 segments, 1349 words
-OpenTranscribe: 0.037s (273x faster)
-```
-
-Uses sorted arrays + binary search for candidate range, then NumPy vectorized overlap checks. The `fill_nearest` fallback assigns speakers to segments with no direct diarization overlap by finding the nearest diarization midpoint.
+OpenTranscribe delegates to WhisperX 3.8.1's built-in `assign_word_speakers()` (`speaker_assigner.py`), which uses pandas vectorized overlap computation to efficiently match words and segments to diarization intervals. The `fill_nearest=True` parameter ensures segments in small diarization gaps get assigned to the nearest speaker rather than being left unassigned.
 
 ---
 
@@ -314,23 +313,23 @@ All benchmarks: Joe Rogan Experience #2404 (3.3 hours, 11,893s), NVIDIA RTX A600
 
 ### High Priority
 
-#### 1. Confidence-Based Word Timestamp Filtering
-**Status**: Not yet implemented
-**Description**: faster-whisper returns a `probability` field for each word (the decoder's confidence). Words with very low probability (<0.3) often have unreliable timestamps. Filtering or flagging these could improve speaker assignment at boundaries.
-**Implementation**: In `transcriber.py`, after extracting words, filter or mark words with `w.probability < threshold`.
-**Files**: `backend/app/transcription/transcriber.py:96-104`
+#### 1. Confidence-Based Word Timestamp Interpolation
+**Status**: IMPLEMENTED
+**Description**: faster-whisper returns a `probability` field for each word (the decoder's confidence). Words with very low probability (<0.3) often have unreliable cross-attention DTW timestamps. Rather than trusting these, OpenTranscribe interpolates their timestamps from the nearest high-confidence neighbors, distributing time evenly across low-confidence runs.
+**Implementation**: `_interpolate_low_confidence_words()` in `transcriber.py` runs after word extraction and monotonicity validation. Identifies runs of consecutive low-confidence words, anchors to reliable neighbor timestamps, and distributes time evenly.
+**Files**: `backend/app/transcription/transcriber.py`
 
 #### 2. Silero VAD Parameter Tuning
-**Status**: Using defaults
-**Description**: Silero VAD's default parameters may not be optimal for all audio types. Exposing `min_speech_duration_ms`, `min_silence_duration_ms`, and `speech_pad_ms` as configurable options could improve segment quality for specific use cases (noisy recordings, fast dialogue, lecture-style monologues).
-**Implementation**: Add VAD parameters to `TranscriptionConfig` and pass them through to `BatchedInferencePipeline.transcribe()`.
-**Files**: `backend/app/transcription/config.py`, `backend/app/transcription/transcriber.py:80-88`
+**Status**: IMPLEMENTED
+**Description**: Silero VAD parameters are now fully user-configurable via the Settings UI (Settings > Transcription > Advanced Transcription > VAD Settings). Users can tune `threshold`, `min_silence_duration_ms`, `min_speech_duration_ms`, and `speech_pad_ms` for specific audio types (noisy recordings, fast dialogue, lecture-style monologues).
+**Implementation**: Parameters stored per-user in the `user_setting` table, loaded at transcription time, passed through `TranscriptionConfig` to `BatchedInferencePipeline.transcribe()`. Environment variables provide system-wide defaults.
+**Files**: `backend/app/transcription/config.py`, `backend/app/transcription/transcriber.py`, `backend/app/api/endpoints/user_settings.py`, `frontend/src/components/settings/TranscriptionSettings.svelte`
 
 #### 3. Timestamp Sanity Validation
-**Status**: Partial (segment-level clamping exists)
-**Description**: Add explicit validation for word timestamps: ensure monotonically increasing within a segment, ensure no word exceeds segment boundaries, ensure word durations are physically plausible (not 0ms or >10s for a single word).
-**Implementation**: Post-processing pass after transcription, before speaker assignment.
-**Files**: `backend/app/utils/segment_dedup.py` or new `backend/app/utils/timestamp_validation.py`
+**Status**: IMPLEMENTED
+**Description**: Word timestamps are validated for monotonicity (each word starts at or after the previous word ends), segment boundary containment (no word exceeds its segment), minimum duration (10ms floor), and maximum plausible duration (5s cap for a single word). This runs in the transcriber immediately after word extraction, before any downstream processing.
+**Implementation**: `_validate_word_timestamps()` in `transcriber.py` enforces all invariants in a single in-place pass over each segment's words.
+**Files**: `backend/app/transcription/transcriber.py`
 
 ### Medium Priority
 
@@ -376,10 +375,13 @@ decode_audio() ─── FFmpeg decodes to 16kHz mono float32 PCM
   │
   ▼
 BatchedInferencePipeline.transcribe()
-  │  ├── Silero VAD segments audio into speech regions
+  │  ├── Silero VAD segments audio (user-configurable thresholds)
   │  ├── Cut & Merge produces ~10-30s independent chunks
   │  ├── Batched forward pass (no inter-segment dependency)
   │  ├── Cross-attention DTW produces word timestamps
+  │  ├── Timestamp validation: monotonicity, duration caps, boundary clamping
+  │  ├── Low-confidence interpolation: words with probability < 0.3 get timestamps
+  │  │   interpolated from reliable neighbors
   │  └── Output: segments with text, start, end, words[{word, start, end, probability}]
   │
   ▼
@@ -399,11 +401,10 @@ Segment Dedup (clean_segments)
   │  └── _clamp_overlapping_timestamps() ─── Fixes inter-segment gaps
   │
   ▼
-assign_word_speakers_fast()
-  │  ├── Build interval tree from diarization segments
-  │  ├── For each segment: query tree, assign speaker with max time overlap
-  │  ├── For each word: query tree, assign speaker with max time overlap
-  │  └── fill_nearest fallback for segments outside diarization range
+assign_speakers() ─── Delegates to WhisperX's assign_word_speakers()
+  │  ├── Pandas vectorized overlap computation between words and diarization segments
+  │  ├── Each word/segment assigned to speaker with maximum time overlap
+  │  └── fill_nearest=True fallback for segments outside diarization range
   │
   ▼
 Final transcript: segments with text, start, end, speaker, words[{word, start, end, speaker}]
@@ -413,14 +414,14 @@ Final transcript: segments with text, start, end, speaker, words[{word, start, e
 
 | File | Role in Drift Mitigation |
 |------|--------------------------|
-| `backend/app/transcription/transcriber.py` | Batched inference with `word_timestamps=True` and `vad_filter=True` — eliminates sequential drift |
+| `backend/app/transcription/transcriber.py` | Batched inference with `word_timestamps=True` and `vad_filter=True` — eliminates sequential drift. Includes word timestamp validation (monotonicity, duration caps) and low-confidence interpolation. |
 | `backend/app/transcription/audio.py` | `decode_audio()` — converts all formats to raw PCM, eliminating encoding drift |
 | `backend/app/transcription/diarizer.py` | PyAnnote v4 direct — independent speaker timeline, no dependency on Whisper timestamps |
 | `backend/app/transcription/pipeline.py` | Orchestrates pipeline — sequential VRAM mode releases transcriber before diarizer |
-| `backend/app/transcription/config.py` | Configuration with hardware-detected defaults |
+| `backend/app/transcription/config.py` | Configuration with hardware-detected defaults and user-configurable VAD/accuracy params |
+| `backend/app/transcription/speaker_assigner.py` | Delegates to WhisperX 3.8.1's `assign_word_speakers()` for pandas vectorized speaker assignment |
 | `backend/app/transcription/model_manager.py` | Warm model caching — eliminates repeated model loading overhead |
 | `backend/app/utils/segment_dedup.py` | Sentence splitting + dedup — replaces what wav2vec2 alignment provided |
-| `backend/app/utils/fast_speaker_assignment.py` | Interval tree speaker assignment — 273x faster than WhisperX |
 
 ---
 

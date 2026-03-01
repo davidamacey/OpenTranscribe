@@ -44,7 +44,7 @@ torch==2.8.0
 torchaudio==2.8.0
 
 # =============================================================================
-# WhisperX 3.7.6 Dependencies (explicit since we install with --no-deps)
+# WhisperX 3.8.1 Dependencies (explicit since we install with --no-deps)
 # Source: https://github.com/m-bain/whisperx/blob/main/pyproject.toml
 # =============================================================================
 # CTranslate2 - inference engine for Whisper
@@ -64,16 +64,14 @@ huggingface-hub<1.0.0
 # Triton for optimized attention (Linux x86_64 only)
 triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 
-# PyAnnote v4 - OVERRIDE whisperx's pyannote-audio<4.0.0 requirement
-# We need v4 for VBx clustering, WeSpeaker embeddings, and overlap detection
-# WhisperX's DiarizationPipeline is monkey-patched at runtime
-# See: backend/app/utils/pyannote_compat.py
+# PyAnnote v4 - aligned with WhisperX 3.8.1's own pyannote-audio>=4.0.0 requirement
+# Provides VBx clustering, WeSpeaker embeddings, and overlap detection
 pyannote.audio>=4.0.0
 # Required by pyannote/embedding model checkpoint (pickle dependency)
 omegaconf>=2.3.0
 
-# NOTE: whisperx==3.7.6 is installed separately in Dockerfile with --no-deps
-# to bypass the pyannote-audio<4.0.0 conflict
+# NOTE: whisperx==3.8.1 is installed separately in Dockerfile with --no-deps
+# to keep our version pins in requirements.txt authoritative
 # =============================================================================
 
 # Supporting libraries

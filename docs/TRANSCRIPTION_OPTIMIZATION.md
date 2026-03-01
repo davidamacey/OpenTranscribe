@@ -9,7 +9,7 @@ OpenTranscribe uses a custom transcription pipeline (`backend/app/transcription/
 | Engine | Default | Description |
 |--------|---------|-------------|
 | `native` | Yes | faster-whisper BatchedInferencePipeline + PyAnnote v4 direct |
-| `whisperx` | Fallback | Legacy WhisperX pipeline with optional wav2vec2 alignment |
+| `whisperx` | Fallback | Legacy WhisperX pipeline (uses same native word timestamps) |
 
 ### Native Pipeline Flow
 
@@ -25,7 +25,7 @@ Audio Load (decode_audio)
 
 ### Key Design Decisions
 
-1. **BatchedInferencePipeline + word_timestamps=True**: WhisperX hardcodes `word_timestamps=False` in its batched pipeline. We bypass it and call faster-whisper directly, getting batched speed WITH word-level timestamps. This eliminates the need for wav2vec2 alignment entirely.
+1. **BatchedInferencePipeline + word_timestamps=True**: faster-whisper's batched pipeline provides native word-level timestamps via cross-attention DTW for all 100+ languages. No separate alignment model needed.
 
 2. **Sequential VRAM mode**: Transcriber is loaded, used, and released before the diarizer loads. This keeps peak VRAM low (~5-9GB) for compatibility with 8-12GB GPUs.
 
@@ -113,7 +113,7 @@ All benchmarks use Joe Rogan Experience #2404 (3.3 hours, 11,893s) on NVIDIA RTX
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ENABLE_ALIGNMENT` | `true` | wav2vec2 word-level alignment (adds ~389s for 3hr file) |
+| `ENABLE_ALIGNMENT` | `false` | Legacy wav2vec2 alignment (deprecated, native timestamps used instead) |
 | `PIPELINE_MODE` | `sequential` | `sequential` or `parallel` (parallel needs 12GB+ VRAM) |
 
 ### Recommended Configurations
@@ -127,9 +127,9 @@ WHISPER_MODEL=large-v3-turbo
 
 **Maximum Quality**:
 ```env
-TRANSCRIPTION_ENGINE=whisperx
+TRANSCRIPTION_ENGINE=native
 WHISPER_MODEL=large-v3
-ENABLE_ALIGNMENT=true
+# Native word timestamps via cross-attention DTW for all languages
 ```
 
 **Low VRAM (8GB GPU)**:
@@ -158,7 +158,7 @@ WHISPER_MODEL=large-v3-turbo
 
 WhisperX was the original transcription backend but had architectural constraints:
 
-1. **Alignment bottleneck**: wav2vec2 alignment took 389s (55% of total) for a 3hr file. It processes segments sequentially — 300+ separate CUDA kernel launches instead of batched.
+1. **Alignment bottleneck**: The old wav2vec2 alignment step took 389s (55% of total) for a 3hr file, processing segments sequentially with 300+ separate CUDA kernel launches. This is now eliminated by native word timestamps.
 
 2. **No batched word timestamps**: WhisperX deliberately hardcodes `word_timestamps=False` in its batched pipeline (`asr.py` lines 370-372). You had to choose: batched speed OR word timestamps.
 
@@ -170,7 +170,7 @@ WhisperX was the original transcription backend but had architectural constraint
 |----------|--------|---------|
 | Disable alignment + segment dedup | 316s, 99.5% quality match | Good speed, but only 77% speaker consistency (segment-level timestamps) |
 | Parallel alignment + diarization | 579s, GPU contention 16-24% | Not worth it on same GPU |
-| Batched wav2vec2 alignment | ~420s estimated | Implemented but still slow |
+| Batched wav2vec2 alignment | ~420s estimated | Implemented but still slow (now removed) |
 | Native word_timestamps (sequential) | 437s, 95% speaker consistency | Good quality but slower than batched |
 | **BatchedInferencePipeline + word_timestamps** | **332s, 95% speaker consistency** | **Best of both worlds** |
 
@@ -178,7 +178,7 @@ The breakthrough was discovering that faster-whisper 1.2.1's `BatchedInferencePi
 
 ### Segment Dedup: Why It's Needed
 
-Without wav2vec2 alignment, WhisperX outputs both coarse VAD-chunked segments AND fine-grained subsegments for the same time ranges. The native pipeline also produces overlapping segments from VAD chunking.
+The transcription pipeline produces both coarse VAD-chunked segments AND fine-grained subsegments for the same time ranges due to batched inference chunking.
 
 The dedup module (`backend/app/utils/segment_dedup.py`) handles this:
 1. NLTK punkt sentence splitting (replicates what alignment implicitly provided)
@@ -270,14 +270,16 @@ These parameters affect transcription speed. Relevant for both native and whispe
 | `backend/app/utils/hardware_detection.py` | GPU detection, batch_size, compute_type |
 | `backend/app/utils/vram_profiler.py` | Per-step VRAM and timing profiler |
 
-### WhisperX Fallback
+### WhisperX Fallback (Legacy, Removed)
 
-| File | Purpose |
-|------|---------|
-| `backend/app/tasks/transcription/whisperx_service.py` | Legacy WhisperX pipeline |
-| `backend/app/utils/pyannote_compat.py` | PyAnnote v4 monkey-patching for WhisperX |
-| `backend/app/utils/batched_alignment.py` | Batched wav2vec2 alignment |
-| `backend/app/tasks/transcription/parallel_pipeline.py` | Parallel alignment+diarization |
+The following files were part of the legacy WhisperX fallback pipeline and have been removed:
+
+| File | Purpose | Status |
+|------|---------|--------|
+| `backend/app/tasks/transcription/whisperx_service.py` | Legacy WhisperX pipeline | Removed |
+| `backend/app/utils/pyannote_compat.py` | PyAnnote v4 monkey-patching for WhisperX | Removed |
+| `backend/app/utils/batched_alignment.py` | Batched wav2vec2 alignment | Removed |
+| `backend/app/tasks/transcription/parallel_pipeline.py` | Parallel alignment+diarization | Removed |
 
 ### Benchmarking Tools
 

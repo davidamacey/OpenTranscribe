@@ -37,7 +37,12 @@ export interface TranscriptionSystemDefaults {
   available_source_languages: Record<string, string>;
   available_llm_output_languages: Record<string, string>;
   common_languages: string[];
-  languages_with_alignment: string[];
+  vad_threshold: number;
+  vad_min_silence_ms: number;
+  vad_min_speech_ms: number;
+  vad_speech_pad_ms: number;
+  hallucination_silence_threshold: number | null;
+  repetition_penalty: number;
 }
 
 /**
@@ -52,6 +57,12 @@ export interface TranscriptionSettings {
   source_language: string;
   translate_to_english: boolean;
   llm_output_language: string;
+  vad_threshold: number;
+  vad_min_silence_ms: number;
+  vad_min_speech_ms: number;
+  vad_speech_pad_ms: number;
+  hallucination_silence_threshold: number | null;
+  repetition_penalty: number;
 }
 
 /**
@@ -66,6 +77,12 @@ export interface TranscriptionSettingsUpdate {
   source_language?: string;
   translate_to_english?: boolean;
   llm_output_language?: string;
+  vad_threshold?: number;
+  vad_min_silence_ms?: number;
+  vad_min_speech_ms?: number;
+  vad_speech_pad_ms?: number;
+  hallucination_silence_threshold?: number | null;
+  repetition_penalty?: number;
 }
 
 /**
@@ -89,6 +106,12 @@ export const DEFAULT_TRANSCRIPTION_SETTINGS: TranscriptionSettings = {
   source_language: 'auto',
   translate_to_english: false,
   llm_output_language: 'en',
+  vad_threshold: 0.5,
+  vad_min_silence_ms: 2000,
+  vad_min_speech_ms: 250,
+  vad_speech_pad_ms: 400,
+  hallucination_silence_threshold: null,
+  repetition_penalty: 1.0,
 };
 
 /**

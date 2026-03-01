@@ -15,6 +15,73 @@ from app.transcription.config import TranscriptionConfig
 
 logger = logging.getLogger(__name__)
 
+# Maximum plausible duration for a single word (seconds)
+_MAX_WORD_DURATION = 5.0
+# Words below this probability have unreliable cross-attention DTW timestamps
+_LOW_CONFIDENCE_THRESHOLD = 0.3
+
+
+def _validate_word_timestamps(words: list[dict], seg_start: float, seg_end: float) -> None:
+    """Enforce monotonicity and plausible durations for word timestamps in-place.
+
+    Cross-attention DTW can produce overlapping or implausibly long word
+    timestamps. This pass ensures:
+    1. Each word starts at or after the previous word ends (monotonicity)
+    2. No single word spans more than _MAX_WORD_DURATION seconds
+    3. All words remain within [seg_start, seg_end]
+    """
+    for i, word in enumerate(words):
+        # Cap implausible durations first
+        if word["end"] - word["start"] > _MAX_WORD_DURATION:
+            word["end"] = min(word["start"] + _MAX_WORD_DURATION, seg_end)
+
+        # Enforce monotonicity: word N starts at or after word N-1 ends
+        if i > 0 and word["start"] < words[i - 1]["end"]:
+            word["start"] = words[i - 1]["end"]
+            # Re-check minimum duration after shift
+            if word["end"] <= word["start"]:
+                word["end"] = min(word["start"] + 0.01, seg_end)
+
+
+def _interpolate_low_confidence_words(words: list[dict], seg_start: float, seg_end: float) -> None:
+    """Interpolate timestamps for low-probability words from reliable neighbors.
+
+    Words with probability below _LOW_CONFIDENCE_THRESHOLD have unreliable
+    cross-attention DTW timestamps. Instead of trusting them, we interpolate
+    from the nearest high-confidence neighbors, distributing time evenly
+    across the low-confidence span.
+    """
+    if not words:
+        return
+
+    n = len(words)
+    # Find runs of consecutive low-confidence words
+    i = 0
+    while i < n:
+        if words[i]["probability"] >= _LOW_CONFIDENCE_THRESHOLD:
+            i += 1
+            continue
+
+        # Found start of a low-confidence run
+        run_start = i
+        while i < n and words[i]["probability"] < _LOW_CONFIDENCE_THRESHOLD:
+            i += 1
+        run_end = i  # exclusive
+
+        # Determine anchor timestamps from reliable neighbors
+        left_time = words[run_start - 1]["end"] if run_start > 0 else seg_start
+        right_time = words[run_end]["start"] if run_end < n else seg_end
+
+        # Distribute time evenly across the low-confidence run
+        run_len = run_end - run_start
+        if right_time <= left_time:
+            continue  # No room to interpolate
+        step = (right_time - left_time) / run_len
+        for j in range(run_start, run_end):
+            offset = j - run_start
+            words[j]["start"] = left_time + offset * step
+            words[j]["end"] = left_time + (offset + 1) * step
+
 
 class Transcriber:
     """Faster-whisper BatchedInferencePipeline with native word timestamps."""
@@ -77,38 +144,66 @@ class Transcriber:
         )
 
         assert self._pipeline is not None, "Pipeline not initialized"
-        segments_gen, info = self._pipeline.transcribe(
-            audio,
+        kwargs: dict = dict(
             batch_size=self.config.batch_size,
             word_timestamps=True,
             beam_size=self.config.beam_size,
             task=task,
             language=language,
             vad_filter=True,
+            vad_parameters={
+                "threshold": self.config.vad_threshold,
+                "min_silence_duration_ms": self.config.vad_min_silence_ms,
+                "min_speech_duration_ms": self.config.vad_min_speech_ms,
+                "speech_pad_ms": self.config.vad_speech_pad_ms,
+            },
+            repetition_penalty=self.config.repetition_penalty,
         )
+        if self.config.hallucination_silence_threshold is not None:
+            kwargs["hallucination_silence_threshold"] = self.config.hallucination_silence_threshold
 
-        # Convert generator to list of dicts
+        segments_gen, info = self._pipeline.transcribe(audio, **kwargs)
+
+        # Convert generator to list of dicts with timestamp validation
+        audio_duration = len(audio) / 16000  # 16kHz sample rate
         segments = []
         total_words = 0
         for seg in segments_gen:
+            seg_start = max(float(seg.start), 0.0)
+            seg_end = min(float(seg.end), audio_duration)
+            if seg_end <= seg_start:
+                continue  # Skip invalid segments
+
             words = []
             if seg.words:
                 for w in seg.words:
+                    word_start = max(float(w.start), seg_start)
+                    word_end = min(float(w.end), seg_end)
+                    if word_end <= word_start:
+                        word_end = min(word_start + 0.01, seg_end)
                     words.append(
                         {
                             "word": w.word,
-                            "start": float(w.start),
-                            "end": float(w.end),
+                            "start": word_start,
+                            "end": word_end,
                             "probability": float(w.probability),
                         }
                     )
+
+                # Timestamp sanity: enforce monotonicity and cap implausible durations
+                _validate_word_timestamps(words, seg_start, seg_end)
+
+                # Interpolate timestamps for low-confidence words (probability < 0.3)
+                # whose cross-attention DTW timestamps are unreliable
+                _interpolate_low_confidence_words(words, seg_start, seg_end)
+
                 total_words += len(words)
 
             segments.append(
                 {
                     "text": seg.text.strip(),
-                    "start": float(seg.start),
-                    "end": float(seg.end),
+                    "start": seg_start,
+                    "end": seg_end,
                     "words": words,
                 }
             )
