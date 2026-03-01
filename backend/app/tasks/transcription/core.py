@@ -1181,6 +1181,16 @@ def transcribe_audio_task(
             None = run all tasks. Valid values: 'analytics', 'speaker_llm',
             'summarization', 'topic_extraction', 'search_indexing'.
     """
+    # Gate: defer transcription while speaker embedding migration holds the GPU
+    from app.services.migration_lock_service import migration_lock
+
+    if migration_lock.is_active():
+        logger.info(
+            "Migration lock active — deferring transcription for %s (retry in 60s)",
+            file_uuid,
+        )
+        raise self.retry(countdown=60, max_retries=120)
+
     task_id = self.request.id
     ctx = None
 

@@ -16,6 +16,9 @@
   let failedFiles: string[] = [];
   let stoppingMigration = false;
 
+  let transcriptionPaused = false;
+  let estimatedMinutes = 0;
+
   let loading = true;
   let error = '';
 
@@ -89,6 +92,11 @@
       migrationNeeded = data.migration_needed;
       v3DocumentCount = data.v3_document_count || 0;
       v4DocumentCount = data.v4_document_count || 0;
+      transcriptionPaused = data.transcription_paused || false;
+
+      // Estimate migration time: ~0.6s/file with pipelined multi-model extraction
+      const fileCount = v3DocumentCount || 0;
+      estimatedMinutes = Math.max(1, Math.ceil((fileCount * 0.6 + 60) / 60));
 
       // Also fetch progress if migration might be running
       await loadMigrationProgress();
@@ -293,6 +301,14 @@
             <p class="migration-note">
               {$t('settings.embeddingMigration.migrationNote')}
             </p>
+            {#if v3DocumentCount > 0}
+              <p class="migration-estimate">
+                {$t('settings.embeddingMigration.migrationEstimate', {
+                  minutes: estimatedMinutes,
+                  count: v3DocumentCount
+                })}
+              </p>
+            {/if}
           </div>
           <div class="migration-actions">
             {#if migrationInProgress}
@@ -319,6 +335,18 @@
             {/if}
           </div>
         </div>
+
+        <!-- Transcription Paused Notice -->
+        {#if transcriptionPaused || migrationInProgress}
+          <div class="paused-notice">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="10" y1="15" x2="10" y2="9"/>
+              <line x1="14" y1="15" x2="14" y2="9"/>
+            </svg>
+            <span>{$t('settings.embeddingMigration.transcriptionPaused')}</span>
+          </div>
+        {/if}
 
         <!-- Progress Section (shown when migration is in progress) -->
         {#if migrationInProgress && totalFiles > 0}
@@ -595,6 +623,30 @@
   .migration-note {
     margin-top: 0.5rem !important;
     font-style: italic;
+  }
+
+  .migration-estimate {
+    margin-top: 0.25rem !important;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .paused-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .paused-notice svg {
+    flex-shrink: 0;
+    color: #f59e0b;
   }
 
   .migration-actions {

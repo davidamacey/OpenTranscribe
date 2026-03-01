@@ -806,6 +806,13 @@ def update_speaker_embedding_on_reassignment(
         source_speaker_uuid: UUID of the speaker that lost the segment (or None if orphan-deleted)
         user_id: ID of the user who owns the data
     """
+    # Gate: defer while speaker embedding migration holds the GPU
+    from app.services.migration_lock_service import migration_lock
+
+    if migration_lock.is_active():
+        logger.info("Migration lock active — deferring speaker embedding update (retry in 60s)")
+        raise self.retry(countdown=60, max_retries=120)
+
     import os
     import tempfile
 

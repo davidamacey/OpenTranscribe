@@ -183,6 +183,13 @@ def rediarize_task(  # noqa: C901
             Valid values: 'analytics', 'speaker_llm', 'summarization',
             'topic_extraction', 'search_indexing'.
     """
+    # Gate: defer while speaker embedding migration holds the GPU
+    from app.services.migration_lock_service import migration_lock
+
+    if migration_lock.is_active():
+        logger.info("Migration lock active — deferring rediarize for %s (retry in 60s)", file_uuid)
+        raise self.retry(countdown=60, max_retries=120)
+
     import shutil
 
     from app.utils.uuid_helpers import get_file_by_uuid

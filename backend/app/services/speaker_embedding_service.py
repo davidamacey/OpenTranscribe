@@ -118,6 +118,7 @@ class SpeakerEmbeddingService:
                 "ffmpeg",
                 "-i",
                 audio_path,
+                "-vn",  # Skip video decoding (crucial for MP4/video files)
                 "-f",
                 "f32le",
                 "-acodec",
@@ -203,6 +204,151 @@ class SpeakerEmbeddingService:
         except Exception as e:
             logger.error(f"Error extracting embedding from {audio_path}: {e}")
             return None
+
+    @staticmethod
+    def _load_audio_segment(
+        audio_source: str,
+        start: float,
+        duration: float,
+        target_sr: int = 16000,
+    ) -> Optional[torch.Tensor]:
+        """Load only a specific segment of audio using ffmpeg seeking.
+
+        Uses -ss before -i for fast input seeking (demuxer-level seek),
+        and -vn to skip video entirely. Only decodes the needed audio
+        portion — orders of magnitude faster than decoding a full file.
+
+        Args:
+            audio_source: Local file path or HTTP/presigned URL.
+            start: Segment start time in seconds.
+            duration: Segment duration in seconds.
+            target_sr: Target sample rate.
+
+        Returns:
+            Waveform tensor [1, samples] or None on failure.
+        """
+        import subprocess
+
+        cmd = [
+            "ffmpeg",
+            "-ss",
+            str(start),  # Seek BEFORE input (fast demuxer seek)
+            "-i",
+            audio_source,
+            "-t",
+            str(duration),  # Only decode this duration
+            "-vn",  # Skip video stream entirely
+            "-f",
+            "f32le",
+            "-acodec",
+            "pcm_f32le",
+            "-ac",
+            "1",
+            "-ar",
+            str(target_sr),
+            "-v",
+            "quiet",
+            "-",
+        ]
+        try:
+            proc = subprocess.run(  # noqa: S603  # nosec B603
+                cmd,
+                capture_output=True,
+                timeout=30,
+            )
+            if proc.returncode == 0 and len(proc.stdout) > 0:
+                audio = np.frombuffer(proc.stdout, dtype=np.float32).copy()
+                return torch.from_numpy(audio).unsqueeze(0)
+        except Exception as e:
+            logger.debug(f"Segment extraction failed: {e}")
+        return None
+
+    def extract_embedding_from_segment(
+        self,
+        audio_source: str,
+        segment: dict[str, float],
+    ) -> Optional[np.ndarray]:
+        """Extract embedding for a single segment using fast ffmpeg seeking.
+
+        Unlike extract_embedding_from_file which decodes the entire file,
+        this only decodes the specific time range needed — critical for
+        large video files where full decode takes 10-20 seconds.
+
+        Args:
+            audio_source: Local file path or presigned MinIO URL.
+            segment: Dict with 'start' and 'end' keys (seconds).
+
+        Returns:
+            L2-normalized embedding array, or None on failure.
+        """
+        start = segment["start"]
+        duration = segment["end"] - start
+        if duration < 0.5:
+            return None
+
+        waveform = self._load_audio_segment(audio_source, start, duration)
+        if waveform is None or waveform.shape[1] == 0:
+            return None
+
+        try:
+            audio_input = {"waveform": waveform, "sample_rate": 16000}
+            embedding = self.inference(audio_input)
+
+            if embedding is not None:
+                norm = np.linalg.norm(embedding)
+                if norm > 0:
+                    embedding = embedding / norm
+
+            return embedding  # type: ignore[no-any-return]
+        except Exception as e:
+            logger.error(f"Error extracting embedding from segment: {e}")
+            return None
+
+    def extract_embedding_from_waveform(
+        self,
+        waveform: torch.Tensor,
+        sample_rate: int,
+        segment: Optional[dict[str, float]] = None,
+    ) -> Optional[np.ndarray]:
+        """Extract speaker embedding from a pre-loaded waveform.
+
+        Use this when processing multiple segments from the same audio file
+        to avoid re-decoding the file for each segment.
+
+        Args:
+            waveform: Audio tensor [channels, samples] (already loaded).
+            sample_rate: Sample rate of the waveform.
+            segment: Optional segment dict with 'start' and 'end' times.
+
+        Returns:
+            L2-normalized embedding array, or None on failure.
+        """
+        try:
+            wav = waveform
+            if segment:
+                start_sample = int(segment["start"] * sample_rate)
+                end_sample = int(segment["end"] * sample_rate)
+                wav = wav[:, start_sample:end_sample]
+
+            if wav.shape[0] > 1:
+                wav = wav.mean(dim=0, keepdim=True)
+
+            audio_input = {"waveform": wav, "sample_rate": sample_rate}
+            embedding = self.inference(audio_input)
+
+            if embedding is not None:
+                norm = np.linalg.norm(embedding)
+                if norm > 0:
+                    embedding = embedding / norm
+
+            return embedding  # type: ignore[no-any-return]
+        except Exception as e:
+            logger.error(f"Error extracting embedding from waveform segment: {e}")
+            return None
+
+    def load_audio(self, audio_path: str) -> tuple[torch.Tensor, int]:
+        """Public wrapper for _load_audio. Loads audio file once for reuse."""
+        return self._load_audio(audio_path)
 
     def extract_embeddings_for_segments(
         self,

@@ -120,6 +120,7 @@ celery_app.conf.update(
         "normalize_speaker_embeddings": {"queue": "cpu"},
         "check_migration_status": {"queue": "utility"},
         "extract_v4_embeddings": {"queue": "gpu"},
+        "extract_v4_embeddings_batch": {"queue": "gpu"},
         "finalize_v4_migration": {"queue": "utility"},
         # Benchmark/baseline tasks (lightweight DB reads)
         "export_transcript_baseline": {"queue": "utility"},

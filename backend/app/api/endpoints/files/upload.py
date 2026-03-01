@@ -151,6 +151,15 @@ def start_transcription_task(
         num_speakers: Optional fixed number of speakers for diarization
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        # Check if migration lock is active — tasks will self-retry via the gate
+        from app.services.migration_lock_service import migration_lock
+
+        if migration_lock.is_active():
+            logger.info(
+                f"Migration lock active — file {file_id} will be queued and "
+                "processed automatically after migration completes"
+            )
+
         # Launch GPU transcription task with speaker parameters
         transcribe_audio_task.delay(
             file_uuid,

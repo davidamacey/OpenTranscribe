@@ -15,6 +15,7 @@ from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
 from app.models.user import User
 from app.services.embedding_mode_service import EmbeddingModeService
+from app.services.migration_lock_service import migration_lock
 from app.services.migration_progress_service import migration_progress
 
 router = APIRouter()
@@ -46,6 +47,9 @@ async def get_migration_status(
         # Add progress tracking info from Redis
         progress = migration_progress.get_status()
         status["progress"] = progress
+
+        # Indicate whether transcription is paused by migration lock
+        status["transcription_paused"] = migration_lock.is_active()
 
         return status
 
@@ -100,6 +104,14 @@ async def start_migration(
         - progress: Current progress info (if migration already running)
     """
     from app.tasks.embedding_migration_v4 import migrate_speaker_embeddings_v4_task
+
+    # Check if migration lock is already held (another migration in progress)
+    if migration_lock.is_active():
+        return {
+            "status": "already_running",
+            "message": "Migration lock is active — another migration is in progress",
+            "transcription_paused": True,
+        }
 
     # Check if a migration is already running
     if migration_progress.is_running():
@@ -158,11 +170,14 @@ async def stop_migration(
 
         success = migration_progress.force_stop()
 
+        # Release migration lock so transcription can resume
+        migration_lock.deactivate()
+
         if success:
             logger.warning("Migration force stopped by user")
             return {
                 "status": "stopped",
-                "message": "Migration marked as stopped. Running tasks will complete.",
+                "message": "Migration stopped and transcription lock released.",
             }
         else:
             return {
