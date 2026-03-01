@@ -243,16 +243,16 @@
   .toggle-label {
     font-size: 0.875rem;
     font-weight: 500;
-    color: var(--text-primary, #111827);
+    color: var(--text-color);
   }
 
   .form-select {
     width: 100%;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color, #d1d5db);
+    border: 1px solid var(--input-border);
     border-radius: 0.375rem;
-    background-color: var(--bg-primary, #ffffff);
-    color: var(--text-primary, #111827);
+    background-color: var(--input-background);
+    color: var(--text-color);
     font-size: 0.875rem;
     transition: border-color 0.15s;
   }
@@ -364,6 +364,6 @@
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background-color: var(--bg-secondary, #f3f4f6);
+    background-color: var(--hover-color);
   }
 </style>

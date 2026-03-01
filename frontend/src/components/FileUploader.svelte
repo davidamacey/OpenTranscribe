@@ -4397,8 +4397,8 @@
   }
 
   .download-options-summary:hover {
-    color: var(--text-primary, #111827);
-    background-color: var(--bg-secondary, #f9fafb);
+    color: var(--text-color);
+    background-color: var(--hover-color);
   }
 
   .download-options-content {
@@ -4418,7 +4418,7 @@
 
   .download-option-row label {
     font-size: 0.8125rem;
-    color: var(--text-primary, #111827);
+    color: var(--text-color);
     white-space: nowrap;
   }
 
@@ -4426,10 +4426,10 @@
     flex: 1;
     max-width: 200px;
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border-color, #d1d5db);
+    border: 1px solid var(--input-border);
     border-radius: 0.375rem;
-    background-color: var(--bg-primary, #ffffff);
-    color: var(--text-primary, #111827);
+    background-color: var(--input-background);
+    color: var(--text-color);
     font-size: 0.8125rem;
   }
 
