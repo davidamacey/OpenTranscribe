@@ -628,10 +628,10 @@ A pre-commit hook automatically runs `svelte-check` and `vite build` when fronte
 1. File upload to MinIO storage
 2. Metadata extraction and database record creation
 3. Celery task dispatch to worker with GPU support
-4. WhisperX transcription with word-level alignment (100+ languages supported)
+4. WhisperX transcription with native word-level timestamps (100+ languages supported)
    - Configurable source language (auto-detect or specify)
    - Optional translation to English
-   - ~42 languages support word-level timestamps
+   - All 100+ languages support word-level timestamps natively via faster-whisper cross-attention DTW
 5. PyAnnote speaker diarization and voice fingerprinting
 6. **LLM speaker identification suggestions** (optional - manual verification required)
 7. **LLM-powered summarization** with BLUF format (optional - user-triggered)
@@ -723,8 +723,7 @@ OpenTranscribe now supports transcription in 100+ languages with configurable se
 - **LLM Output Language**: Generate AI summaries in preferred language (12 supported)
 
 **Language Features:**
-- ~42 languages support word-level timestamps via wav2vec2 alignment models
-- Languages without alignment models fall back to segment-level timestamps
+- All 100+ languages support word-level timestamps natively via faster-whisper cross-attention DTW
 - Settings stored per-user in the database
 
 **Configuration:**
@@ -794,7 +793,6 @@ ${MODEL_CACHE_DIR}/
 │   ├── hub/             # WhisperX models (~1.5GB)
 │   └── transformers/    # PyAnnote transformer cache
 ├── torch/               # PyTorch models cache
-│   ├── hub/checkpoints/ # Wav2Vec2 alignment model (~360MB)
 │   └── pyannote/        # PyAnnote speaker models (~500MB)
 ├── nltk_data/           # NLTK data files
 │   ├── tokenizers/      # punkt_tab tokenizer (~13MB)
@@ -843,7 +841,7 @@ volumes:
 - **No code complexity**: Models use their natural cache locations
 - **Persistent storage**: Models saved between container restarts
 - **User configurable**: Simple `.env` variable controls cache location
-- **No re-downloads**: Models cached after first download (~2.9GB total)
+- **No re-downloads**: Models cached after first download (~2.5GB total)
 - **Automatic setup**: OpenSearch neural models download automatically on first start
 - **Offline capability**: Models persist for air-gapped deployments
 

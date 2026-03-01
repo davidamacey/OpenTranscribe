@@ -166,8 +166,8 @@ def process_segments_with_speakers(
         speaker_id = normalize_speaker_label(speaker_id)
         speaker_db_id = speaker_mapping.get(speaker_id)
 
-        # Process word-level timestamps (only populated when ENABLE_ALIGNMENT=true;
-        # words_data will be empty when alignment is disabled, which is the default)
+        # Process word-level timestamps (always available from faster-whisper
+        # native word_timestamps=True)
         words_data = []
         if "words" in segment:
             for word in segment["words"]:

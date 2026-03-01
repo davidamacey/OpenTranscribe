@@ -32,14 +32,10 @@ RUN pip install --user --no-cache-dir --upgrade pip
 # Use --user to install to /root/.local which we'll copy to final stage
 RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
 
-# Install WhisperX with --no-deps to avoid pyannote-audio<4.0.0 conflict
-# WhisperX 3.7.6 requires pyannote-audio<4.0.0 but we need v4 for VBx clustering
-# We work around this by:
-#   1. Installing all whisperx deps in requirements.txt (minus pyannote-audio)
-#   2. Installing pyannote.audio>=4.0.0 in requirements.txt
-#   3. Installing whisperx without deps here
-#   4. Monkey-patching DiarizationPipeline at runtime (pyannote_compat.py)
-RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps whisperx==3.7.6
+# Install WhisperX with --no-deps to keep our version pins in requirements.txt
+# WhisperX 3.8.1 has native pyannote-audio>=4.0.0 support — no monkey patches needed
+# We still use --no-deps to prevent surprise dependency upgrades
+RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps whisperx==3.8.1
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime Stage - Minimal production image with non-root user

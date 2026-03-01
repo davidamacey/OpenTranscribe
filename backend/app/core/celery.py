@@ -23,17 +23,7 @@ if not _SKIP_CELERY:
 
     torch.load = _patched_torch_load
 
-    # Apply PyAnnote v4 compatibility patch BEFORE any whisperx imports
-    # Only needed for whisperx engine — native engine uses PyAnnote v4 directly
-    _engine = os.environ.get("TRANSCRIPTION_ENGINE", "native").lower()
-    if _engine == "whisperx":
-        from app.utils.pyannote_compat import apply_pyannote_v4_patch  # noqa: E402
-
-        apply_pyannote_v4_patch()
-    else:
-        logging.getLogger(__name__).info(
-            "Skipping WhisperX pyannote patch (TRANSCRIPTION_ENGINE=native)"
-        )
+    # Note: WhisperX 3.8.1 has native PyAnnote v4 support — no patches needed
 
 # Imports must come after torch.load patch to prevent caching issues
 from celery import Celery  # noqa: E402

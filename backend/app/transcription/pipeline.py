@@ -1,8 +1,7 @@
 """Main transcription pipeline orchestrator.
 
 Coordinates: audio loading -> transcription -> diarization -> speaker
-assignment -> dedup into a single process() call with the same output
-format as WhisperXService.process_full_pipeline().
+assignment -> dedup into a single process() call.
 """
 
 import logging
@@ -17,11 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class TranscriptionPipeline:
-    """Full transcription pipeline using faster-whisper + PyAnnote v4.
-
-    Output format is identical to WhisperXService.process_full_pipeline()
-    so no downstream changes are needed in core.py result processing.
-    """
+    """Full transcription pipeline using faster-whisper + PyAnnote v4."""
 
     def __init__(self, config: TranscriptionConfig):
         self.config = config

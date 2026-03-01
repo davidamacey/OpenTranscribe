@@ -1,10 +1,9 @@
 """
-Vectorized segment deduplication for WhisperX transcription output.
+Vectorized segment deduplication for transcription output.
 
-When alignment is disabled (ENABLE_ALIGNMENT=false), WhisperX returns both
-coarse VAD-chunked segments AND their fine-grained sentence subsegments,
-creating overlapping/duplicate entries. This module merges them using numpy
-interval operations - no ML model needed.
+Whisper's batched pipeline can return both coarse VAD-chunked segments AND
+their fine-grained sentence subsegments, creating overlapping/duplicate
+entries. This module merges them using numpy interval operations.
 
 The dominant pattern is "full containment": a long segment (e.g., 0.0-40.0s)
 followed by shorter subsegments of the same content (0.0-13.0s, 14.0-25.0s, etc).
@@ -280,7 +279,7 @@ def split_sentences_nltk(segments: list[dict]) -> list[dict]:
     """Split multi-sentence segments into individual sentences using NLTK punkt.
 
     When word-level timestamps are available (from faster-whisper native
-    word_timestamps or wav2vec2 alignment), uses them for precise sentence
+    word_timestamps from faster-whisper), uses them for precise sentence
     boundaries. Falls back to character-position interpolation when words
     are not available.
 
@@ -429,7 +428,7 @@ def clean_segments(
     Full segment cleaning pipeline: sentence split, dedup, clamp overlaps.
 
     This replaces the segment merging that WhisperX's align() function
-    performs, without requiring the wav2vec2 alignment model.
+    previously performed, using native word timestamps from faster-whisper.
 
     Args:
         segments: Raw segments from WhisperX transcription

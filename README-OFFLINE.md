@@ -23,7 +23,7 @@ The OpenTranscribe offline package provides a complete, self-contained deploymen
   - WhisperX transcription models (large-v3-turbo default + large-v3)
   - PyAnnote speaker diarization models
   - OpenSearch neural search models (semantic search embeddings)
-  - Language-specific alignment models (wav2vec2) for word-level timestamps
+  - Word-level timestamps natively supported for all 100+ languages
 - Configuration files and templates
 - Installation and management scripts
 - Complete documentation

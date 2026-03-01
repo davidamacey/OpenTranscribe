@@ -1,14 +1,10 @@
-"""Thin wrapper around the existing fast_speaker_assignment module.
+"""Speaker assignment using WhisperX's diarize module.
 
-Provides a clean interface for the transcription pipeline while reusing
-the interval-tree + NumPy speaker assignment implementation.
+Delegates to whisperx.diarize.assign_word_speakers() which computes
+speaker-segment overlap via pandas vectorized operations.
 """
 
-import logging
-
 import pandas as pd
-
-logger = logging.getLogger(__name__)
 
 
 def assign_speakers(
@@ -17,8 +13,8 @@ def assign_speakers(
 ) -> dict:
     """Assign speaker labels to transcript segments and words.
 
-    Uses the existing fast_speaker_assignment module (interval tree + NumPy,
-    273x faster than WhisperX's implementation).
+    Uses WhisperX's assign_word_speakers() which computes overlap between
+    diarization intervals and transcript segments using pandas operations.
 
     fill_nearest=True ensures segments in small diarization gaps (e.g.,
     between speaker turns) get the nearest speaker instead of being
@@ -31,6 +27,6 @@ def assign_speakers(
     Returns:
         Updated transcript_result with speaker assignments on segments and words.
     """
-    from app.utils.fast_speaker_assignment import assign_word_speakers_fast
+    from whisperx.diarize import assign_word_speakers
 
-    return assign_word_speakers_fast(diarize_df, transcript_result, fill_nearest=True)
+    return assign_word_speakers(diarize_df, transcript_result, fill_nearest=True)  # type: ignore[no-any-return]

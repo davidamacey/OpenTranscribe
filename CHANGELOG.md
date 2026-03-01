@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Overview
 
-Major release with three major enterprise-grade features: multi-method authentication system with super admin UI, PyAnnote v4 migration with speaker overlap detection, and OpenSearch native neural search integration. This release significantly improves security, performance, and search capabilities.
+Major release with four major enterprise-grade features: multi-method authentication system with super admin UI, PyAnnote v4 migration with speaker overlap detection, OpenSearch native neural search integration, and a unified transcription pipeline with native word-level timestamps for all 100+ languages. This release significantly improves security, performance, and search capabilities.
 
 ### Added
 
@@ -32,9 +32,9 @@ Major release with three major enterprise-grade features: multi-method authentic
 - **Automatic Migration System** - Admin UI for seamless migration from PyAnnote v3 to v4 with progress tracking
 - **Speaker Overlap Detection** - Identifies and visualizes overlapping speakers with confidence scoring
 - **Warm Model Caching** - Eliminates 40-60 second cold-start delays by pre-loading models on startup
-- **Fast Speaker Assignment** - 273x faster speaker assignment using interval tree optimization
+- **Fast Speaker Assignment** - Efficient speaker assignment using WhisperX's built-in speaker mapping
 - **Flexible Embedding Mode** - Per-file toggle between PyAnnote v3, v4, or auto-detection
-- **Optional Word-Level Alignment** - User-configurable word-level timestamp alignment (saves 17-120s per file)
+- **Native Word-Level Timestamps** - Always-on word-level timestamps for all 100+ languages via cross-attention DTW (no separate alignment model needed)
 - **Asynchronous Embedding Extraction** - Non-blocking speaker embedding processing
 
 #### OpenSearch Native Neural Search
@@ -44,6 +44,12 @@ Major release with three major enterprise-grade features: multi-method authentic
 - **Model Registry** - 6 embedding models organized by quality tier (smallest/fastest to largest/most accurate)
 - **Offline/Airgapped Support** - Model downloading scripts for environments without internet access
 - **Dynamic Model Management** - Add/remove embedding models via admin UI
+
+#### Unified Transcription Pipeline
+- **Native Word-Level Timestamps** - Word timestamps now provided natively by faster-whisper cross-attention DTW for all 100+ languages (previously only ~42 languages via wav2vec2 alignment)
+- **Unified Pipeline** - Single streamlined transcription pipeline replaces the previous parallel_pipeline/whisperx_service split
+- **User-Configurable VAD Settings** - Exposed Voice Activity Detection threshold and minimum silence duration as user-tunable settings
+- **Word Timestamp Validation** - Post-processing validation and correction of word-level timestamps to prevent drift and ensure monotonicity
 
 #### Performance Improvements
 - **Default Model Change** - Switched from large-v2 to large-v3-turbo (6x faster transcription)
@@ -61,11 +67,25 @@ Major release with three major enterprise-grade features: multi-method authentic
 - **Speaker Embedding Storage** - Database schema updated to support v3/v4 dual-mode during migration
 - **Authentication Configuration** - Moved from environment variables to database for better security and manageability
 - **Model Caching** - Improved caching strategy with warm-start support and automatic prefetching
+- **Word-Level Timestamps** - Now native for all 100+ languages via cross-attention DTW (previously only ~42 languages supported via wav2vec2 alignment model)
+- **Transcription Pipeline** - Consolidated into a single unified pipeline; removed separate parallel pipeline and WhisperX service layer
+
+### Removed
+
+- **wav2vec2 Alignment Model** - No longer needed; word-level timestamps are now native via faster-whisper cross-attention DTW
+- **`whisperx_service.py`** - Removed separate WhisperX service abstraction (functionality merged into unified pipeline)
+- **`parallel_pipeline.py`** - Removed parallel pipeline module (replaced by unified pipeline)
+- **`pyannote_compat.py`** - Removed PyAnnote compatibility shim
+- **`fast_speaker_assignment.py`** - Removed custom speaker assignment utility (using WhisperX built-in assignment)
+- **`batched_alignment.py`** - Removed batched alignment utility (alignment no longer needed)
+- **`ENABLE_ALIGNMENT` env var** - Deprecated and ignored (alignment is always-on natively)
+- **`TRANSCRIPTION_ENGINE` env var** - Deprecated and ignored (single unified engine)
 
 ### Breaking Changes
 
 - **Authentication Configuration**: Auth settings now configured via Super Admin UI (Settings → Authentication) instead of environment variables. Database configuration takes precedence if set.
 - **PyAnnote Migration**: Existing installations may need to migrate speaker embeddings for optimal overlap detection (optional but recommended)
+- **wav2vec2 Alignment Model Removed**: The separate wav2vec2 alignment model is no longer used. Word-level timestamps are now provided natively by faster-whisper cross-attention DTW. The `ENABLE_ALIGNMENT` and `TRANSCRIPTION_ENGINE` environment variables are deprecated and silently ignored.
 
 ### Fixed
 
@@ -110,6 +130,27 @@ To take advantage of new speaker overlap detection and improved performance:
   - In Settings → Transcription → Model Selection, choose `large-v3`
 - **Maximum accuracy needed**: Switch to `large-v3` for best overall accuracy
   - In Settings → Transcription → Model Selection, choose `large-v3`
+
+#### wav2vec2 Model Cache Cleanup (Optional)
+
+The wav2vec2 alignment model is no longer used. You can reclaim ~360MB of disk space by removing it from your model cache:
+
+```bash
+# Remove wav2vec2 alignment model cache (~360MB)
+rm -rf ${MODEL_CACHE_DIR:-./models}/torch/hub/checkpoints/wav2vec2_*
+```
+
+No reprocessing of existing transcriptions is needed -- existing word-level timestamps are preserved.
+
+#### Environment Variable Cleanup (Optional)
+
+The following environment variables are deprecated and silently ignored. You may remove them from your `.env` file:
+
+```bash
+# These can be safely removed from .env:
+# ENABLE_ALIGNMENT=true        (alignment is now always-on natively)
+# TRANSCRIPTION_ENGINE=whisperx (single unified engine, setting ignored)
+```
 
 ---
 
@@ -428,7 +469,7 @@ First official release of OpenTranscribe! This release marks the transition from
 
 #### Core Transcription Features
 - **WhisperX Integration** - High-accuracy speech recognition with faster-whisper backend
-- **Word-Level Timestamps** - Precise timing for every word using WAV2VEC2 alignment
+- **Word-Level Timestamps** - Precise timing for every word using cross-attention DTW
 - **Multi-Language Support** - Transcribe in 50+ languages with automatic English translation
 - **GPU Acceleration** - 70x realtime speed with large-v2 model on NVIDIA GPUs
 - **CPU Fallback** - Complete CPU-only mode for systems without GPUs
@@ -610,7 +651,7 @@ First official release of OpenTranscribe! This release marks the transition from
 - Celery - Distributed task queue
 - Redis - Message broker and caching
 - PostgreSQL - Relational database
-- WhisperX - Speech recognition with alignment
+- WhisperX - Speech recognition with native word-level timestamps
 - PyAnnote.audio - Speaker diarization
 - OpenSearch 3.3.1 - Search engine (Apache Lucene 10)
 - MinIO - S3-compatible object storage
@@ -623,7 +664,7 @@ First official release of OpenTranscribe! This release marks the transition from
 - faster-whisper - Optimized Whisper inference
 - PyAnnote segmentation-3.0 - Speaker segmentation
 - PyAnnote speaker-diarization-3.1 - Speaker identification
-- WAV2VEC2 - Word-level alignment
+- faster-whisper cross-attention DTW - Native word-level timestamps
 - Sentence Transformers all-MiniLM-L6-v2 - Semantic search (~80MB)
 - Multiple LLM provider support (OpenAI, Claude, vLLM, Ollama, OpenRouter)
 

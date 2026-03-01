@@ -24,6 +24,7 @@ from app.core.config import settings as app_settings
 from app.core.constants import COMMON_LANGUAGES
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
+from app.core.constants import DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.core.constants import DEFAULT_ORG_CONTEXT_INCLUDE_CUSTOM_PROMPTS
 from app.core.constants import DEFAULT_ORG_CONTEXT_INCLUDE_DEFAULT_PROMPTS
@@ -31,12 +32,16 @@ from app.core.constants import DEFAULT_ORG_CONTEXT_TEXT
 from app.core.constants import DEFAULT_RECORDING_AUTO_STOP
 from app.core.constants import DEFAULT_RECORDING_MAX_DURATION
 from app.core.constants import DEFAULT_RECORDING_QUALITY
+from app.core.constants import DEFAULT_REPETITION_PENALTY
 from app.core.constants import DEFAULT_SOURCE_LANGUAGE
 from app.core.constants import DEFAULT_SPEAKER_PROMPT_BEHAVIOR
 from app.core.constants import DEFAULT_TRANSCRIPTION_MAX_SPEAKERS
 from app.core.constants import DEFAULT_TRANSCRIPTION_MIN_SPEAKERS
 from app.core.constants import DEFAULT_TRANSLATE_TO_ENGLISH
-from app.core.constants import LANGUAGES_WITH_ALIGNMENT
+from app.core.constants import DEFAULT_VAD_MIN_SILENCE_MS
+from app.core.constants import DEFAULT_VAD_MIN_SPEECH_MS
+from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
+from app.core.constants import DEFAULT_VAD_THRESHOLD
 from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.core.constants import VALID_RECORDING_DURATIONS
 from app.core.constants import VALID_RECORDING_QUALITIES
@@ -581,6 +586,12 @@ def get_transcription_settings(
                     "transcription_source_language",
                     "transcription_translate_to_english",
                     "transcription_llm_output_language",
+                    "transcription_vad_threshold",
+                    "transcription_vad_min_silence_ms",
+                    "transcription_vad_min_speech_ms",
+                    "transcription_vad_speech_pad_ms",
+                    "transcription_hallucination_silence_threshold",
+                    "transcription_repetition_penalty",
                 ]
             ),
         )
@@ -633,6 +644,26 @@ def get_transcription_settings(
         translate_to_english=settings_map.get("transcription_translate_to_english", "false").lower()
         == "true",
         llm_output_language=llm_output_language_value,
+        vad_threshold=float(
+            settings_map.get("transcription_vad_threshold", str(DEFAULT_VAD_THRESHOLD))
+        ),
+        vad_min_silence_ms=int(
+            settings_map.get("transcription_vad_min_silence_ms", str(DEFAULT_VAD_MIN_SILENCE_MS))
+        ),
+        vad_min_speech_ms=int(
+            settings_map.get("transcription_vad_min_speech_ms", str(DEFAULT_VAD_MIN_SPEECH_MS))
+        ),
+        vad_speech_pad_ms=int(
+            settings_map.get("transcription_vad_speech_pad_ms", str(DEFAULT_VAD_SPEECH_PAD_MS))
+        ),
+        hallucination_silence_threshold=(
+            float(settings_map["transcription_hallucination_silence_threshold"])
+            if settings_map.get("transcription_hallucination_silence_threshold")
+            else None
+        ),
+        repetition_penalty=float(
+            settings_map.get("transcription_repetition_penalty", str(DEFAULT_REPETITION_PENALTY))
+        ),
     )
 
 
@@ -662,7 +693,16 @@ def update_transcription_settings(
         HTTPException: If validation fails for any setting
     """
     # Convert Pydantic model to dict, excluding None values
+    # But preserve hallucination_silence_threshold=None (means "disable")
     update_data = settings_data.model_dump(exclude_none=True)
+    if (
+        settings_data.hallucination_silence_threshold is None
+        and "hallucination_silence_threshold" not in update_data
+    ):
+        # Check if the field was explicitly set in the request body
+        raw = settings_data.model_dump(exclude_unset=True)
+        if "hallucination_silence_threshold" in raw:
+            update_data["hallucination_silence_threshold"] = None
 
     if not update_data:
         return get_transcription_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
@@ -681,21 +721,32 @@ def update_transcription_settings(
     _validate_source_language(update_data.get("source_language"))
     _validate_llm_output_language(update_data.get("llm_output_language"))
 
-    # Map frontend keys to database keys
-    setting_mappings = {
-        "min_speakers": "transcription_min_speakers",
-        "max_speakers": "transcription_max_speakers",
-        "speaker_prompt_behavior": "transcription_speaker_prompt_behavior",
-        "garbage_cleanup_enabled": "transcription_garbage_cleanup_enabled",
-        "garbage_cleanup_threshold": "transcription_garbage_cleanup_threshold",
-        "source_language": "transcription_source_language",
-        "translate_to_english": "transcription_translate_to_english",
-        "llm_output_language": "transcription_llm_output_language",
+    # Map frontend keys to database keys with optional value transform
+    setting_mappings: dict[str, tuple[str, Any]] = {
+        "min_speakers": ("transcription_min_speakers", None),
+        "max_speakers": ("transcription_max_speakers", None),
+        "speaker_prompt_behavior": ("transcription_speaker_prompt_behavior", None),
+        "garbage_cleanup_enabled": ("transcription_garbage_cleanup_enabled", None),
+        "garbage_cleanup_threshold": ("transcription_garbage_cleanup_threshold", None),
+        "source_language": ("transcription_source_language", None),
+        "translate_to_english": ("transcription_translate_to_english", None),
+        "llm_output_language": ("transcription_llm_output_language", None),
+        "vad_threshold": ("transcription_vad_threshold", None),
+        "vad_min_silence_ms": ("transcription_vad_min_silence_ms", None),
+        "vad_min_speech_ms": ("transcription_vad_min_speech_ms", None),
+        "vad_speech_pad_ms": ("transcription_vad_speech_pad_ms", None),
+        "hallucination_silence_threshold": (
+            "transcription_hallucination_silence_threshold",
+            lambda v: str(v) if v is not None else "",
+        ),
+        "repetition_penalty": ("transcription_repetition_penalty", None),
     }
 
     # Update each setting in the database
     for frontend_key, value in update_data.items():
-        _upsert_user_setting(db, int(current_user.id), setting_mappings[frontend_key], value)
+        db_key, transform = setting_mappings[frontend_key]
+        db_value = transform(value) if transform else value
+        _upsert_user_setting(db, int(current_user.id), db_key, db_value)
 
     db.commit()
 
@@ -730,6 +781,12 @@ def reset_transcription_settings(
                     "transcription_source_language",
                     "transcription_translate_to_english",
                     "transcription_llm_output_language",
+                    "transcription_vad_threshold",
+                    "transcription_vad_min_silence_ms",
+                    "transcription_vad_min_speech_ms",
+                    "transcription_vad_speech_pad_ms",
+                    "transcription_hallucination_silence_threshold",
+                    "transcription_repetition_penalty",
                 ]
             ),
         )
@@ -748,6 +805,12 @@ def reset_transcription_settings(
         "source_language": DEFAULT_TRANSCRIPTION_SETTINGS["source_language"],
         "translate_to_english": DEFAULT_TRANSCRIPTION_SETTINGS["translate_to_english"],
         "llm_output_language": DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"],
+        "vad_threshold": DEFAULT_VAD_THRESHOLD,
+        "vad_min_silence_ms": DEFAULT_VAD_MIN_SILENCE_MS,
+        "vad_min_speech_ms": DEFAULT_VAD_MIN_SPEECH_MS,
+        "vad_speech_pad_ms": DEFAULT_VAD_SPEECH_PAD_MS,
+        "hallucination_silence_threshold": DEFAULT_HALLUCINATION_SILENCE_THRESHOLD,
+        "repetition_penalty": DEFAULT_REPETITION_PENALTY,
     }
 
     return {
@@ -782,7 +845,12 @@ def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
         available_source_languages=WHISPER_LANGUAGES,
         available_llm_output_languages=LLM_OUTPUT_LANGUAGES,
         common_languages=COMMON_LANGUAGES,
-        languages_with_alignment=sorted(list(LANGUAGES_WITH_ALIGNMENT or [])),
+        vad_threshold=DEFAULT_VAD_THRESHOLD,
+        vad_min_silence_ms=DEFAULT_VAD_MIN_SILENCE_MS,
+        vad_min_speech_ms=DEFAULT_VAD_MIN_SPEECH_MS,
+        vad_speech_pad_ms=DEFAULT_VAD_SPEECH_PAD_MS,
+        hallucination_silence_threshold=DEFAULT_HALLUCINATION_SILENCE_THRESHOLD,
+        repetition_penalty=DEFAULT_REPETITION_PENALTY,
     )
 
 

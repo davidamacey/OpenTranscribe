@@ -489,11 +489,6 @@ async def get_admin_stats(
                 "description": "PyAnnote Speaker Diarization 3.1",
                 "purpose": "Speaker Identification & Segmentation",
             },
-            "alignment": {
-                "name": "Wav2Vec2 (Language-Adaptive)",
-                "description": "WhisperX Alignment Model",
-                "purpose": "Word-Level Timestamp Alignment",
-            },
         }
 
         total_files = file_stats["total"]

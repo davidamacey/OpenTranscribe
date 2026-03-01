@@ -6,7 +6,6 @@ to avoid magic numbers and improve maintainability.
 
 Language Data Sources:
 - Whisper language codes: Imported from faster_whisper.tokenizer._LANGUAGE_CODES (with fallback)
-- Alignment languages: Imported from whisperx.alignment DEFAULT_ALIGN_MODELS_TORCH/HF
 - Language names: From OpenAI whisper source (https://github.com/openai/whisper/blob/main/whisper/tokenizer.py)
   Title-cased for display purposes.
 """
@@ -19,71 +18,6 @@ _logger = logging.getLogger(__name__)
 # =============================================================================
 # Dynamic imports for language support
 # =============================================================================
-
-# Import alignment languages from whisperx (public API)
-# Skip in test mode to avoid heavy torch import (~6s)
-
-if _os.environ.get("SKIP_CELERY", "").lower() == "true":
-    # Use fallback list in test mode - avoid loading torch/whisperx
-    _logger.debug("Test mode: using fallback alignment language list")
-    LANGUAGES_WITH_ALIGNMENT = None  # Will be set below in fallback
-else:
-    try:
-        from whisperx.alignment import DEFAULT_ALIGN_MODELS_HF
-        from whisperx.alignment import DEFAULT_ALIGN_MODELS_TORCH
-
-        LANGUAGES_WITH_ALIGNMENT = set(DEFAULT_ALIGN_MODELS_TORCH.keys()) | set(
-            DEFAULT_ALIGN_MODELS_HF.keys()
-        )
-    except ImportError:
-        _logger.warning(
-            "Could not import whisperx alignment models, using fallback alignment language list"
-        )
-        LANGUAGES_WITH_ALIGNMENT = None
-
-if LANGUAGES_WITH_ALIGNMENT is None:
-    # Fallback: known alignment languages as of whisperx 3.3.1
-    LANGUAGES_WITH_ALIGNMENT = {
-        "ar",
-        "ca",
-        "cs",
-        "da",
-        "de",
-        "el",
-        "en",
-        "es",
-        "eu",
-        "fa",
-        "fi",
-        "fr",
-        "gl",
-        "he",
-        "hi",
-        "hr",
-        "hu",
-        "it",
-        "ja",
-        "ka",
-        "ko",
-        "lv",
-        "ml",
-        "nl",
-        "nn",
-        "no",
-        "pl",
-        "pt",
-        "ro",
-        "ru",
-        "sk",
-        "sl",
-        "te",
-        "tl",
-        "tr",
-        "uk",
-        "ur",
-        "vi",
-        "zh",
-    }
 
 # Try to import language codes from faster_whisper for validation
 # Skip in test mode to avoid heavy torch import
@@ -310,6 +244,16 @@ DEFAULT_SPEAKER_PROMPT_BEHAVIOR = "always_prompt"
 DEFAULT_GARBAGE_CLEANUP_ENABLED = True
 DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
 
+# Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
+DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
+DEFAULT_VAD_MIN_SILENCE_MS = 2000  # Min silence to split segments (ms)
+DEFAULT_VAD_MIN_SPEECH_MS = 250  # Min speech duration to keep (ms)
+DEFAULT_VAD_SPEECH_PAD_MS = 400  # Padding around detected speech (ms)
+
+# Accuracy tuning defaults
+DEFAULT_HALLUCINATION_SILENCE_THRESHOLD: float | None = None  # None = disabled
+DEFAULT_REPETITION_PENALTY = 1.0  # 1.0 = no penalty
+
 # Valid speaker prompt behaviors
 VALID_SPEAKER_PROMPT_BEHAVIORS = ["always_prompt", "use_defaults", "use_custom"]
 
@@ -485,6 +429,3 @@ ORG_CONTEXT_MAX_LENGTH = 10000
 DEFAULT_ORG_CONTEXT_TEXT = ""
 DEFAULT_ORG_CONTEXT_INCLUDE_DEFAULT_PROMPTS = True
 DEFAULT_ORG_CONTEXT_INCLUDE_CUSTOM_PROMPTS = False
-
-# Note: LANGUAGES_WITH_ALIGNMENT is defined at the top of this file
-# via dynamic import from whisperx.alignment module

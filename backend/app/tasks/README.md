@@ -33,7 +33,6 @@ tasks/
 │   ├── core.py                # Task orchestrator
 │   ├── metadata_extractor.py  # Media metadata processing
 │   ├── audio_processor.py     # Audio conversion/extraction
-│   ├── whisperx_service.py    # AI transcription service
 │   ├── speaker_processor.py   # Speaker diarization
 │   ├── storage.py             # Database storage utilities
 │   └── notifications.py       # WebSocket notifications
@@ -124,31 +123,6 @@ def convert_audio_format(input_path: str, output_path: str) -> None:
 - **Video Audio Extraction**: Extract audio track from video files
 - **Audio Conversion**: Convert to optimal format (16kHz, mono, PCM)
 - **Quality Optimization**: Prepare audio for best AI recognition results
-
-### WhisperX Service (`whisperx_service.py`)
-Manages the AI transcription pipeline using WhisperX:
-
-```python
-class WhisperXService:
-    def process_full_pipeline(self, audio_file_path: str, hf_token: str = None) -> Dict[str, Any]:
-        """Run complete WhisperX pipeline: transcription, alignment, and diarization."""
-
-    def transcribe_audio(self, audio_file_path: str) -> Dict[str, Any]:
-        """Transcribe audio using WhisperX."""
-
-    def align_transcription(self, transcription_result: Dict[str, Any], audio) -> Dict[str, Any]:
-        """Align transcription with precise word-level timestamps."""
-
-    def perform_speaker_diarization(self, audio, hf_token: str = None) -> Dict[str, Any]:
-        """Perform speaker diarization on audio."""
-```
-
-**AI Features:**
-- **Advanced Recognition**: WhisperX with faster-whisper backend
-- **Word-level Alignment**: Precise timing for each word using WAV2VEC2
-- **Speaker Diarization**: PyAnnote-based speaker identification
-- **Multi-language Support**: Automatic translation to English
-- **GPU Acceleration**: Optimized for CUDA when available
 
 ### Speaker Processing (`speaker_processor.py`)
 Manages speaker identification and database operations:

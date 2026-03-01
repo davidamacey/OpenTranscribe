@@ -160,10 +160,9 @@ check_huggingface_token() {
 download_models_docker() {
     print_header "Downloading AI Models"
 
-    print_info "This will download approximately 2.9GB of AI models:"
+    print_info "This will download approximately 2.4GB of AI models:"
     print_info "  • WhisperX transcription models (~1.5GB)"
     print_info "  • PyAnnote speaker diarization models (~500MB)"
-    print_info "  • Wav2Vec2 alignment model (~360MB)"
     print_info "  • wav2vec2 gender classifier (~380MB)"
     echo ""
     print_warning "This may take 10-30 minutes depending on your internet speed..."

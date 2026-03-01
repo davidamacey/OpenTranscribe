@@ -213,7 +213,6 @@ transcription/
 ├── core.py              # Main orchestrator
 ├── metadata_extractor.py # File metadata processing
 ├── audio_processor.py   # Audio conversion/extraction
-├── whisperx_service.py  # AI transcription service
 ├── speaker_processor.py # Speaker diarization
 ├── storage.py          # Database storage
 └── notifications.py    # WebSocket updates
