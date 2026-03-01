@@ -17,6 +17,7 @@ from typing import cast
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import status
 from sqlalchemy.orm import Session
 
 from app import models
@@ -1209,7 +1210,13 @@ def update_download_settings(
     }
 
     for frontend_key, value in update_data.items():
-        _upsert_user_setting(db, int(current_user.id), setting_mappings[frontend_key], value)
+        db_key = setting_mappings.get(frontend_key)
+        if db_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown download setting field: '{frontend_key}'",
+            )
+        _upsert_user_setting(db, int(current_user.id), db_key, value)
 
     db.commit()
 
