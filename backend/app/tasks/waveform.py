@@ -73,7 +73,7 @@ def _cleanup_temp_file(temp_file_path: str | None) -> None:
 
 
 @celery_app.task(
-    name="generate_waveform_task",
+    name="media.generate_waveform",
     bind=True,
     max_retries=3,
     default_retry_delay=60,

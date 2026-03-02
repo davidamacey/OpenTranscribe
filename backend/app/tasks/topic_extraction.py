@@ -77,7 +77,7 @@ def send_topic_extraction_notification(
         return False
 
 
-@celery_app.task(bind=True, name="extract_topics_from_transcript")
+@celery_app.task(bind=True, name="ai.extract_topics")
 def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
     """
     Extract AI tag and collection suggestions from a completed transcript.
@@ -233,7 +233,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         db.close()
 
 
-@celery_app.task(bind=True, name="batch_extract_topics")
+@celery_app.task(bind=True, name="ai.extract_topics_batch")
 def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: bool = False):
     """
     Extract AI suggestions for multiple files in batch.

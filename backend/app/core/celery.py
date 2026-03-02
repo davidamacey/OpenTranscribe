@@ -41,6 +41,7 @@ celery_app = Celery(
     include=[
         "app.tasks.transcription",
         "app.tasks.waveform",
+        "app.tasks.waveform_generation",
         "app.tasks.summarization",
         "app.tasks.analytics",
         "app.tasks.utility",
@@ -70,46 +71,52 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     worker_prefetch_multiplier=1,  # One task at a time for GPU tasks
+    worker_send_task_events=True,  # Enable real-time task events for Flower
+    task_send_sent_event=True,  # Fire event when task is dispatched to queue
+    result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
     task_routes={
         # GPU Queue - GPU-intensive AI tasks ONLY (concurrency=1, requires GPU)
-        # WhisperX transcription + PyAnnote diarization - runs continuously without blocking
         "app.tasks.transcription.*": {"queue": "gpu"},
-        "transcribe_audio": {"queue": "gpu"},
-        "rediarize": {"queue": "gpu"},
+        "transcription.process_file": {"queue": "gpu"},
+        "transcription.rediarize_speakers": {"queue": "gpu"},
+        "speaker.update_embeddings_gpu": {"queue": "gpu"},
+        "migration.extract_embeddings_v4": {"queue": "gpu"},
+        "migration.extract_embeddings_v4_batch": {"queue": "gpu"},
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
-        # YouTube downloads in parallel, immediately dispatch to GPU when complete
-        "process_youtube_url_task": {"queue": "download"},
-        "process_youtube_playlist_task": {"queue": "download"},
+        "download.media_url": {"queue": "download"},
+        "download.media_playlist": {"queue": "download"},
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         # Audio/video processing that doesn't need GPU - modern CPUs have 8+ cores
-        "generate_waveform_task": {"queue": "cpu"},
-        "generate_waveform_data": {"queue": "cpu"},
-        "extract_audio": {"queue": "cpu"},
-        "analyze_transcript": {"queue": "cpu"},
-        "detect_speaker_attributes": {"queue": "cpu"},
+        "media.generate_waveform": {"queue": "cpu"},
+        "media.generate_waveform_data": {"queue": "cpu"},
+        "analytics.analyze_transcript": {"queue": "cpu"},
+        "speaker.detect_attributes": {"queue": "cpu"},
+        "system.update_gpu_stats": {"queue": "cpu"},
+        "migration.speaker_embeddings_v4": {"queue": "cpu"},
+        "migration.normalize_embeddings": {"queue": "cpu"},
+        "migration.thumbnails_to_webp": {"queue": "cpu"},
+        "search.reindex_all": {"queue": "cpu"},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
-        # These are I/O-bound API calls to external LLM services (vLLM, OpenAI, etc.)
-        # Moderate concurrency to avoid overwhelming LLM APIs and maintain stability
-        # Run AFTER transcription, don't block next transcription from starting
         "app.tasks.summarization.*": {"queue": "nlp"},
-        "summarize_transcript": {"queue": "nlp"},
+        "ai.generate_summary": {"queue": "nlp"},
         "app.tasks.analytics.*": {"queue": "nlp"},
         # Speaker embedding reassignment needs GPU for PyAnnote model
         "update_speaker_embedding_on_reassignment": {"queue": "gpu"},
         "app.tasks.speaker_tasks.*": {"queue": "nlp"},
-        "identify_speakers_llm": {"queue": "nlp"},
+        "ai.identify_speakers": {"queue": "nlp"},
+        "speaker.process_update": {"queue": "nlp"},
+        "speaker.extract_embeddings": {"queue": "nlp"},
         "app.tasks.topic_extraction.*": {"queue": "nlp"},
-        "extract_topics_from_transcript": {"queue": "nlp"},
+        "ai.extract_topics": {"queue": "nlp"},
+        "ai.extract_topics_batch": {"queue": "nlp"},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         # Dedicated worker keeps the embedding model loaded and processes one at a time.
         # Same pattern as GPU queue: sequential execution, model stays warm in memory.
         "app.tasks.reindex_task.*": {"queue": "embedding"},
-        "reindex_transcripts": {"queue": "embedding"},
-        "index_transcript_search": {"queue": "embedding"},
         "app.tasks.search_indexing_task.*": {"queue": "embedding"},
-        "update_file_access_index": {"queue": "embedding"},
-        "search_index_maintenance": {"queue": "embedding"},
-        # Utility Queue - Lightweight maintenance tasks (concurrency=2)
+        "search.index_transcript": {"queue": "embedding"},
+        "search.index_maintenance": {"queue": "embedding"},
+        # Utility Queue - Lightweight maintenance tasks (concurrency=8)
         "app.tasks.utility.*": {"queue": "utility"},
         "app.tasks.recovery.*": {"queue": "utility"},
         # GPU stats runs on the cpu worker so it fires independently of long-running
@@ -117,43 +124,36 @@ celery_app.conf.update(
         # The cpu worker is given 'count: all' NVIDIA device access in gpu.yml so it
         # can call nvidia-smi for any device.  The task selects the correct device ID
         # via GPU_SCALE_ENABLED + GPU_SCALE_DEVICE_ID vs GPU_DEVICE_ID from .env.
-        "update_gpu_stats": {"queue": "cpu"},
-        "startup_recovery": {"queue": "utility"},
-        "recover_user_files": {"queue": "utility"},
-        "periodic_health_check": {"queue": "utility"},
-        # Embedding Migration Tasks (v3 → v4)
-        "migrate_speaker_embeddings_to_v4": {"queue": "cpu"},
-        "normalize_speaker_embeddings": {"queue": "cpu"},
-        "check_migration_status": {"queue": "utility"},
-        "extract_v4_embeddings": {"queue": "gpu"},
-        "extract_v4_embeddings_batch": {"queue": "gpu"},
-        "finalize_v4_migration": {"queue": "utility"},
-        # Benchmark/baseline tasks (lightweight DB reads)
-        "export_transcript_baseline": {"queue": "utility"},
-        "compare_transcript_baseline": {"queue": "utility"},
-        # Retention cleanup task
-        "cleanup_expired_files": {"queue": "utility"},
+        "system.startup_recovery": {"queue": "utility"},
+        "system.recover_user_files": {"queue": "utility"},
+        "system.health_check": {"queue": "utility"},
+        "system.cleanup_expired_files": {"queue": "utility"},
+        "migration.check_status": {"queue": "utility"},
+        "migration.finalize_v4": {"queue": "utility"},
+        "quality.export_baseline": {"queue": "utility"},
+        "quality.compare_baseline": {"queue": "utility"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
         "periodic-health-check": {
-            "task": "periodic_health_check",
+            "task": "system.health_check",
             "schedule": crontab(minute="*/10"),  # Run every 10 minutes
             "options": {"queue": "utility"},
         },
         "search-index-maintenance": {
-            "task": "search_index_maintenance",
+            "task": "search.index_maintenance",
             "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
             "options": {"queue": "embedding"},
         },
         "gpu-stats-update": {
-            "task": "update_gpu_stats",
-            "schedule": crontab(minute="*/5"),  # Every 5 minutes
+            "task": "system.update_gpu_stats",
+            "schedule": crontab(minute="*/5"),  # Run every 5 minutes
             "options": {"queue": "cpu"},
         },
         "cleanup-expired-files": {
-            "task": "cleanup_expired_files",
+            "task": "system.cleanup_expired_files",
             "schedule": crontab(minute=0),  # Every hour on the hour
+            "options": {"queue": "utility"},
         },
     },
 )

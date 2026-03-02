@@ -319,7 +319,7 @@ def _store_speaker_predictions(db: Session, file_id: int, predictions: dict[str,
     db.commit()
 
 
-@celery_app.task(bind=True, name="identify_speakers_llm")
+@celery_app.task(bind=True, name="ai.identify_speakers")
 def identify_speakers_llm_task(self, file_uuid: str):
     """
     Use LLM to provide speaker identification suggestions

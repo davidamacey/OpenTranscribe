@@ -1158,7 +1158,7 @@ def _handle_outer_exception(
     return {"status": "error", "message": error_msg}
 
 
-@celery_app.task(bind=True, name="transcribe_audio")
+@celery_app.task(bind=True, name="transcription.process_file")
 def transcribe_audio_task(
     self,
     file_uuid: str,

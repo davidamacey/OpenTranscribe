@@ -237,7 +237,7 @@ def get_gpu_usage():
         # nvidia-smi not available — dispatch to cpu worker (debounced)
         lock_acquired = redis_client.set("gpu_stats_pending", "1", nx=True, ex=30)
         if lock_acquired:
-            celery_app.send_task("update_gpu_stats", queue="cpu")
+            celery_app.send_task("system.update_gpu_stats", queue="cpu")
             logger.info("Dispatched on-demand GPU stats collection")
 
         return [

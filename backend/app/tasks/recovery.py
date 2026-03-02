@@ -21,7 +21,7 @@ from app.utils.task_lock import with_task_lock
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="startup_recovery", bind=True, acks_late=True, reject_on_worker_lost=True)
+@celery_app.task(name="system.startup_recovery", bind=True, acks_late=True, reject_on_worker_lost=True)
 def startup_recovery_task(self):
     """
     Recovery task to run on system startup to handle files/tasks interrupted by
@@ -99,7 +99,7 @@ def startup_recovery_task(self):
     return summary
 
 
-@celery_app.task(name="recover_user_files", bind=True, acks_late=True, reject_on_worker_lost=True)
+@celery_app.task(name="system.recover_user_files", bind=True, acks_late=True, reject_on_worker_lost=True)
 def recover_user_files_task(self, user_id: int | None = None):
     """
     Task to recover files for a specific user or all users.
@@ -171,14 +171,14 @@ def _check_opensearch_health(summary: dict) -> None:
 
 
 @celery_app.task(
-    name="periodic_health_check",
+    name="system.health_check",
     bind=True,
     acks_late=True,
     reject_on_worker_lost=True,
     soft_time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME - 30,
     time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME,
 )
-@with_task_lock("periodic_health_check", timeout=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME)
+@with_task_lock("system.health_check", timeout=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME)
 def periodic_health_check_task(self):
     """
     Periodic task to check for stuck tasks and inconsistent media files.

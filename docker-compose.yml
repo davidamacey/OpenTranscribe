@@ -155,7 +155,7 @@ services:
     container_name: opentranscribe-celery-worker
     restart: always
     env_file: .env
-    command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=${GPU_DEFAULT_CONCURRENCY:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000}
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=${GPU_DEFAULT_CONCURRENCY:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcription@%h -E
     # GPU configuration is provided by docker-compose.gpu.yml overlay
     # when NVIDIA GPU is detected (automatically handled by opentr.sh)
     # This allows the base file to work on macOS and CPU-only Linux systems
@@ -181,7 +181,7 @@ services:
       # Per-container batch size override (default worker is typically a smaller GPU)
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d celery@$$HOSTNAME"]
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcription@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -196,7 +196,7 @@ services:
     container_name: opentranscribe-celery-download-worker
     restart: always
     env_file: .env
-    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-3} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10}
+    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-3} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
@@ -212,7 +212,7 @@ services:
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d celery@$$HOSTNAME"]
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d media-downloader@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -227,7 +227,7 @@ services:
     container_name: opentranscribe-celery-cpu-worker
     restart: always
     env_file: .env
-    command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility --concurrency=8 --max-tasks-per-child=20
+    command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility --concurrency=8 --max-tasks-per-child=20 --hostname cpu-processor@%h -E
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -240,7 +240,7 @@ services:
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d celery@$$HOSTNAME"]
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cpu-processor@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -255,7 +255,7 @@ services:
     container_name: opentranscribe-celery-nlp-worker
     restart: always
     env_file: .env
-    command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=${NLP_CONCURRENCY:-4} --max-tasks-per-child=${NLP_MAX_TASKS:-50}
+    command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=${NLP_CONCURRENCY:-4} --max-tasks-per-child=${NLP_MAX_TASKS:-50} --hostname ai-nlp@%h -E
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -268,16 +268,16 @@ services:
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d celery@$$HOSTNAME"]
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d ai-nlp@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     depends_on:
-      backend:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - postgres
+      - redis
+      - minio
+      - opensearch
 
   celery-embedding-worker:
     container_name: opentranscribe-celery-embedding-worker
@@ -286,7 +286,7 @@ services:
     # Dedicated embedding worker: concurrency=1 keeps one model loaded in memory.
     # Same pattern as GPU worker - sequential processing, model stays warm.
     # High max-tasks-per-child avoids model reload overhead.
-    command: celery -A app.core.celery worker --loglevel=info -Q embedding --concurrency=1 --max-tasks-per-child=500
+    command: celery -A app.core.celery worker --loglevel=info -Q embedding --concurrency=1 --max-tasks-per-child=500 --hostname search-indexer@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     environment:
@@ -301,7 +301,7 @@ services:
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d celery@$$HOSTNAME"]
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d search-indexer@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -392,10 +392,19 @@ services:
       --persistent=True
       --db=/app/flower.db
       --broker=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
+      --max_tasks=10000
+      --natural_time=True
+      --auto_refresh=True
+      --tasks_columns=name,uuid,state,received,started,runtime,worker,args
+      --purge_offline_workers=600
+      --queues=gpu,download,cpu,nlp,embedding,utility
+      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}
     ports:
       - "${FLOWER_PORT:-5175}:5555"
     environment:
       - CELERY_BROKER_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
+      - FLOWER_USER=${FLOWER_USER:-admin}
+      - FLOWER_PASSWORD=${FLOWER_PASSWORD:-flower}
       - TEMP_DIR=/app/temp
     depends_on:
       - redis

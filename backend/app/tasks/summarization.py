@@ -557,7 +557,7 @@ def _handle_task_error(
     return {"status": "error", "message": error_msg}
 
 
-@celery_app.task(bind=True, name="summarize_transcript")
+@celery_app.task(bind=True, name="ai.generate_summary")
 def summarize_transcript_task(
     self,
     file_uuid: str,

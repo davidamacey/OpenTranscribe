@@ -164,7 +164,7 @@ class YouTubeProcessingResult(TypedDict):
 
 
 @celery_app.task(
-    name="process_youtube_url_task",
+    name="download.media_url",
     bind=True,
     max_retries=3,
     retry_backoff=True,
@@ -666,7 +666,7 @@ def _dispatch_video_task(
         return False
 
 
-@celery_app.task(name="process_youtube_playlist_task", bind=True)
+@celery_app.task(name="download.media_playlist", bind=True)
 def process_youtube_playlist_task(
     self,
     url: str,

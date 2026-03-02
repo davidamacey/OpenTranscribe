@@ -8,7 +8,7 @@ from app.services.analytics_service import AnalyticsService
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, name="analyze_transcript")
+@celery_app.task(bind=True, name="analytics.analyze_transcript")
 def analyze_transcript_task(self, file_uuid: str):
     """
     Analyze a transcript to extract comprehensive analytics:

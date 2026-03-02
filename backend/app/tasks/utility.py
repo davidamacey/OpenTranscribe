@@ -83,7 +83,7 @@ def _query_single_gpu(device_id: int, subprocess_mod, format_bytes) -> dict | No
         return None
 
 
-@celery_app.task(name="update_gpu_stats", bind=True)
+@celery_app.task(name="system.update_gpu_stats", bind=True)
 def update_gpu_stats(self):
     """Periodic task to update GPU statistics in Redis.
 
