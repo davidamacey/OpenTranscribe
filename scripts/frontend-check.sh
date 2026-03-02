@@ -104,6 +104,7 @@ attempt_claude_fix() {
 
     local claude_exit=0
     timeout "$CLAUDE_TIMEOUT" claude -p \
+        --model claude-sonnet-4-6 \
         --allowedTools "Read,Glob,Grep,Edit" \
         "You are fixing frontend build/type-check errors in a SvelteKit + TypeScript project.
 
