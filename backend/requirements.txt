@@ -80,7 +80,9 @@ gender-guesser>=0.4.0
 sentencepiece>=0.1.99
 psutil>=5.9.5
 pyexiftool>=0.5.0
-yt-dlp>=2026.2.21
+# [default] extras: mutagen (metadata), pycryptodomex (stream decryption),
+# websockets (WS-based extractors), brotli (compressed responses), certifi (SSL)
+yt-dlp[default]>=2026.2.21
 
 # Semantic search and NLP
 sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2)

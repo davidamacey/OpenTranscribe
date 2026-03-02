@@ -36,13 +36,41 @@ from app.utils.thumbnail import generate_and_upload_thumbnail_sync
 
 logger = logging.getLogger(__name__)
 
-# Base yt-dlp options merged into every YoutubeDL call.
-# js_runtimes enables Deno for YouTube PO-token generation — required since
-# yt-dlp 2025.11 to pass YouTube's bot-detection checks.  Deno is the default
-# and recommended runtime; its binary is installed at /usr/local/bin/deno via
-# the Dockerfile multi-stage COPY from denoland/deno:bin.
+# ---------------------------------------------------------------------------
+# yt-dlp base configuration
+# ---------------------------------------------------------------------------
+
+# Base yt-dlp options merged into EVERY YoutubeDL call (info extraction,
+# playlist enumeration, and actual downloads).
+#
+# js_runtimes — required since yt-dlp 2025.11 for YouTube PO-token generation.
+#   Deno is the recommended headless runtime; its binary lives at
+#   /usr/local/bin/deno, installed via the Dockerfile multi-stage COPY
+#   from denoland/deno:bin.
+#
+# Resilience settings prevent hung connections and transient failures that are
+# common in headless / containerised server environments.
 _YT_DLP_BASE_OPTS: dict[str, object] = {
+    # JavaScript runtime — solves YouTube's bot-detection challenge
     "js_runtimes": {"deno": {"path": "/usr/local/bin/deno"}},
+    # Connection resilience
+    "socket_timeout": 30,
+    "retries": 5,
+    "fragment_retries": 5,
+    "skip_unavailable_fragments": True,
+    "concurrent_fragment_downloads": 4,
+}
+
+# YouTube extractor arguments for 2026 best-practice client rotation.
+# Using 'default' (yt-dlp auto-selects) plus proven fallback clients.
+# 'android' and 'android_sdkless' are deprecated/blocked; ios_downgraded
+# and android_vr bypass SABR restrictions on many networks.
+# Skip auto-translated subtitles to reduce unnecessary network requests.
+_YOUTUBE_EXTRACTOR_ARGS: dict[str, dict] = {
+    "youtube": {
+        "player_client": ["default", "web_safari", "ios_downgraded", "android_vr"],
+        "skip": ["translated_subs"],
+    }
 }
 
 # Authentication and access error patterns with user-friendly messages
@@ -807,6 +835,7 @@ class MediaDownloadService:
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
+            "extractor_args": _YOUTUBE_EXTRACTOR_ARGS,
         }
 
         try:
@@ -854,6 +883,7 @@ class MediaDownloadService:
             "no_warnings": True,
             "extract_flat": "in_playlist",  # Extract video info without downloading
             "skip_download": True,
+            "extractor_args": _YOUTUBE_EXTRACTOR_ARGS,
         }
 
         try:
@@ -954,45 +984,48 @@ class MediaDownloadService:
         # Configure yt-dlp options for highest quality with web-compatible output
         ydl_opts = {
             **_YT_DLP_BASE_OPTS,
-            # Download best H.264 quality for maximum browser compatibility
-            # Prefer H.264 video codec over AV1 to ensure playback works across all browsers
+            # Initial format string — refined after extract_info reveals real availability
             "format": _build_yt_dlp_format_string(video_quality, audio_only, audio_quality),
             "outtmpl": os.path.join(output_path, "%(title)s.%(ext)s"),
-            "restrictfilenames": True,  # Avoid special characters in filename
-            "no_warnings": False,
-            "extractaudio": False,
-            "embed_subs": True,  # Embed subtitles if available
-            "writesubtitles": False,  # Don't write separate subtitle files
-            "writeautomaticsub": False,  # Don't write auto-generated subs
+            "restrictfilenames": True,  # Safe filenames (no special chars)
+            "no_warnings": True,
             "ignoreerrors": False,
-            "no_playlist": True,  # Only download single video
-            "max_filesize": 15 * 1024 * 1024 * 1024,  # 15GB limit (matches upload limit)
-            # Ensure web-compatible MP4 output
+            "no_playlist": True,  # Single-video downloads only
+            "max_filesize": 15 * 1024 * 1024 * 1024,  # 15 GB — matches upload limit
+            # Always merge/remux to MP4 for broadest browser compatibility
             "merge_output_format": "mp4",
-            # Use configured temp directory for yt-dlp cache and temporary files
+            # Cache and temp dirs
             "cachedir": str(settings.TEMP_DIR / "yt-dlp-cache"),
-            "paths": {"temp": output_path},  # Use the provided output_path for temp files
-            # Anti-blocking measures for YouTube
-            "extractor_args": {
-                "youtube": {
-                    "player_client": [
-                        "android",
-                        "web",
-                    ],  # Try Android client first, fallback to web
-                    "player_skip": ["webpage", "configs"],  # Skip unnecessary requests
-                }
-            },
+            "paths": {"temp": output_path},
+            # 2026 YouTube client rotation — avoids SABR blocking.
+            # 'android' and 'android_sdkless' are deprecated; ios_downgraded
+            # and android_vr bypass server-side restrictions on many networks.
+            "extractor_args": _YOUTUBE_EXTRACTOR_ARGS,
+            # Browser impersonation headers (Chrome 131 — current stable Jan 2026)
             "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-us,en;q=0.5",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "DNT": "1",
                 "Sec-Fetch-Mode": "navigate",
             },
+            # FFmpegVideoRemuxer: fast, lossless container remux to MP4.
+            # Our format string already selects H.264+AAC streams so no
+            # re-encoding is needed; FFmpegMetadata embeds title/uploader info.
             "postprocessors": [
                 {
-                    "key": "FFmpegVideoConvertor",
+                    "key": "FFmpegVideoRemuxer",
                     "preferedformat": "mp4",
-                }
+                },
+                {
+                    "key": "FFmpegMetadata",
+                    "add_metadata": True,
+                },
             ],
         }
 

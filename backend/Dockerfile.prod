@@ -85,9 +85,12 @@ WORKDIR /app
 # Copy Python packages from builder stage
 COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 
-# Copy Deno binary — required by yt-dlp to generate YouTube PO tokens
-# Without a JS runtime, yt-dlp cannot bypass YouTube's bot-detection checks
+# Copy Deno binary — required by yt-dlp (since 2025.11) to generate YouTube
+# proof-of-origin (PO) tokens.  Without a JS runtime every YouTube request is
+# flagged as a bot.  chmod ensures the bit is set even if the source image
+# permission differs.
 COPY --from=deno-bin /deno /usr/local/bin/deno
+RUN chmod +x /usr/local/bin/deno
 
 # Ensure scripts in .local are usable by adding to PATH
 # Set LD_LIBRARY_PATH for cuDNN libraries from PyTorch package
