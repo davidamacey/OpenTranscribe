@@ -36,6 +36,15 @@ from app.utils.thumbnail import generate_and_upload_thumbnail_sync
 
 logger = logging.getLogger(__name__)
 
+# Base yt-dlp options merged into every YoutubeDL call.
+# js_runtimes enables Deno for YouTube PO-token generation — required since
+# yt-dlp 2025.11 to pass YouTube's bot-detection checks.  Deno is the default
+# and recommended runtime; its binary is installed at /usr/local/bin/deno via
+# the Dockerfile multi-stage COPY from denoland/deno:bin.
+_YT_DLP_BASE_OPTS: dict[str, object] = {
+    "js_runtimes": {"deno": {"path": "/usr/local/bin/deno"}},
+}
+
 # Authentication and access error patterns with user-friendly messages
 AUTH_ERROR_PATTERNS = {
     "logged-in": "requires a logged-in account",
@@ -794,6 +803,7 @@ class MediaDownloadService:
             return provider.extract_info(url, username=media_username, password=media_password)
 
         ydl_opts = {
+            **_YT_DLP_BASE_OPTS,
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
@@ -839,6 +849,7 @@ class MediaDownloadService:
             HTTPException: If unable to extract playlist information
         """
         ydl_opts = {
+            **_YT_DLP_BASE_OPTS,
             "quiet": True,
             "no_warnings": True,
             "extract_flat": "in_playlist",  # Extract video info without downloading
@@ -942,6 +953,7 @@ class MediaDownloadService:
 
         # Configure yt-dlp options for highest quality with web-compatible output
         ydl_opts = {
+            **_YT_DLP_BASE_OPTS,
             # Download best H.264 quality for maximum browser compatibility
             # Prefer H.264 video codec over AV1 to ensure playback works across all browsers
             "format": _build_yt_dlp_format_string(video_quality, audio_only, audio_quality),
