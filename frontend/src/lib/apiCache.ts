@@ -22,6 +22,9 @@ export const CacheTTL = {
   FILES: 2 * 60 * 1000, // 2 minutes
   COLLECTIONS: 5 * 60 * 1000, // 5 minutes
   STATUS: 60 * 1000, // 1 minute
+  GROUPS: 5 * 60 * 1000, // 5 minutes
+  SHARES: 2 * 60 * 1000, // 2 minutes
+  SHARED_COLLECTIONS: 3 * 60 * 1000, // 3 minutes
 } as const;
 
 class ApiCache {
@@ -132,6 +135,15 @@ class ApiCache {
       case 'collections':
         this.invalidate('collections:');
         break;
+      case 'groups':
+        this.invalidate('groups:');
+        break;
+      case 'shares':
+        this.invalidate('shares:');
+        break;
+      case 'shared_collections':
+        this.invalidate('shared-collections:');
+        break;
       case 'all':
         this.clear();
         break;
@@ -172,6 +184,10 @@ export const cacheKey = {
   files: (page: number, filterHash: string) => `files:page:${page}:${filterHash}`,
   collections: () => 'collections:all',
   status: () => 'status:summary',
+  groups: () => 'groups:all',
+  groupDetail: (uuid: string) => `groups:detail:${uuid}`,
+  shares: (collectionUuid: string) => `shares:collection:${collectionUuid}`,
+  sharedCollections: () => 'shared-collections:all',
 };
 
 // Expose stats to dev console

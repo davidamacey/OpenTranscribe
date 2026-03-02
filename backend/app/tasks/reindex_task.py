@@ -81,6 +81,7 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     """
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.services.permission_service import PermissionService
 
     file_id = int(media_file.id)
     file_uuid = str(media_file.uuid)
@@ -133,6 +134,10 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     if hasattr(media_file, "collection_memberships") and media_file.collection_memberships:
         collection_id_list = [int(cm.collection_id) for cm in media_file.collection_memberships]
 
+    # Compute full access list (owner + shared users/groups) so reindex
+    # preserves share grants instead of resetting to owner-only
+    accessible_user_ids = PermissionService.get_users_with_file_access(db, file_id)
+
     return {
         "file_id": file_id,
         "file_uuid": file_uuid,
@@ -146,6 +151,7 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
         "duration": media_file.duration,
         "file_size": media_file.file_size,
         "collection_ids": collection_id_list,
+        "accessible_user_ids": accessible_user_ids,
     }
 
 
@@ -520,6 +526,7 @@ def reindex_transcripts_task(
                                 duration=metadata["duration"],
                                 file_size=metadata["file_size"],
                                 collection_ids=metadata["collection_ids"],
+                                accessible_user_ids=metadata.get("accessible_user_ids"),
                             )
 
                             stats["indexed_files"] += 1

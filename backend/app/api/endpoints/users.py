@@ -21,6 +21,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
+from app.schemas.user import UserSearchResult
 from app.schemas.user import UserUpdate
 from app.utils.uuid_helpers import get_user_by_uuid
 
@@ -160,6 +161,37 @@ def update_current_user(
     db.refresh(current_user)
 
     return current_user
+
+
+@router.get("/search", response_model=list[UserSearchResult])
+def search_users(
+    q: str = Query(..., min_length=2, max_length=100, description="Search query (min 2 chars)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Search users by name or email for sharing autocomplete.
+
+    Returns up to 20 results, excluding the current user.
+    """
+    from sqlalchemy import or_
+
+    pattern = f"%{q}%"
+    users = (
+        db.query(User)
+        .filter(
+            User.id != current_user.id,
+            User.is_active == True,  # noqa: E712
+            or_(
+                User.email.ilike(pattern),
+                User.full_name.ilike(pattern),
+            ),
+        )
+        .order_by(User.full_name, User.email)
+        .limit(20)
+        .all()
+    )
+
+    return [UserSearchResult(uuid=u.uuid, full_name=u.full_name, email=u.email) for u in users]
 
 
 @router.get("/{user_uuid}", response_model=UserSchema)

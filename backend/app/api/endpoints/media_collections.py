@@ -1,3 +1,6 @@
+"""API endpoints for media collections with sharing support."""
+
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -5,6 +8,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import status
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -15,12 +19,18 @@ from sqlalchemy.orm import selectinload
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import apply_all_filters
+from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED
+from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED
+from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARED
 from app.db.base import get_db
+from app.models.group import UserGroup
+from app.models.group import UserGroupMember
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.prompt import SummaryPrompt
+from app.models.sharing import CollectionShare
 from app.models.user import User
 from app.schemas.media import Collection as CollectionSchema
 from app.schemas.media import CollectionCreate
@@ -30,11 +40,75 @@ from app.schemas.media import CollectionResponse
 from app.schemas.media import CollectionUpdate
 from app.schemas.media import CollectionWithCount
 from app.schemas.media import PaginatedMediaFileResponse
+from app.schemas.sharing import Share
+from app.schemas.sharing import ShareCreate
+from app.schemas.sharing import SharedCollectionInfo
+from app.schemas.sharing import ShareUpdate
+from app.schemas.user import UserBrief
 from app.services.formatting_service import FormattingService
+from app.services.permission_service import PermissionService
+from app.tasks.search_indexing_task import update_file_access_index
+from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
+from app.utils.uuid_helpers import get_collection_by_uuid_with_sharing
 from app.utils.uuid_helpers import validate_uuids
+from app.utils.websocket_notify import send_ws_event
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _get_share_target_user_ids(db: Session, share: CollectionShare) -> list[int]:
+    """Return the user IDs affected by a share.
+
+    For user-targeted shares this is a single-element list.
+    For group-targeted shares this is all group members.
+    """
+    if share.target_type == "user" and share.target_user_id:
+        return [int(share.target_user_id)]
+    if share.target_type == "group" and share.target_group_id:
+        return [
+            int(m.user_id)
+            for m in db.query(UserGroupMember.user_id)
+            .filter(UserGroupMember.group_id == share.target_group_id)
+            .all()
+        ]
+    return []
+
+
+def _notify_share_event(
+    db: Session,
+    share: CollectionShare,
+    collection: Collection,
+    notification_type: str,
+    extra_data: dict | None = None,
+) -> None:
+    """Send a WebSocket notification for a sharing event to all affected users."""
+    target_ids = _get_share_target_user_ids(db, share)
+    data: dict = {
+        "collection_uuid": str(collection.uuid),
+        "collection_name": collection.name,
+        "share_uuid": str(share.uuid),
+        "permission": share.permission,
+        "message": _share_message(notification_type, collection.name),
+    }
+    if extra_data:
+        data.update(extra_data)
+
+    for uid in target_ids:
+        send_ws_event(uid, notification_type, data)
+
+
+def _share_message(notification_type: str, collection_name: str) -> str:
+    """Build a human-readable message for a share notification."""
+    if notification_type == NOTIFICATION_TYPE_COLLECTION_SHARED:
+        return f"Collection '{collection_name}' has been shared with you"
+    if notification_type == NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED:
+        return f"Your access to collection '{collection_name}' has been revoked"
+    if notification_type == NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED:
+        return f"Your permissions on collection '{collection_name}' have been updated"
+    return "Collection sharing update"
 
 
 def _resolve_prompt_uuid(db: Session, prompt_uuid: str | None, user_id: int) -> int | None:
@@ -69,29 +143,234 @@ def _get_prompt_info(collection: Collection) -> tuple:
     return (None, None)
 
 
+def _build_share_response(db: Session, share: CollectionShare) -> Share:
+    """Build a Share response from a CollectionShare record."""
+    shared_by_brief = UserBrief(
+        uuid=share.shared_by.uuid,
+        full_name=share.shared_by.full_name,
+        email=share.shared_by.email,
+    )
+
+    if share.target_type == "user" and share.target_user:
+        target_uuid = share.target_user.uuid
+        target_name = share.target_user.full_name or share.target_user.email
+        target_email = share.target_user.email
+        member_count = None
+    elif share.target_type == "group" and share.target_group:
+        target_uuid = share.target_group.uuid
+        target_name = share.target_group.name
+        target_email = None
+        member_count = (
+            db.query(UserGroupMember)
+            .filter(UserGroupMember.group_id == share.target_group.id)
+            .count()
+        )
+    else:
+        raise HTTPException(status_code=500, detail="Invalid share target")
+
+    return Share(
+        uuid=share.uuid,
+        target_type=share.target_type,
+        target_uuid=target_uuid,
+        target_name=target_name,
+        target_email=target_email,
+        member_count=member_count,
+        permission=share.permission,
+        shared_by=shared_by_brief,
+        created_at=share.created_at,
+    )
+
+
+# ============================================================================
+# Static routes FIRST (before parameterized routes)
+# ============================================================================
+
+
+@router.get("/shared-with-me", response_model=list[SharedCollectionInfo])
+async def list_shared_collections(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List collections shared with the current user (not owned by them)."""
+    accessible = PermissionService.get_accessible_collection_ids(db, int(current_user.id))
+
+    # Filter to only shared collections (not owned)
+    shared_ids = [(cid, perm) for cid, perm in accessible if perm != "owner"]
+
+    if not shared_ids:
+        return []
+
+    collection_ids = [cid for cid, _ in shared_ids]
+    perm_map = {cid: perm for cid, perm in shared_ids}
+
+    collections = (
+        db.query(Collection)
+        .options(joinedload(Collection.user))
+        .filter(Collection.id.in_(collection_ids))
+        .all()
+    )
+
+    results = []
+    for coll in collections:
+        # Also skip if user actually owns this collection
+        if coll.user_id == current_user.id:
+            continue
+
+        media_count = (
+            db.query(CollectionMember).filter(CollectionMember.collection_id == coll.id).count()
+        )
+
+        # Find the share record for shared_by and shared_at info
+        user_group_ids = (
+            db.query(UserGroupMember.group_id)
+            .filter(UserGroupMember.user_id == current_user.id)
+            .subquery()
+        )
+        share = (
+            db.query(CollectionShare)
+            .options(joinedload(CollectionShare.shared_by))
+            .filter(
+                CollectionShare.collection_id == coll.id,
+                or_(
+                    CollectionShare.target_user_id == current_user.id,
+                    CollectionShare.target_group_id.in_(db.query(user_group_ids.c.group_id)),
+                ),
+            )
+            .first()
+        )
+
+        shared_by_brief = UserBrief(
+            uuid=coll.user.uuid,
+            full_name=coll.user.full_name,
+            email=coll.user.email,
+        )
+        shared_at = share.created_at if share else coll.created_at
+        if share and share.shared_by:
+            shared_by_brief = UserBrief(
+                uuid=share.shared_by.uuid,
+                full_name=share.shared_by.full_name,
+                email=share.shared_by.email,
+            )
+
+        results.append(
+            SharedCollectionInfo(
+                uuid=coll.uuid,
+                name=coll.name,
+                description=coll.description,
+                media_count=media_count,
+                my_permission=perm_map.get(coll.id, "viewer"),
+                shared_by=shared_by_brief,
+                shared_at=shared_at,
+            )
+        )
+
+    return results
+
+
 @router.get("", response_model=list[CollectionWithCount])
 async def list_collections(
+    ownership: str = Query(
+        "mine",
+        pattern="^(mine|shared|all)$",
+        description="Filter: 'mine' (owned), 'shared' (shared with me), 'all' (both)",
+    ),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all collections for the current user with media count"""
-    # First get collection IDs and counts
-    counts_query = (
-        db.query(Collection.id, func.count(CollectionMember.id).label("media_count"))
-        .filter(Collection.user_id == current_user.id)
-        .outerjoin(CollectionMember)
-        .group_by(Collection.id)
-        .offset(skip)
-        .limit(limit)
-    ).all()
+    """Get collections for the current user with media count.
 
-    # Extract collection IDs
-    collection_ids = [c[0] for c in counts_query]
-    counts_dict = {c[0]: c[1] or 0 for c in counts_query}
+    Use ownership param to filter:
+    - 'mine': Only collections owned by current user (default)
+    - 'shared': Only collections shared with current user
+    - 'all': Both owned and shared collections
+    """
+    user_id = int(current_user.id)
 
-    # Then fetch full collection objects with user and prompt relationships
+    if ownership == "mine":
+        # Original behavior: only owned collections
+        counts_query = (
+            db.query(Collection.id, func.count(CollectionMember.id).label("media_count"))
+            .filter(Collection.user_id == user_id)
+            .outerjoin(CollectionMember)
+            .group_by(Collection.id)
+            .offset(skip)
+            .limit(limit)
+        ).all()
+
+        collection_ids = [c[0] for c in counts_query]
+        counts_dict = {c[0]: c[1] or 0 for c in counts_query}
+        perm_dict: dict[int, str] = {cid: "owner" for cid in collection_ids}
+        shared_by_dict: dict[int, UserBrief | None] = {}
+
+    elif ownership == "shared":
+        # Only shared collections
+        accessible = PermissionService.get_accessible_collection_ids(db, user_id)
+        shared_entries = [(cid, perm) for cid, perm in accessible if perm != "owner"]
+        # Additionally exclude owned collections
+        owned_ids = set(
+            cid for (cid,) in db.query(Collection.id).filter(Collection.user_id == user_id).all()
+        )
+        shared_entries = [(cid, perm) for cid, perm in shared_entries if cid not in owned_ids]
+
+        collection_ids = [cid for cid, _ in shared_entries]
+        perm_dict = {cid: perm for cid, perm in shared_entries}
+        counts_dict = {}
+        shared_by_dict = {}
+
+        if collection_ids:
+            counts_query = (
+                db.query(
+                    Collection.id,
+                    func.count(CollectionMember.id).label("media_count"),
+                )
+                .filter(Collection.id.in_(collection_ids))
+                .outerjoin(CollectionMember)
+                .group_by(Collection.id)
+                .offset(skip)
+                .limit(limit)
+            ).all()
+            collection_ids = [c[0] for c in counts_query]
+            counts_dict = {c[0]: c[1] or 0 for c in counts_query}
+
+            # Get shared_by info for each shared collection
+            _populate_shared_by(db, collection_ids, user_id, shared_by_dict)
+
+    else:
+        # All collections: owned + shared
+        accessible = PermissionService.get_accessible_collection_ids(db, user_id)
+        perm_dict = {cid: perm for cid, perm in accessible}
+        all_ids = list(perm_dict.keys())
+        shared_by_dict = {}
+
+        if all_ids:
+            counts_query = (
+                db.query(
+                    Collection.id,
+                    func.count(CollectionMember.id).label("media_count"),
+                )
+                .filter(Collection.id.in_(all_ids))
+                .outerjoin(CollectionMember)
+                .group_by(Collection.id)
+                .offset(skip)
+                .limit(limit)
+            ).all()
+            collection_ids = [c[0] for c in counts_query]
+            counts_dict = {c[0]: c[1] or 0 for c in counts_query}
+
+            # Get shared_by info for non-owned collections
+            non_owned = [cid for cid in collection_ids if perm_dict.get(cid) != "owner"]
+            if non_owned:
+                _populate_shared_by(db, non_owned, user_id, shared_by_dict)
+        else:
+            collection_ids = []
+            counts_dict = {}
+
+    if not collection_ids:
+        return []
+
+    # Fetch full collection objects with user and prompt relationships
     collections_objs = (
         db.query(Collection)
         .options(
@@ -102,19 +381,67 @@ async def list_collections(
         .all()
     )
 
+    # Bulk-fetch share counts for all collections
+    share_counts_query = (
+        db.query(
+            CollectionShare.collection_id,
+            func.count(CollectionShare.id).label("share_count"),
+        )
+        .filter(CollectionShare.collection_id.in_(collection_ids))
+        .group_by(CollectionShare.collection_id)
+    ).all()
+    share_counts_dict = {row[0]: row[1] for row in share_counts_query}
+
     collections = []
     for collection in collections_objs:
-        # Use model_validate with the collection object
         collection_with_count = CollectionWithCount.model_validate(collection)
-        # Set the media_count from our counts dict
         collection_with_count.media_count = counts_dict.get(collection.id, 0)
-        # Set prompt info
         prompt_uuid, prompt_name = _get_prompt_info(collection)
         collection_with_count.default_prompt_id = prompt_uuid
         collection_with_count.default_prompt_name = prompt_name
+
+        # Set sharing metadata
+        my_perm = perm_dict.get(collection.id, "owner")
+        collection_with_count.my_permission = my_perm
+        collection_with_count.is_shared = collection.user_id != current_user.id
+        collection_with_count.share_count = share_counts_dict.get(collection.id, 0)
+        if collection.id in shared_by_dict:
+            collection_with_count.shared_by = shared_by_dict[collection.id]
+
         collections.append(collection_with_count)
 
     return collections
+
+
+def _populate_shared_by(
+    db: Session,
+    collection_ids: list[int],
+    user_id: int,
+    shared_by_dict: dict,
+) -> None:
+    """Populate shared_by UserBrief for a list of shared collection IDs."""
+    user_group_ids_sq = (
+        db.query(UserGroupMember.group_id).filter(UserGroupMember.user_id == user_id).subquery()
+    )
+    shares = (
+        db.query(CollectionShare)
+        .options(joinedload(CollectionShare.shared_by))
+        .filter(
+            CollectionShare.collection_id.in_(collection_ids),
+            or_(
+                CollectionShare.target_user_id == user_id,
+                CollectionShare.target_group_id.in_(db.query(user_group_ids_sq.c.group_id)),
+            ),
+        )
+        .all()
+    )
+    for share in shares:
+        if share.collection_id not in shared_by_dict and share.shared_by:
+            shared_by_dict[share.collection_id] = UserBrief(
+                uuid=share.shared_by.uuid,
+                full_name=share.shared_by.full_name,
+                email=share.shared_by.email,
+            )
 
 
 @router.post("", response_model=CollectionSchema)
@@ -165,13 +492,21 @@ async def create_collection(
     return result
 
 
+# ============================================================================
+# Parameterized routes (/{collection_uuid}/...)
+# ============================================================================
+
+
 @router.get("/{collection_uuid}", response_model=CollectionResponse)
 async def get_collection(
     collection_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get a specific collection with its media files"""
+    """Get a specific collection with its media files.
+
+    Uses PermissionService: any user with viewer+ permission can access.
+    """
     collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
 
     # Reload with joined data
@@ -210,16 +545,18 @@ async def update_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update a collection"""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
+    """Update a collection. Requires editor+ permission."""
+    collection, permission = get_collection_by_uuid_with_sharing(
+        db, collection_uuid, int(current_user.id), min_permission="editor"
+    )
     collection_id = collection.id
 
-    # Check if new name conflicts with existing collection
+    # Check if new name conflicts with existing collection (for the owner)
     if collection_update.name and collection_update.name != collection.name:
         existing = (
             db.query(Collection)
             .filter(
-                Collection.user_id == current_user.id,
+                Collection.user_id == collection.user_id,
                 Collection.name == collection_update.name,
                 Collection.id != collection_id,
             )
@@ -268,8 +605,27 @@ async def delete_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a collection"""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
+    """Delete a collection. Only the original owner can delete."""
+    collection, permission = get_collection_by_uuid_with_sharing(
+        db, collection_uuid, int(current_user.id), min_permission="owner"
+    )
+
+    # Only original owner can delete
+    if collection.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the collection owner can delete it",
+        )
+
+    # Reindex files BEFORE deletion (cascade will remove shares + members)
+    file_ids = [
+        cm.media_file_id
+        for cm in db.query(CollectionMember.media_file_id)
+        .filter(CollectionMember.collection_id == collection.id)
+        .all()
+    ]
+    if file_ids:
+        update_file_access_index.delay(file_ids)
 
     db.delete(collection)
     db.commit()
@@ -284,9 +640,10 @@ async def add_media_to_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add media files to a collection"""
-    # Verify collection exists and belongs to user
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
+    """Add media files to a collection. Requires editor+ permission."""
+    collection, permission = get_collection_by_uuid_with_sharing(
+        db, collection_uuid, int(current_user.id), min_permission="editor"
+    )
     collection_id = collection.id
 
     # Bulk resolve UUIDs to IDs in a single query (avoids N+1)
@@ -327,12 +684,22 @@ async def add_media_to_collection(
 
     # Add new members
     added_count = 0
+    added_file_ids = []
     for media_file_id in new_ids:
         member = CollectionMember(collection_id=collection_id, media_file_id=media_file_id)
         db.add(member)
+        added_file_ids.append(media_file_id)
         added_count += 1
 
     db.commit()
+
+    # If collection has shares, reindex newly added files
+    if added_file_ids:
+        share_count = (
+            db.query(CollectionShare).filter(CollectionShare.collection_id == collection_id).count()
+        )
+        if share_count > 0:
+            update_file_access_index.delay(added_file_ids)
 
     return {
         "message": f"Added {added_count} media files to collection",
@@ -348,9 +715,10 @@ async def remove_media_from_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Remove media files from a collection"""
-    # Verify collection exists and belongs to user
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
+    """Remove media files from a collection. Requires editor+ permission."""
+    collection, permission = get_collection_by_uuid_with_sharing(
+        db, collection_uuid, int(current_user.id), min_permission="editor"
+    )
     collection_id = collection.id
 
     # Bulk resolve UUIDs to IDs in a single query (avoids N+1)
@@ -370,6 +738,14 @@ async def remove_media_from_collection(
     )
 
     db.commit()
+
+    # If collection has shares, reindex removed files
+    if media_file_ids:
+        share_count = (
+            db.query(CollectionShare).filter(CollectionShare.collection_id == collection_id).count()
+        )
+        if share_count > 0:
+            update_file_access_index.delay(media_file_ids)
 
     return {
         "message": f"Removed {removed_count} media files from collection",
@@ -407,7 +783,7 @@ async def get_collection_media(
     current_user: User = Depends(get_current_user),
 ):
     """Get media files in a collection with filtering, sorting, and pagination."""
-    # Verify collection exists and belongs to user
+    # Verify collection exists and user has access
     collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
     collection_id = collection.id
 
@@ -431,8 +807,10 @@ async def get_collection_media(
         .filter(CollectionMember.collection_id == collection_id)
     )
 
-    # Non-admin users can only see their own files
-    if current_user.role != "admin":
+    # Non-admin users without shared access can only see their own files
+    # For shared collections, show all files in the collection
+    is_shared = collection.user_id != current_user.id
+    if current_user.role != "admin" and not is_shared:
         base_query = base_query.filter(MediaFile.user_id == current_user.id)
 
     # Prepare filters dictionary
@@ -449,7 +827,7 @@ async def get_collection_media(
         "file_type": file_type,
         "status": status,
         "transcript_search": transcript_search,
-        "user_id": int(current_user.id) if current_user.role != "admin" else None,
+        "user_id": int(current_user.id) if current_user.role != "admin" and not is_shared else None,
     }
 
     # Apply all filters
@@ -497,3 +875,248 @@ async def get_collection_media(
         total_pages=total_pages,
         has_more=has_more,
     )
+
+
+# ============================================================================
+# Collection sharing endpoints
+# ============================================================================
+
+
+@router.get("/{collection_uuid}/shares", response_model=list[Share])
+async def list_collection_shares(
+    collection_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all shares on a collection. Requires owner permission."""
+    collection, permission = get_collection_by_uuid_with_sharing(
+        db, collection_uuid, int(current_user.id), min_permission="owner"
+    )
+
+    shares = (
+        db.query(CollectionShare)
+        .options(
+            joinedload(CollectionShare.shared_by),
+            joinedload(CollectionShare.target_user),
+            joinedload(CollectionShare.target_group),
+        )
+        .filter(CollectionShare.collection_id == collection.id)
+        .order_by(CollectionShare.created_at.desc())
+        .all()
+    )
+
+    return [_build_share_response(db, share) for share in shares]
+
+
+@router.post(
+    "/{collection_uuid}/shares",
+    response_model=Share,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_collection_share(
+    collection_uuid: str,
+    share_in: ShareCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Share a collection with a user or group. Requires owner permission."""
+    collection, permission = get_collection_by_uuid_with_sharing(
+        db, collection_uuid, int(current_user.id), min_permission="owner"
+    )
+
+    target_user_id = None
+    target_group_id = None
+
+    if share_in.target_type == "user":
+        target_user = get_by_uuid(db, User, str(share_in.target_uuid), "User not found")
+
+        # Cannot share with yourself
+        if target_user.id == current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot share a collection with yourself",
+            )
+
+        # Check for existing share
+        existing = (
+            db.query(CollectionShare)
+            .filter(
+                CollectionShare.collection_id == collection.id,
+                CollectionShare.target_user_id == target_user.id,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Collection is already shared with this user",
+            )
+
+        target_user_id = target_user.id
+
+    elif share_in.target_type == "group":
+        target_group = get_by_uuid(db, UserGroup, str(share_in.target_uuid), "Group not found")
+
+        # Check for existing share
+        existing = (
+            db.query(CollectionShare)
+            .filter(
+                CollectionShare.collection_id == collection.id,
+                CollectionShare.target_group_id == target_group.id,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Collection is already shared with this group",
+            )
+
+        target_group_id = target_group.id
+
+    share = CollectionShare(
+        collection_id=collection.id,
+        shared_by_id=current_user.id,
+        target_type=share_in.target_type,
+        target_user_id=target_user_id,
+        target_group_id=target_group_id,
+        permission=share_in.permission,
+    )
+    db.add(share)
+    db.commit()
+    db.refresh(share)
+
+    # Reload with relationships
+    share = (
+        db.query(CollectionShare)
+        .options(
+            joinedload(CollectionShare.shared_by),
+            joinedload(CollectionShare.target_user),
+            joinedload(CollectionShare.target_group),
+        )
+        .filter(CollectionShare.id == share.id)
+        .first()
+    )
+
+    # Reindex OpenSearch accessible_user_ids for files in this collection
+    file_ids = [
+        cm.media_file_id
+        for cm in db.query(CollectionMember.media_file_id)
+        .filter(CollectionMember.collection_id == collection.id)
+        .all()
+    ]
+    if file_ids:
+        update_file_access_index.delay(file_ids)
+
+    # Notify affected user(s) about the new share
+    _notify_share_event(db, share, collection, NOTIFICATION_TYPE_COLLECTION_SHARED)
+
+    return _build_share_response(db, share)
+
+
+@router.put("/{collection_uuid}/shares/{share_uuid}", response_model=Share)
+async def update_collection_share(
+    collection_uuid: str,
+    share_uuid: str,
+    share_update: ShareUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update a share's permission level. Requires owner permission on collection."""
+    collection, permission = get_collection_by_uuid_with_sharing(
+        db, collection_uuid, int(current_user.id), min_permission="owner"
+    )
+
+    share = get_by_uuid(db, CollectionShare, share_uuid, "Share not found")
+
+    # Verify share belongs to this collection
+    if share.collection_id != collection.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Share not found on this collection",
+        )
+
+    share.permission = share_update.permission
+    db.commit()
+    db.refresh(share)
+
+    # Reload with relationships
+    share = (
+        db.query(CollectionShare)
+        .options(
+            joinedload(CollectionShare.shared_by),
+            joinedload(CollectionShare.target_user),
+            joinedload(CollectionShare.target_group),
+        )
+        .filter(CollectionShare.id == share.id)
+        .first()
+    )
+
+    # Reindex files since permission level changed
+    file_ids = [
+        cm.media_file_id
+        for cm in db.query(CollectionMember.media_file_id)
+        .filter(CollectionMember.collection_id == collection.id)
+        .all()
+    ]
+    if file_ids:
+        update_file_access_index.delay(file_ids)
+
+    # Notify affected user(s) about the permission change
+    _notify_share_event(db, share, collection, NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED)
+
+    return _build_share_response(db, share)
+
+
+@router.delete(
+    "/{collection_uuid}/shares/{share_uuid}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_collection_share(
+    collection_uuid: str,
+    share_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Revoke a share on a collection. Requires owner permission."""
+    collection, permission = get_collection_by_uuid_with_sharing(
+        db, collection_uuid, int(current_user.id), min_permission="owner"
+    )
+
+    share = get_by_uuid(db, CollectionShare, share_uuid, "Share not found")
+
+    # Verify share belongs to this collection
+    if share.collection_id != collection.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Share not found on this collection",
+        )
+
+    # Capture notification data before deletion
+    target_user_ids = _get_share_target_user_ids(db, share)
+    revoke_data: dict = {
+        "collection_uuid": str(collection.uuid),
+        "collection_name": collection.name,
+        "share_uuid": share_uuid,
+        "permission": share.permission,
+        "message": _share_message(NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED, collection.name),
+    }
+
+    db.delete(share)
+    db.commit()
+
+    # Reindex OpenSearch accessible_user_ids for files in this collection
+    file_ids = [
+        cm.media_file_id
+        for cm in db.query(CollectionMember.media_file_id)
+        .filter(CollectionMember.collection_id == collection.id)
+        .all()
+    ]
+    if file_ids:
+        update_file_access_index.delay(file_ids)
+
+    # Notify affected user(s) about the revocation
+    for uid in target_user_ids:
+        send_ws_event(uid, NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED, revoke_data)
+
+    return None

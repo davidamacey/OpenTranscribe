@@ -824,7 +824,7 @@ class HybridSearchService:
                     "query": {
                         "bool": {
                             "must": [{"match_phrase_prefix": {"title": prefix}}],
-                            "filter": [{"term": {"user_id": user_id}}],
+                            "filter": [{"terms": {"accessible_user_ids": [user_id]}}],
                         }
                     },
                     "_source": ["title", "file_uuid"],
@@ -837,7 +837,7 @@ class HybridSearchService:
                     "query": {
                         "bool": {
                             "must": [{"prefix": {"speaker": {"value": prefix.lower()}}}],
-                            "filter": [{"term": {"user_id": user_id}}],
+                            "filter": [{"terms": {"accessible_user_ids": [user_id]}}],
                         }
                     },
                     "aggs": {"speakers": {"terms": {"field": "speaker", "size": 4}}},
@@ -907,7 +907,7 @@ class HybridSearchService:
                 index=index_name,
                 body={
                     "size": 0,
-                    "query": {"term": {"user_id": user_id}},
+                    "query": {"terms": {"accessible_user_ids": [user_id]}},
                     "aggs": {
                         "speakers": {"terms": {"field": "speaker", "size": 100}},
                         "tags": {"terms": {"field": "tags", "size": 100}},
@@ -956,7 +956,7 @@ class HybridSearchService:
         title_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build OpenSearch filter clauses."""
-        filters: list[dict[str, Any]] = [{"term": {"user_id": user_id}}]
+        filters: list[dict[str, Any]] = [{"terms": {"accessible_user_ids": [user_id]}}]
 
         if speakers:
             filters.append({"terms": {"speaker": speakers}})

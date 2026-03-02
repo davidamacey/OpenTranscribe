@@ -207,6 +207,13 @@ NOTIFICATION_TYPE_TRANSCRIPTION_STATUS = "transcription_status"
 NOTIFICATION_TYPE_SUMMARIZATION_STATUS = "summarization_status"
 NOTIFICATION_TYPE_SPEAKER_MATCH = "speaker_match"
 
+# Sharing notifications
+NOTIFICATION_TYPE_COLLECTION_SHARED = "collection_shared"
+NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED = "collection_share_revoked"
+NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED = "collection_share_updated"
+NOTIFICATION_TYPE_GROUP_MEMBER_ADDED = "group_member_added"
+NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED = "group_member_removed"
+
 # Task statuses
 TASK_STATUS_PENDING = "pending"
 TASK_STATUS_PROCESSING = "processing"

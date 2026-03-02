@@ -93,3 +93,18 @@ class User(Base):
         cascade="all, delete-orphan",
         order_by="desc(PasswordHistory.created_at)",
     )
+    # Groups and sharing relationships
+    owned_groups = relationship("UserGroup", back_populates="owner", cascade="all, delete-orphan")
+    group_memberships = relationship(
+        "UserGroupMember", back_populates="user", cascade="all, delete-orphan"
+    )
+    shared_by_me = relationship(
+        "CollectionShare",
+        foreign_keys="CollectionShare.shared_by_id",
+        back_populates="shared_by",
+    )
+    shared_with_me = relationship(
+        "CollectionShare",
+        foreign_keys="CollectionShare.target_user_id",
+        back_populates="target_user",
+    )

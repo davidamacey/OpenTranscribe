@@ -5,6 +5,11 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import ShareBadge from './sharing/ShareBadge.svelte';
+  import SharedByAttribution from './sharing/SharedByAttribution.svelte';
+  import ShareCollectionModal from './sharing/ShareCollectionModal.svelte';
+  import { SharingApi } from '$lib/api/sharing';
+  import type { SharedCollection } from '$lib/types/groups';
 
   // Props
   export let selectedMediaIds: string[] = [];  // UUIDs
@@ -13,6 +18,11 @@
 
   // State
   let collections: any[] = [];
+  let sharedCollections: SharedCollection[] = [];
+  let loadingShared = false;
+  let showShareModal = false;
+  let shareModalCollectionUuid = '';
+  let shareModalCollectionName = '';
   let loading = false;
   let showCreateModal = false;
   let showEditModal = false;
@@ -62,6 +72,31 @@
     } finally {
       loadingPrompts = false;
     }
+  }
+
+  // Fetch shared collections
+  async function fetchSharedCollections() {
+    loadingShared = true;
+    try {
+      sharedCollections = await SharingApi.fetchSharedCollections();
+    } catch (err: any) {
+      console.error('Error fetching shared collections:', err);
+    } finally {
+      loadingShared = false;
+    }
+  }
+
+  // Open share modal for a collection
+  function openShareModal(collection: any) {
+    shareModalCollectionUuid = collection.uuid;
+    shareModalCollectionName = collection.name;
+    showShareModal = true;
+  }
+
+  // Handle share completion - refresh collections
+  function handleShared() {
+    fetchCollections();
+    fetchSharedCollections();
   }
 
   // Create new collection
@@ -230,6 +265,7 @@
   onMount(() => {
     fetchCollections();
     fetchPrompts();
+    fetchSharedCollections();
   });
 </script>
 
@@ -253,13 +289,17 @@
       <div class="spinner"></div>
       {$t('collectionsPanel.loading')}
     </div>
-  {:else if collections.length === 0}
+  {:else if collections.length === 0 && sharedCollections.length === 0}
     <div class="empty-state">
       <p>{$t('collectionsPanel.noCollectionsYet')}</p>
       <p class="hint">{$t('collectionsPanel.createFirstHint')}</p>
     </div>
   {:else}
     <div class="collections-list">
+      <!-- My Collections -->
+      {#if collections.length > 0}
+        <div class="section-label">{$t('sharing.myCollections')}</div>
+      {/if}
       {#each collections as collection (collection.uuid)}
         <div
           class="collection-card"
@@ -283,11 +323,25 @@
               {#if collection.default_prompt_name}
                 <span class="badge prompt">{collection.default_prompt_name}</span>
               {/if}
+              {#if collection.share_count > 0}
+                <ShareBadge shareCount={collection.share_count} isShared={true} />
+              {/if}
             </div>
           </div>
 
           {#if viewMode === 'manage'}
             <div class="collection-actions">
+              <button
+                class="share-button"
+                title={$t('sharing.shareCollection')}
+                on:click|stopPropagation={() => openShareModal(collection)}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                  <polyline points="16 6 12 2 8 6"/>
+                  <line x1="12" y1="2" x2="12" y2="15"/>
+                </svg>
+              </button>
               <button
                 class="edit-button"
                 title={$t('collectionsPanel.editCollection')}
@@ -322,6 +376,44 @@
           {/if}
         </div>
       {/each}
+
+      <!-- Shared with Me -->
+      {#if sharedCollections.length > 0}
+        <div class="section-label shared-label">{$t('sharing.sharedWithMe')}</div>
+        {#each sharedCollections as shared (shared.uuid)}
+          <div
+            class="collection-card shared-card"
+            class:selected={selectedCollectionId === shared.uuid}
+            role="button"
+            tabindex="0"
+            on:click={() => handleCollectionClick(shared)}
+            on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleCollectionClick(shared)}
+            transition:slide
+          >
+            <div class="collection-info">
+              <h4>{shared.name}</h4>
+              {#if shared.description}
+                <p class="description">{shared.description}</p>
+              {/if}
+              <div class="meta">
+                <span class="media-count">{shared.media_count} {shared.media_count !== 1 ? $t('collectionsPanel.files') : $t('collectionsPanel.file')}</span>
+                <span class="badge shared-permission">{shared.my_permission}</span>
+              </div>
+              <SharedByAttribution sharedBy={shared.shared_by} />
+            </div>
+
+            {#if viewMode === 'add' && selectedMediaIds.length > 0 && shared.my_permission !== 'viewer'}
+              <button
+                class="btn-add"
+                disabled={addingToCollection}
+                on:click|stopPropagation={() => addMediaToCollection(shared.uuid)}
+              >
+                {selectedMediaIds.length !== 1 ? $t('collectionsPanel.addFiles', { count: selectedMediaIds.length }) : $t('collectionsPanel.addFile', { count: selectedMediaIds.length })}
+              </button>
+            {/if}
+          </div>
+        {/each}
+      {/if}
     </div>
   {/if}
 
@@ -542,6 +634,16 @@
       </div>
     </div>
   {/if}
+
+<!-- Share Collection Modal -->
+{#if showShareModal}
+  <ShareCollectionModal
+    collectionUuid={shareModalCollectionUuid}
+    collectionName={shareModalCollectionName}
+    on:shared={handleShared}
+    on:close={() => showShareModal = false}
+  />
+{/if}
 
 <!-- Delete Confirmation Modal -->
 <ConfirmationModal
@@ -773,6 +875,57 @@
   .collection-actions {
     display: flex;
     gap: 8px;
+  }
+
+  .section-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    padding: 4px 0;
+  }
+
+  .section-label.shared-label {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .shared-card {
+    border-left: 3px solid #3b82f6;
+  }
+
+  .badge.shared-permission {
+    background: rgba(139, 92, 246, 0.1);
+    color: #8b5cf6;
+    text-transform: capitalize;
+  }
+
+  :global(.dark) .badge.shared-permission {
+    background: rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+  }
+
+  .share-button {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid;
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-color);
+  }
+
+  .share-button:hover:not(:disabled) {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
   }
 
   .edit-button, .delete-config-button {

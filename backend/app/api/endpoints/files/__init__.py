@@ -175,6 +175,12 @@ def list_media_files(
     # Pagination parameters
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    # Ownership filter
+    ownership: str = Query(
+        "mine",
+        pattern="^(mine|shared|all)$",
+        description="Filter: 'mine' (owned), 'shared' (via shared collections), 'all' (both)",
+    ),
     # Existing filters
     search: Optional[str] = None,
     tag: Optional[list[str]] = Query(None),
@@ -200,12 +206,20 @@ def list_media_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """List all media files for the current user with optional filters and pagination"""
+    """List media files for the current user with optional filters and pagination.
+
+    Use ownership param to control scope:
+    - 'mine': Only files owned by current user (default, preserves existing behavior)
+    - 'shared': Only files accessible via shared collections
+    - 'all': Both owned and shared files
+    """
     from sqlalchemy import func as sa_func
     from sqlalchemy.orm import defer
     from sqlalchemy.orm import joinedload
     from sqlalchemy.orm import load_only
     from sqlalchemy.orm import selectinload
+
+    from app.services.permission_service import PermissionService
 
     # Eager-loading strategy for list view:
     # - joinedload for user (many-to-one — no row inflation)
@@ -223,13 +237,37 @@ def list_media_files(
         defer(MediaFile.waveform_data),  # type: ignore[arg-type]
     ]
 
-    # Admin users can see all files, regular users only see their own files
+    user_id = int(current_user.id)
+
+    # Admin users can see all files regardless of ownership param
     if current_user.role == "admin":
         base_query = db.query(MediaFile).options(*list_options)
-    else:
+        effective_user_id = None
+    elif ownership == "mine":
+        # Default: only owned files
+        base_query = db.query(MediaFile).options(*list_options).filter(MediaFile.user_id == user_id)
+        effective_user_id = user_id
+    elif ownership == "shared":
+        # Only files from shared collections (not owned by user)
+        accessible_subquery = PermissionService.get_accessible_file_ids_subquery(db, user_id)
         base_query = (
-            db.query(MediaFile).options(*list_options).filter(MediaFile.user_id == current_user.id)
+            db.query(MediaFile)
+            .options(*list_options)
+            .filter(
+                MediaFile.id.in_(db.query(accessible_subquery.c.id)),
+                MediaFile.user_id != user_id,  # Exclude owned files
+            )
         )
+        effective_user_id = None  # Don't filter by user_id in apply_all_filters
+    else:
+        # All: owned + shared
+        accessible_subquery = PermissionService.get_accessible_file_ids_subquery(db, user_id)
+        base_query = (
+            db.query(MediaFile)
+            .options(*list_options)
+            .filter(MediaFile.id.in_(db.query(accessible_subquery.c.id)))
+        )
+        effective_user_id = None
 
     # Prepare filters dictionary
     filters = {
@@ -245,7 +283,7 @@ def list_media_files(
         "file_type": file_type,
         "status": status,
         "transcript_search": transcript_search,
-        "user_id": int(current_user.id) if current_user.role != "admin" else None,
+        "user_id": effective_user_id,
     }
 
     # Apply all filters

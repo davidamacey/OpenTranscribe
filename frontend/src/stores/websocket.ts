@@ -27,7 +27,12 @@ export type NotificationType =
   | 'reindex_stopped'
   | 'migration_progress'
   | 'migration_complete'
-  | 'cache_invalidate';
+  | 'cache_invalidate'
+  | 'collection_shared'
+  | 'collection_share_revoked'
+  | 'collection_share_updated'
+  | 'group_member_added'
+  | 'group_member_removed';
 
 // Notification interface
 export interface Notification {
@@ -276,6 +281,77 @@ function createWebSocketStore() {
                 );
               }
               return;
+            } else if (data.type === 'collection_shared') {
+              // Collection shared with user — invalidate collections cache and notify
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('collection-shared', { detail: data.data }));
+              }
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  apiCache.invalidateByScope('collections');
+                  apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
+                })
+                .catch(() => {});
+              // Fall through to create a visible notification
+            } else if (data.type === 'collection_share_revoked') {
+              // Collection share revoked — invalidate caches and notify
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('share-revoked', { detail: data.data }));
+              }
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  apiCache.invalidateByScope('collections');
+                  apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
+                })
+                .catch(() => {});
+              // Fall through to create a visible notification
+            } else if (data.type === 'collection_share_updated') {
+              // Collection share permissions updated — invalidate caches and notify
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('share-updated', { detail: data.data }));
+              }
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  apiCache.invalidateByScope('collections');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
+                })
+                .catch(() => {});
+              // Fall through to create a visible notification
+            } else if (data.type === 'group_member_added') {
+              // User added to a group — invalidate caches and notify
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('group-member-added', { detail: data.data }));
+              }
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  apiCache.invalidateByScope('collections');
+                  apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
+                })
+                .catch(() => {});
+              // Fall through to create a visible notification
+            } else if (data.type === 'group_member_removed') {
+              // User removed from a group — invalidate caches and notify
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('group-member-removed', { detail: data.data })
+                );
+              }
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  apiCache.invalidateByScope('collections');
+                  apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('shares');
+                  apiCache.invalidateByScope('shared_collections');
+                })
+                .catch(() => {});
+              // Fall through to create a visible notification
             }
 
             // Handle progressive notifications
@@ -557,6 +633,16 @@ function createWebSocketStore() {
         return translate('notifications.fileUpdated');
       case 'file_deleted':
         return translate('notifications.fileDeleted');
+      case 'collection_shared':
+        return translate('notifications.collectionShared');
+      case 'collection_share_revoked':
+        return translate('notifications.collectionShareRevoked');
+      case 'collection_share_updated':
+        return translate('notifications.collectionShareUpdated');
+      case 'group_member_added':
+        return translate('notifications.groupMemberAdded');
+      case 'group_member_removed':
+        return translate('notifications.groupMemberRemoved');
       default:
         return translate('notifications.notification');
     }
