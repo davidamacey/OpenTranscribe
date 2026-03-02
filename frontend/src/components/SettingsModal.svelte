@@ -91,7 +91,7 @@
       cpu: { total_percent: '0%', per_cpu: [], logical_cores: 0, physical_cores: 0 },
       memory: { total: '0 B', available: '0 B', used: '0 B', percent: '0%' },
       disk: { total: '0 B', used: '0 B', free: '0 B', percent: '0%' },
-      gpu: { available: false, name: 'N/A', memory_total: 'N/A', memory_used: 'N/A', memory_free: 'N/A', memory_percent: 'N/A', utilization_percent: 'N/A', temperature_celsius: null },
+      gpus: [{ available: false, name: 'N/A', memory_total: 'N/A', memory_used: 'N/A', memory_free: 'N/A', memory_percent: 'N/A', utilization_percent: 'N/A', temperature_celsius: null }],
       uptime: 'Unknown',
       platform: 'Unknown',
       python_version: 'Unknown'
@@ -106,8 +106,10 @@
   let statsLoading = false;
   let statsRefreshing = false;
   let statsInitialLoaded = false;
-  let statsPollingInterval: ReturnType<typeof setInterval> | null = null;
   let gpuRetryScheduled = false;
+  let currentGpuIndex = 0;
+  $: activeGpu = stats.system?.gpus?.[currentGpuIndex] ?? stats.system?.gpus?.[0];
+  $: gpuCount = stats.system?.gpus?.length ?? 1;
 
   // Admin Task Health section
   let taskHealthData: any = null;
@@ -229,7 +231,6 @@
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
-    stopStatsPolling();
     // Re-enable scroll when component is destroyed
     document.body.style.overflow = '';
   });
@@ -246,7 +247,6 @@
       // Load data for the active section when modal opens
       if (activeSection === 'system-statistics') {
         loadStats();
-        startStatsPolling();
       } else if (activeSection === 'admin-users' && isAdmin) {
         loadAdminUsers();
       } else if (activeSection === 'admin-task-health' && isAdmin) {
@@ -257,7 +257,6 @@
     } else if (!isOpen && previousOpenState) {
       // Modal just closed
       document.body.style.overflow = '';
-      stopStatsPolling();
       previousOpenState = false;
     }
   }
@@ -284,7 +283,6 @@
   }
 
   function closeModal() {
-    stopStatsPolling();
     settingsModalStore.close();
     showCloseConfirmation = false;
     resetAllForms();
@@ -320,37 +318,24 @@
   function handleGpuStatsEvent(event: Event) {
     const gpuData = (event as CustomEvent).detail;
     if (gpuData && stats?.system) {
-      stats = { ...stats, system: { ...stats.system, gpu: gpuData } };
-    }
-  }
-
-  function startStatsPolling() {
-    stopStatsPolling();
-    statsPollingInterval = setInterval(() => {
-      loadStats();
-    }, 30000);
-  }
-
-  function stopStatsPolling() {
-    if (statsPollingInterval) {
-      clearInterval(statsPollingInterval);
-      statsPollingInterval = null;
+      const gpus = Array.isArray(gpuData) ? gpuData : [gpuData];
+      // Clamp index in case GPU count decreased
+      if (currentGpuIndex >= gpus.length) currentGpuIndex = 0;
+      stats = { ...stats, system: { ...stats.system, gpus } };
     }
   }
 
   function switchSection(sectionId: SettingsSection) {
     settingsModalStore.setActiveSection(sectionId);
 
-    // Load data for specific sections
+    // Load data for specific sections on navigation.
+    // GPU stats refresh via WebSocket broadcast (every 5 min) — no polling needed.
     if (sectionId === 'system-statistics') {
       loadStats();
-      startStatsPolling();
     } else if (sectionId === 'admin-users') {
       loadAdminUsers();
     } else if (sectionId === 'admin-task-health') {
       loadTaskHealth();
-    } else {
-      stopStatsPolling();
     }
   }
 
@@ -551,7 +536,7 @@
       statsInitialLoaded = true;
 
       // Auto-retry once if GPU stats are loading
-      if (response.data?.system?.gpu?.loading && !gpuRetryScheduled) {
+      if (response.data?.system?.gpus?.[0]?.loading && !gpuRetryScheduled) {
         gpuRetryScheduled = true;
         setTimeout(() => {
           gpuRetryScheduled = false;
@@ -1311,27 +1296,36 @@
 
                   <!-- GPU VRAM -->
                   <div class="stat-card stat-card-with-bar">
-                    {#if stats.system?.gpu?.available}
+                    {#if activeGpu?.available}
                       <div class="stat-card-content">
-                        <h4>{$t('settings.statistics.gpuVram')}</h4>
-                        <div class="stat-value">{stats.system.gpu.memory_percent || '0%'}</div>
-                        <div class="stat-detail">
-                          <span>{$t('settings.statistics.gpu')}: {stats.system.gpu.name || $t('common.unknown')}</span>
-                          <span>{$t('settings.statistics.total')}: {stats.system.gpu.memory_total || $t('common.unknown')}</span>
-                          <span>{$t('settings.statistics.used')}: {stats.system.gpu.memory_used || $t('common.unknown')}</span>
-                          <span>{$t('settings.statistics.free')}: {stats.system.gpu.memory_free || $t('common.unknown')}</span>
-                          {#if stats.system.gpu.utilization_percent && stats.system.gpu.utilization_percent !== 'N/A'}
-                            <span>{$t('settings.statistics.gpuUtilization')}: {stats.system.gpu.utilization_percent}</span>
+                        <h4 class="gpu-card-header">
+                          <span>{$t('settings.statistics.gpuVram')}</span>
+                          {#if gpuCount > 1}
+                            <div class="gpu-stepper">
+                              <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex - 1 + gpuCount) % gpuCount} aria-label="Previous GPU">&#8249;</button>
+                              <span class="gpu-step-label">GPU {currentGpuIndex + 1}/{gpuCount}</span>
+                              <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex + 1) % gpuCount} aria-label="Next GPU">&#8250;</button>
+                            </div>
                           {/if}
-                          {#if stats.system.gpu.temperature_celsius !== null && stats.system.gpu.temperature_celsius !== undefined}
-                            <span>{$t('settings.statistics.gpuTemperature')}: {stats.system.gpu.temperature_celsius}°C</span>
+                        </h4>
+                        <div class="stat-value">{activeGpu.memory_percent || '0%'}</div>
+                        <div class="stat-detail">
+                          <span>{$t('settings.statistics.gpu')}: {activeGpu.name || $t('common.unknown')}</span>
+                          <span>{$t('settings.statistics.total')}: {activeGpu.memory_total || $t('common.unknown')}</span>
+                          <span>{$t('settings.statistics.used')}: {activeGpu.memory_used || $t('common.unknown')}</span>
+                          <span>{$t('settings.statistics.free')}: {activeGpu.memory_free || $t('common.unknown')}</span>
+                          {#if activeGpu.utilization_percent && activeGpu.utilization_percent !== 'N/A'}
+                            <span>{$t('settings.statistics.gpuUtilization')}: {activeGpu.utilization_percent}</span>
+                          {/if}
+                          {#if activeGpu.temperature_celsius !== null && activeGpu.temperature_celsius !== undefined}
+                            <span>{$t('settings.statistics.gpuTemperature')}: {activeGpu.temperature_celsius}°C</span>
                           {/if}
                         </div>
                       </div>
                       <div class="progress-bar">
-                        <div class="progress-fill" style="width: {parseFloat(stats.system.gpu.memory_percent) || 0}%"></div>
+                        <div class="progress-fill" style="width: {parseFloat(activeGpu.memory_percent) || 0}%"></div>
                       </div>
-                    {:else if stats.system?.gpu?.loading}
+                    {:else if activeGpu?.loading}
                       <div class="stat-card-content">
                         <h4>{$t('settings.statistics.gpuVram')}</h4>
                         <div class="stat-value loading-text">{$t('common.loading')}</div>
@@ -1341,7 +1335,7 @@
                       <div class="stat-card-content">
                         <h4>{$t('settings.statistics.gpuVram')}</h4>
                         <div class="stat-value">N/A</div>
-                        <div class="stat-detail">{stats.system?.gpu?.name || $t('settings.statistics.noGpu')}</div>
+                        <div class="stat-detail">{activeGpu?.name || $t('settings.statistics.noGpu')}</div>
                       </div>
                     {/if}
                   </div>
@@ -2117,6 +2111,45 @@
     font-size: 0.75rem;
     font-weight: 400;
     color: var(--text-secondary);
+  }
+
+  .gpu-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .gpu-stepper {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-left: auto;
+  }
+
+  .gpu-step-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.875rem;
+    line-height: 1;
+    padding: 0 0.3rem;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .gpu-step-btn:hover {
+    background-color: var(--primary-light, var(--border-color));
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+  }
+
+  .gpu-step-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.03em;
+    white-space: nowrap;
   }
 
   .progress-bar {

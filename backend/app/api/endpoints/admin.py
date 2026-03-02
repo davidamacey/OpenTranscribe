@@ -208,7 +208,12 @@ def _query_gpu_via_smi() -> dict | None:
 
 
 def get_gpu_usage():
-    """Get GPU usage from Redis cache, falling back to direct nvidia-smi query."""
+    """Get GPU usage array from Redis cache, falling back to direct nvidia-smi query.
+
+    Returns a list of GPU stat dicts — one per active GPU device.  In normal
+    mode this is a single-element list; in --gpu-scale dual-worker mode it
+    contains one entry per active GPU worker.
+    """
     try:
         import json
 
@@ -218,40 +223,46 @@ def get_gpu_usage():
         gpu_stats_json = redis_client.get("gpu_stats")
 
         if gpu_stats_json:
-            return json.loads(gpu_stats_json)
+            data = json.loads(gpu_stats_json)
+            # Migrate legacy single-dict format to list
+            return data if isinstance(data, list) else [data]
 
         # Redis empty — try nvidia-smi directly (works if backend host has NVIDIA drivers)
         direct_stats = _query_gpu_via_smi()
         if direct_stats:
-            # Cache the result so subsequent polls don't re-run nvidia-smi
-            redis_client.setex("gpu_stats", 600, json.dumps(direct_stats))
-            return direct_stats
+            result = [direct_stats]
+            redis_client.setex("gpu_stats", 600, json.dumps(result))
+            return result
 
-        # nvidia-smi not available — dispatch to GPU worker (debounced)
+        # nvidia-smi not available — dispatch to cpu worker (debounced)
         lock_acquired = redis_client.set("gpu_stats_pending", "1", nx=True, ex=30)
         if lock_acquired:
             celery_app.send_task("update_gpu_stats", queue="cpu")
             logger.info("Dispatched on-demand GPU stats collection")
 
-        return {
-            "available": False,
-            "loading": True,
-            "name": "Loading GPU stats...",
-            "memory_total": "N/A",
-            "memory_used": "N/A",
-            "memory_free": "N/A",
-            "memory_percent": "N/A",
-        }
+        return [
+            {
+                "available": False,
+                "loading": True,
+                "name": "Loading GPU stats...",
+                "memory_total": "N/A",
+                "memory_used": "N/A",
+                "memory_free": "N/A",
+                "memory_percent": "N/A",
+            }
+        ]
     except Exception as e:
         logger.error(f"Error getting GPU usage from Redis: {e}")
-        return {
-            "available": False,
-            "name": "Error",
-            "memory_total": "Unknown",
-            "memory_used": "Unknown",
-            "memory_free": "Unknown",
-            "memory_percent": "Unknown",
-        }
+        return [
+            {
+                "available": False,
+                "name": "Error",
+                "memory_total": "Unknown",
+                "memory_used": "Unknown",
+                "memory_free": "Unknown",
+                "memory_percent": "Unknown",
+            }
+        ]
 
 
 def format_bytes(byte_count):

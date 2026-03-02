@@ -56,14 +56,16 @@ async def get_system_stats(
                     "logical_cores": 0,
                     "physical_cores": 0,
                 },
-                "gpu": {
-                    "available": False,
-                    "name": "Error",
-                    "memory_total": "Unknown",
-                    "memory_used": "Unknown",
-                    "memory_free": "Unknown",
-                    "memory_percent": "Unknown",
-                },
+                "gpus": [
+                    {
+                        "available": False,
+                        "name": "Error",
+                        "memory_total": "Unknown",
+                        "memory_used": "Unknown",
+                        "memory_free": "Unknown",
+                        "memory_percent": "Unknown",
+                    }
+                ],
                 "memory": {
                     "total": "Unknown",
                     "available": "Unknown",
@@ -125,7 +127,7 @@ async def get_system_stats(
                 "memory": system_stats["memory"],
                 "cpu": system_stats["cpu"],
                 "disk": system_stats["disk"],
-                "gpu": system_stats["gpu"],
+                "gpus": system_stats["gpu"],  # list of GPU stat dicts
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
             },

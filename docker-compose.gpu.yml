@@ -15,7 +15,8 @@
 # docker-compose.yml to work on CPU-only systems.
 #
 # Configuration:
-#   GPU_DEVICE_ID - GPU device to use (default: 0)
+#   GPU_DEVICE_ID       - GPU device for AI work in normal mode (default: 0)
+#   GPU_SCALE_DEVICE_ID - GPU device for AI work in --gpu-scale mode (default: 2)
 #   Set in .env file: GPU_DEVICE_ID=1
 
 services:
@@ -33,11 +34,15 @@ services:
 
   celery-cpu-worker:
     # GPU access for nvidia-smi stats collection (update_gpu_stats task).
-    # Only needs driver access — no CUDA workloads run here.
+    # Uses 'count: all' so it can query ANY GPU device — this is needed because
+    # in --gpu-scale mode the active AI GPU is GPU_SCALE_DEVICE_ID (e.g. 2) which
+    # differs from GPU_DEVICE_ID (e.g. 0).  The task reads GPU_SCALE_ENABLED from
+    # .env to pick the correct device ID at runtime.
+    # No CUDA workloads run on this worker — only nvidia-smi NVML reads.
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               capabilities: [gpu]
-              device_ids: ['${GPU_DEVICE_ID:-0}']
+              count: all

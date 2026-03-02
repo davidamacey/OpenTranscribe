@@ -566,6 +566,15 @@ class Settings(BaseSettings):
     # to leave headroom for user-initiated downloads.
     YOUTUBE_RECOVERY_BATCH_SIZE: int = _int_env("YOUTUBE_RECOVERY_BATCH_SIZE", 3)
 
+    # Master switch for automatic YouTube download retries.
+    # Set to false to stop all automatic re-attempts (both Celery task retries
+    # and the recovery task's periodic re-queuing).  Manual downloads via the
+    # UI are NOT affected — only automatic/background retry loops are disabled.
+    # Re-enable by setting to true and restarting the celery-worker container.
+    YOUTUBE_AUTO_RETRY_ENABLED: bool = (
+        os.getenv("YOUTUBE_AUTO_RETRY_ENABLED", "true").lower() == "true"
+    )
+
     # Celery task-level rate limit for YouTube downloads.
     # Format: "N/h" (per hour), "N/m" (per minute), "N/s" (per second).
     # This is enforced by the download worker regardless of how many tasks

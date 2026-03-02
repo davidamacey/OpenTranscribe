@@ -111,6 +111,11 @@ celery_app.conf.update(
         # Utility Queue - Lightweight maintenance tasks (concurrency=2)
         "app.tasks.utility.*": {"queue": "utility"},
         "app.tasks.recovery.*": {"queue": "utility"},
+        # GPU stats runs on the cpu worker so it fires independently of long-running
+        # GPU transcription tasks (gpu worker concurrency=1 would block for 30+ min).
+        # The cpu worker is given 'count: all' NVIDIA device access in gpu.yml so it
+        # can call nvidia-smi for any device.  The task selects the correct device ID
+        # via GPU_SCALE_ENABLED + GPU_SCALE_DEVICE_ID vs GPU_DEVICE_ID from .env.
         "update_gpu_stats": {"queue": "cpu"},
         "startup_recovery": {"queue": "utility"},
         "recover_user_files": {"queue": "utility"},

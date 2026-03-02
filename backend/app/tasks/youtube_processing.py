@@ -435,7 +435,11 @@ def process_youtube_url_task(
                 # Check if this is a retriable error using the canonical set
                 is_retriable = error_category in RETRIABLE_CATEGORIES
 
-                if is_retriable and self.request.retries < self.max_retries:
+                if (
+                    is_retriable
+                    and self.request.retries < self.max_retries
+                    and settings.YOUTUBE_AUTO_RETRY_ENABLED
+                ):
                     # Calculate backoff: 30s, 120s, 480s
                     countdown = 30 * (2**self.request.retries)
                     logger.warning(

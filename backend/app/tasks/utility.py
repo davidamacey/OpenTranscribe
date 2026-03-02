@@ -29,34 +29,20 @@ def _get_broadcast_redis():
     return _broadcast_redis_client
 
 
-@celery_app.task(name="update_gpu_stats", bind=True)
-def update_gpu_stats(self):
-    """
-    Periodic task to update GPU statistics in Redis.
+def _query_single_gpu(device_id: int, subprocess_mod, format_bytes) -> dict | None:
+    """Query nvidia-smi for one GPU device and return a parsed stats dict.
 
-    This task runs on the celery worker (which has GPU access) and stores
-    GPU memory stats in Redis so the backend API can retrieve them.
-
-    Uses nvidia-smi to get accurate GPU memory usage including all processes,
-    not just PyTorch allocated memory.
+    Args:
+        device_id: NVIDIA device index to query.
+        subprocess_mod: The subprocess module (passed in to avoid re-import).
+        format_bytes: Byte-formatting helper (passed in to avoid closure issues).
 
     Returns:
-        Dictionary with GPU stats or error status
+        Dict of GPU stats, or None if the query fails.
     """
     try:
-        import os
-        import subprocess
-
-        # Use GPU_DEVICE_ID env var if set, else default to 0
-        device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
-
-        # Use nvidia-smi for all GPU info (no torch dependency needed).
-        # This allows the task to run on any worker queue, not just the GPU queue.
-        # Query: name, memory.used, memory.total, memory.free, utilization.gpu, temperature.gpu
-        # Security: Safe subprocess call with hardcoded system command (nvidia-smi).
-        # Only dynamic parameter is device_id (integer), preventing command injection.
-        result = subprocess.run(  # noqa: S603 - hardcoded nvidia-smi, integer device_id
-            [  # noqa: S607 # nosec B603 B607
+        result = subprocess_mod.run(  # noqa: S603 # nosec B603 B607
+            [  # noqa: S607
                 "nvidia-smi",
                 "--query-gpu=name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
                 "--format=csv,noheader,nounits",
@@ -66,8 +52,6 @@ def update_gpu_stats(self):
             text=True,
             check=True,
         )
-
-        # Parse the output: "name, used, total, free, util%, temp" in MiB/%/C
         parts = result.stdout.strip().split(", ")
         gpu_name = parts[0]
         memory_used_mib = float(parts[1])
@@ -76,24 +60,14 @@ def update_gpu_stats(self):
         utilization_percent = int(parts[4]) if len(parts) > 4 else None
         temperature_celsius = int(parts[5]) if len(parts) > 5 else None
 
-        # Convert MiB to bytes for formatting
         memory_used = memory_used_mib * 1024 * 1024
         memory_total = memory_total_mib * 1024 * 1024
         memory_free = memory_free_mib * 1024 * 1024
-
-        # Calculate percentage used
         memory_percent = (memory_used / memory_total * 100) if memory_total > 0 else 0
 
-        # Format bytes to human-readable
-        def format_bytes(byte_count):
-            for unit in ["B", "KB", "MB", "GB", "TB"]:
-                if byte_count < 1024 or unit == "TB":
-                    return f"{byte_count:.2f} {unit}"
-                byte_count /= 1024
-            return f"{byte_count:.2f} TB"
-
-        gpu_stats = {
+        return {
             "available": True,
+            "device_id": device_id,
             "name": gpu_name,
             "memory_total": format_bytes(memory_total),
             "memory_used": format_bytes(memory_used),
@@ -104,16 +78,80 @@ def update_gpu_stats(self):
             else "N/A",
             "temperature_celsius": temperature_celsius,
         }
+    except Exception as e:
+        logger.warning(f"nvidia-smi query for device {device_id} failed: {e}")
+        return None
 
-        # Store in Redis with 5-minute expiration (survives gaps between GPU tasks)
+
+@celery_app.task(name="update_gpu_stats", bind=True)
+def update_gpu_stats(self):
+    """Periodic task to update GPU statistics in Redis.
+
+    Runs on the cpu worker (which has 'count: all' NVIDIA device access via
+    docker-compose.gpu.yml) so it fires independently of long-running GPU
+    transcription tasks that hold the gpu queue at concurrency=1.
+
+    Collects stats for every GPU the app is actively using:
+      - Normal mode:      GPU_DEVICE_ID only
+      - GPU-scale mode:   GPU_SCALE_DEVICE_ID (scaled worker) +
+                          GPU_DEVICE_ID (default worker, when GPU_SCALE_DEFAULT_WORKER=1)
+
+    Stores a JSON array in Redis key "gpu_stats" and broadcasts it via WebSocket
+    so the frontend can cycle through all active GPUs.
+
+    Returns:
+        List of GPU stat dicts (one per active device).
+    """
+    try:
+        import os
+        import subprocess
+
+        def format_bytes(byte_count):
+            for unit in ["B", "KB", "MB", "GB", "TB"]:
+                if byte_count < 1024 or unit == "TB":
+                    return f"{byte_count:.2f} {unit}"
+                byte_count /= 1024
+            return f"{byte_count:.2f} TB"
+
+        # Determine which GPU devices the app workers are using.
+        # All values come from .env via env_file on the cpu-worker service.
+        gpu_scale_enabled = os.environ.get("GPU_SCALE_ENABLED", "false").lower() == "true"
+        scale_device_id = int(os.environ.get("GPU_SCALE_DEVICE_ID", "2"))
+        default_device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
+        scale_default_worker = os.environ.get("GPU_SCALE_DEFAULT_WORKER", "0") == "1"
+
+        if gpu_scale_enabled:
+            # Scaled worker is always the primary; add default worker if also active.
+            device_ids = [scale_device_id]
+            if scale_default_worker and default_device_id != scale_device_id:
+                device_ids.append(default_device_id)
+        else:
+            device_ids = [default_device_id]
+
+        gpu_stats_list = []
+        for device_id in device_ids:
+            stats = _query_single_gpu(device_id, subprocess, format_bytes)
+            if stats:
+                gpu_stats_list.append(stats)
+
+        if not gpu_stats_list:
+            gpu_stats_list = [
+                {
+                    "available": False,
+                    "device_id": device_ids[0] if device_ids else 0,
+                    "name": "No GPU Available",
+                    "memory_total": "N/A",
+                    "memory_used": "N/A",
+                    "memory_free": "N/A",
+                    "memory_percent": "N/A",
+                }
+            ]
+
+        # Store array in Redis (10-min TTL; beat runs every 5 min)
         redis_client = celery_app.backend.client
-        redis_client.setex(
-            "gpu_stats",
-            600,  # Expire after 10 minutes (beat runs every 5)
-            json.dumps(gpu_stats),
-        )
+        redis_client.setex("gpu_stats", 600, json.dumps(gpu_stats_list))
 
-        # Broadcast to all connected WebSocket clients
+        # Broadcast array to all connected WebSocket clients
         try:
             _get_broadcast_redis().publish(
                 "websocket_notifications",
@@ -121,11 +159,11 @@ def update_gpu_stats(self):
                     {
                         "type": "gpu_stats_update",
                         "broadcast": True,
-                        "data": gpu_stats,
+                        "data": gpu_stats_list,
                     }
                 ),
             )
-            logger.debug("Broadcast GPU stats update via WebSocket")
+            logger.debug(f"Broadcast GPU stats for {len(gpu_stats_list)} device(s)")
         except Exception as broadcast_err:
             logger.warning(f"Failed to broadcast GPU stats: {broadcast_err}")
 
@@ -133,30 +171,42 @@ def update_gpu_stats(self):
         with contextlib.suppress(Exception):  # noqa: S110
             redis_client.delete("gpu_stats_pending")
 
-        logger.debug(f"Updated GPU stats in Redis: {gpu_stats}")
-        return gpu_stats
+        logger.debug(f"Updated GPU stats in Redis: {gpu_stats_list}")
+        return gpu_stats_list
 
     except FileNotFoundError:
         logger.warning("nvidia-smi not found — no GPU available")
-        return {
-            "available": False,
-            "name": "No GPU Available",
-            "memory_total": "N/A",
-            "memory_used": "N/A",
-            "memory_free": "N/A",
-            "memory_percent": "N/A",
-        }
+        fallback = [
+            {
+                "available": False,
+                "device_id": 0,
+                "name": "No GPU Available",
+                "memory_total": "N/A",
+                "memory_used": "N/A",
+                "memory_free": "N/A",
+                "memory_percent": "N/A",
+            }
+        ]
+        with contextlib.suppress(Exception):
+            celery_app.backend.client.setex("gpu_stats", 600, json.dumps(fallback))
+        return fallback
     except Exception as e:
         logger.error(f"Error updating GPU stats: {str(e)}")
-        return {
-            "available": False,
-            "name": "Error",
-            "memory_total": "Unknown",
-            "memory_used": "Unknown",
-            "memory_free": "Unknown",
-            "memory_percent": "Unknown",
-            "error": str(e),
-        }
+        fallback = [
+            {
+                "available": False,
+                "device_id": 0,
+                "name": "Error",
+                "memory_total": "Unknown",
+                "memory_used": "Unknown",
+                "memory_free": "Unknown",
+                "memory_percent": "Unknown",
+                "error": str(e),
+            }
+        ]
+        with contextlib.suppress(Exception):
+            celery_app.backend.client.setex("gpu_stats", 600, json.dumps(fallback))
+        return fallback
 
 
 # All recovery tasks have been moved to app.tasks.recovery
