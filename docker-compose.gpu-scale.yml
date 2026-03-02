@@ -47,6 +47,7 @@ services:
       --prefetch-multiplier=${GPU_SCALE_WORKERS:-4}
       --max-tasks-per-child=${GPU_SCALE_MAX_TASKS:-500}
       -n gpu-scaled@%h
+      -E
       --loglevel=info
     environment:
       # CUDA_VISIBLE_DEVICES=0 because Docker's device reservation (deploy.resources)
