@@ -70,7 +70,7 @@ services:
     pull_policy: never
     volumes:
       # Offline: sentence-transformers model must be pre-cached
-      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
