@@ -33,6 +33,7 @@
   }
 
   async function handleRevoke(share: Share) {
+    if (!confirm($t('sharing.revokeConfirm', { name: share.target_name }))) return;
     revokingShareId = share.uuid;
     try {
       await SharingApi.revokeShare(collectionUuid, share.uuid);
@@ -80,7 +81,7 @@
         </div>
 
         <div class="share-actions">
-          {#if canManage && share.permission !== 'owner'}
+          {#if canManage}
             <PermissionLevelSelect
               value={share.permission}
               disabled={updatingShareId === share.uuid}
@@ -103,7 +104,7 @@
             </button>
           {:else}
             <span class="permission-label">
-              {share.permission === 'owner' ? $t('sharing.permissionOwner') : $t('sharing.permission' + share.permission.charAt(0).toUpperCase() + share.permission.slice(1))}
+              {$t(share.permission === 'viewer' ? 'sharing.permissionViewer' : share.permission === 'editor' ? 'sharing.permissionEditor' : 'sharing.permissionViewer')}
             </span>
           {/if}
         </div>

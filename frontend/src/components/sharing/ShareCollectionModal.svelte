@@ -65,36 +65,38 @@
     if (pendingTargets.length === 0) return;
 
     sharing = true;
-    let successCount = 0;
-    let errors: string[] = [];
+    try {
+      let successCount = 0;
+      let errors: string[] = [];
 
-    for (const target of pendingTargets) {
-      try {
-        const newShare = await SharingApi.shareCollection(collectionUuid, {
-          target_type: target.type,
-          target_uuid: target.uuid,
-          permission: target.permission,
-        });
-        sharingStore.addShare(newShare);
-        shares = [...shares, newShare];
-        successCount++;
-      } catch (err: any) {
-        console.error('Error sharing with target:', target, err);
-        const detail = err.response?.data?.detail || $t('sharing.failedToShare');
-        errors.push(`${target.name}: ${detail}`);
+      for (const target of pendingTargets) {
+        try {
+          const newShare = await SharingApi.shareCollection(collectionUuid, {
+            target_type: target.type,
+            target_uuid: target.uuid,
+            permission: target.permission,
+          });
+          sharingStore.addShare(newShare);
+          shares = [...shares, newShare];
+          successCount++;
+        } catch (err: any) {
+          console.error('Error sharing with target:', target, err);
+          const detail = err.response?.data?.detail || $t('sharing.failedToShare');
+          errors.push(`${target.name}: ${detail}`);
+        }
       }
-    }
 
-    if (successCount > 0) {
-      toastStore.success($t('sharing.sharedSuccess', { count: successCount }));
-      dispatch('shared');
+      if (successCount > 0) {
+        toastStore.success($t('sharing.sharedSuccess', { count: successCount }));
+        dispatch('shared');
+      }
+      if (errors.length > 0) {
+        toastStore.error(errors.join('\n'));
+      }
+    } finally {
+      pendingTargets = [];
+      sharing = false;
     }
-    if (errors.length > 0) {
-      toastStore.error(errors.join('\n'));
-    }
-
-    pendingTargets = [];
-    sharing = false;
   }
 
   function handleClose() {
@@ -129,12 +131,13 @@
     class="modal-content"
     role="dialog"
     aria-modal="true"
+    aria-labelledby="share-modal-title"
     on:click|stopPropagation
     on:keydown|stopPropagation
     transition:slide
   >
     <div class="modal-header">
-      <h3>{$t('sharing.shareCollection')}</h3>
+      <h3 id="share-modal-title">{$t('sharing.shareCollection')}</h3>
       <button
         class="close-button"
         on:click={handleClose}
@@ -149,7 +152,6 @@
       <!-- Search for users/groups to share with -->
       <div class="search-section">
         <ShareTargetSearch
-          {collectionUuid}
           {existingShareTargets}
           on:select={handleTargetSelect}
         />
@@ -453,11 +455,11 @@
     to { transform: rotate(360deg); }
   }
 
-  :global(.dark) .modal-overlay {
+  :global([data-theme='dark']) .modal-overlay {
     background: rgba(0, 0, 0, 0.7);
   }
 
-  :global(.dark) .pending-item {
+  :global([data-theme='dark']) .pending-item {
     background: rgba(255, 255, 255, 0.03);
   }
 </style>

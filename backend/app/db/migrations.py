@@ -136,9 +136,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='user_mfa' AND column_name='uuid')"
     )
-    has_user_group = "user_group" in tables
+    has_user_group = (
+        "user_group" in tables and "user_group_member" in tables and "collection_share" in tables
+    )
+
+    has_sharing_constraints = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = '_collection_share_permission_check')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v211: CHECK constraints and indexes on groups/sharing tables
+    if has_user_group and has_sharing_constraints:
+        return "v211_add_sharing_constraints_and_indexes"
     # v210: user groups and collection sharing tables
     if has_user_group:
         return "v210_add_groups_and_sharing"

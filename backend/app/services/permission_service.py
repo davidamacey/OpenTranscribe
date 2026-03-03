@@ -61,7 +61,6 @@ class PermissionService:
             db.query(
                 func.max(
                     case(
-                        (CollectionShare.permission == "owner", 3),
                         (CollectionShare.permission == "editor", 2),
                         (CollectionShare.permission == "viewer", 1),
                         else_=0,
@@ -110,7 +109,6 @@ class PermissionService:
             db.query(
                 func.max(
                     case(
-                        (CollectionShare.permission == "owner", 3),
                         (CollectionShare.permission == "editor", 2),
                         (CollectionShare.permission == "viewer", 1),
                         else_=0,

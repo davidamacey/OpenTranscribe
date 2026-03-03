@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
@@ -103,7 +104,7 @@ def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -
         name=group.name,
         description=group.description,
         member_count=member_count,
-        my_role=my_role or "owner",
+        my_role=my_role or "member",
         owner=owner_brief,
         created_at=group.created_at,
     )
@@ -123,7 +124,51 @@ def list_groups(
         .all()
     )
 
-    return [_build_group_response(db, group, int(current_user.id)) for group in groups]
+    if not groups:
+        return []
+
+    group_ids = [g.id for g in groups]
+
+    # Batch: member counts per group
+    count_rows = (
+        db.query(UserGroupMember.group_id, func.count(UserGroupMember.id))
+        .filter(UserGroupMember.group_id.in_(group_ids))
+        .group_by(UserGroupMember.group_id)
+        .all()
+    )
+    counts = {gid: cnt for gid, cnt in count_rows}
+
+    # Batch: current user's role per group
+    role_rows = (
+        db.query(UserGroupMember.group_id, UserGroupMember.role)
+        .filter(
+            UserGroupMember.group_id.in_(group_ids),
+            UserGroupMember.user_id == current_user.id,
+        )
+        .all()
+    )
+    roles = {gid: role for gid, role in role_rows}
+
+    results = []
+    for group in groups:
+        owner_brief = UserBrief(
+            uuid=group.owner.uuid,
+            full_name=group.owner.full_name,
+            email=group.owner.email,
+        )
+        results.append(
+            GroupSchema(
+                uuid=group.uuid,
+                name=group.name,
+                description=group.description,
+                member_count=counts.get(group.id, 0),
+                my_role=roles.get(group.id, "member"),
+                owner=owner_brief,
+                created_at=group.created_at,
+            )
+        )
+
+    return results
 
 
 @router.post("", response_model=GroupSchema, status_code=status.HTTP_201_CREATED)
@@ -380,11 +425,13 @@ def update_member_role(
             detail="Cannot change the group owner's role",
         )
 
-    # Admins cannot promote others to admin (only owner can)
-    if caller_membership.role == "admin" and member_update.role == "admin":
+    # Admins cannot change other admins' roles (only owner can)
+    if caller_membership.role == "admin" and (
+        target_membership.role == "admin" or member_update.role == "admin"
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the group owner can promote members to admin",
+            detail="Only the group owner can change admin roles",
         )
 
     target_membership.role = member_update.role

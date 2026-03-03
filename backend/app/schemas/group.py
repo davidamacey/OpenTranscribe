@@ -14,7 +14,7 @@ from app.schemas.user import UserBrief
 
 class GroupBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=2000)
 
 
 class GroupCreate(GroupBase):
@@ -23,7 +23,7 @@ class GroupCreate(GroupBase):
 
 class GroupUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=2000)
 
 
 class GroupMemberAdd(BaseModel):
@@ -54,7 +54,7 @@ class Group(UUIDBaseSchema):
     name: str
     description: Optional[str] = None
     member_count: int = 0
-    my_role: str = "owner"
+    my_role: str = "member"
     owner: UserBrief
     created_at: datetime
 

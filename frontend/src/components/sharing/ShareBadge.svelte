@@ -34,7 +34,7 @@
     white-space: nowrap;
   }
 
-  :global(.dark) .share-badge {
+  :global([data-theme='dark']) .share-badge {
     background: rgba(59, 130, 246, 0.2);
     color: #60a5fa;
   }

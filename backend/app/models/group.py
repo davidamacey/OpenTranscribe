@@ -21,13 +21,15 @@ class UserGroup(Base):
 
     __tablename__ = "user_group"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     uuid = Column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    owner_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    owner_id = Column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -49,12 +51,14 @@ class UserGroupMember(Base):
 
     __tablename__ = "user_group_member"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     uuid = Column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
-    group_id = Column(Integer, ForeignKey("user_group.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    group_id = Column(
+        Integer, ForeignKey("user_group.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String(20), nullable=False, default="member")  # "owner", "admin", "member"
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
 

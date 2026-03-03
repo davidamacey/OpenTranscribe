@@ -4,6 +4,7 @@
   import { GroupsApi } from '$lib/api/groups';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { formatDate } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import GroupMemberList from './GroupMemberList.svelte';
   import GroupMemberSearch from './GroupMemberSearch.svelte';
@@ -23,6 +24,10 @@
   let editDescription = group.description || '';
   let isSaving = false;
   let isDeleting = false;
+
+  // Keep edit fields in sync when the group prop changes externally
+  $: if (!editingName) editName = group.name;
+  $: if (!editingDescription) editDescription = group.description || '';
 
   $: canEdit = group.my_role === 'owner' || group.my_role === 'admin';
   $: canDelete = group.my_role === 'owner';
@@ -59,8 +64,8 @@
 
     isSaving = true;
     try {
-      await GroupsApi.updateGroup(group.uuid, { name: editName.trim() });
-      group.name = editName.trim();
+      const updated = await GroupsApi.updateGroup(group.uuid, { name: editName.trim() });
+      group = { ...group, name: updated.name };
       editingName = false;
       toastStore.success($t('groups.toast.groupUpdated'));
       dispatch('updated');
@@ -81,8 +86,8 @@
 
     isSaving = true;
     try {
-      await GroupsApi.updateGroup(group.uuid, { description: newDesc || undefined });
-      group.description = newDesc || null;
+      const updated = await GroupsApi.updateGroup(group.uuid, { description: newDesc || undefined });
+      group = { ...group, description: updated.description ?? null };
       editingDescription = false;
       toastStore.success($t('groups.toast.groupUpdated'));
       dispatch('updated');
@@ -149,13 +154,6 @@
     }
   }
 
-  function formatDate(dateStr: string): string {
-    try {
-      return new Date(dateStr).toLocaleDateString();
-    } catch {
-      return dateStr;
-    }
-  }
 </script>
 
 <div class="group-detail">
@@ -195,7 +193,6 @@
           bind:value={editName}
           maxlength="255"
           on:keydown={handleNameKeydown}
-          on:blur={saveName}
         />
         <div class="edit-actions">
           <button class="btn-inline-save" on:click={saveName} disabled={isSaving}>
@@ -207,9 +204,7 @@
         </div>
       </div>
     {:else}
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="display-name" class:editable={canEdit} on:click={startEditName}>
+      <div class="display-name" class:editable={canEdit} role="button" tabindex="0" on:click={startEditName} on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && startEditName()}>
         <h3 class="group-name">{group.name}</h3>
         <GroupRoleBadge role={group.my_role} />
         {#if canEdit}
@@ -242,9 +237,7 @@
         </div>
       </div>
     {:else}
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="display-description" class:editable={canEdit} on:click={startEditDescription}>
+      <div class="display-description" class:editable={canEdit} role="button" tabindex="0" on:click={startEditDescription} on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && startEditDescription()}>
         {#if group.description}
           <p class="group-description">{group.description}</p>
         {:else if canEdit}

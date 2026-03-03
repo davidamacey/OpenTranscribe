@@ -4,9 +4,6 @@
   import { GroupsApi } from '$lib/api/groups';
   import type { ShareTargetSearchResult } from '$lib/types/groups';
 
-  // eslint-disable-next-line svelte/no-unused-svelte-ignore
-  // svelte-ignore export_let_unused
-  export let collectionUuid: string = '';
   export let existingShareTargets: Array<{ type: string; uuid: string }> = [];
 
   const dispatch = createEventDispatcher();
@@ -277,11 +274,11 @@
     text-align: center;
   }
 
-  :global(.dark) .search-input {
+  :global([data-theme='dark']) .search-input {
     background-color: rgba(255, 255, 255, 0.05);
   }
 
-  :global(.dark) .search-results {
+  :global([data-theme='dark']) .search-results {
     background: var(--surface-color);
   }
 </style>

@@ -102,9 +102,11 @@ class User(Base):
         "CollectionShare",
         foreign_keys="CollectionShare.shared_by_id",
         back_populates="shared_by",
+        passive_deletes=True,
     )
     shared_with_me = relationship(
         "CollectionShare",
         foreign_keys="CollectionShare.target_user_id",
         back_populates="target_user",
+        passive_deletes=True,
     )

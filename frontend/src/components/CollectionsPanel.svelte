@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { fade, slide } from 'svelte/transition';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
@@ -262,10 +262,24 @@
     }
   }
 
+  function handleShareWsEvent() {
+    fetchCollections();
+    fetchSharedCollections();
+  }
+
   onMount(() => {
+    window.addEventListener('collection-shared', handleShareWsEvent);
+    window.addEventListener('share-revoked', handleShareWsEvent);
+    window.addEventListener('share-updated', handleShareWsEvent);
     fetchCollections();
     fetchPrompts();
     fetchSharedCollections();
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('collection-shared', handleShareWsEvent);
+    window.removeEventListener('share-revoked', handleShareWsEvent);
+    window.removeEventListener('share-updated', handleShareWsEvent);
   });
 </script>
 
@@ -397,7 +411,7 @@
               {/if}
               <div class="meta">
                 <span class="media-count">{shared.media_count} {shared.media_count !== 1 ? $t('collectionsPanel.files') : $t('collectionsPanel.file')}</span>
-                <span class="badge shared-permission">{shared.my_permission}</span>
+                <span class="badge shared-permission">{$t('sharing.permission' + shared.my_permission.charAt(0).toUpperCase() + shared.my_permission.slice(1))}</span>
               </div>
               <SharedByAttribution sharedBy={shared.shared_by} />
             </div>
@@ -902,7 +916,7 @@
     text-transform: capitalize;
   }
 
-  :global(.dark) .badge.shared-permission {
+  :global([data-theme='dark']) .badge.shared-permission {
     background: rgba(139, 92, 246, 0.2);
     color: #a78bfa;
   }

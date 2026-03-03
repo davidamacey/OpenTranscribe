@@ -9,6 +9,17 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Module-level connection pool (reused across all calls)
+_redis_pool: redis.ConnectionPool | None = None
+
+
+def _get_redis_client() -> redis.Redis:
+    """Return a Redis client backed by a shared connection pool."""
+    global _redis_pool
+    if _redis_pool is None:
+        _redis_pool = redis.ConnectionPool.from_url(settings.REDIS_URL)
+    return redis.Redis(connection_pool=_redis_pool)
+
 
 def send_ws_event(user_id: int, notification_type: str, data: dict) -> bool:
     """Publish a WebSocket notification to a specific user via Redis pub/sub.
@@ -26,13 +37,13 @@ def send_ws_event(user_id: int, notification_type: str, data: dict) -> bool:
         True on success, False on failure (errors are logged, never raised).
     """
     try:
-        redis_client = redis.from_url(settings.REDIS_URL)
+        client = _get_redis_client()
         notification = {
             "user_id": user_id,
             "type": notification_type,
             "data": data,
         }
-        redis_client.publish("websocket_notifications", json.dumps(notification))
+        client.publish("websocket_notifications", json.dumps(notification))
         logger.info(
             "Published WS notification for user %s: %s",
             user_id,

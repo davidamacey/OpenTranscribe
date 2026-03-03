@@ -11,7 +11,6 @@
   const options: { value: PermissionLevel; labelKey: string; descKey: string }[] = [
     { value: 'viewer', labelKey: 'sharing.permissionViewer', descKey: 'sharing.permissionViewerDesc' },
     { value: 'editor', labelKey: 'sharing.permissionEditor', descKey: 'sharing.permissionEditorDesc' },
-    { value: 'owner', labelKey: 'sharing.permissionOwner', descKey: 'sharing.permissionOwnerDesc' },
   ];
 
   function handleChange(event: Event) {
@@ -64,7 +63,7 @@
     cursor: not-allowed;
   }
 
-  :global(.dark) .permission-select {
+  :global([data-theme='dark']) .permission-select {
     background-color: rgba(255, 255, 255, 0.05);
   }
 </style>

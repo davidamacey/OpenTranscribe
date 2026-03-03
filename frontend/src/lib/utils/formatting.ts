@@ -8,6 +8,33 @@ import { format } from 'date-fns';
  */
 
 /**
+ * Formats a date string to a locale-aware short date.
+ */
+export function formatDate(dateStr: string): string {
+  try {
+    return new Date(dateStr).toLocaleDateString();
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Returns 1-2 character initials from a name or email.
+ */
+export function getInitials(name: string | null, email: string): string {
+  if (name) {
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  }
+  return email ? email[0].toUpperCase() : '?';
+}
+
+/**
  * Formats a duration in seconds for video player UI (HH:MM:SS or MM:SS format).
  * This is kept for video player controls and live timestamp display.
  * @param {number} totalSeconds - The duration in seconds.

@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import type { Group, GroupDetail } from '$lib/types/groups';
   import { GroupsApi } from '$lib/api/groups';
   import { groupsStore, myGroups, memberGroups } from '$stores/groups';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { formatDate } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import GroupDetailPanel from './GroupDetailPanel.svelte';
   import GroupCreateModal from './GroupCreateModal.svelte';
@@ -13,8 +14,19 @@
   let showCreateModal = false;
   let loadingDetail = false;
 
+  function handleGroupWsEvent() {
+    loadGroups();
+  }
+
   onMount(async () => {
+    window.addEventListener('group-member-added', handleGroupWsEvent);
+    window.addEventListener('group-member-removed', handleGroupWsEvent);
     await loadGroups();
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('group-member-added', handleGroupWsEvent);
+    window.removeEventListener('group-member-removed', handleGroupWsEvent);
   });
 
   async function loadGroups() {
@@ -71,13 +83,6 @@
     loadGroups();
   }
 
-  function formatDate(dateStr: string): string {
-    try {
-      return new Date(dateStr).toLocaleDateString();
-    } catch {
-      return dateStr;
-    }
-  }
 </script>
 
 {#if selectedGroup}

@@ -5,6 +5,7 @@
   import { toastStore } from '$stores/toast';
   import { authStore } from '$stores/auth';
   import { t } from '$stores/locale';
+  import { formatDate, getInitials } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
 
   export let members: GroupMember[] = [];
@@ -67,20 +68,6 @@
     }
   }
 
-  function formatDate(dateStr: string): string {
-    try {
-      return new Date(dateStr).toLocaleDateString();
-    } catch {
-      return dateStr;
-    }
-  }
-
-  function getInitials(name: string | null, email: string): string {
-    if (name) {
-      return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-    }
-    return email[0].toUpperCase();
-  }
 </script>
 
 <div class="member-list">

@@ -15,11 +15,11 @@ from app.schemas.user import UserBrief
 class ShareCreate(BaseModel):
     target_type: str = Field(..., pattern="^(user|group)$")
     target_uuid: UUID
-    permission: str = Field("viewer", pattern="^(viewer|editor|owner)$")
+    permission: str = Field("viewer", pattern="^(viewer|editor)$")
 
 
 class ShareUpdate(BaseModel):
-    permission: str = Field(..., pattern="^(viewer|editor|owner)$")
+    permission: str = Field(..., pattern="^(viewer|editor)$")
 
 
 class Share(UUIDBaseSchema):

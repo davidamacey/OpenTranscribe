@@ -3,7 +3,7 @@
  */
 
 export type GroupRole = 'owner' | 'admin' | 'member';
-export type PermissionLevel = 'viewer' | 'editor' | 'owner';
+export type PermissionLevel = 'viewer' | 'editor';
 export type ShareTargetType = 'user' | 'group';
 
 export interface UserBrief {

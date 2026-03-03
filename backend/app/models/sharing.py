@@ -22,7 +22,7 @@ class CollectionShare(Base):
 
     __tablename__ = "collection_share"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     uuid = Column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
@@ -39,7 +39,7 @@ class CollectionShare(Base):
     target_group_id = Column(
         Integer, ForeignKey("user_group.id", ondelete="CASCADE"), nullable=True, index=True
     )
-    permission = Column(String(20), nullable=False, default="viewer")  # "viewer", "editor", "owner"
+    permission = Column(String(20), nullable=False, default="viewer")  # "viewer" or "editor"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

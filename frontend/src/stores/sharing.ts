@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { Share, SharedCollection } from '$lib/types/groups';
+import type { Share, SharedCollection, PermissionLevel } from '$lib/types/groups';
 
 interface SharingState {
   currentCollectionShares: Share[];
@@ -34,11 +34,11 @@ function createSharingStore() {
         ...s,
         currentCollectionShares: s.currentCollectionShares.filter((sh) => sh.uuid !== uuid),
       })),
-    updateSharePermission: (uuid: string, permission: string) =>
+    updateSharePermission: (uuid: string, permission: PermissionLevel) =>
       store.update((s) => ({
         ...s,
         currentCollectionShares: s.currentCollectionShares.map((sh) =>
-          sh.uuid === uuid ? { ...sh, permission: permission as Share['permission'] } : sh
+          sh.uuid === uuid ? { ...sh, permission } : sh
         ),
       })),
     setSharedCollections: (collections: SharedCollection[]) =>
