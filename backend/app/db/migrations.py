@@ -145,7 +145,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = '_collection_share_permission_check')"
     )
 
+    has_speaker_cluster = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'speaker_cluster')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v220: speaker clustering tables
+    if has_speaker_cluster:
+        return "v220_add_speaker_clusters"
     # v211: CHECK constraints and indexes on groups/sharing tables
     if has_user_group and has_sharing_constraints:
         return "v211_add_sharing_constraints_and_indexes"

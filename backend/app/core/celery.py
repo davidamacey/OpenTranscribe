@@ -60,6 +60,7 @@ celery_app = Celery(
         "app.tasks.baseline_export",
         "app.tasks.cleanup",
         "app.tasks.rediarize_task",
+        "app.tasks.speaker_clustering",
     ],
 )
 
@@ -139,6 +140,11 @@ celery_app.conf.update(
         "migration.finalize_v4": {"queue": "utility"},
         "quality.export_baseline": {"queue": "utility"},
         "quality.compare_baseline": {"queue": "utility"},
+        # Speaker clustering tasks (CPU-bound similarity comparisons)
+        "app.tasks.speaker_clustering.*": {"queue": "cpu"},
+        "app.tasks.speaker_clustering.cluster_speakers_for_file": {"queue": "cpu"},
+        "app.tasks.speaker_clustering.recluster_all_speakers": {"queue": "cpu"},
+        "app.tasks.speaker_clustering.extract_speaker_audio_clips": {"queue": "cpu"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={

@@ -204,6 +204,11 @@ class SpeakerProfile(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    # Cluster origin
+    source_cluster_id = Column(
+        Integer, ForeignKey("speaker_cluster.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Relationships
     user = relationship("User", back_populates="speaker_profiles")
     speaker_instances = relationship(
@@ -214,6 +219,7 @@ class SpeakerProfile(Base):
         back_populates="speaker_profile",
         cascade="all, delete-orphan",
     )
+    source_cluster = relationship("SpeakerCluster", foreign_keys=[source_cluster_id])
 
 
 class Speaker(Base):
@@ -254,11 +260,17 @@ class Speaker(Base):
     attribute_confidence = Column(JSONB, nullable=True)  # {"gender": 0.92, "age_range": 0.75}
     attributes_predicted_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Cluster assignment
+    cluster_id = Column(
+        Integer, ForeignKey("speaker_cluster.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Relationships
     user = relationship("User", back_populates="speakers")
     media_file = relationship("MediaFile", back_populates="speakers")
     profile = relationship("SpeakerProfile", back_populates="speaker_instances")
     transcript_segments = relationship("TranscriptSegment", back_populates="speaker")
+    cluster = relationship("SpeakerCluster", back_populates="speakers")
 
 
 class Comment(Base):
@@ -454,6 +466,83 @@ class SpeakerCollectionMember(Base):
     # Relationships
     collection = relationship("SpeakerCollection", back_populates="collection_members")
     speaker_profile = relationship("SpeakerProfile", back_populates="speaker_collections")
+
+
+class SpeakerCluster(Base):
+    """Auto-discovered cluster of likely-same speakers across files."""
+
+    __tablename__ = "speaker_cluster"
+
+    id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    label = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    member_count = Column(Integer, default=0)
+    promoted_to_profile_id = Column(
+        Integer, ForeignKey("speaker_profile.id", ondelete="SET NULL"), nullable=True
+    )
+    representative_speaker_id = Column(Integer, nullable=True)
+    quality_score = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    user = relationship("User", backref="speaker_clusters")
+    promoted_to_profile = relationship("SpeakerProfile", foreign_keys=[promoted_to_profile_id])
+    members = relationship(
+        "SpeakerClusterMember", back_populates="cluster", cascade="all, delete-orphan"
+    )
+    speakers = relationship("Speaker", back_populates="cluster")
+
+
+class SpeakerClusterMember(Base):
+    """Membership of a speaker in a cluster."""
+
+    __tablename__ = "speaker_cluster_member"
+
+    id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
+    cluster_id = Column(
+        Integer, ForeignKey("speaker_cluster.id", ondelete="CASCADE"), nullable=False
+    )
+    speaker_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
+    confidence = Column(Float, default=0.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    cluster = relationship("SpeakerCluster", back_populates="members")
+    speaker = relationship("Speaker")
+
+    __table_args__ = (UniqueConstraint("cluster_id", "speaker_id", name="uq_cluster_speaker"),)
+
+
+class SpeakerAudioClip(Base):
+    """Short audio clip of a speaker for identification."""
+
+    __tablename__ = "speaker_audio_clip"
+
+    id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
+    speaker_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
+    media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
+    storage_path = Column(String(512), nullable=False)
+    start_time = Column(Float, nullable=False)
+    end_time = Column(Float, nullable=False)
+    duration = Column(Float, nullable=False)
+    is_representative = Column(Boolean, default=False)
+    quality_score = Column(Float, default=0.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    speaker = relationship("Speaker", backref="audio_clips")
+    media_file = relationship("MediaFile")
 
 
 class SpeakerMatch(Base):

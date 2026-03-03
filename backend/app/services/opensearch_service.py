@@ -1746,6 +1746,280 @@ def remove_profile_embedding(profile_uuid: str) -> bool:
         return False
 
 
+def store_cluster_embedding(
+    cluster_uuid: str,
+    user_id: int,
+    embedding: list[float],
+    label: str | None = None,
+) -> bool:
+    """Store a cluster centroid embedding in OpenSearch.
+
+    Args:
+        cluster_uuid: UUID of the speaker cluster.
+        user_id: Owner user ID.
+        embedding: L2-normalized centroid embedding vector.
+        label: Optional cluster label.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    try:
+        ensure_indices_exist()
+
+        doc = {
+            "document_type": "cluster",
+            "cluster_uuid": str(cluster_uuid),
+            "user_id": user_id,
+            "embedding": embedding,
+            "updated_at": datetime.datetime.now().isoformat(),
+        }
+        if label:
+            doc["label"] = label
+
+        opensearch_client.index(
+            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            body=doc,
+            id=f"cluster_{cluster_uuid}",
+            refresh="wait_for",
+        )
+
+        logger.info(f"Stored cluster {cluster_uuid} centroid in OpenSearch")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error storing cluster embedding: {e}")
+        return False
+
+
+def delete_cluster_embedding(cluster_uuid: str) -> bool:
+    """Delete a cluster centroid from OpenSearch.
+
+    Args:
+        cluster_uuid: UUID of the speaker cluster.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    try:
+        opensearch_client.delete(
+            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            id=f"cluster_{cluster_uuid}",
+        )
+        logger.info(f"Removed cluster {cluster_uuid} embedding from OpenSearch")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Error removing cluster embedding (may not exist): {e}")
+        return False
+
+
+def find_matching_clusters(
+    embedding: list[float],
+    user_id: int,
+    k: int = 5,
+    threshold: float = 0.65,
+) -> list[dict]:
+    """Find matching cluster centroids for a speaker embedding using kNN.
+
+    Args:
+        embedding: L2-normalized speaker embedding vector.
+        user_id: Owner user ID.
+        k: Number of nearest neighbors.
+        threshold: Minimum cosine similarity.
+
+    Returns:
+        List of dicts with cluster_uuid, similarity, label.
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return []
+
+    try:
+        query = {
+            "size": k,
+            "query": {
+                "knn": {
+                    "embedding": {
+                        "vector": embedding,
+                        "k": k,
+                        "filter": {
+                            "bool": {
+                                "filter": [
+                                    {"term": {"document_type": "cluster"}},
+                                    {"term": {"user_id": user_id}},
+                                ]
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+
+        matches = []
+        for hit in response["hits"]["hits"]:
+            score = hit["_score"]
+            if score < threshold:
+                continue
+            source = hit["_source"]
+            matches.append(
+                {
+                    "cluster_uuid": source.get("cluster_uuid"),
+                    "similarity": float(score),
+                    "label": source.get("label"),
+                }
+            )
+
+        return matches
+
+    except Exception as e:
+        logger.error(f"Error finding matching clusters: {e}")
+        return []
+
+
+def msearch_speaker_similarities(
+    speaker_data: list[dict],
+    user_id: int,
+    k: int = 10,
+) -> list[list[dict]]:
+    """Batch kNN search for building a similarity graph.
+
+    Args:
+        speaker_data: List of dicts with speaker_uuid and embedding.
+        user_id: Owner user ID.
+        k: Number of nearest neighbors per query.
+
+    Returns:
+        List of result lists, one per input embedding.
+    """
+    if not opensearch_client or not speaker_data:
+        return [[] for _ in speaker_data]
+
+    try:
+        # Build msearch body
+        body_parts: list[str] = []
+        for sd in speaker_data:
+            header = {"index": settings.OPENSEARCH_SPEAKER_INDEX}
+            query = {
+                "size": k,
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": sd["embedding"],
+                            "k": k,
+                            "filter": {
+                                "bool": {
+                                    "filter": [
+                                        {"term": {"user_id": user_id}},
+                                        {
+                                            "bool": {
+                                                "must_not": [
+                                                    {"exists": {"field": "document_type"}},
+                                                ]
+                                            }
+                                        },
+                                    ]
+                                }
+                            },
+                        }
+                    }
+                },
+            }
+            import json
+
+            body_parts.append(json.dumps(header))
+            body_parts.append(json.dumps(query))
+
+        msearch_body = "\n".join(body_parts) + "\n"
+        response = opensearch_client.msearch(body=msearch_body)
+
+        results: list[list[dict]] = []
+        for resp in response.get("responses", []):
+            hits: list[dict] = []
+            for hit in resp.get("hits", {}).get("hits", []):
+                source = hit.get("_source", {})
+                hits.append(
+                    {
+                        "speaker_uuid": source.get("speaker_uuid"),
+                        "similarity": float(hit["_score"]),
+                        "speaker_id": source.get("speaker_id"),
+                    }
+                )
+            results.append(hits)
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Error in msearch speaker similarities: {e}")
+        return [[] for _ in speaker_data]
+
+
+def get_all_speaker_embeddings(
+    user_id: int,
+    limit: int = 10000,
+) -> list[dict]:
+    """Fetch all speaker embeddings for a user from OpenSearch.
+
+    Args:
+        user_id: Owner user ID.
+        limit: Maximum number of embeddings to return.
+
+    Returns:
+        List of dicts with speaker_uuid and embedding.
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return []
+
+    try:
+        query = {
+            "size": limit,
+            "query": {
+                "bool": {
+                    "filter": [
+                        {"term": {"user_id": user_id}},
+                    ],
+                    "must_not": [
+                        {"exists": {"field": "document_type"}},
+                    ],
+                }
+            },
+            "_source": ["speaker_uuid", "embedding", "speaker_id", "profile_id", "display_name"],
+        }
+
+        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+
+        results = []
+        for hit in response["hits"]["hits"]:
+            source = hit["_source"]
+            if "embedding" in source and "speaker_uuid" in source:
+                results.append(
+                    {
+                        "speaker_uuid": source["speaker_uuid"],
+                        "embedding": source["embedding"],
+                        "speaker_id": source.get("speaker_id"),
+                        "profile_id": source.get("profile_id"),
+                        "display_name": source.get("display_name"),
+                    }
+                )
+
+        logger.info(f"Fetched {len(results)} speaker embeddings for user {user_id}")
+        return results
+
+    except Exception as e:
+        logger.error(f"Error fetching speaker embeddings: {e}")
+        return []
+
+
 def remove_speaker_embedding(speaker_uuid: str) -> bool:
     """
     Remove a speaker embedding from OpenSearch.
@@ -1956,6 +2230,65 @@ def find_matching_profiles(
     except Exception as e:
         logger.error(f"Error finding matching profiles: {e}")
         return []
+
+
+def update_cluster_embedding(
+    cluster_uuid: str,
+    embedding: list[float],
+    label: str | None = None,
+) -> bool:
+    """Update an existing cluster centroid embedding in OpenSearch.
+
+    Re-indexes the full document (same as store) so that the embedding vector
+    is replaced atomically.
+
+    Args:
+        cluster_uuid: UUID of the cluster.
+        embedding: Updated centroid embedding vector.
+        label: Optional updated label for the cluster.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    try:
+        ensure_indices_exist()
+
+        # Fetch existing document to preserve user_id
+        doc_id = f"cluster_{cluster_uuid}"
+        try:
+            existing = opensearch_client.get(index=settings.OPENSEARCH_SPEAKER_INDEX, id=doc_id)
+            user_id = existing["_source"].get("user_id")
+            existing_label = existing["_source"].get("label")
+        except Exception:
+            logger.error(f"Cannot update cluster {cluster_uuid}: document not found")
+            return False
+
+        doc = {
+            "document_type": "cluster",
+            "cluster_uuid": str(cluster_uuid),
+            "user_id": user_id,
+            "embedding": embedding,
+            "label": label if label is not None else existing_label,
+            "updated_at": datetime.datetime.now().isoformat(),
+        }
+
+        opensearch_client.index(
+            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            body=doc,
+            id=doc_id,
+            refresh="wait_for",
+        )
+
+        logger.info(f"Updated cluster {cluster_uuid} embedding in OpenSearch")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error updating cluster embedding for {cluster_uuid}: {e}")
+        return False
 
 
 def cleanup_orphaned_speaker_embeddings(user_id: int) -> int:

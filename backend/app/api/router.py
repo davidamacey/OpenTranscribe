@@ -14,6 +14,7 @@ from .endpoints import llm_status
 from .endpoints import media_collections
 from .endpoints import prompts
 from .endpoints import search
+from .endpoints import speaker_clusters
 from .endpoints import speaker_profiles
 from .endpoints import speakers
 from .endpoints import summarization
@@ -63,6 +64,9 @@ include_router_with_consistency(search.router, prefix="/search", tags=["search"]
 include_router_with_consistency(speakers.router, prefix="/speakers", tags=["speakers"])
 include_router_with_consistency(
     speaker_profiles.router, prefix="/speaker-profiles", tags=["speaker-profiles"]
+)
+include_router_with_consistency(
+    speaker_clusters.router, prefix="/speaker-clusters", tags=["speaker-clusters"]
 )
 include_router_with_consistency(comments.router, prefix="/comments", tags=["comments"])
 include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])

@@ -16,8 +16,12 @@ from .media import FileStatus
 from .media import FileTag
 from .media import MediaFile
 from .media import Speaker
+from .media import SpeakerAudioClip
+from .media import SpeakerCluster
+from .media import SpeakerClusterMember
 from .media import SpeakerCollection
 from .media import SpeakerCollectionMember
+from .media import SpeakerMatch
 from .media import SpeakerProfile
 from .media import Tag
 from .media import Task
@@ -46,6 +50,10 @@ __all__ = [
     "Analytics",
     "Collection",
     "CollectionMember",
+    "SpeakerCluster",
+    "SpeakerClusterMember",
+    "SpeakerAudioClip",
+    "SpeakerMatch",
     "SpeakerCollection",
     "SpeakerCollectionMember",
     "SummaryPrompt",
