@@ -44,6 +44,7 @@ celery_app = Celery(
         "app.tasks.waveform_generation",
         "app.tasks.summarization",
         "app.tasks.analytics",
+        "app.tasks.cleanup",
         "app.tasks.utility",
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
@@ -124,10 +125,16 @@ celery_app.conf.update(
         # The cpu worker is given 'count: all' NVIDIA device access in gpu.yml so it
         # can call nvidia-smi for any device.  The task selects the correct device ID
         # via GPU_SCALE_ENABLED + GPU_SCALE_DEVICE_ID vs GPU_DEVICE_ID from .env.
+        "app.tasks.cleanup.*": {"queue": "utility"},
         "system.startup_recovery": {"queue": "utility"},
         "system.recover_user_files": {"queue": "utility"},
         "system.health_check": {"queue": "utility"},
+        "system.check_tasks_health": {"queue": "utility"},
         "system.cleanup_expired_files": {"queue": "utility"},
+        "cleanup.run_periodic_cleanup": {"queue": "utility"},
+        "cleanup.deep_cleanup": {"queue": "utility"},
+        "cleanup.health_check": {"queue": "utility"},
+        "cleanup.emergency_recovery": {"queue": "utility"},
         "migration.check_status": {"queue": "utility"},
         "migration.finalize_v4": {"queue": "utility"},
         "quality.export_baseline": {"queue": "utility"},
