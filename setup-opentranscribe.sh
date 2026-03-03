@@ -856,6 +856,7 @@ configure_environment() {
         ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
         REDIS_PASSWORD=$(openssl rand -hex 32)
         OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+        FLOWER_PASSWORD=$(openssl rand -hex 16)
     elif command -v python3 &> /dev/null; then
         # Fallback to Python's secrets module
         POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
@@ -865,6 +866,7 @@ configure_environment() {
         ENCRYPTION_KEY=$(python3 -c "import secrets, base64; print('opentranscribe_' + base64.b64encode(secrets.token_bytes(48)).decode())")
         REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
         OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        FLOWER_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(16))")
     else
         # Basic fallback (not recommended for production)
         POSTGRES_PASSWORD="postgres_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
@@ -873,6 +875,7 @@ configure_environment() {
         ENCRYPTION_KEY="encryption_key_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
         REDIS_PASSWORD="redis_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
         OPENSEARCH_PASSWORD="opensearch_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+        FLOWER_PASSWORD="flower_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
         echo "⚠️  Using basic secrets - install openssl or python3 for cryptographically secure generation"
     fi
 
@@ -1271,6 +1274,7 @@ create_env_file() {
     sed -i.bak "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$ENCRYPTION_KEY|g" .env
     sed -i.bak "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|g" .env
     sed -i.bak "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=$OPENSEARCH_PASSWORD|g" .env
+    sed -i.bak "s|FLOWER_PASSWORD=.*|FLOWER_PASSWORD=$FLOWER_PASSWORD|g" .env
 
     # Update AI model configuration
     sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env
