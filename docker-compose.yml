@@ -388,7 +388,7 @@ services:
     command: >
       python -m celery -A app.core.celery flower
       --port=5555
-      --url_prefix=${VITE_FLOWER_URL_PREFIX:-flower}
+      --url_prefix=${FLOWER_URL_PREFIX:-flower}
       --persistent=True
       --db=/app/flower.db
       --broker=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0

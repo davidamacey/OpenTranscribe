@@ -113,6 +113,12 @@ server {
         # a browser auth dialog when opening the dashboard from the app UI.
         # FLOWER_AUTH_B64 is computed at nginx startup as base64(FLOWER_USER:FLOWER_PASSWORD).
         proxy_set_header Authorization "Basic ${FLOWER_AUTH_B64}";
+
+        # WebSocket/SSE support for Flower's real-time task event stream
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400s;
+        proxy_buffering off;
     }
 
     # MinIO Console (S3 storage management)

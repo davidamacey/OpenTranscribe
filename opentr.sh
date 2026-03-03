@@ -904,6 +904,17 @@ check_health() {
   echo "📋 MinIO health:"
   docker compose exec -T minio curl -s http://localhost:9000/minio/health/live > /dev/null && echo "OK" || echo "⚠️ MinIO health check failed."
 
+  echo "📋 Flower health:"
+  if docker compose exec -T flower curl -s "http://localhost:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck" > /dev/null 2>&1; then
+    echo "OK (http://localhost:${FLOWER_PORT:-5175}/${FLOWER_URL_PREFIX:-flower}/)"
+  else
+    if docker compose ps flower 2>/dev/null | grep -q "Up"; then
+      echo "⚠️ Flower container running but not responding"
+    else
+      echo "⚠️ Flower not running"
+    fi
+  fi
+
   # NGINX health (only if configured)
   if [ -n "$NGINX_SERVER_NAME" ]; then
     echo "📋 NGINX health:"

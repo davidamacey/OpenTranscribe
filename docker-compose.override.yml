@@ -101,7 +101,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile.prod
     volumes:
-      - ./backend:/app  # Mount source code for development
+      # Flower only needs persistent DB storage, not hot-reload source code.
+      # Using flower_data:/app (not ./backend:/app) avoids /app mount conflict.
       - flower_data:/app
 
   # GPU Scaled Worker - Development build (only active with --gpu-scale flag)
