@@ -12,6 +12,7 @@ from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
+from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
 
 # Set up logging
@@ -335,7 +336,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Audio transcription and analysis API",
-    version="1.0.0",
+    version=APP_VERSION,
     openapi_url=f"{settings.API_PREFIX}/openapi.json",
     docs_url=f"{settings.API_PREFIX}/docs",
     redoc_url=f"{settings.API_PREFIX}/redoc",
@@ -374,7 +375,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # typ
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
-    return {"status": "healthy"}
+    return {"status": "healthy", "version": APP_VERSION}
 
 
 # Static files are served by nginx in production, not by FastAPI

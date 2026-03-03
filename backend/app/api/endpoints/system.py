@@ -16,6 +16,7 @@ from app.api.endpoints.admin import get_gpu_usage
 from app.api.endpoints.admin import get_memory_usage
 from app.api.endpoints.admin import get_system_uptime
 from app.api.endpoints.auth import get_current_user
+from app.core.version import APP_VERSION
 from app.db.base import get_db
 from app.models.user import User
 from app.services.protected_media_providers import get_protected_media_auth_config
@@ -122,7 +123,7 @@ async def get_system_stats(
             },
             "models": models_info,
             "system": {
-                "version": "1.0.0",
+                "version": APP_VERSION,
                 "uptime": system_stats["uptime"],
                 "memory": system_stats["memory"],
                 "cpu": system_stats["cpu"],

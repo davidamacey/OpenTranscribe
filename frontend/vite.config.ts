@@ -18,6 +18,10 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
+        '/health': {
+          target: 'http://backend:8080',
+          changeOrigin: true,
+        },
         '/api': {
           target: 'http://backend:8080',
           changeOrigin: true,
@@ -56,6 +60,17 @@ export default defineConfig(({ mode }) => {
           // Set Host header to match what MinIO signed the URL with
           headers: {
             Host: 'minio:9000',
+          },
+        },
+        // Flower proxy for dev mode - injects Basic Auth header
+        // so browsers don't need to handle credentials in URL (blocked by modern browsers)
+        '/flower': {
+          target: `http://flower:5555`,
+          changeOrigin: true,
+          headers: {
+            Authorization: `Basic ${Buffer.from(
+              `${env.FLOWER_USER || 'admin'}:${env.FLOWER_PASSWORD || 'flower'}`
+            ).toString('base64')}`,
           },
         },
         // S3 proxy for presigned URLs (thumbnails, media files)

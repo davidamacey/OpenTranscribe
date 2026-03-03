@@ -108,7 +108,8 @@ export class AdminApi {
     offset?: number;
   }): Promise<AuditLogEntry[]> {
     const response = await axiosInstance.get('/admin/audit-logs', { params });
-    return response.data;
+    const data = response.data;
+    return Array.isArray(data) ? data : data.logs ?? [];
   }
 
   static async exportAuditLogs(
@@ -117,7 +118,7 @@ export class AdminApi {
     endDate?: string
   ): Promise<Blob> {
     const response = await axiosInstance.get('/admin/audit-logs/export', {
-      params: { format, start_date: startDate, end_date: endDate },
+      params: { export_format: format, start_date: startDate, end_date: endDate },
       responseType: 'blob',
     });
     return response.data;

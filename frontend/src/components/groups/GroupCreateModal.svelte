@@ -1,12 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { fade } from 'svelte/transition';
   import type { Group } from '$lib/types/groups';
   import { GroupsApi } from '$lib/api/groups';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
 
   export let isOpen = false;
+  export let noBackdrop = false;
 
   const dispatch = createEventDispatcher<{
     created: Group;
@@ -67,7 +67,7 @@
   <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
   <div
     class="modal-backdrop"
-    transition:fade={{ duration: 200 }}
+    class:no-backdrop={noBackdrop}
     on:click={handleBackdropClick}
     on:keydown={handleKeydown}
     tabindex="-1"
@@ -75,7 +75,7 @@
     aria-modal="true"
     aria-labelledby="create-group-title"
   >
-    <div class="modal-container" transition:fade={{ duration: 200, delay: 100 }}>
+    <div class="modal-container">
       <div class="modal-content">
         <div class="modal-header">
           <h2 id="create-group-title" class="modal-title">{$t('groups.createGroup')}</h2>
@@ -116,6 +116,7 @@
                 rows="3"
                 placeholder={$t('groups.descriptionPlaceholder')}
               ></textarea>
+              <span class="form-hint">{$t('groups.descriptionHint')}</span>
             </div>
           </div>
 
@@ -272,37 +273,50 @@
   }
 
   .modal-button {
-    padding: 0.5rem 1.25rem;
+    padding: 0.6rem 1.2rem;
     border: none;
     border-radius: 8px;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s ease;
   }
 
   .cancel-button {
     background: var(--card-background);
     color: var(--text-color);
     border: 1px solid var(--border-color);
+    box-shadow: var(--card-shadow);
   }
 
   .cancel-button:hover {
-    background: var(--background-color);
+    background: var(--button-hover, #e5e7eb);
+    border-color: var(--border-color);
   }
 
   .confirm-button {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .confirm-button:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .confirm-button:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .confirm-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .modal-backdrop.no-backdrop {
+    background: transparent !important;
   }
 
   :global([data-theme='dark']) .modal-backdrop {
@@ -311,6 +325,14 @@
 
   :global([data-theme='dark']) .modal-container {
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  }
+
+  .form-hint {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-style: italic;
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -271,13 +271,6 @@
     {/if}
 
     <div class="form-actions">
-      <button
-        class="btn btn-primary"
-        on:click={handleReindexAll}
-        disabled={isReindexing}
-      >
-        {isReindexing ? ($t('search.reindexing') || 'Re-indexing...') : ($t('search.reindexAll') || 'Re-index All')}
-      </button>
       {#if indexStatus.pending_files > 0}
         <button
           class="btn btn-secondary"
@@ -287,6 +280,13 @@
           Re-index Pending
         </button>
       {/if}
+      <button
+        class="btn btn-primary"
+        on:click={handleReindexAll}
+        disabled={isReindexing}
+      >
+        {isReindexing ? ($t('search.reindexing') || 'Re-indexing...') : ($t('search.reindexAll') || 'Re-index All')}
+      </button>
     </div>
 
     <div class="section-divider"></div>
@@ -321,17 +321,17 @@
   {#if modelChanged}
     <div class="form-actions">
       <button
+        class="btn btn-secondary"
+        on:click={() => (selectedModelId = currentModelId)}
+      >
+        Cancel
+      </button>
+      <button
         class="btn btn-primary"
         on:click={handleModelChange}
         disabled={isSwitchingModel}
       >
         {isSwitchingModel ? 'Applying...' : 'Apply & Re-index'}
-      </button>
-      <button
-        class="btn btn-secondary"
-        on:click={() => (selectedModelId = currentModelId)}
-      >
-        Cancel
       </button>
     </div>
   {/if}
@@ -462,6 +462,11 @@
     display: flex;
     gap: 0.75rem;
     margin-top: 0.75rem;
+    justify-content: flex-end;
+  }
+
+  .form-actions .btn-secondary {
+    margin-right: auto;
   }
 
   .btn {
@@ -471,16 +476,23 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s ease;
   }
 
   .btn-primary {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-hover);
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-primary:disabled {

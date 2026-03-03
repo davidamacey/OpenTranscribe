@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
   import { t } from '$stores/locale';
 
   export let isOpen = false;
@@ -51,15 +50,14 @@
 {#if isOpen}
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
-    class="modal-backdrop"
-    transition:fade={{ duration: 200 }}
+    class="modal-backdrop no-backdrop"
     on:click={handleBackdropClick}
     on:keydown={handleKeydown}
     tabindex="-1"
     role="dialog"
     aria-modal="true"
   >
-    <div class="modal-container" transition:fade={{ duration: 200, delay: 100 }}>
+    <div class="modal-container">
       <div class="modal-header">
         <h2 class="modal-title">{$t('settings.statistics.processingDetails')}</h2>
         <button class="modal-close" on:click={close} aria-label="Close">
@@ -241,6 +239,10 @@
     padding: 1rem;
   }
 
+  .modal-backdrop.no-backdrop {
+    background: transparent !important;
+  }
+
   .modal-container {
     background: var(--card-background, var(--background-color));
     border: 1px solid var(--border-color);
@@ -311,16 +313,21 @@
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
+    border-radius: 0;
     padding: 0.5rem 0.75rem;
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-secondary);
     cursor: pointer;
+    box-shadow: none;
     transition: color 0.2s, border-color 0.2s;
   }
 
   .tab:hover {
     color: var(--text-color);
+    background: none;
+    transform: none;
+    box-shadow: none;
   }
 
   .tab.active {

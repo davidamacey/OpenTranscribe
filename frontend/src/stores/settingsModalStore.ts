@@ -36,7 +36,7 @@ interface SettingsModalState {
 
 const initialState: SettingsModalState = {
   isOpen: false,
-  activeSection: 'profile',
+  activeSection: 'system-statistics',
   dirtyState: {
     profile: false,
     security: false,
@@ -72,13 +72,14 @@ function createSettingsModalStore() {
       update((state) => ({
         ...state,
         isOpen: true,
-        activeSection: section || 'profile',
+        activeSection: section || 'system-statistics',
       }));
     },
     close: () => {
       update((state) => ({
         ...state,
         isOpen: false,
+        activeSection: 'system-statistics',
       }));
     },
     setActiveSection: (section: SettingsSection) => {

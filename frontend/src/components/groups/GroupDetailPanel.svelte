@@ -8,6 +8,7 @@
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import GroupMemberList from './GroupMemberList.svelte';
   import GroupMemberSearch from './GroupMemberSearch.svelte';
+  import ConfirmationModal from '../ConfirmationModal.svelte';
 
   export let group: GroupDetail;
 
@@ -24,6 +25,7 @@
   let editDescription = group.description || '';
   let isSaving = false;
   let isDeleting = false;
+  let showDeleteConfirm = false;
 
   // Keep edit fields in sync when the group prop changes externally
   $: if (!editingName) editName = group.name;
@@ -99,10 +101,13 @@
     }
   }
 
-  async function handleDelete() {
-    if (!confirm($t('groups.confirmDelete'))) return;
-    isDeleting = true;
+  function requestDelete() {
+    showDeleteConfirm = true;
+  }
 
+  async function executeDelete() {
+    showDeleteConfirm = false;
+    isDeleting = true;
     try {
       await GroupsApi.deleteGroup(group.uuid);
       toastStore.success($t('groups.toast.groupDeleted'));
@@ -170,7 +175,7 @@
     {#if canDelete}
       <button
         class="btn-delete"
-        on:click={handleDelete}
+        on:click={requestDelete}
         disabled={isDeleting}
         title={$t('groups.deleteGroup')}
       >
@@ -204,7 +209,7 @@
         </div>
       </div>
     {:else}
-      <div class="display-name" class:editable={canEdit} role="button" tabindex="0" on:click={startEditName} on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && startEditName()}>
+      <div class="display-name" class:editable={canEdit} role="button" tabindex="0" title={canEdit ? $t('groups.clickToEdit') : undefined} on:click={startEditName} on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && startEditName()}>
         <h3 class="group-name">{group.name}</h3>
         <GroupRoleBadge role={group.my_role} />
         {#if canEdit}
@@ -237,7 +242,7 @@
         </div>
       </div>
     {:else}
-      <div class="display-description" class:editable={canEdit} role="button" tabindex="0" on:click={startEditDescription} on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && startEditDescription()}>
+      <div class="display-description" class:editable={canEdit} role="button" tabindex="0" title={canEdit ? $t('groups.clickToEdit') : undefined} on:click={startEditDescription} on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && startEditDescription()}>
         {#if group.description}
           <p class="group-description">{group.description}</p>
         {:else if canEdit}
@@ -287,6 +292,18 @@
       on:left={handleLeft}
     />
   </div>
+
+  <ConfirmationModal
+    bind:isOpen={showDeleteConfirm}
+    title={$t('groups.deleteGroup')}
+    message={$t('groups.confirmDelete')}
+    confirmText={isDeleting ? $t('groups.deleting') : $t('groups.deleteGroup')}
+    cancelText={$t('modal.cancel')}
+    confirmButtonClass="modal-delete-button"
+    on:confirm={executeDelete}
+    on:cancel={() => showDeleteConfirm = false}
+    on:close={() => showDeleteConfirm = false}
+  />
 </div>
 
 <style>

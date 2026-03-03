@@ -224,13 +224,18 @@
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
+    border-radius: 0;
     cursor: pointer;
     color: var(--color-text-secondary);
     font-size: 0.875rem;
+    box-shadow: none;
   }
 
   .tab:hover {
     color: var(--color-text);
+    background: none;
+    transform: none;
+    box-shadow: none;
   }
 
   .tab.active {

@@ -473,7 +473,7 @@
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s, opacity 0.2s;
+    transition: all 0.2s ease;
   }
 
   .btn:disabled {
@@ -482,11 +482,18 @@
   }
 
   .btn-primary {
-    background: var(--color-primary);
+    background-color: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--color-primary-dark);
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
   }
 </style>

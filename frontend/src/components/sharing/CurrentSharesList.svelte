@@ -4,6 +4,7 @@
   import { SharingApi } from '$lib/api/sharing';
   import { sharingStore } from '$stores/sharing';
   import PermissionLevelSelect from './PermissionLevelSelect.svelte';
+  import ConfirmationModal from '../ConfirmationModal.svelte';
   import type { Share, PermissionLevel } from '$lib/types/groups';
 
   export let shares: Share[] = [];
@@ -12,6 +13,8 @@
 
   let updatingShareId: string | null = null;
   let revokingShareId: string | null = null;
+  let showRevokeConfirm = false;
+  let pendingRevokeShare: Share | null = null;
 
   async function handlePermissionChange(share: Share, event: CustomEvent<PermissionLevel>) {
     const newPermission = event.detail;
@@ -32,8 +35,17 @@
     }
   }
 
-  async function handleRevoke(share: Share) {
-    if (!confirm($t('sharing.revokeConfirm', { name: share.target_name }))) return;
+  function requestRevoke(share: Share) {
+    pendingRevokeShare = share;
+    showRevokeConfirm = true;
+  }
+
+  async function executeRevoke() {
+    if (!pendingRevokeShare) return;
+    const share = pendingRevokeShare;
+    showRevokeConfirm = false;
+    pendingRevokeShare = null;
+
     revokingShareId = share.uuid;
     try {
       await SharingApi.revokeShare(collectionUuid, share.uuid);
@@ -89,7 +101,7 @@
             />
             <button
               class="revoke-btn"
-              on:click={() => handleRevoke(share)}
+              on:click={() => requestRevoke(share)}
               disabled={revokingShareId === share.uuid}
               title={$t('sharing.revokeAccess')}
             >
@@ -112,6 +124,18 @@
     {/each}
   </div>
 {/if}
+
+<ConfirmationModal
+  bind:isOpen={showRevokeConfirm}
+  title={$t('sharing.revokeAccess')}
+  message={pendingRevokeShare ? $t('sharing.revokeConfirm', { name: pendingRevokeShare.target_name }) : ''}
+  confirmText={$t('sharing.revokeAccess')}
+  cancelText={$t('modal.cancel')}
+  confirmButtonClass="modal-delete-button"
+  on:confirm={executeRevoke}
+  on:cancel={() => { showRevokeConfirm = false; pendingRevokeShare = null; }}
+  on:close={() => { showRevokeConfirm = false; pendingRevokeShare = null; }}
+/>
 
 <style>
   .shares-list {

@@ -13,6 +13,21 @@
   let selectedGroup: GroupDetail | null = null;
   let showCreateModal = false;
   let loadingDetail = false;
+  let searchQuery = '';
+
+  $: filteredMyGroups = searchQuery.trim()
+    ? $myGroups.filter(g =>
+        g.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        (g.description && g.description.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+      )
+    : $myGroups;
+
+  $: filteredMemberGroups = searchQuery.trim()
+    ? $memberGroups.filter(g =>
+        g.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        (g.description && g.description.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+      )
+    : $memberGroups;
 
   function handleGroupWsEvent() {
     loadGroups();
@@ -128,12 +143,46 @@
         <p class="empty-description">{$t('groups.emptyDescription')}</p>
       </div>
     {:else}
+      <!-- Search -->
+      {#if $groupsStore.groups.length > 0}
+        <div class="search-wrapper">
+          <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input
+            type="text"
+            class="search-input"
+            placeholder={$t('groups.searchPlaceholder')}
+            bind:value={searchQuery}
+          />
+          {#if searchQuery}
+            <button
+              class="search-clear"
+              on:click={() => searchQuery = ''}
+              title={$t('groups.clearSearch')}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          {/if}
+        </div>
+      {/if}
+
+      {#if searchQuery && filteredMyGroups.length === 0 && filteredMemberGroups.length === 0}
+        <div class="no-results">
+          <p>{$t('groups.noSearchResults')}</p>
+        </div>
+      {/if}
+
       <!-- My Groups (Owned) -->
-      {#if $myGroups.length > 0}
+      {#if filteredMyGroups.length > 0}
         <div class="groups-section">
           <h4 class="groups-section-title">{$t('groups.myGroups')}</h4>
           <div class="groups-grid">
-            {#each $myGroups as group (group.uuid)}
+            {#each filteredMyGroups as group (group.uuid)}
               <button class="group-card" on:click={() => openGroupDetail(group)} disabled={loadingDetail}>
                 <div class="card-header">
                   <span class="card-name">{group.name}</span>
@@ -159,11 +208,11 @@
       {/if}
 
       <!-- Groups I'm a Member Of -->
-      {#if $memberGroups.length > 0}
+      {#if filteredMemberGroups.length > 0}
         <div class="groups-section">
           <h4 class="groups-section-title">{$t('groups.memberOf')}</h4>
           <div class="groups-grid">
-            {#each $memberGroups as group (group.uuid)}
+            {#each filteredMemberGroups as group (group.uuid)}
               <button class="group-card" on:click={() => openGroupDetail(group)} disabled={loadingDetail}>
                 <div class="card-header">
                   <span class="card-name">{group.name}</span>
@@ -190,7 +239,7 @@
     {/if}
   </div>
 
-  <GroupCreateModal bind:isOpen={showCreateModal} on:created={handleGroupCreated} />
+  <GroupCreateModal bind:isOpen={showCreateModal} noBackdrop on:created={handleGroupCreated} />
 {/if}
 
 <style>
@@ -209,19 +258,26 @@
     display: flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.5rem 1rem;
-    background: var(--primary-color);
+    padding: 0.6rem 1.2rem;
+    background-color: #3b82f6;
     color: white;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.15s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-create:hover {
-    background: var(--primary-hover);
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-create:active {
+    transform: translateY(0);
   }
 
   .loading-state {
@@ -307,6 +363,74 @@
     color: var(--text-secondary);
     max-width: 320px;
     line-height: 1.5;
+  }
+
+  .search-wrapper {
+    position: relative;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.8125rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-light, rgba(59, 130, 246, 0.1));
+  }
+
+  .search-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+  }
+
+  .search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-secondary);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s;
+  }
+
+  .search-clear:hover {
+    color: var(--text-color);
+  }
+
+  .no-results {
+    text-align: center;
+    padding: 1rem 0;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+  }
+
+  .no-results p {
+    margin: 0;
   }
 
   .groups-section {

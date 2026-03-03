@@ -24,31 +24,15 @@ export function getAppBaseUrl(): string {
 
 /**
  * Constructs the Flower Dashboard URL.
- * Supports VITE_FLOWER_PORT for localhost development with embedded Basic Auth credentials.
- * Uses relative path /flower/ for production with Nginx (nginx injects auth header).
+ * Both dev (Vite proxy) and production (Nginx proxy) inject the Basic Auth
+ * header server-side, so the browser never needs to handle credentials.
  */
 export function getFlowerUrl(): string {
   if (typeof window === 'undefined') return '';
 
-  const viteFlowerPort = import.meta.env.VITE_FLOWER_PORT;
   const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
   const cleanPrefix = urlPrefix.replace(/^\/+|\/+$/g, '');
 
-  // Localhost mode: use specific port with embedded credentials for seamless auth
-  // (works for HTTP localhost; production uses nginx auth header injection instead)
-  if (viteFlowerPort) {
-    const protocol = window.location.protocol;
-    const host = window.location.hostname;
-    const user = import.meta.env.VITE_FLOWER_USER;
-    const password = import.meta.env.VITE_FLOWER_PASSWORD;
-    if (user && password) {
-      return `${protocol}//${user}:${password}@${host}:${viteFlowerPort}/${cleanPrefix}/`;
-    }
-    return `${protocol}//${host}:${viteFlowerPort}/${cleanPrefix}/`;
-  }
-
-  // Production/nginx mode: nginx injects Authorization header automatically,
-  // so the browser never needs to present credentials
   return `${window.location.origin}/${cleanPrefix}/`;
 }
 

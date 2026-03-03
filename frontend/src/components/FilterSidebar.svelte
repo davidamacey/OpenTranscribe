@@ -619,33 +619,6 @@
   </div>
 
   <div class="filter-section">
-    <h3>{$t('filter.ownership')}</h3>
-    <div class="ownership-list">
-      <button
-        class="ownership-button"
-        class:selected={ownershipFilter === 'all'}
-        on:click={() => setOwnershipFilter('all')}
-      >
-        {$t('filter.allFiles')}
-      </button>
-      <button
-        class="ownership-button"
-        class:selected={ownershipFilter === 'mine'}
-        on:click={() => setOwnershipFilter('mine')}
-      >
-        {$t('filter.myFiles')}
-      </button>
-      <button
-        class="ownership-button"
-        class:selected={ownershipFilter === 'shared'}
-        on:click={() => setOwnershipFilter('shared')}
-      >
-        {$t('filter.sharedWithMe')}
-      </button>
-    </div>
-  </div>
-
-  <div class="filter-section">
     <h3>{$t('filter.tags')}</h3>
     {#if loadingTags}
       <p class="loading-text">{$t('filter.loadingTags')}</p>
@@ -849,6 +822,33 @@
       {/each}
     </div>
   </div>
+
+  <div class="filter-section">
+    <h3>{$t('filter.ownership')}</h3>
+    <div class="ownership-list">
+      <button
+        class="ownership-button"
+        class:selected={ownershipFilter === 'all'}
+        on:click={() => setOwnershipFilter('all')}
+      >
+        {$t('filter.allFiles')}
+      </button>
+      <button
+        class="ownership-button"
+        class:selected={ownershipFilter === 'mine'}
+        on:click={() => setOwnershipFilter('mine')}
+      >
+        {$t('filter.myFiles')}
+      </button>
+      <button
+        class="ownership-button"
+        class:selected={ownershipFilter === 'shared'}
+        on:click={() => setOwnershipFilter('shared')}
+      >
+        {$t('filter.sharedWithMe')}
+      </button>
+    </div>
+  </div>
 </div>
 
 <style>
@@ -870,7 +870,8 @@
   }
 
   .filter-header h2 {
-    font-size: 1.2rem;
+    font-size: 1rem;
+    font-weight: 600;
     margin: 0;
   }
 
@@ -884,10 +885,10 @@
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    color: var(--text-color);
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85rem;
-    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 0.3rem 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 400;
     cursor: pointer;
     transition: all 0.2s ease;
   }
@@ -919,20 +920,24 @@
     left: 5%;
     right: 5%;
     height: 2px;
-    background: linear-gradient(to right, transparent 0%, var(--text-secondary) 20%, var(--text-secondary) 80%, transparent 100%);
-    opacity: 0.3;
+    background: var(--border-color);
+    opacity: 0.5;
   }
 
   .filter-section h3 {
-    font-size: 1rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
     margin: 0;
   }
 
   .filter-input {
-    padding: 0.5rem 0.75rem;
+    padding: 0.45rem 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.9rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
   }
 
   /* Section header with inline clear button */
@@ -972,12 +977,12 @@
     align-items: center;
     gap: 0.5rem;
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: 0.45rem 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 6px;
     background-color: var(--background-color);
     color: var(--text-color);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     cursor: pointer;
     transition: border-color 0.2s ease;
     text-align: left;
@@ -1122,7 +1127,7 @@
 
   .loading-text,
   .empty-text {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
     margin: 0;
   }
@@ -1209,8 +1214,9 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     color: var(--text-color);
-    font-size: 0.85rem;
-    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    font-weight: 400;
+    padding: 0.35rem 0.7rem;
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;
@@ -1244,8 +1250,9 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     color: var(--text-color);
-    font-size: 0.85rem;
-    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    font-weight: 400;
+    padding: 0.35rem 0.7rem;
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;
@@ -1277,8 +1284,9 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     color: var(--text-color);
-    font-size: 0.85rem;
-    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    font-weight: 400;
+    padding: 0.35rem 0.7rem;
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;

@@ -1103,6 +1103,10 @@
     padding-top: 0.5rem;
   }
 
+  .button-row .btn-secondary {
+    margin-right: auto;
+  }
+
   .btn {
     padding: 0.5rem 1rem;
     border-radius: 6px;
@@ -1119,12 +1123,19 @@
   }
 
   .btn-primary {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-color-dark, #2563eb);
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-secondary {

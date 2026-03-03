@@ -283,6 +283,10 @@
     margin-top: 1rem;
   }
 
+  .button-group .btn-secondary {
+    margin-right: auto;
+  }
+
   .btn {
     padding: 0.5rem 1.25rem;
     border: none;
@@ -290,7 +294,7 @@
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 500;
-    transition: opacity 0.2s;
+    transition: all 0.2s ease;
   }
 
   .btn:disabled {
@@ -299,12 +303,19 @@
   }
 
   .btn-primary {
-    background: var(--primary-color, #4a9eff);
+    background-color: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover, #3a8eef);
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-secondary {

@@ -180,7 +180,14 @@
       <!-- Actions -->
       <div class="form-actions">
         <button
-          class="save-button"
+          class="btn btn-secondary"
+          on:click={handleReset}
+          disabled={saving}
+        >
+          {$t('common.resetToDefaults')}
+        </button>
+        <button
+          class="btn btn-primary"
           on:click={saveSettings}
           disabled={saving || !settingsChanged}
         >
@@ -190,13 +197,6 @@
           {:else}
             {$t('common.saveSettings')}
           {/if}
-        </button>
-        <button
-          class="reset-button"
-          on:click={handleReset}
-          disabled={saving}
-        >
-          {$t('common.resetToDefaults')}
         </button>
       </div>
 
@@ -405,12 +405,11 @@
     padding-top: 0.5rem;
   }
 
-  .save-button {
-    padding: 0.75rem 2rem;
-    background: #3b82f6;
-    color: white;
+  .btn {
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
     border: none;
-    border-radius: 8px;
+    font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -419,34 +418,40 @@
     gap: 0.5rem;
   }
 
-  .save-button:hover:not(:disabled) {
-    background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+  .btn-primary {
+    background-color: #3b82f6;
+    color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
-  .save-button:disabled {
-    opacity: 0.6;
+  .btn-primary:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .reset-button {
-    padding: 0.75rem 1.5rem;
-    background: var(--background-color);
+  .btn-secondary {
+    background-color: var(--background-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    margin-right: auto;
   }
 
-  .reset-button:hover:not(:disabled) {
-    background: var(--border-color);
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--button-hover, #e5e7eb);
   }
 
-  .reset-button:disabled {
-    opacity: 0.6;
+  .btn-secondary:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
   }
 
@@ -514,8 +519,7 @@
       flex-direction: column;
     }
 
-    .save-button,
-    .reset-button {
+    .btn {
       width: 100%;
       justify-content: center;
     }

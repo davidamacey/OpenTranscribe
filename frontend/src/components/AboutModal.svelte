@@ -2,8 +2,10 @@
   import { fade, scale } from 'svelte/transition';
   import { onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
+  import axios from 'axios';
 
   export let showModal = false;
+  let appVersion = '';
 
   function closeModal() {
     showModal = false;
@@ -19,6 +21,19 @@
     if (event.key === 'Escape') {
       closeModal();
     }
+  }
+
+  async function fetchVersion() {
+    try {
+      const res = await axios.get('/health');
+      appVersion = res.data?.version || '';
+    } catch {
+      appVersion = '';
+    }
+  }
+
+  $: if (showModal && !appVersion) {
+    fetchVersion();
   }
 
   // Disable scroll when modal is open
@@ -78,7 +93,16 @@
     >
       <div class="modal-content">
         <div class="modal-header">
-          <h2 id="about-modal-title">{$t('about.title')}</h2>
+          <div>
+            <h2 id="about-modal-title">{$t('about.title')}</h2>
+            <div class="header-version">
+              {#if appVersion}
+                <span class="header-version-number">OpenTranscribe {appVersion}</span>
+                <span class="header-version-sep">&middot;</span>
+              {/if}
+              <span class="header-version-tagline">{$t('about.version')}</span>
+            </div>
+          </div>
           <button
             class="modal-close"
             on:click={closeModal}
@@ -328,9 +352,6 @@
               </p>
             </section>
 
-            <section class="version-section">
-              <p class="version-info">{$t('about.version')}</p>
-            </section>
           </div>
         </div>
       </div>
@@ -503,12 +524,28 @@
     margin: 0;
   }
 
-  .version-info {
+  .header-version {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 0.25rem;
+  }
+
+  .header-version-number {
     color: var(--text-secondary);
-    font-size: 0.875rem;
-    text-align: center;
-    font-style: italic;
-    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .header-version-sep {
+    color: var(--text-secondary);
+    opacity: 0.5;
+    font-size: 0.75rem;
+  }
+
+  .header-version-tagline {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
   }
 
   /* Credits Section Styles */

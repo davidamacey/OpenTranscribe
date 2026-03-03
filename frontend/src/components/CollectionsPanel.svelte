@@ -39,6 +39,24 @@
   let selectedCollectionId: string | null = null;  // UUID
   let addingToCollection = false;
 
+  // Search state
+  let searchQuery = '';
+
+  // Filtered collections based on search
+  $: filteredCollections = searchQuery.trim()
+    ? collections.filter(c =>
+        c.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        (c.description && c.description.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+      )
+    : collections;
+
+  $: filteredSharedCollections = searchQuery.trim()
+    ? sharedCollections.filter(c =>
+        c.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        (c.description && c.description.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+      )
+    : sharedCollections;
+
   // Prompt selection state
   let availablePrompts: any[] = [];
   let newCollectionPromptId: string | null = null;
@@ -298,6 +316,34 @@
     </button>
   </div>
 
+  <!-- Search -->
+  {#if !loading && (collections.length > 0 || sharedCollections.length > 0)}
+    <div class="search-wrapper">
+      <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input
+        type="text"
+        class="search-input"
+        placeholder={$t('collectionsPanel.searchPlaceholder')}
+        bind:value={searchQuery}
+      />
+      {#if searchQuery}
+        <button
+          class="search-clear"
+          on:click={() => searchQuery = ''}
+          title={$t('collectionsPanel.clearSearch')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      {/if}
+    </div>
+  {/if}
+
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
@@ -310,11 +356,17 @@
     </div>
   {:else}
     <div class="collections-list">
+      {#if searchQuery && filteredCollections.length === 0 && filteredSharedCollections.length === 0}
+        <div class="no-results">
+          <p>{$t('collectionsPanel.noSearchResults')}</p>
+        </div>
+      {/if}
+
       <!-- My Collections -->
-      {#if collections.length > 0}
+      {#if filteredCollections.length > 0}
         <div class="section-label">{$t('sharing.myCollections')}</div>
       {/if}
-      {#each collections as collection (collection.uuid)}
+      {#each filteredCollections as collection (collection.uuid)}
         <div
           class="collection-card"
           class:selected={selectedCollectionId === collection.uuid}
@@ -392,9 +444,9 @@
       {/each}
 
       <!-- Shared with Me -->
-      {#if sharedCollections.length > 0}
+      {#if filteredSharedCollections.length > 0}
         <div class="section-label shared-label">{$t('sharing.sharedWithMe')}</div>
-        {#each sharedCollections as shared (shared.uuid)}
+        {#each filteredSharedCollections as shared (shared.uuid)}
           <div
             class="collection-card shared-card"
             class:selected={selectedCollectionId === shared.uuid}
@@ -436,7 +488,7 @@
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
-      class="modal-overlay"
+      class="modal-backdrop"
       role="presentation"
       on:click={() => showCreateModal = false}
       on:keydown={(e) => e.key === 'Escape' && (() => showCreateModal = false)()}
@@ -447,95 +499,103 @@
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <!-- svelte-ignore a11y_interactive_supports_focus -->
       <div
-        class="modal-content"
+        class="modal-container"
         role="dialog"
         aria-modal="true"
         on:click|stopPropagation
         on:keydown|stopPropagation
         transition:slide
       >
-        <div class="modal-header">
-          <h3>{$t('collectionsPanel.createNewCollection')}</h3>
-          <button
-            class="close-button"
-            on:click={() => showCreateModal = false}
-            type="button"
-            aria-label={$t('collectionsPanel.closeModal')}
-          >×</button>
-        </div>
-
-        <form on:submit|preventDefault={createCollection} class="config-form">
-          <div class="form-group">
-            <label for="collection-name">{$t('collectionsPanel.name')}</label>
-            <input
-              id="collection-name"
-              type="text"
-              bind:value={newCollectionName}
-              class="form-control"
-              placeholder={$t('collectionsPanel.namePlaceholder')}
-              required
-              disabled={creating}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="collection-description">{$t('collectionsPanel.description')}</label>
-            <textarea
-              id="collection-description"
-              bind:value={newCollectionDescription}
-              class="form-control"
-              placeholder={$t('collectionsPanel.descriptionPlaceholder')}
-              rows="3"
-              disabled={creating}
-            ></textarea>
-          </div>
-
-          <div class="form-group">
-            <label for="collection-prompt">{$t('collectionsPanel.defaultPrompt')}</label>
-            <select
-              id="collection-prompt"
-              bind:value={newCollectionPromptId}
-              class="form-control"
-              disabled={creating || loadingPrompts}
-            >
-              <option value={null}>{$t('collectionsPanel.noDefaultPrompt')}</option>
-              {#each availablePrompts as prompt}
-                <option value={prompt.uuid}>
-                  {prompt.name}{prompt.is_system_default ? ` (${$t('collectionsPanel.system')})` : ''}
-                </option>
-              {/each}
-            </select>
-            <span class="form-hint">{$t('collectionsPanel.defaultPromptHint')}</span>
-          </div>
-
-          <div class="form-actions">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>{$t('collectionsPanel.createNewCollection')}</h2>
             <button
-              type="button"
-              class="cancel-button"
+              class="modal-close-button"
               on:click={() => showCreateModal = false}
-              disabled={creating}
+              type="button"
+              aria-label={$t('collectionsPanel.closeModal')}
+              title={$t('collectionsPanel.closeModal')}
             >
-              {$t('collectionsPanel.cancel')}
-            </button>
-            <button
-              type="submit"
-              class="save-button primary"
-              disabled={creating || !newCollectionName.trim()}
-            >
-              {#if creating}
-                <div class="spinner-mini"></div>
-                {$t('collectionsPanel.creating')}
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                  <polyline points="17,21 17,13 7,13 7,21"/>
-                  <polyline points="7,3 7,8 15,8"/>
-                </svg>
-                {$t('collectionsPanel.createCollection')}
-              {/if}
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
             </button>
           </div>
-        </form>
+
+          <form on:submit|preventDefault={createCollection} class="config-form">
+            <div class="form-group">
+              <label for="collection-name">{$t('collectionsPanel.name')}</label>
+              <input
+                id="collection-name"
+                type="text"
+                bind:value={newCollectionName}
+                class="form-control"
+                placeholder={$t('collectionsPanel.namePlaceholder')}
+                required
+                disabled={creating}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="collection-description">{$t('collectionsPanel.description')}</label>
+              <textarea
+                id="collection-description"
+                bind:value={newCollectionDescription}
+                class="form-control"
+                placeholder={$t('collectionsPanel.descriptionPlaceholder')}
+                rows="3"
+                disabled={creating}
+              ></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="collection-prompt">{$t('collectionsPanel.defaultPrompt')}</label>
+              <select
+                id="collection-prompt"
+                bind:value={newCollectionPromptId}
+                class="form-control"
+                disabled={creating || loadingPrompts}
+              >
+                <option value={null}>{$t('collectionsPanel.noDefaultPrompt')}</option>
+                {#each availablePrompts as prompt}
+                  <option value={prompt.uuid}>
+                    {prompt.name}{prompt.is_system_default ? ` (${$t('collectionsPanel.system')})` : ''}
+                  </option>
+                {/each}
+              </select>
+              <span class="form-hint">{$t('collectionsPanel.defaultPromptHint')}</span>
+            </div>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="cancel-button"
+                on:click={() => showCreateModal = false}
+                disabled={creating}
+              >
+                {$t('collectionsPanel.cancel')}
+              </button>
+              <button
+                type="submit"
+                class="save-button primary"
+                disabled={creating || !newCollectionName.trim()}
+              >
+                {#if creating}
+                  <div class="spinner-mini"></div>
+                  {$t('collectionsPanel.creating')}
+                {:else}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                    <polyline points="17,21 17,13 7,13 7,21"/>
+                    <polyline points="7,3 7,8 15,8"/>
+                  </svg>
+                  {$t('collectionsPanel.createCollection')}
+                {/if}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   {/if}
@@ -545,7 +605,7 @@
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
-      class="modal-overlay"
+      class="modal-backdrop"
       role="presentation"
       on:click={() => showEditModal = false}
       on:keydown={(e) => e.key === 'Escape' && (() => showEditModal = false)()}
@@ -556,95 +616,103 @@
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <!-- svelte-ignore a11y_interactive_supports_focus -->
       <div
-        class="modal-content"
+        class="modal-container"
         role="dialog"
         aria-modal="true"
         on:click|stopPropagation
         on:keydown|stopPropagation
         transition:slide
       >
-        <div class="modal-header">
-          <h3>{$t('collectionsPanel.editCollectionTitle')}</h3>
-          <button
-            class="close-button"
-            on:click={() => showEditModal = false}
-            type="button"
-            aria-label={$t('collectionsPanel.closeModal')}
-          >×</button>
-        </div>
-
-        <form on:submit|preventDefault={updateCollection} class="config-form">
-          <div class="form-group">
-            <label for="edit-collection-name">{$t('collectionsPanel.name')}</label>
-            <input
-              id="edit-collection-name"
-              type="text"
-              bind:value={editCollectionName}
-              class="form-control"
-              placeholder={$t('collectionsPanel.collectionName')}
-              required
-              disabled={updating}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="edit-collection-description">{$t('collectionsPanel.description')}</label>
-            <textarea
-              id="edit-collection-description"
-              bind:value={editCollectionDescription}
-              class="form-control"
-              placeholder={$t('collectionsPanel.descriptionPlaceholder')}
-              rows="3"
-              disabled={updating}
-            ></textarea>
-          </div>
-
-          <div class="form-group">
-            <label for="edit-collection-prompt">{$t('collectionsPanel.defaultPrompt')}</label>
-            <select
-              id="edit-collection-prompt"
-              bind:value={editCollectionPromptId}
-              class="form-control"
-              disabled={updating || loadingPrompts}
-            >
-              <option value={null}>{$t('collectionsPanel.noDefaultPrompt')}</option>
-              {#each availablePrompts as prompt}
-                <option value={prompt.uuid}>
-                  {prompt.name}{prompt.is_system_default ? ` (${$t('collectionsPanel.system')})` : ''}
-                </option>
-              {/each}
-            </select>
-            <span class="form-hint">{$t('collectionsPanel.defaultPromptHint')}</span>
-          </div>
-
-          <div class="form-actions">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>{$t('collectionsPanel.editCollectionTitle')}</h2>
             <button
-              type="button"
-              class="cancel-button"
+              class="modal-close-button"
               on:click={() => showEditModal = false}
-              disabled={updating}
+              type="button"
+              aria-label={$t('collectionsPanel.closeModal')}
+              title={$t('collectionsPanel.closeModal')}
             >
-              {$t('collectionsPanel.cancel')}
-            </button>
-            <button
-              type="submit"
-              class="save-button primary"
-              disabled={updating || !editCollectionName.trim()}
-            >
-              {#if updating}
-                <div class="spinner-mini"></div>
-                {$t('collectionsPanel.updating')}
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                  <polyline points="17,21 17,13 7,13 7,21"/>
-                  <polyline points="7,3 7,8 15,8"/>
-                </svg>
-                {$t('collectionsPanel.updateCollection')}
-              {/if}
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
             </button>
           </div>
-        </form>
+
+          <form on:submit|preventDefault={updateCollection} class="config-form">
+            <div class="form-group">
+              <label for="edit-collection-name">{$t('collectionsPanel.name')}</label>
+              <input
+                id="edit-collection-name"
+                type="text"
+                bind:value={editCollectionName}
+                class="form-control"
+                placeholder={$t('collectionsPanel.collectionName')}
+                required
+                disabled={updating}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="edit-collection-description">{$t('collectionsPanel.description')}</label>
+              <textarea
+                id="edit-collection-description"
+                bind:value={editCollectionDescription}
+                class="form-control"
+                placeholder={$t('collectionsPanel.descriptionPlaceholder')}
+                rows="3"
+                disabled={updating}
+              ></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="edit-collection-prompt">{$t('collectionsPanel.defaultPrompt')}</label>
+              <select
+                id="edit-collection-prompt"
+                bind:value={editCollectionPromptId}
+                class="form-control"
+                disabled={updating || loadingPrompts}
+              >
+                <option value={null}>{$t('collectionsPanel.noDefaultPrompt')}</option>
+                {#each availablePrompts as prompt}
+                  <option value={prompt.uuid}>
+                    {prompt.name}{prompt.is_system_default ? ` (${$t('collectionsPanel.system')})` : ''}
+                  </option>
+                {/each}
+              </select>
+              <span class="form-hint">{$t('collectionsPanel.defaultPromptHint')}</span>
+            </div>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="cancel-button"
+                on:click={() => showEditModal = false}
+                disabled={updating}
+              >
+                {$t('collectionsPanel.cancel')}
+              </button>
+              <button
+                type="submit"
+                class="save-button primary"
+                disabled={updating || !editCollectionName.trim()}
+              >
+                {#if updating}
+                  <div class="spinner-mini"></div>
+                  {$t('collectionsPanel.updating')}
+                {:else}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                    <polyline points="17,21 17,13 7,13 7,21"/>
+                    <polyline points="7,3 7,8 15,8"/>
+                  </svg>
+                  {$t('collectionsPanel.updateCollection')}
+                {/if}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   {/if}
@@ -708,7 +776,7 @@
     background-color: #3b82f6;
     color: white;
     border: none;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
@@ -738,6 +806,75 @@
     line-height: 1;
     color: white;
     font-weight: bold;
+  }
+
+  .search-wrapper {
+    position: relative;
+    margin-bottom: 12px;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.875rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-light, rgba(59, 130, 246, 0.1));
+  }
+
+  .search-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+  }
+
+  .search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-secondary);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s;
+  }
+
+  .search-clear:hover {
+    color: var(--text-color);
+  }
+
+  .no-results {
+    text-align: center;
+    padding: 1.5rem 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .no-results p {
+    margin: 0;
   }
 
   .loading {
@@ -1001,62 +1138,81 @@
     cursor: not-allowed;
   }
 
-  /* Modal styles - updated to match LLM config modal */
-  .modal-overlay {
+  /* Modal styles - standard pattern */
+  .modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 1200;
     padding: 1rem;
   }
 
-  .modal-content {
-    background-color: var(--background-color);
-    border-radius: 8px;
+  .modal-container {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
     max-width: 600px;
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    animation: slideIn 0.2s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .modal-content {
+    display: flex;
+    flex-direction: column;
   }
 
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.5rem 1.5rem 1rem 1.5rem;
+    padding: 1.5rem;
     border-bottom: 1px solid var(--border-color);
   }
 
-  .modal-header h3 {
+  .modal-header h2 {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: var(--text-color);
+    line-height: 1.4;
   }
 
-  .close-button {
+  .modal-close-button {
     background: none;
     border: none;
-    font-size: 1.5rem;
     cursor: pointer;
-    color: var(--text-light);
-    padding: 0;
-    width: 30px;
-    height: 30px;
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .close-button:hover {
+  .modal-close-button:hover {
     color: var(--text-color);
+    background: var(--button-hover);
   }
 
   .config-form {
@@ -1115,7 +1271,7 @@
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
@@ -1124,16 +1280,8 @@
   }
 
   .cancel-button:hover:not(:disabled) {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .cancel-button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    background: var(--button-hover, #e5e7eb);
+    border-color: var(--border-color);
   }
 
   .save-button {
@@ -1144,7 +1292,7 @@
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
@@ -1183,42 +1331,52 @@
 
 
   /* Dark mode adjustments */
-  :global(.dark) .modal-overlay {
+  :global([data-theme='dark']) .modal-backdrop {
     background: rgba(0, 0, 0, 0.7);
   }
 
-  :global(.dark) .form-group input,
-  :global(.dark) .form-group textarea {
+  :global([data-theme='dark']) .modal-container {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modal-container {
+      animation: none;
+    }
+  }
+
+  :global([data-theme='dark']) .form-group input,
+  :global([data-theme='dark']) .form-group textarea {
     background: rgba(255, 255, 255, 0.03);
     color: var(--text-primary);
     border-color: var(--border-color);
   }
 
-  :global(.dark) .form-group input:focus,
-  :global(.dark) .form-group textarea:focus {
+  :global([data-theme='dark']) .form-group input:focus,
+  :global([data-theme='dark']) .form-group textarea:focus {
     background: rgba(255, 255, 255, 0.05);
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
   }
 
-  :global(.dark) .form-group input:hover,
-  :global(.dark) .form-group textarea:hover {
+  :global([data-theme='dark']) .form-group input:hover,
+  :global([data-theme='dark']) .form-group textarea:hover {
     background: rgba(255, 255, 255, 0.04);
     border-color: var(--primary-color);
   }
 
-  :global(.dark) .collection-card {
+  :global([data-theme='dark']) .collection-card {
     background: var(--card-background);
     border-color: var(--border-color);
   }
 
 
-  :global(.dark) .badge.public {
+  :global([data-theme='dark']) .badge.public {
     background: rgba(34, 197, 94, 0.2);
     color: #4ade80;
   }
 
-  :global(.dark) .badge.prompt {
+  :global([data-theme='dark']) .badge.prompt {
     background: rgba(59, 130, 246, 0.2);
     color: #60a5fa;
   }
@@ -1229,7 +1387,7 @@
     color: white !important;
     border: none !important;
     padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     font-size: 0.95rem !important;
     font-weight: 500 !important;
     cursor: pointer !important;
@@ -1248,7 +1406,7 @@
     color: var(--text-color) !important;
     border: 1px solid var(--border-color) !important;
     padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
+    border-radius: 8px !important;
     font-size: 0.95rem !important;
     font-weight: 500 !important;
     cursor: pointer !important;

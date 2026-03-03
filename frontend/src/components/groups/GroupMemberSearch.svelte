@@ -67,8 +67,9 @@
       toastStore.success($t('groups.toast.memberAdded'));
       dispatch('memberAdded', { userUuid: user.uuid });
 
-      // Remove from results
-      searchResults = searchResults.filter((u) => u.uuid !== user.uuid);
+      // Clear search after successful add (dropdown-select pattern)
+      searchQuery = '';
+      searchResults = [];
     } catch (err: any) {
       const message = err?.response?.data?.detail || $t('groups.toast.addMemberFailed');
       toastStore.error(message);
@@ -109,34 +110,32 @@
   </div>
 
   {#if filteredResults.length > 0}
-    <div class="search-results">
+    <ul class="search-results">
       {#each filteredResults as user (user.uuid)}
-        <div class="result-row">
-          <div class="result-avatar">
-            {getInitials(user.full_name, user.email)}
-          </div>
-          <div class="result-info">
-            <span class="result-name">{user.full_name || user.email}</span>
-            {#if user.full_name}
-              <span class="result-email">{user.email}</span>
-            {/if}
-          </div>
+        <li>
           <button
-            class="btn-add"
+            class="result-item"
             on:click={() => handleAddMember(user)}
             disabled={addingUserUuid === user.uuid}
           >
+            <div class="result-avatar">
+              {getInitials(user.full_name, user.email)}
+            </div>
+            <div class="result-info">
+              <span class="result-name">{user.full_name || user.email}</span>
+              {#if user.full_name}
+                <span class="result-email">{user.email}</span>
+              {/if}
+            </div>
             {#if addingUserUuid === user.uuid}
-              {$t('groups.adding')}
-            {:else}
-              {$t('groups.add')}
+              <span class="adding-spinner"></span>
             {/if}
           </button>
-        </div>
+        </li>
       {/each}
-    </div>
+    </ul>
   {:else if searchQuery.trim().length >= 2 && !isSearching}
-    <p class="no-results">{$t('groups.noUsersFound')}</p>
+    <div class="no-results">{$t('groups.noUsersFound')}</div>
   {/if}
 </div>
 
@@ -235,39 +234,53 @@
   }
 
   .search-results {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
+    list-style: none;
+    margin: 4px 0 0 0;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
     max-height: 200px;
     overflow-y: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.25rem;
+    background: var(--surface-color);
   }
 
-  .result-row {
+  .search-results li + li {
+    border-top: 1px solid var(--border-color);
+  }
+
+  .result-item {
     display: flex;
     align-items: center;
     gap: 0.625rem;
-    padding: 0.5rem 0.625rem;
-    border-radius: 6px;
-    transition: background-color 0.15s;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.15s ease;
   }
 
-  .result-row:hover {
-    background-color: var(--background-color);
+  .result-item:hover:not(:disabled) {
+    background-color: var(--hover-color, rgba(59, 130, 246, 0.08));
+  }
+
+  .result-item:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
 
   .result-avatar {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background-color: var(--primary-color);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
     font-weight: 600;
     flex-shrink: 0;
   }
@@ -282,7 +295,6 @@
   .result-name {
     font-size: 0.8125rem;
     font-weight: 500;
-    color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -296,35 +308,20 @@
     text-overflow: ellipsis;
   }
 
-  .btn-add {
-    padding: 0.25rem 0.75rem;
-    border: 1px solid var(--primary-color);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--primary-color);
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
-    white-space: nowrap;
+  .adding-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
     flex-shrink: 0;
   }
 
-  .btn-add:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    color: white;
-  }
-
-  .btn-add:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .no-results {
+    padding: 0.5rem;
     font-size: 0.8125rem;
     color: var(--text-secondary);
     text-align: center;
-    padding: 0.75rem 0;
-    margin: 0;
   }
 </style>

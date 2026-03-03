@@ -160,7 +160,7 @@
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: var(--text-color);
     line-height: 1.4;
@@ -207,7 +207,7 @@
   .modal-button {
     padding: 0.6rem 1.2rem;
     border: none;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
@@ -220,7 +220,7 @@
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 0.95rem;
     font-weight: 500;
     transition: all 0.2s ease;
@@ -236,16 +236,8 @@
   }
 
   .cancel-button:hover {
-    background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .cancel-button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    background: var(--button-hover, #e5e7eb);
+    border-color: var(--border-color);
   }
 
   .confirm-button {
@@ -281,9 +273,8 @@
   }
 
   :global([data-theme='dark']) .cancel-button:hover {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
+    background: var(--button-hover, rgba(255, 255, 255, 0.1));
+    border-color: var(--border-color);
   }
 
   :global([data-theme='dark']) .modal-footer {

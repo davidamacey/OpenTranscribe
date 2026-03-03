@@ -133,34 +133,49 @@
         title: $t('settings.sections.administration'),
         items: [
           { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' },
-          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
-          { id: 'admin-settings' as SettingsSection, label: $t('settings.systemSettings.title'), icon: 'settings' },
-          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
-          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
           ...(isSuperAdmin ? [
-            { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' },
             { id: 'account-status' as SettingsSection, label: 'Account Status', icon: 'users' },
+            { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' },
             { id: 'audit-logs' as SettingsSection, label: 'Audit Logs', icon: 'list' }
           ] : [])
+        ]
+      },
+      {
+        title: $t('settings.sections.systemManagement'),
+        items: [
+          { id: 'admin-settings' as SettingsSection, label: $t('settings.systemSettings.title'), icon: 'settings' },
+          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
+          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
+          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
+          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' }
         ]
       }
     ] : []),
     {
-      title: $t('settings.sections.userSettings'),
+      title: $t('settings.sections.account'),
       items: [
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
         { id: 'security' as SettingsSection, label: $t('settings.security.title'), icon: 'shield' },
         { id: 'language' as SettingsSection, label: $t('settings.language.title'), icon: 'globe' },
-        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
-        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
-        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
-        { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
-        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' },
-        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
-        { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' },
         { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group' }
+      ]
+    },
+    {
+      title: $t('settings.sections.transcriptionAi'),
+      items: [
+        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
+        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
+        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
+        { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
+        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' }
+      ]
+    },
+    {
+      title: $t('settings.sections.mediaOutput'),
+      items: [
+        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
+        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' }
       ]
     }
   ];
@@ -1014,20 +1029,20 @@
 
                 <div class="form-actions">
                   <button
-                    type="submit"
-                    class="btn btn-primary"
-                    disabled={!recordingSettingsChanged || recordingSettingsLoading}
-                  >
-                    {recordingSettingsLoading ? $t('common.saving') : $t('common.saveSettings')}
-                  </button>
-
-                  <button
                     type="button"
                     class="btn btn-secondary"
                     on:click={resetRecordingSettings}
                     disabled={recordingSettingsLoading}
                   >
                     {$t('common.resetToDefaults')}
+                  </button>
+
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    disabled={!recordingSettingsChanged || recordingSettingsLoading}
+                  >
+                    {recordingSettingsLoading ? $t('common.saving') : $t('common.saveSettings')}
                   </button>
                 </div>
               </form>
@@ -1128,10 +1143,11 @@
           <!-- System Statistics Section -->
           {#if activeSection === 'system-statistics'}
             <div class="content-section">
-              <h3 class="section-title">{$t('settings.statistics.title')}</h3>
-              <p class="section-description">{$t('settings.statistics.description')}</p>
-
-              <div class="stats-actions">
+              <div class="section-header-row">
+                <div>
+                  <h3 class="section-title">{$t('settings.statistics.title')}</h3>
+                  <p class="section-description">{$t('settings.statistics.description')}</p>
+                </div>
                 <button
                   type="button"
                   class="btn btn-secondary btn-refresh"
@@ -1394,10 +1410,11 @@
           <!-- Admin Task Health Section -->
           {#if activeSection === 'admin-task-health' && isAdmin}
             <div class="content-section">
-              <h3 class="section-title">{$t('settings.taskHealth.title')}</h3>
-              <p class="section-description">{$t('settings.taskHealth.description')}</p>
-
-              <div class="stats-actions">
+              <div class="section-header-row">
+                <div>
+                  <h3 class="section-title">{$t('settings.taskHealth.title')}</h3>
+                  <p class="section-description">{$t('settings.taskHealth.description')}</p>
+                </div>
                 <button
                   type="button"
                   class="btn btn-secondary"
@@ -1697,18 +1714,25 @@
   }
 
   .sidebar-section {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.25rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .sidebar-section:first-child {
+    border-top: none;
+    padding-top: 0;
   }
 
   .section-heading {
     font-size: 0.6875rem;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-secondary);
-    margin: 0 1.25rem 0.5rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-color);
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary, var(--text-secondary));
+    opacity: 0.7;
+    margin: 0 1.25rem 0.375rem;
+    padding-top: 0;
   }
 
   .section-nav {
@@ -1721,18 +1745,21 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.5rem 1.25rem;
+    padding: 0.4375rem 0.75rem;
+    margin: 0 0.5rem;
     border: none;
+    border-radius: 6px;
     background-color: transparent;
     color: var(--text-color);
     text-align: left;
     cursor: pointer;
-    transition: color 0.15s;
+    transition: background-color 0.15s, color 0.15s;
     font-size: 0.8125rem;
     position: relative;
   }
 
   .nav-item:hover {
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.04));
     color: var(--primary-color);
   }
 
@@ -1740,16 +1767,6 @@
     background-color: var(--primary-light);
     color: var(--primary-color);
     font-weight: 500;
-  }
-
-  .nav-item.active::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background-color: var(--primary-color);
   }
 
   .nav-item-label {
@@ -1886,25 +1903,37 @@
     display: flex;
     gap: 0.75rem;
     margin-top: 0.75rem;
+    justify-content: flex-end;
+  }
+
+  .form-actions .btn-secondary {
+    margin-right: auto;
   }
 
   .btn {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
     border: none;
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s ease;
   }
 
   .btn-primary {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-hover);
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-primary:disabled {
@@ -1930,19 +1959,33 @@
   .btn-warning {
     background-color: var(--warning-color);
     color: white;
+    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
   }
 
   .btn-warning:hover:not(:disabled) {
-    filter: brightness(0.9);
+    background-color: #d97706;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25);
+  }
+
+  .btn-warning:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-danger {
     background-color: var(--error-color);
     color: white;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .btn-danger:hover:not(:disabled) {
-    filter: brightness(0.9);
+    background-color: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
+  }
+
+  .btn-danger:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-small {
@@ -1971,8 +2014,17 @@
     transition: opacity 0.3s ease;
   }
 
-  .stats-actions {
+  .section-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
     margin-bottom: 1rem;
+    padding-right: 2rem;
+  }
+
+  .section-header-row .section-description {
+    margin-bottom: 0;
   }
 
   .loading-state {

@@ -231,9 +231,6 @@ class Settings(BaseSettings):
         "CONCURRENT_SESSION_POLICY", "terminate_oldest"
     )  # or "reject"
 
-    # ===== Super Admin Bootstrap =====
-    BOOTSTRAP_SUPER_ADMIN_EMAIL: str = os.getenv("BOOTSTRAP_SUPER_ADMIN_EMAIL", "")
-
     # Encryption settings for sensitive data (API keys, etc.)
     ENCRYPTION_KEY: str = os.getenv(
         "ENCRYPTION_KEY", "this_should_be_changed_in_production_for_api_key_encryption"

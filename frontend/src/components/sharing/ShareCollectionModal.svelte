@@ -117,7 +117,7 @@
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
-  class="modal-overlay"
+  class="modal-backdrop"
   role="presentation"
   on:click={handleClose}
   on:keydown={(e) => e.key === 'Escape' && handleClose()}
@@ -128,7 +128,7 @@
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div
-    class="modal-content"
+    class="modal-container"
     role="dialog"
     aria-modal="true"
     aria-labelledby="share-modal-title"
@@ -136,174 +136,201 @@
     on:keydown|stopPropagation
     transition:slide
   >
-    <div class="modal-header">
-      <h3 id="share-modal-title">{$t('sharing.shareCollection')}</h3>
-      <button
-        class="close-button"
-        on:click={handleClose}
-        type="button"
-        aria-label={$t('sharing.close')}
-      >&times;</button>
-    </div>
-
-    <div class="modal-body">
-      <p class="collection-name">{collectionName}</p>
-
-      <!-- Search for users/groups to share with -->
-      <div class="search-section">
-        <ShareTargetSearch
-          {existingShareTargets}
-          on:select={handleTargetSelect}
-        />
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="share-modal-title">{$t('sharing.shareCollection')}</h2>
+        <button
+          class="modal-close-button"
+          on:click={handleClose}
+          type="button"
+          aria-label={$t('sharing.close')}
+          title={$t('sharing.close')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
 
-      <!-- Pending targets to share -->
-      {#if pendingTargets.length > 0}
-        <div class="pending-section" transition:slide>
-          <h4>{$t('sharing.pendingShares')}</h4>
-          <div class="pending-list">
-            {#each pendingTargets as target, index (target.type + '-' + target.uuid)}
-              <div class="pending-item">
-                <div class="pending-info">
-                  {#if target.type === 'user'}
-                    <svg class="type-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                      <circle cx="12" cy="7" r="4"/>
-                    </svg>
-                  {:else}
-                    <svg class="type-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                      <circle cx="9" cy="7" r="4"/>
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                    </svg>
-                  {/if}
-                  <span class="pending-name">{target.name}</span>
-                </div>
-                <div class="pending-actions">
-                  <PermissionLevelSelect
-                    value={target.permission}
-                    on:change={(e) => handlePendingPermissionChange(index, e)}
-                  />
-                  <button
-                    class="remove-btn"
-                    on:click={() => removePendingTarget(index)}
-                    title={$t('sharing.remove')}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18"/>
-                      <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            {/each}
-          </div>
+      <div class="modal-body">
+        <p class="collection-name">{collectionName}</p>
 
-          <div class="share-action">
-            <button
-              class="share-btn"
-              on:click={shareWithTargets}
-              disabled={sharing || pendingTargets.length === 0}
-            >
-              {#if sharing}
-                <div class="spinner-mini"></div>
-                {$t('sharing.sharing')}
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
-                  <polyline points="16 6 12 2 8 6"/>
-                  <line x1="12" y1="2" x2="12" y2="15"/>
-                </svg>
-                {$t('sharing.shareButton')}
-              {/if}
-            </button>
-          </div>
+        <!-- Search for users/groups to share with -->
+        <div class="search-section">
+          <ShareTargetSearch
+            {existingShareTargets}
+            on:select={handleTargetSelect}
+          />
         </div>
-      {/if}
 
-      <!-- Divider -->
-      {#if shares.length > 0}
-        <div class="divider"></div>
-      {/if}
+        <!-- Pending targets to share -->
+        {#if pendingTargets.length > 0}
+          <div class="pending-section" transition:slide>
+            <h4>{$t('sharing.pendingShares')}</h4>
+            <div class="pending-list">
+              {#each pendingTargets as target, index (target.type + '-' + target.uuid)}
+                <div class="pending-item">
+                  <div class="pending-info">
+                    {#if target.type === 'user'}
+                      <svg class="type-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                      </svg>
+                    {:else}
+                      <svg class="type-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                      </svg>
+                    {/if}
+                    <span class="pending-name">{target.name}</span>
+                  </div>
+                  <div class="pending-actions">
+                    <PermissionLevelSelect
+                      value={target.permission}
+                      on:change={(e) => handlePendingPermissionChange(index, e)}
+                    />
+                    <button
+                      class="remove-btn"
+                      on:click={() => removePendingTarget(index)}
+                      title={$t('sharing.remove')}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              {/each}
+            </div>
 
-      <!-- Existing shares -->
-      {#if loading}
-        <div class="loading-shares">
-          <div class="spinner-mini"></div>
-          {$t('sharing.loadingShares')}
-        </div>
-      {:else}
-        <CurrentSharesList
-          {shares}
-          canManage={true}
-          {collectionUuid}
-        />
-      {/if}
+            <div class="share-action">
+              <button
+                class="share-btn"
+                on:click={shareWithTargets}
+                disabled={sharing || pendingTargets.length === 0}
+              >
+                {#if sharing}
+                  <div class="spinner-mini"></div>
+                  {$t('sharing.sharing')}
+                {:else}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                    <polyline points="16 6 12 2 8 6"/>
+                    <line x1="12" y1="2" x2="12" y2="15"/>
+                  </svg>
+                  {$t('sharing.shareButton')}
+                {/if}
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Divider -->
+        {#if shares.length > 0}
+          <div class="divider"></div>
+        {/if}
+
+        <!-- Existing shares -->
+        {#if loading}
+          <div class="loading-shares">
+            <div class="spinner-mini"></div>
+            {$t('sharing.loadingShares')}
+          </div>
+        {:else}
+          <CurrentSharesList
+            {shares}
+            canManage={true}
+            {collectionUuid}
+          />
+        {/if}
+      </div>
     </div>
   </div>
 </div>
 
 <style>
-  .modal-overlay {
+  .modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 1200;
     padding: 1rem;
   }
 
-  .modal-content {
-    background-color: var(--background-color);
-    border-radius: 8px;
+  .modal-container {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
     max-width: 540px;
     width: 100%;
     max-height: 85vh;
     overflow-y: auto;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    animation: slideIn 0.2s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .modal-content {
+    display: flex;
+    flex-direction: column;
   }
 
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.25rem 1.5rem 1rem 1.5rem;
+    padding: 1.5rem;
     border-bottom: 1px solid var(--border-color);
   }
 
-  .modal-header h3 {
+  .modal-header h2 {
     margin: 0;
-    font-size: 1.15rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: var(--text-color);
+    line-height: 1.4;
   }
 
-  .close-button {
+  .modal-close-button {
     background: none;
     border: none;
-    font-size: 1.5rem;
     cursor: pointer;
-    color: var(--text-light);
-    padding: 0;
-    width: 30px;
-    height: 30px;
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .close-button:hover {
+  .modal-close-button:hover {
     color: var(--text-color);
+    background: var(--button-hover);
   }
 
   .modal-body {
-    padding: 1.25rem 1.5rem;
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -455,8 +482,18 @@
     to { transform: rotate(360deg); }
   }
 
-  :global([data-theme='dark']) .modal-overlay {
+  :global([data-theme='dark']) .modal-backdrop {
     background: rgba(0, 0, 0, 0.7);
+  }
+
+  :global([data-theme='dark']) .modal-container {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modal-container {
+      animation: none;
+    }
   }
 
   :global([data-theme='dark']) .pending-item {

@@ -7,6 +7,7 @@
   import { t } from '$stores/locale';
   import { formatDate, getInitials } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
+  import ConfirmationModal from '../ConfirmationModal.svelte';
 
   export let members: GroupMember[] = [];
   export let groupUuid: string;
@@ -23,6 +24,12 @@
 
   let changingRoleFor: string | null = null;
   let removingMember: string | null = null;
+  let showRemoveConfirm = false;
+  let pendingRemoveMember: GroupMember | null = null;
+
+  $: pendingIsLeavingSelf = pendingRemoveMember?.user_uuid === currentUserUuid;
+  $: removeConfirmMessage = pendingIsLeavingSelf ? $t('groups.confirmLeave') : $t('groups.confirmRemoveMember');
+  $: removeConfirmTitle = pendingIsLeavingSelf ? $t('groups.leaveGroup') : $t('groups.removeMember');
 
   async function handleRoleChange(member: GroupMember, newRole: 'admin' | 'member') {
     if (newRole === member.role) return;
@@ -40,13 +47,17 @@
     }
   }
 
-  async function handleRemoveMember(member: GroupMember) {
-    const isLeavingSelf = member.user_uuid === currentUserUuid;
-    const confirmMsg = isLeavingSelf
-      ? $t('groups.confirmLeave')
-      : $t('groups.confirmRemoveMember');
+  function requestRemoveMember(member: GroupMember) {
+    pendingRemoveMember = member;
+    showRemoveConfirm = true;
+  }
 
-    if (!confirm(confirmMsg)) return;
+  async function executeRemoveMember() {
+    if (!pendingRemoveMember) return;
+    const member = pendingRemoveMember;
+    const isLeavingSelf = member.user_uuid === currentUserUuid;
+    showRemoveConfirm = false;
+    pendingRemoveMember = null;
 
     removingMember = member.user_uuid;
 
@@ -109,7 +120,7 @@
 
             <button
               class="btn-remove"
-              on:click={() => handleRemoveMember(member)}
+              on:click={() => requestRemoveMember(member)}
               disabled={removingMember === member.user_uuid}
               title={$t('groups.removeMember')}
             >
@@ -121,7 +132,7 @@
           {:else if member.user_uuid === currentUserUuid && member.role !== 'owner'}
             <button
               class="btn-leave"
-              on:click={() => handleRemoveMember(member)}
+              on:click={() => requestRemoveMember(member)}
               disabled={removingMember === member.user_uuid}
             >
               {$t('groups.leaveGroup')}
@@ -132,6 +143,18 @@
     {/each}
   {/if}
 </div>
+
+<ConfirmationModal
+  bind:isOpen={showRemoveConfirm}
+  title={removeConfirmTitle}
+  message={removeConfirmMessage}
+  confirmText={pendingIsLeavingSelf ? $t('groups.leaveGroup') : $t('groups.removeMember')}
+  cancelText={$t('modal.cancel')}
+  confirmButtonClass="modal-delete-button"
+  on:confirm={executeRemoveMember}
+  on:cancel={() => { showRemoveConfirm = false; pendingRemoveMember = null; }}
+  on:close={() => { showRemoveConfirm = false; pendingRemoveMember = null; }}
+/>
 
 <style>
   .member-list {

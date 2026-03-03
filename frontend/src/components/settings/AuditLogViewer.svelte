@@ -14,17 +14,22 @@
   };
 
   const eventTypes = [
-    'AUTH_LOGIN_SUCCESS',
-    'AUTH_LOGIN_FAILURE',
-    'AUTH_LOGOUT',
-    'AUTH_MFA_SETUP',
-    'AUTH_MFA_VERIFY',
-    'AUTH_PASSWORD_CHANGE',
-    'AUTH_ACCOUNT_LOCKOUT',
-    'AUTH_ACCOUNT_UNLOCK',
-    'ADMIN_USER_CREATE',
-    'ADMIN_USER_UPDATE',
-    'ADMIN_SETTINGS_CHANGE'
+    { value: 'auth.login.success', label: 'Login Success' },
+    { value: 'auth.login.failure', label: 'Login Failure' },
+    { value: 'auth.logout', label: 'Logout' },
+    { value: 'auth.mfa.setup', label: 'MFA Setup' },
+    { value: 'auth.mfa.verify', label: 'MFA Verify' },
+    { value: 'auth.mfa.disable', label: 'MFA Disable' },
+    { value: 'auth.password.change', label: 'Password Change' },
+    { value: 'auth.account.lockout', label: 'Account Lockout' },
+    { value: 'auth.account.unlock', label: 'Account Unlock' },
+    { value: 'auth.token.refresh', label: 'Token Refresh' },
+    { value: 'auth.session.created', label: 'Session Created' },
+    { value: 'admin.user.create', label: 'User Create' },
+    { value: 'admin.user.update', label: 'User Update' },
+    { value: 'admin.user.delete', label: 'User Delete' },
+    { value: 'admin.role.change', label: 'Role Change' },
+    { value: 'admin.settings.change', label: 'Settings Change' }
   ];
 
   onMount(async () => {
@@ -77,11 +82,10 @@
   }
 
   function getOutcomeClass(outcome: string): string {
-    switch (outcome) {
-      case 'SUCCESS': return 'success';
-      case 'FAILURE': return 'failure';
-      default: return 'partial';
-    }
+    const lower = outcome.toLowerCase();
+    if (lower === 'success') return 'success';
+    if (lower === 'failure') return 'failure';
+    return 'partial';
   }
 </script>
 
@@ -112,7 +116,7 @@
           <select bind:value={filters.eventType}>
             <option value="">All</option>
             {#each eventTypes as type}
-              <option value={type}>{type.replace('AUTH_', '').replace('ADMIN_', '')}</option>
+              <option value={type.value}>{type.label}</option>
             {/each}
           </select>
         </label>
@@ -120,12 +124,12 @@
           <span class="label-text">Outcome</span>
           <select bind:value={filters.outcome}>
             <option value="">All</option>
-            <option value="SUCCESS">Success</option>
-            <option value="FAILURE">Failure</option>
+            <option value="success">Success</option>
+            <option value="failure">Failure</option>
           </select>
         </label>
-        <div class="filter-actions">
-          <button class="btn-primary" on:click={loadAuditLogs}>Apply</button>
+        <button class="btn-apply" on:click={loadAuditLogs}>Apply</button>
+        <div class="export-actions">
           <button class="btn-secondary" on:click={() => exportLogs('csv')}>CSV</button>
           <button class="btn-secondary" on:click={() => exportLogs('json')}>JSON</button>
         </div>
@@ -149,13 +153,13 @@
           </thead>
           <tbody>
             {#each auditLogs as event}
-              <tr class:failure={event.outcome === 'FAILURE'}>
+              <tr class:failure={event.outcome?.toLowerCase() === 'failure'}>
                 <td>{formatDateTime(event.timestamp)}</td>
-                <td><span class="event-type">{event.event_type.replace('AUTH_', '').replace('ADMIN_', '')}</span></td>
+                <td><span class="event-type">{event.event_type}</span></td>
                 <td>{event.username || '-'}</td>
                 <td>
                   <span class="outcome {getOutcomeClass(event.outcome)}">
-                    {event.outcome === 'SUCCESS' ? 'OK' : 'FAIL'}
+                    {event.outcome?.toLowerCase() === 'success' ? 'OK' : 'FAIL'}
                   </span>
                 </td>
                 <td>{event.source_ip}</td>
@@ -270,13 +274,33 @@
     min-width: 6rem;
   }
 
-  .filter-actions {
+  .btn-apply {
+    padding: 0.25rem 0.625rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    height: 1.75rem;
+    white-space: nowrap;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    align-self: flex-end;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
+  }
+
+  .btn-apply:hover {
+    background: #2563eb;
+    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
+  }
+
+  .export-actions {
     display: flex;
     gap: 0.25rem;
     margin-left: auto;
   }
 
-  .btn-primary,
   .btn-secondary {
     padding: 0.25rem 0.5rem;
     border-radius: 3px;
@@ -284,22 +308,10 @@
     font-size: 0.75rem;
     height: 1.75rem;
     white-space: nowrap;
-  }
-
-  .btn-primary {
-    background: var(--color-primary);
-    color: white;
-    border: none;
-  }
-
-  .btn-primary:hover {
-    opacity: 0.9;
-  }
-
-  .btn-secondary {
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     color: var(--color-text);
+    transition: all 0.15s;
   }
 
   .btn-secondary:hover {
@@ -375,7 +387,7 @@
     color: rgb(22, 163, 74);
   }
 
-  :global(.dark) .outcome.success {
+  :global([data-theme='dark']) .outcome.success {
     background: rgba(34, 197, 94, 0.2);
     color: rgb(74, 222, 128);
   }
@@ -385,7 +397,7 @@
     color: rgb(220, 38, 38);
   }
 
-  :global(.dark) .outcome.failure {
+  :global([data-theme='dark']) .outcome.failure {
     background: rgba(239, 68, 68, 0.2);
     color: rgb(248, 113, 113);
   }

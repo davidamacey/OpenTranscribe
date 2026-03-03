@@ -503,9 +503,7 @@
               class="dropdown-item"
               on:click={() => {
                 showDropdown = false;
-                // Open to admin section for admins, profile for regular users
-                const defaultSection = $user?.role === "admin" ? 'admin-users' : 'profile';
-                settingsModalStore.open(defaultSection);
+                settingsModalStore.open('system-statistics');
               }}
               title={$t('nav.settings')}
             >
