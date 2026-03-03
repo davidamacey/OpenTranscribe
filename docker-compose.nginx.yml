@@ -34,7 +34,10 @@ services:
     env_file:
       - .env
     command: >
-      /bin/sh -c "envsubst '$$NGINX_SERVER_NAME'
+      /bin/sh -c "
+      FLOWER_AUTH_B64=$$(printf '%s:%s' '${FLOWER_USER:-admin}' '${FLOWER_PASSWORD:-flower}' | base64 -w 0) &&
+      export FLOWER_AUTH_B64 &&
+      envsubst '$$NGINX_SERVER_NAME $$FLOWER_AUTH_B64'
       < /etc/nginx/templates/site.conf.template
       > /etc/nginx/conf.d/site.conf && nginx -g 'daemon off;'"
     ports:

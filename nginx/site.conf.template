@@ -109,9 +109,10 @@ server {
         proxy_set_header Host $host;
         proxy_redirect off;
 
-        # Basic auth can be added here if needed
-        # auth_basic "Flower Dashboard";
-        # auth_basic_user_file /etc/nginx/.htpasswd;
+        # Inject Flower Basic Auth credentials automatically so users don't see
+        # a browser auth dialog when opening the dashboard from the app UI.
+        # FLOWER_AUTH_B64 is computed at nginx startup as base64(FLOWER_USER:FLOWER_PASSWORD).
+        proxy_set_header Authorization "Basic ${FLOWER_AUTH_B64}";
     }
 
     # MinIO Console (S3 storage management)

@@ -24,27 +24,31 @@ export function getAppBaseUrl(): string {
 
 /**
  * Constructs the Flower Dashboard URL.
- * Supports VITE_FLOWER_PORT for localhost development.
- * Uses relative path /flower/ for production with Nginx.
+ * Supports VITE_FLOWER_PORT for localhost development with embedded Basic Auth credentials.
+ * Uses relative path /flower/ for production with Nginx (nginx injects auth header).
  */
 export function getFlowerUrl(): string {
   if (typeof window === 'undefined') return '';
 
   const viteFlowerPort = import.meta.env.VITE_FLOWER_PORT;
   const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
+  const cleanPrefix = urlPrefix.replace(/^\/+|\/+$/g, '');
 
-  // Localhost mode: use specific port if defined
+  // Localhost mode: use specific port with embedded credentials for seamless auth
+  // (works for HTTP localhost; production uses nginx auth header injection instead)
   if (viteFlowerPort) {
     const protocol = window.location.protocol;
     const host = window.location.hostname;
-    // Construct URL like http://localhost:5175/flower/
-    // Ensure we handle urlPrefix correctly (it might or might not have leading/trailing slashes)
-    const cleanPrefix = urlPrefix.replace(/^\/+|\/+$/g, '');
+    const user = import.meta.env.VITE_FLOWER_USER;
+    const password = import.meta.env.VITE_FLOWER_PASSWORD;
+    if (user && password) {
+      return `${protocol}//${user}:${password}@${host}:${viteFlowerPort}/${cleanPrefix}/`;
+    }
     return `${protocol}//${host}:${viteFlowerPort}/${cleanPrefix}/`;
   }
 
-  // Production/nginx mode: use current origin with prefix
-  const cleanPrefix = urlPrefix.replace(/^\/+|\/+$/g, '');
+  // Production/nginx mode: nginx injects Authorization header automatically,
+  // so the browser never needs to present credentials
   return `${window.location.origin}/${cleanPrefix}/`;
 }
 
