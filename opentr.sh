@@ -48,7 +48,7 @@ show_help() {
   echo "  restore [file]      - Restore database from backup"
   echo ""
   echo "Development Commands:"
-  echo "  restart-backend     - Restart backend, all celery workers & flower without database reset"
+  echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
   echo "  restart-frontend    - Restart frontend without affecting backend services"
   echo "  restart-all         - Restart all services without resetting database"
   echo "  rebuild-backend     - Rebuild and update backend services with code changes"
@@ -772,24 +772,24 @@ restore_database() {
   echo "🔄 Restoring database from ${BACKUP_FILE}..."
 
   # Stop services that use the database
-  docker compose stop backend celery-worker celery-beat
+  docker compose stop backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
 
   # Restore the database
   if docker compose exec -T postgres psql -U postgres opentranscribe < "$BACKUP_FILE"; then
     echo "✅ Database restored successfully."
     echo "🔄 Restarting services..."
-    docker compose start backend celery-worker celery-beat
+    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
   else
     echo "❌ Database restore failed."
     echo "🔄 Restarting services anyway..."
-    docker compose start backend celery-worker celery-beat
+    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
     exit 1
   fi
 }
 
 # Function to restart backend services (backend, all celery workers, flower) without database reset
 restart_backend() {
-  echo "🔄 Restarting backend services (backend, all celery workers, flower)..."
+  echo "🔄 Restarting backend services (backend, all celery workers, celery-beat, flower)..."
 
   # Restart backend and all celery services in place
   # Note: celery-worker-gpu-scaled is optional (scale: 0 by default) so we ignore errors for it
@@ -1018,7 +1018,7 @@ case "$1" in
     fi
 
     # shellcheck disable=SC2086
-    docker compose $COMPOSE_FILES up -d --build backend celery-worker celery-beat flower
+    docker compose $COMPOSE_FILES up -d --build backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat flower
     echo "✅ Backend services rebuilt successfully."
     ;;
 
