@@ -12,6 +12,8 @@ services:
     image: postgres:17.5-alpine
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     # Performance tuning for transcription workloads (2500+ files, 1M+ segments)
     # All values configurable via .env, defaults tuned for 4-8GB RAM + SSD storage
     command: >
@@ -41,11 +43,20 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - minio_data:/data
     ports:
       - "${MINIO_PORT:-5178}:9000"
       - "${MINIO_CONSOLE_PORT:-5179}:9001"
+    environment:
+      # Server-side encryption at rest (AES-256-GCM)
+      # Auto-encrypts all new objects. Existing unencrypted objects remain readable.
+      # Key format: <key-name>:<base64-encoded-32-byte-key>
+      # Generate with: echo "opentranscribe-key:$(openssl rand -base64 32)"
+      - MINIO_KMS_SECRET_KEY=${MINIO_KMS_SECRET_KEY:-}
+      - MINIO_KMS_AUTO_ENCRYPTION=${MINIO_KMS_AUTO_ENCRYPTION:-off}
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -58,6 +69,8 @@ services:
     image: redis:8.2.2-alpine3.22
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${REDIS_PORT:-5177}:6379"
     volumes:
@@ -84,6 +97,8 @@ services:
     container_name: opentranscribe-opensearch
     image: opensearchproject/opensearch:3.4.0
     restart: always
+    security_opt:
+      - no-new-privileges:true
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -115,6 +130,8 @@ services:
     container_name: opentranscribe-backend
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     # Backend handles API requests only - except the search embedding model
     # which is loaded for query-time vector search. AI processing in celery-worker.
     volumes:
@@ -156,6 +173,8 @@ services:
     container_name: opentranscribe-celery-worker
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=${GPU_DEFAULT_CONCURRENCY:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcription@%h -E
     # GPU configuration is provided by docker-compose.gpu.yml overlay
     # when NVIDIA GPU is detected (automatically handled by opentr.sh)
@@ -197,6 +216,8 @@ services:
     container_name: opentranscribe-celery-download-worker
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-3} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
@@ -228,6 +249,8 @@ services:
     container_name: opentranscribe-celery-cpu-worker
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility --concurrency=8 --max-tasks-per-child=20 --hostname cpu-processor@%h -E
     environment:
       # Internal Docker network settings (same as backend)
@@ -256,6 +279,8 @@ services:
     container_name: opentranscribe-celery-nlp-worker
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=${NLP_CONCURRENCY:-4} --max-tasks-per-child=${NLP_MAX_TASKS:-50} --hostname ai-nlp@%h -E
     environment:
       # Internal Docker network settings (same as backend)
@@ -284,6 +309,8 @@ services:
     container_name: opentranscribe-celery-embedding-worker
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     # Dedicated embedding worker: concurrency=1 keeps one model loaded in memory.
     # Same pattern as GPU worker - sequential processing, model stays warm.
     # High max-tasks-per-child avoids model reload overhead.
@@ -317,6 +344,8 @@ services:
     container_name: opentranscribe-celery-beat
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     command: celery -A app.core.celery beat --loglevel=info
     environment:
       # Internal Docker network settings (same as backend)
@@ -352,6 +381,8 @@ services:
     scale: 0  # Disabled by default, gpu-scale.yml sets scale: 1
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     environment:
       # Internal Docker network settings (same as other workers)
       - POSTGRES_HOST=postgres
@@ -377,6 +408,8 @@ services:
     container_name: opentranscribe-frontend
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     # Note: ports, healthcheck, and NODE_ENV defined in override files (dev vs prod)
     depends_on:
       backend:
@@ -386,6 +419,8 @@ services:
     container_name: opentranscribe-flower
     restart: always
     env_file: .env
+    security_opt:
+      - no-new-privileges:true
     command: >
       python -m celery -A app.core.celery flower
       --port=5555

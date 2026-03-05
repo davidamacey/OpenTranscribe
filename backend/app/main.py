@@ -68,7 +68,12 @@ def _validate_production_secrets():
 
 
 async def _setup_minio():
-    """Initialize MinIO bucket on startup."""
+    """Initialize MinIO bucket on startup.
+
+    Creates the media bucket if it doesn't exist and ensures the bucket
+    policy is private (no anonymous/public access). All file access goes
+    through presigned URLs, so public read is unnecessary and a security risk.
+    """
     try:
         import json
 
@@ -90,23 +95,31 @@ async def _setup_minio():
         if not client.bucket_exists(bucket_name):
             client.make_bucket(bucket_name)
             logger.info(f"MinIO bucket '{bucket_name}' created successfully")
-
-            policy = {
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Principal": {"AWS": "*"},
-                        "Action": ["s3:GetObject"],
-                        "Resource": [f"arn:aws:s3:::{bucket_name}/*"],
-                    }
-                ],
-            }
-
-            client.set_bucket_policy(bucket_name, json.dumps(policy))
-            logger.info(f"Public read policy set for bucket '{bucket_name}'")
         else:
             logger.info(f"MinIO bucket '{bucket_name}' already exists")
+
+        # Security: ensure bucket has no public access policy.
+        # Previous versions set a public read policy ("Principal": {"AWS": "*"})
+        # which allowed anonymous access to all stored files. Since all file
+        # access goes through presigned URLs, public read is unnecessary.
+        # Remove any existing public policy to lock down the bucket.
+        try:
+            existing_policy = client.get_bucket_policy(bucket_name)
+            if existing_policy:
+                policy_data = json.loads(existing_policy)
+                has_public_access = any(
+                    stmt.get("Principal") in ({"AWS": "*"}, "*", {"AWS": ["*"]})
+                    for stmt in policy_data.get("Statement", [])
+                )
+                if has_public_access:
+                    client.delete_bucket_policy(bucket_name)
+                    logger.warning(
+                        f"SECURITY FIX: Removed public access policy from bucket '{bucket_name}'. "
+                        "All file access now requires authentication via presigned URLs."
+                    )
+        except Exception:  # noqa: S110
+            # No policy set (expected for new buckets) — this is the secure default
+            logger.debug("No bucket policy set for '%s' (secure default)", bucket_name)
 
     except Exception as e:
         logger.error(f"Error setting up MinIO bucket: {e}")

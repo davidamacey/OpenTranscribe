@@ -39,11 +39,17 @@ server {
     ssl_session_timeout 1d;
     ssl_session_tickets off;
 
-    # Security Headers
+    # Hide NGINX version in response headers and error pages
+    server_tokens off;
+
+    # Security Headers (OWASP recommendations)
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-XSS-Protection "0" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(self), geolocation=(), payment=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; media-src 'self' blob:; worker-src 'self' blob:; frame-ancestors 'self';" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     # File upload size limit (for audio/video transcription)
     # Supports files up to 10GB for large GoPro/4K recordings
