@@ -25,6 +25,7 @@ from .refresh_token import RefreshToken
 from .topic import TopicSuggestion
 from .user import User
 from .user_llm_settings import UserLLMSettings
+from .medical_keyterm import MedicalKeyterm
 from .user_mfa import UserMFA
 
 __all__ = [
@@ -50,4 +51,5 @@ __all__ = [
     "RefreshToken",
     "UserMFA",
     "PasswordHistory",
+    "MedicalKeyterm",
 ]

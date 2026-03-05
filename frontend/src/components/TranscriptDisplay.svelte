@@ -541,6 +541,12 @@
                       on:speakerCreated={handleSpeakerCreated}
                     />
                   </div>
+                  {#if segment.confidence != null && segment.confidence < 0.7}
+                    <span
+                      class="confidence-indicator low-confidence"
+                      title="Low confidence ({Math.round(segment.confidence * 100)}%)"
+                    >&#9679;</span>
+                  {/if}
                   <div class="segment-text">
                     {@html highlightTextWithMatches(
                       segment.text,
@@ -1339,6 +1345,18 @@
   /* Dark mode speaker colors */
   :global([data-theme='dark']) .segment-speaker {
     color: var(--speaker-dark);
+  }
+
+  .confidence-indicator {
+    font-size: 8px;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-right: 2px;
+    cursor: help;
+  }
+
+  .confidence-indicator.low-confidence {
+    color: var(--warning-color, #f59e0b);
   }
 
   .segment-text {

@@ -10,6 +10,7 @@ export interface TranscriptSegment {
   end_time: number;
   text: string;
   speaker_label?: string;
+  confidence?: number; // ASR confidence score (0.0-1.0)
   speaker?: {
     uuid?: string;
     name?: string;

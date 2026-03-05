@@ -140,6 +140,9 @@ CREATE TABLE IF NOT EXISTS media_file (
     force_delete_eligible BOOLEAN DEFAULT FALSE,
     recovery_attempts INTEGER DEFAULT 0,
     last_recovery_attempt TIMESTAMP WITH TIME ZONE NULL,
+    -- ASR provider tracking
+    asr_provider VARCHAR(50) NULL,  -- e.g., 'deepgram', 'whisperx'
+    asr_model VARCHAR(100) NULL,    -- e.g., 'nova-3-medical', 'large-v2'
     user_id INTEGER NOT NULL REFERENCES "user" (id)
 );
 
@@ -229,7 +232,8 @@ CREATE TABLE IF NOT EXISTS transcript_segment (
     speaker_id INTEGER NULL REFERENCES speaker(id),
     start_time FLOAT NOT NULL,
     end_time FLOAT NOT NULL,
-    text TEXT NOT NULL
+    text TEXT NOT NULL,
+    confidence FLOAT NULL  -- ASR confidence score (0.0-1.0)
 );
 
 -- Comments table
@@ -849,3 +853,18 @@ VALUES
     ('Interview', CURRENT_TIMESTAMP),
     ('Personal', CURRENT_TIMESTAMP)
 ON CONFLICT (name) DO NOTHING;
+
+-- Medical keyterm table for ASR vocabulary boosting
+CREATE TABLE IF NOT EXISTS medical_keyterm (
+    id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    user_id INTEGER REFERENCES "user"(id),  -- NULL = system-wide
+    term VARCHAR(255) NOT NULL,
+    category VARCHAR(100) NULL,  -- 'medication', 'anatomy', 'procedure', 'diagnosis'
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(COALESCE(user_id, 0), term)
+);
+
+CREATE INDEX IF NOT EXISTS idx_medical_keyterm_user_id ON medical_keyterm(user_id);
+CREATE INDEX IF NOT EXISTS idx_medical_keyterm_active ON medical_keyterm(is_active);

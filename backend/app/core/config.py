@@ -219,7 +219,8 @@ class Settings(BaseSettings):
         f"redis://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}/0",
     )
 
-    # OpenSearch settings
+    # OpenSearch settings (optional — set OPENSEARCH_ENABLED=false to disable)
+    OPENSEARCH_ENABLED: bool = os.getenv("OPENSEARCH_ENABLED", "true").lower() == "true"
     OPENSEARCH_HOST: str = os.getenv("OPENSEARCH_HOST", "localhost")
     OPENSEARCH_PORT: str = os.getenv("OPENSEARCH_PORT", "9200")
     OPENSEARCH_USER: str = os.getenv("OPENSEARCH_USER", "admin")
@@ -261,6 +262,11 @@ class Settings(BaseSettings):
         _validate_keycloak_settings(self)
         _validate_pki_settings(self)
         return self
+
+    # ASR Provider Configuration
+    ASR_PROVIDER: str = os.getenv("ASR_PROVIDER", "deepgram")  # deepgram, whisperx
+    DEEPGRAM_API_KEY: str = os.getenv("DEEPGRAM_API_KEY", "")
+    DEEPGRAM_MODEL: str = os.getenv("DEEPGRAM_MODEL", "nova-3-medical")
 
     # Hardware Detection Settings (auto-detected by default)
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu

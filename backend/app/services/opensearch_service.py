@@ -13,23 +13,29 @@ from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
 # Setup logging
 logger = logging.getLogger(__name__)
 
-# Initialize the OpenSearch client
+# Initialize the OpenSearch client (optional — can be disabled via OPENSEARCH_ENABLED=false)
 opensearch_client: OpenSearch | None
-try:
-    opensearch_client = OpenSearch(
-        hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
-        http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-        use_ssl=False,
-        verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-        connection_class=RequestsHttpConnection,
-    )
-    logger.info("OpenSearch client initialized successfully")
-except (ConnectionError, ValueError) as e:
-    logger.error(f"Configuration error initializing OpenSearch client: {e}")
+_opensearch_enabled = os.getenv("OPENSEARCH_ENABLED", "true").lower() == "true"
+
+if not _opensearch_enabled:
+    logger.info("OpenSearch is disabled (OPENSEARCH_ENABLED=false). Search features unavailable.")
     opensearch_client = None
-except Exception as e:
-    logger.error(f"Unexpected error initializing OpenSearch client: {e}")
-    opensearch_client = None
+else:
+    try:
+        opensearch_client = OpenSearch(
+            hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
+            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
+            use_ssl=False,
+            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+            connection_class=RequestsHttpConnection,
+        )
+        logger.info("OpenSearch client initialized successfully")
+    except (ConnectionError, ValueError) as e:
+        logger.warning(f"OpenSearch not available: {e}. Search features will be disabled.")
+        opensearch_client = None
+    except Exception as e:
+        logger.warning(f"OpenSearch not available: {e}. Search features will be disabled.")
+        opensearch_client = None
 
 
 def ensure_indices_exist():

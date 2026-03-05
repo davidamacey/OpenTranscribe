@@ -107,6 +107,10 @@ class MediaFile(Base):
         DateTime(timezone=True), nullable=True
     )  # Last recovery attempt time
 
+    # ASR provider tracking
+    asr_provider = Column(String, nullable=True)  # e.g., 'deepgram', 'whisperx'
+    asr_model = Column(String, nullable=True)  # e.g., 'nova-3-medical', 'large-v2'
+
     # Relationships
     user = relationship("User", back_populates="media_files")
     transcript_segments = relationship(
@@ -143,6 +147,7 @@ class TranscriptSegment(Base):
     start_time = Column(Float, nullable=False)  # Start time in seconds
     end_time = Column(Float, nullable=False)  # End time in seconds
     text = Column(Text, nullable=False)
+    confidence = Column(Float, nullable=True)  # ASR confidence score (0.0-1.0)
 
     # Relationships
     media_file = relationship("MediaFile", back_populates="transcript_segments")

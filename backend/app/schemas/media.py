@@ -219,6 +219,7 @@ class TranscriptSegmentBase(BaseModel):
     end_time: float
     text: str
     speaker_id: Optional[UUID] = None
+    confidence: Optional[float] = None  # ASR confidence score (0.0-1.0)
 
 
 class TranscriptSegmentCreate(TranscriptSegmentBase):
@@ -238,6 +239,7 @@ class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
 
     media_file_id: UUID
     speaker: Optional[Speaker] = None
+    confidence: Optional[float] = None  # ASR confidence score (0.0-1.0)
 
     # Formatted fields for frontend display
     formatted_timestamp: Optional[str] = None  # e.g., "0:45.2"
@@ -316,6 +318,10 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     author: Optional[str] = None
     description: Optional[str] = None
     source_url: Optional[str] = None
+
+    # ASR provider tracking
+    asr_provider: Optional[str] = None  # e.g., 'deepgram', 'whisperx'
+    asr_model: Optional[str] = None  # e.g., 'nova-3-medical', 'large-v2'
 
     # Formatted fields for frontend display
     formatted_duration: Optional[str] = None  # e.g., "5:23"

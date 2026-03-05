@@ -8,6 +8,7 @@ export interface TranscriptSegment {
   speaker_id?: string; // UUID
   speaker_label?: string;
   resolved_speaker_name?: string;
+  confidence?: number; // ASR confidence score (0.0-1.0)
   speaker?: {
     uuid: string; // UUID
     name: string;

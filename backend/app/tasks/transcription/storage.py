@@ -30,6 +30,7 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
             end_time=segment["end"],
             text=segment["text"],
             speaker_id=segment["speaker_id"],
+            confidence=segment.get("confidence"),
         )
         db.add(db_segment)
 

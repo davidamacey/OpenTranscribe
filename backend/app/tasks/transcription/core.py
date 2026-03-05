@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import tempfile
@@ -9,6 +10,8 @@ from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.services.asr import TranscriptionConfig
+from app.services.asr import get_asr_provider
 from app.services.minio_service import download_file
 from app.services.opensearch_service import index_transcript
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
@@ -32,7 +35,6 @@ from .storage import generate_full_transcript
 from .storage import get_unique_speaker_names
 from .storage import save_transcript_segments
 from .storage import update_media_file_transcription_status
-from .whisperx_service import WhisperXService
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +243,27 @@ def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: l
         logger.warning(f"Could not index transcript: file_uuid not found for file_id {ctx.file_id}")
 
 
-def _run_whisperx_pipeline(
+def _get_medical_keyterms(user_id: int) -> list[str]:
+    """Retrieve active medical keyterms for the user (user-specific + system-wide)."""
+    try:
+        from app.models.medical_keyterm import MedicalKeyterm
+
+        with session_scope() as db:
+            keyterms = (
+                db.query(MedicalKeyterm.term)
+                .filter(
+                    MedicalKeyterm.is_active.is_(True),
+                    (MedicalKeyterm.user_id == user_id) | (MedicalKeyterm.user_id.is_(None)),
+                )
+                .all()
+            )
+            return [k.term for k in keyterms]
+    except Exception as e:
+        logger.warning(f"Could not load medical keyterms: {e}")
+        return []
+
+
+def _run_asr_pipeline(
     ctx: TranscriptionContext,
     audio_file_path: str,
     min_speakers: int | None,
@@ -250,7 +272,7 @@ def _run_whisperx_pipeline(
     source_language: str | None = None,
     translate_to_english: bool | None = None,
 ) -> dict:
-    """Run the WhisperX transcription pipeline."""
+    """Run the ASR transcription pipeline using the configured provider."""
     # Get user language settings if not explicitly provided
     if source_language is None or translate_to_english is None:
         with session_scope() as db:
@@ -267,11 +289,19 @@ def _run_whisperx_pipeline(
         f"source_language={source_language}, translate_to_english={translate_to_english}"
     )
 
-    whisperx_service = WhisperXService(
-        model_name=os.getenv("WHISPER_MODEL", "large-v2"),
-        models_dir=str(settings.MODEL_BASE_DIR),
+    # Get the configured ASR provider
+    provider = get_asr_provider()
+    logger.info(f"Using ASR provider: {provider.provider_name} for file {ctx.file_id}")
+
+    # Build transcription config
+    keyterms = _get_medical_keyterms(ctx.user_id) if provider.supports_keyterms() else []
+    config = TranscriptionConfig(
         source_language=source_language,
-        translate_to_english=translate_to_english,
+        translate_to_english=translate_to_english or False,
+        min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
+        max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
+        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        keyterms=keyterms,
     )
 
     with session_scope() as db:
@@ -279,19 +309,59 @@ def _run_whisperx_pipeline(
 
     send_progress_notification(ctx.user_id, ctx.file_id, 0.4, "Running AI transcription")
 
-    def whisperx_progress_callback(progress, message):
+    def progress_callback(progress, message):
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=progress)
         send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
 
-    return whisperx_service.process_full_pipeline(
-        audio_file_path,
-        settings.HUGGINGFACE_TOKEN,
-        progress_callback=whisperx_progress_callback,
-        min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
-        max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
-        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
-    )
+    # Run the async provider in a sync context (Celery workers are sync)
+    loop = asyncio.new_event_loop()
+    try:
+        asr_result = loop.run_until_complete(
+            provider.transcribe(audio_file_path, config, progress_callback)
+        )
+    finally:
+        loop.close()
+
+    # Store ASR provider info on the media file
+    with session_scope() as db:
+        media_file = get_refreshed_object(db, MediaFile, ctx.file_id)
+        if media_file:
+            media_file.asr_provider = asr_result.provider_name
+            media_file.asr_model = asr_result.provider_model
+            db.commit()
+
+    # Convert TranscriptionResult to the dict format expected by downstream processing
+    return _asr_result_to_dict(asr_result)
+
+
+def _asr_result_to_dict(asr_result) -> dict:
+    """Convert ASR TranscriptionResult to legacy dict format for existing pipeline."""
+    segments = []
+    for seg in asr_result.segments:
+        words = []
+        for w in seg.words:
+            words.append({
+                "word": w.text,
+                "start": w.start,
+                "end": w.end,
+                "score": w.confidence,
+                "speaker": w.speaker_label,
+            })
+
+        segments.append({
+            "text": seg.text,
+            "start": seg.start,
+            "end": seg.end,
+            "speaker": seg.speaker_label,
+            "words": words,
+            "confidence": seg.confidence,
+        })
+
+    return {
+        "segments": segments,
+        "language": asr_result.detected_language or "en",
+    }
 
 
 def _process_transcription_result(
@@ -504,8 +574,8 @@ def _process_file_in_temp_dir(
         progress_callback=audio_extraction_progress_callback,
     )
 
-    # Run WhisperX pipeline
-    result = _run_whisperx_pipeline(ctx, audio_file_path, min_speakers, max_speakers, num_speakers)
+    # Run ASR pipeline (Deepgram, WhisperX, etc.)
+    result = _run_asr_pipeline(ctx, audio_file_path, min_speakers, max_speakers, num_speakers)
 
     # Validate transcription result
     validation_error = _validate_transcription_result(result, ctx, ctx.task_id)
@@ -548,7 +618,7 @@ def transcribe_audio_task(
     num_speakers: int | None = None,
 ):
     """
-    Process an audio/video file with WhisperX for transcription and Pyannote for diarization.
+    Process an audio/video file using the configured ASR provider (Deepgram, WhisperX, etc.).
 
     Args:
         file_uuid: UUID of the MediaFile to transcribe
@@ -588,7 +658,7 @@ def transcribe_audio_task(
             logger.error(f"PyAnnote model access error: {str(e)}")
             return _handle_transcription_failure(ctx, task_id, str(e), "gated_model_access")
         except Exception as e:
-            logger.error(f"Error in WhisperX processing: {str(e)}")
+            logger.error(f"Error in ASR processing: {str(e)}")
             error_message = _get_user_friendly_error_message(str(e))
             return _handle_transcription_failure(ctx, task_id, error_message, "processing_error")
 
