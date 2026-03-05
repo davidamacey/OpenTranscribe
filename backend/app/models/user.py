@@ -57,6 +57,7 @@ class User(Base):
     summary_prompts = relationship("SummaryPrompt", back_populates="user")
     settings = relationship("UserSetting", back_populates="user")
     llm_settings = relationship("UserLLMSettings", back_populates="user")
+    asr_settings = relationship("UserASRSettings", back_populates="user")
     # Topic extraction relationships
     topic_suggestions = relationship("TopicSuggestion", back_populates="user")
     # Refresh tokens for session management (FedRAMP AC-12)

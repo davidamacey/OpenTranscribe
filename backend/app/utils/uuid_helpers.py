@@ -25,6 +25,7 @@ from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.models.prompt import SummaryPrompt
 from app.models.user import User
+from app.models.user_asr_settings import UserASRSettings
 from app.models.user_llm_settings import UserLLMSettings
 
 T = TypeVar("T")
@@ -193,6 +194,11 @@ def get_prompt_by_uuid(db: Session, uuid: UUID | str) -> SummaryPrompt:
 def get_llm_config_by_uuid(db: Session, uuid: UUID | str) -> UserLLMSettings:
     """Get LLM configuration by UUID"""
     return get_by_uuid(db, UserLLMSettings, uuid, error_message="LLM configuration not found")
+
+
+def get_asr_config_by_uuid(db: Session, uuid: UUID | str) -> UserASRSettings:
+    """Get ASR configuration by UUID"""
+    return get_by_uuid(db, UserASRSettings, uuid, error_message="ASR configuration not found")
 
 
 # Permission checking helpers

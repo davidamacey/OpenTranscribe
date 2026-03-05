@@ -24,6 +24,7 @@ from .prompt import UserSetting
 from .refresh_token import RefreshToken
 from .topic import TopicSuggestion
 from .user import User
+from .user_asr_settings import UserASRSettings
 from .user_llm_settings import UserLLMSettings
 from .medical_keyterm import MedicalKeyterm
 from .user_mfa import UserMFA
@@ -46,6 +47,7 @@ __all__ = [
     "SpeakerCollectionMember",
     "SummaryPrompt",
     "UserSetting",
+    "UserASRSettings",
     "UserLLMSettings",
     "TopicSuggestion",
     "RefreshToken",

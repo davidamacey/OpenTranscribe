@@ -289,8 +289,9 @@ def _run_asr_pipeline(
         f"source_language={source_language}, translate_to_english={translate_to_english}"
     )
 
-    # Get the configured ASR provider
-    provider = get_asr_provider()
+    # Get the configured ASR provider (check user DB settings first, then env vars)
+    with session_scope() as db:
+        provider = get_asr_provider(user_id=ctx.user_id, db=db)
     logger.info(f"Using ASR provider: {provider.provider_name} for file {ctx.file_id}")
 
     # Build transcription config

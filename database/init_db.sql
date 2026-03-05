@@ -868,3 +868,28 @@ CREATE TABLE IF NOT EXISTS medical_keyterm (
 
 CREATE INDEX IF NOT EXISTS idx_medical_keyterm_user_id ON medical_keyterm(user_id);
 CREATE INDEX IF NOT EXISTS idx_medical_keyterm_active ON medical_keyterm(is_active);
+
+-- User ASR settings table for storing user-specific ASR provider configurations
+-- Each user can have multiple ASR configurations. The active configuration
+-- is tracked via the user_setting table with key 'active_asr_config_id'.
+CREATE TABLE IF NOT EXISTS user_asr_settings (
+    id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL, -- User-friendly name for the configuration
+    provider VARCHAR(50) NOT NULL, -- deepgram, whisperx
+    model_name VARCHAR(100) NOT NULL,
+    api_key TEXT, -- Encrypted API key
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    last_tested TIMESTAMP WITH TIME ZONE,
+    test_status VARCHAR(20), -- success, failed, pending
+    test_message TEXT, -- Error message or success details
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, name) -- Ensure unique configuration names per user
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_asr_settings_user_id ON user_asr_settings(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_asr_settings_provider ON user_asr_settings(provider);
+CREATE INDEX IF NOT EXISTS idx_user_asr_settings_active ON user_asr_settings(is_active);
+CREATE INDEX IF NOT EXISTS idx_user_asr_settings_uuid ON user_asr_settings(uuid);

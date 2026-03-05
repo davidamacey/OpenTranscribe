@@ -7,6 +7,7 @@
   import { UserSettingsApi, RecordingSettingsHelper, type RecordingSettings } from '$lib/api/userSettings';
 
   // Import settings components
+  import ASRSettings from '$components/settings/ASRSettings.svelte';
   import LLMSettings from '$components/settings/LLMSettings.svelte';
   import PromptSettings from '$components/settings/PromptSettings.svelte';
   import AudioExtractionSettings from '$components/settings/AudioExtractionSettings.svelte';
@@ -128,7 +129,8 @@
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' }
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
+        { id: 'asr-provider' as SettingsSection, label: 'ASR Provider', icon: 'microphone' }
       ]
     }
   ];
@@ -1038,6 +1040,15 @@
               <h3 class="section-title">{$t('settings.llmProvider.title')}</h3>
               <p class="section-description">{$t('settings.llmProvider.description')}</p>
               <LLMSettings onSettingsChange={onAISettingsChange} />
+            </div>
+          {/if}
+
+          <!-- ASR Provider Section -->
+          {#if activeSection === 'asr-provider'}
+            <div class="content-section">
+              <h3 class="section-title">ASR Provider</h3>
+              <p class="section-description">Configure your speech recognition provider and API keys for transcription.</p>
+              <ASRSettings onSettingsChange={onAISettingsChange} />
             </div>
           {/if}
 

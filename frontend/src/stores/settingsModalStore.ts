@@ -10,6 +10,7 @@ export type SettingsSection =
   | 'transcription'
   | 'ai-prompts'
   | 'llm-provider'
+  | 'asr-provider'
   // System sections (visible to all users)
   | 'system-statistics'
   // Admin sections
@@ -35,6 +36,7 @@ const initialState: SettingsModalState = {
     transcription: false,
     'ai-prompts': false,
     'llm-provider': false,
+    'asr-provider': false,
     'system-statistics': false,
     'admin-users': false,
     'admin-task-health': false,
