@@ -161,8 +161,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'speaker_profile' AND column_name = 'avatar_path')"
     )
+    has_upload_session = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'upload_session')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v280: upload_session table for TUS resumable uploads
+    if has_upload_session:
+        return "v280_add_upload_sessions"
     # v270: profile avatar_path column
     if has_speaker_cluster and has_cluster_quality_metrics and has_avatar_path:
         return "v270_add_profile_avatar"

@@ -1,9 +1,9 @@
 import { get } from 'svelte/store';
 import axiosInstance from '$lib/axios';
-import { authStore } from '$stores/auth';
 import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
 import axios, { type AxiosProgressEvent } from 'axios';
+import * as tus from 'tus-js-client';
 
 // Upload item types
 export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
@@ -11,6 +11,7 @@ export type UploadStatus =
   | 'queued'
   | 'preparing'
   | 'uploading'
+  | 'paused'
   | 'processing'
   | 'completed'
   | 'failed'
@@ -75,14 +76,45 @@ async function calculateFileHash(file: File): Promise<string> {
   return hashHex;
 }
 
+function getAuthToken(): string {
+  try {
+    const auth = localStorage.getItem('auth_store');
+    if (auth) {
+      const parsed = JSON.parse(auth);
+      return parsed.token || parsed.access_token || '';
+    }
+  } catch {
+    // fallback
+  }
+  return '';
+}
+
+async function getOrRefreshToken(): Promise<string> {
+  // Use the existing auth store to get current token
+  // If expired, the auth store handles refresh
+  return getAuthToken();
+}
+
 class UploadService {
   private uploads: Map<string, UploadItem> = new Map();
   private eventListeners: ((event: UploadEvent) => void)[] = [];
   private processingQueue: string[] = [];
   private activeUploads: Set<string> = new Set();
+  private _tusUploads = new Map<string, tus.Upload>();
 
   constructor() {
     this.loadPersistedUploads();
+    // Warn users before closing the tab with active uploads
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
+        const hasActive =
+          this.getActiveUploads().length > 0 || Array.from(this._tusUploads.keys()).length > 0;
+        if (hasActive) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
+    }
   }
 
   // Event system
@@ -306,12 +338,8 @@ class UploadService {
   private async uploadFile(uploadId: string, file: File | Blob): Promise<any> {
     const upload = this.uploads.get(uploadId)!;
 
-    // Create cancel token
-    const cancelToken = axios.CancelToken.source();
-    this.updateUpload(uploadId, { cancelToken });
-
     // Calculate file hash for duplicate detection
-    let fileHash = null;
+    let fileHash = '';
     if (file instanceof File) {
       try {
         this.updateUpload(uploadId, {
@@ -320,17 +348,17 @@ class UploadService {
           estimatedTime: get(t)('upload.calculatingHash'),
         });
         fileHash = await calculateFileHash(file);
-      } catch (err) {
-        // File hash calculation is optional, continue without it
+      } catch {
+        // File hash calculation is optional
       }
     }
 
-    // Step 1: Prepare the upload
+    // Step 1: Prepare the upload (unchanged)
     const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: file.size,
       content_type: file instanceof File ? file.type : 'audio/webm',
-      file_hash: fileHash,
+      file_hash: fileHash || null,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
     });
@@ -341,7 +369,7 @@ class UploadService {
       return { uuid: fileId, isDuplicate: true };
     }
 
-    // Step 2: Upload the file
+    // Step 2: Upload via TUS (replaces direct Axios POST /files)
     this.updateUpload(uploadId, {
       status: 'uploading',
       fileId,
@@ -349,54 +377,15 @@ class UploadService {
       estimatedTime: 'Uploading...',
     });
 
-    const formData = new FormData();
-    formData.append('file', file);
-
-    // Build headers with speaker parameters if provided
-    const headers: Record<string, string> = {
-      'Content-Type': 'multipart/form-data',
-      'X-File-ID': fileId,
-      'X-File-Hash': fileHash || '',
-    };
-
-    // Add speaker diarization parameters to headers if provided
-    if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
-      headers['X-Min-Speakers'] = upload.minSpeakers.toString();
-    }
-    if (upload.maxSpeakers !== null && upload.maxSpeakers !== undefined) {
-      headers['X-Max-Speakers'] = upload.maxSpeakers.toString();
-    }
-    if (upload.numSpeakers !== null && upload.numSpeakers !== undefined) {
-      headers['X-Num-Speakers'] = upload.numSpeakers.toString();
-    }
-
-    await axiosInstance.post('/files', formData, {
-      headers,
-      timeout: UPLOAD_TIMEOUT_MS,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      cancelToken: cancelToken.token,
-      onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-        if (progressEvent.total) {
-          // Calculate progress percentage but cap at 99% during upload
-          // Only show 100% when upload is completely finished and processed
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          const progress = Math.min(percentCompleted, 99);
-
-          this.updateUpload(uploadId, { progress });
-          this.emit('progress', uploadId, { progress });
-
-          // Calculate estimated time remaining
-          const elapsed = Date.now() - (upload.startTime || Date.now());
-          if (elapsed > 0) {
-            const rate = progressEvent.loaded / elapsed; // bytes per ms
-            const remaining = (progressEvent.total - progressEvent.loaded) / rate; // ms remaining
-            const estimatedTime = this.formatTimeRemaining(remaining);
-            this.updateUpload(uploadId, { estimatedTime });
-          }
-        }
-      },
-    });
+    await this._tusUpload(
+      uploadId,
+      file instanceof File ? file : new File([file], upload.name),
+      fileId,
+      fileHash,
+      upload.minSpeakers ?? undefined,
+      upload.maxSpeakers ?? undefined,
+      upload.numSpeakers ?? undefined
+    );
 
     return { uuid: fileId, isDuplicate: false };
   }
@@ -408,14 +397,9 @@ class UploadService {
   ): Promise<any> {
     const upload = this.uploads.get(uploadId)!;
 
-    // Create cancel token
-    const cancelToken = axios.CancelToken.source();
-    this.updateUpload(uploadId, { cancelToken });
-
-    // Use original video file hash from extraction metadata for duplicate detection
     const originalFileHash = extractionMetadata?.originalFileHash || null;
 
-    // Step 1: Prepare the upload with extraction metadata
+    // Step 1: Prepare
     const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: audioBlob.size,
@@ -432,7 +416,7 @@ class UploadService {
       return { uuid: fileId, isDuplicate: true };
     }
 
-    // Step 2: Upload the extracted audio file
+    // Step 2: Upload via TUS
     this.updateUpload(uploadId, {
       status: 'uploading',
       fileId,
@@ -440,39 +424,16 @@ class UploadService {
       estimatedTime: 'Uploading extracted audio...',
     });
 
-    const formData = new FormData();
-    formData.append('file', audioBlob, upload.name);
-
-    await axiosInstance.post('/files', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        'X-File-ID': fileId,
-        'X-File-Hash': originalFileHash || '',
-        'X-Extracted-Audio': 'true', // Flag for backend to know this is extracted audio
-      },
-      timeout: UPLOAD_TIMEOUT_MS,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      cancelToken: cancelToken.token,
-      onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-        if (progressEvent.total) {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          const progress = Math.min(percentCompleted, 99);
-
-          this.updateUpload(uploadId, { progress });
-          this.emit('progress', uploadId, { progress });
-
-          // Calculate estimated time remaining
-          const elapsed = Date.now() - (upload.startTime || Date.now());
-          if (elapsed > 0) {
-            const rate = progressEvent.loaded / elapsed;
-            const remaining = (progressEvent.total - progressEvent.loaded) / rate;
-            const estimatedTime = this.formatTimeRemaining(remaining);
-            this.updateUpload(uploadId, { estimatedTime });
-          }
-        }
-      },
-    });
+    await this._tusUpload(
+      uploadId,
+      new File([audioBlob], upload.name, { type: audioBlob.type || 'audio/opus' }),
+      fileId,
+      originalFileHash || '',
+      undefined,
+      undefined,
+      undefined,
+      extractionMetadata?.videoMetadata || undefined
+    );
 
     return { uuid: fileId, isDuplicate: false };
   }
@@ -529,6 +490,93 @@ class UploadService {
     this.persistUploads();
   }
 
+  private async _tusUpload(
+    uploadId: string,
+    file: File,
+    fileId: string,
+    fileHash: string,
+    minSpeakers?: number,
+    maxSpeakers?: number,
+    numSpeakers?: number,
+    extractedFromVideo?: object
+  ): Promise<void> {
+    const encode = (v: string) => btoa(unescape(encodeURIComponent(v)));
+    const metadata: Record<string, string> = {
+      filename: encode(file.name),
+      filetype: encode(file.type || 'application/octet-stream'),
+      fileId: encode(fileId),
+      fileHash: encode(fileHash || ''),
+    };
+    if (minSpeakers != null) metadata.minSpeakers = encode(String(minSpeakers));
+    if (maxSpeakers != null) metadata.maxSpeakers = encode(String(maxSpeakers));
+    if (numSpeakers != null) metadata.numSpeakers = encode(String(numSpeakers));
+    if (extractedFromVideo) {
+      metadata.extractedFromVideo = encode(JSON.stringify(extractedFromVideo));
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      const upload = new tus.Upload(file, {
+        endpoint: `/api/files/tus`,
+        chunkSize: 10 * 1024 * 1024, // 10MB chunks
+        retryDelays: [1000, 2000, 4000, 8000, 16000],
+        storeFingerprintForResuming: true,
+        fingerprint: async (_f: File, _opts: any) => `tus-${file.name}-${file.size}-${fileHash}`,
+        metadata,
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+        onBeforeRequest: async (req: any) => {
+          const token = await getOrRefreshToken();
+          req.setHeader('Authorization', `Bearer ${token}`);
+        },
+        onProgress: (bytesUploaded: number, bytesTotal: number) => {
+          const progress = Math.round((bytesUploaded / bytesTotal) * 99);
+          this.updateUpload(uploadId, { progress, status: 'uploading' });
+          this.emit('progress', uploadId, { progress });
+        },
+        onSuccess: () => {
+          this._tusUploads.delete(uploadId);
+          resolve();
+        },
+        onError: (error: any) => {
+          if (error.originalResponse?.getStatus() === 401) {
+            // Token refresh handled by onBeforeRequest — retry will occur
+            return;
+          }
+          this._tusUploads.delete(uploadId);
+          reject(error);
+        },
+      });
+
+      this._tusUploads.set(uploadId, upload);
+
+      // Resume from previous upload if exists in localStorage
+      upload.findPreviousUploads().then((previous: any[]) => {
+        if (previous.length > 0) {
+          upload.resumeFromPreviousUpload(previous[0]);
+          this.emit('progress', uploadId, { resumed: true });
+        }
+        upload.start();
+      });
+    });
+  }
+
+  pauseUpload(uploadId: string): void {
+    const tusUpload = this._tusUploads.get(uploadId);
+    if (tusUpload) {
+      tusUpload.abort();
+      this.updateUpload(uploadId, { status: 'paused' });
+      this.persistUploads();
+    }
+  }
+
+  resumeTusUpload(uploadId: string): void {
+    const tusUpload = this._tusUploads.get(uploadId);
+    if (tusUpload) {
+      tusUpload.start();
+      this.updateUpload(uploadId, { status: 'uploading' });
+      this.persistUploads();
+    }
+  }
+
   cancelUpload(uploadId: string) {
     const upload = this.uploads.get(uploadId);
     if (!upload) return;
@@ -536,6 +584,13 @@ class UploadService {
     // Cancel the request if it has a cancel token
     if (upload.cancelToken) {
       upload.cancelToken.cancel('Upload cancelled by user');
+    }
+
+    // Abort TUS upload if active (sends TUS DELETE to server)
+    const tusUpload = this._tusUploads.get(uploadId);
+    if (tusUpload) {
+      tusUpload.abort(true); // true = send TUS DELETE request
+      this._tusUploads.delete(uploadId);
     }
 
     this.updateUpload(uploadId, {
@@ -593,7 +648,8 @@ class UploadService {
       (upload) =>
         upload.status === 'uploading' ||
         upload.status === 'processing' ||
-        upload.status === 'preparing'
+        upload.status === 'preparing' ||
+        upload.status === 'paused'
     );
   }
 

@@ -23,6 +23,7 @@
       case 'uploading':
       case 'processing':
       case 'preparing': return '#3b82f6';
+      case 'paused': return '#f59e0b';
       default: return '#f59e0b';
     }
   }
@@ -36,6 +37,7 @@
       case 'uploading':
       case 'processing': return '↑';
       case 'preparing': return '⚙';
+      case 'paused': return '⏸';
       default: return '⏳';
     }
   }
@@ -47,6 +49,14 @@
 
   function handleCancel() {
     uploadsStore.cancel(upload.id);
+  }
+
+  function handlePause() {
+    uploadsStore.pause(upload.id);
+  }
+
+  function handleResumeTus() {
+    uploadsStore.resumeTus(upload.id);
   }
 
   function handleRemove() {
@@ -87,7 +97,25 @@
         </button>
       {/if}
 
-      {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing'}
+      {#if upload.status === 'uploading'}
+        <button
+          class="action-btn pause-btn"
+          on:click={handlePause}
+          title={$t('upload.pause')}
+        >
+          ⏸
+        </button>
+      {:else if upload.status === 'paused'}
+        <button
+          class="action-btn resume-btn"
+          on:click={handleResumeTus}
+          title={$t('upload.resume')}
+        >
+          ▶
+        </button>
+      {/if}
+
+      {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing' || upload.status === 'paused'}
         <button
           class="action-btn cancel-btn"
           on:click={handleCancel}
@@ -107,7 +135,10 @@
     </div>
   </div>
 
-  {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing'}
+  {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing' || upload.status === 'paused'}
+    {#if upload.status === 'paused'}
+      <span class="status-badge paused-badge">{$t('upload.paused')}</span>
+    {/if}
     <div class="progress-container">
       <div class="progress-bar">
         <div
@@ -213,6 +244,32 @@
   .retry-btn:hover {
     color: #10b981;
     background: rgba(16, 185, 129, 0.1);
+  }
+
+  .pause-btn:hover {
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+  }
+
+  .resume-btn:hover {
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+  }
+
+  .status-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    display: inline-block;
+  }
+
+  .paused-badge {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
   }
 
   .cancel-btn:hover,

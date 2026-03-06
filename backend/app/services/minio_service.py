@@ -476,3 +476,152 @@ class MinIOService:
             self.client.make_bucket(bucket_name)
         except Exception as e:
             raise Exception(f"Error creating bucket: {e}") from e
+
+    # ------------------------------------------------------------------
+    # Multipart upload methods for TUS resumable uploads
+    # WARNING: wraps private minio SDK internals. Pin minio>=7.2.18,<8.0.0.
+    # If SDK removes these, see: https://github.com/minio/minio-py/releases
+    # ------------------------------------------------------------------
+
+    def create_multipart_upload(self, object_name: str, content_type: str) -> str:
+        """Initiate a MinIO S3 multipart upload.
+
+        Args:
+            object_name: Target object path in the media bucket.
+            content_type: MIME type of the file being uploaded.
+
+        Returns:
+            The S3 UploadId string (opaque, may be long).
+        """
+        try:
+            ensure_bucket_exists()
+            result = self.client._create_multipart_upload(
+                settings.MEDIA_BUCKET_NAME,
+                object_name,
+                headers={"Content-Type": content_type},
+            )
+            return str(result)
+        except Exception as e:
+            raise Exception(f"Error creating multipart upload: {e}") from e
+
+    def upload_part(self, object_name: str, upload_id: str, part_number: int, data: bytes) -> str:
+        """Upload one part of a multipart upload.
+
+        Args:
+            object_name: Target object path in the media bucket.
+            upload_id: The S3 UploadId from create_multipart_upload.
+            part_number: 1-based part number (S3 spec).
+            data: Raw bytes for this part (must be >= 5MB for non-final parts).
+
+        Returns:
+            ETag string for the uploaded part (quotes stripped).
+
+        Note:
+            minio-py 7.x ``_upload_part`` signature:
+            (bucket_name, object_name, data, headers, upload_id, part_number)
+            The ``headers`` positional arg comes BEFORE ``upload_id``.
+        """
+        try:
+            etag = self.client._upload_part(
+                settings.MEDIA_BUCKET_NAME,
+                object_name,
+                data,
+                {},  # headers (positional, must come before upload_id)
+                upload_id,
+                part_number,
+            )
+            # Strip surrounding quotes that some S3 implementations add
+            return str(etag).strip('"')
+        except Exception as e:
+            raise Exception(f"Error uploading part {part_number}: {e}") from e
+
+    def complete_multipart_upload(
+        self, object_name: str, upload_id: str, parts: list[dict]
+    ) -> None:
+        """Complete a multipart upload by assembling all parts.
+
+        Args:
+            object_name: Target object path in the media bucket.
+            upload_id: The S3 UploadId from create_multipart_upload.
+            parts: List of {part_number: int, etag: str, size: int} dicts.
+                   Will be sorted by part_number before submission.
+
+        Note:
+            ``minio.commonconfig`` does NOT export ``Part`` in minio-py 7.x.
+            The correct location is ``minio.datatypes.Part``.
+        """
+        try:
+            from minio.datatypes import Part
+
+            sorted_parts = sorted(parts, key=lambda p: p["part_number"])
+            part_objects = [Part(p["part_number"], p["etag"]) for p in sorted_parts]
+            self.client._complete_multipart_upload(
+                settings.MEDIA_BUCKET_NAME,
+                object_name,
+                upload_id,
+                part_objects,
+            )
+        except Exception as e:
+            raise Exception(f"Error completing multipart upload: {e}") from e
+
+    def abort_multipart_upload(self, object_name: str, upload_id: str) -> None:
+        """Abort a multipart upload and free all staged parts.
+
+        Args:
+            object_name: Target object path in the media bucket.
+            upload_id: The S3 UploadId from create_multipart_upload.
+        """
+        try:
+            self.client._abort_multipart_upload(
+                settings.MEDIA_BUCKET_NAME,
+                object_name,
+                upload_id,
+            )
+        except Exception as e:
+            raise Exception(f"Error aborting multipart upload: {e}") from e
+
+    def list_parts(self, object_name: str, upload_id: str) -> list[dict]:
+        """List parts already uploaded for a multipart upload.
+
+        Used for 'heal on HEAD' — reconciling DB state with MinIO truth
+        after a server restart mid-upload.
+
+        Handles S3 pagination: ``_list_parts`` returns at most 1000 parts per
+        call and sets ``is_truncated`` when more pages exist.  Iterates until
+        ``is_truncated`` is False so all parts are returned.
+
+        Args:
+            object_name: Target object path in the media bucket.
+            upload_id: The S3 UploadId from create_multipart_upload.
+
+        Returns:
+            List of {part_number: int, etag: str, size: int} dicts sorted by
+            part_number.
+        """
+        try:
+            parts: list[dict] = []
+            part_number_marker: str | None = None
+
+            while True:
+                result = self.client._list_parts(
+                    settings.MEDIA_BUCKET_NAME,
+                    object_name,
+                    upload_id,
+                    part_number_marker=part_number_marker,
+                )
+                for part in result.parts:
+                    parts.append(
+                        {
+                            "part_number": part.part_number,
+                            "etag": part.etag.strip('"') if part.etag else "",
+                            "size": part.size or 0,
+                        }
+                    )
+                if not result.is_truncated:
+                    break
+                # Advance the marker to fetch the next page
+                part_number_marker = result.next_part_number_marker
+
+            return parts
+        except Exception as e:
+            raise Exception(f"Error listing parts: {e}") from e
