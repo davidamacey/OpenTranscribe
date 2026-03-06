@@ -22,6 +22,7 @@
   let previewMediaUrl = '';
   let showFilters = true;
   let sidebarMounted = false;
+  let neuralSearchActive: boolean | null = null; // null = loading/unknown
 
   // FilterSidebar state
   let filterSearchQuery = '';
@@ -147,6 +148,13 @@
     // Enable sidebar transitions only after initial render is complete
     requestAnimationFrame(() => {
       sidebarMounted = true;
+    });
+
+    // Check neural search availability
+    axiosInstance.get('/search/models/neural').then((res) => {
+      neuralSearchActive = !!(res.data?.neural_enabled && res.data?.active_model_id);
+    }).catch(() => {
+      neuralSearchActive = false;
     });
   });
 
@@ -624,6 +632,13 @@
               {$t('search.results', { count: $searchStore.totalFiles, time: formatSearchTime($searchStore.searchTimeMs) })}
             </span>
             <div class="results-controls">
+              <!-- Neural search status indicator -->
+              {#if neuralSearchActive !== null}
+                <div class="neural-status" class:active={neuralSearchActive} title={neuralSearchActive ? $t('search.neuralActive') : $t('search.neuralInactiveTooltip')}>
+                  <span class="neural-dot"></span>
+                  <span class="neural-label">{neuralSearchActive ? $t('search.neuralActive') : $t('search.neuralInactive')}</span>
+                </div>
+              {/if}
               <!-- Search Mode Toggle -->
               <div class="mode-toggle">
                 <button
@@ -1591,5 +1606,64 @@
       right: 0.5rem;
       bottom: 0.5rem;
     }
+  }
+
+  /* Neural search status indicator */
+  .neural-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    border: 1px solid;
+    cursor: default;
+    white-space: nowrap;
+  }
+
+  .neural-status.active {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #059669;
+  }
+
+  :global(.dark) .neural-status.active {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #34d399;
+  }
+
+  .neural-status:not(.active) {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.25);
+    color: #d97706;
+  }
+
+  :global(.dark) .neural-status:not(.active) {
+    background: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+  }
+
+  .neural-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  .neural-status.active .neural-dot {
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .neural-label {
+    line-height: 1;
   }
 </style>

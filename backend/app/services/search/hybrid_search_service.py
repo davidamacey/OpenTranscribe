@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 _index_verified = False
 _pipeline_verified = False
 _neural_search_available: bool | None = None
+_neural_search_check_time: float = 0.0
+_NEURAL_SEARCH_CACHE_TTL: float = 120.0  # Re-check every 2 minutes
 
 # Lock for module-level state mutations
 _state_lock = threading.Lock()
@@ -408,7 +410,9 @@ def reset_neural_search_state() -> None:
     Call this when switching models or after configuration changes.
     """
     global _neural_search_available
+    global _neural_search_check_time
     _neural_search_available = None
+    _neural_search_check_time = 0.0
     logger.info("Neural search state reset")
 
 
@@ -629,20 +633,28 @@ class HybridSearchService:
     def _check_neural_search_available(self) -> bool:
         """Check if neural search is available in OpenSearch.
 
-        Caches the result to avoid repeated checks.
+        Caches the result to avoid repeated checks. The cached result expires
+        after _NEURAL_SEARCH_CACHE_TTL seconds so transient failures or
+        late model deployments are re-evaluated automatically.
 
         Returns:
             True if neural search is available and a model is deployed.
         """
         global _neural_search_available
+        global _neural_search_check_time
 
         if _neural_search_available is not None:
-            return _neural_search_available
+            if time.time() - _neural_search_check_time < _NEURAL_SEARCH_CACHE_TTL:
+                return _neural_search_available
+            # TTL expired — reset to force re-check
+            _neural_search_available = None
 
         with _state_lock:
             # Double-check after acquiring lock
             if _neural_search_available is not None:
-                return _neural_search_available
+                if time.time() - _neural_search_check_time < _NEURAL_SEARCH_CACHE_TTL:
+                    return _neural_search_available
+                _neural_search_available = None
 
             if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
                 _neural_search_available = False
@@ -654,6 +666,7 @@ class HybridSearchService:
                 ml_service = get_ml_model_service()
                 model_id = ml_service.get_active_model_id()
                 _neural_search_available = model_id is not None
+                _neural_search_check_time = time.time()
                 if _neural_search_available:
                     logger.info(f"Neural search available with model: {model_id}")
                 else:
@@ -662,6 +675,7 @@ class HybridSearchService:
             except Exception as e:
                 logger.warning(f"Could not check neural search availability: {e}")
                 _neural_search_available = False
+                _neural_search_check_time = time.time()
                 return False
 
     def _get_neural_model_id(self) -> str | None:
@@ -1025,6 +1039,10 @@ class HybridSearchService:
     ) -> dict[str, Any]:
         """Build the text query clause (multi_match or match_all).
 
+        For multi-word queries, adds a phrase proximity boost so that
+        chunks where the query terms appear near each other rank higher
+        than chunks where the terms appear far apart.
+
         Args:
             query: Search query text.
             search_fields: Fields to search.
@@ -1033,13 +1051,29 @@ class HybridSearchService:
             Query clause dict.
         """
         if query and query.strip():
-            return {
-                "multi_match": {
-                    "query": query,
-                    "fields": search_fields,
-                    "type": "best_fields",
+            words = [w for w in query.split() if len(w) >= 2]
+            should_clauses: list[dict[str, Any]] = [
+                {
+                    "multi_match": {
+                        "query": query,
+                        "fields": search_fields,
+                        "type": "best_fields",
+                    }
                 }
-            }
+            ]
+            if len(words) > 1:
+                # Boost chunks where query words appear near each other (phrase proximity)
+                should_clauses.append(
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": search_fields,
+                            "type": "phrase",
+                            "boost": 2.0,
+                        }
+                    }
+                )
+            return {"bool": {"should": should_clauses, "minimum_should_match": 1}}
         return {"match_all": {}}
 
     def _get_search_fields(
@@ -1516,6 +1550,470 @@ class HybridSearchService:
         self._normalize_relevance_percent(results)
         return results, int(total_files_agg)
 
+    @staticmethod
+    def _bucket_metadata(bucket: dict[str, Any]) -> dict[str, Any]:
+        """Extract file metadata from a Phase 1 terms-aggregation bucket.
+
+        Defined as a static method (not a closure) to avoid B023 lint errors
+        and to ensure the bucket reference is properly bound.
+
+        Args:
+            bucket: Single bucket from the 'by_file' terms aggregation.
+
+        Returns:
+            Dict with title, language, content_type, speakers, tags,
+            duration, file_size, upload_time, file_id.
+        """
+
+        def _first(agg: str) -> str:
+            kw_b = bucket.get(agg, {}).get("buckets", [])
+            return str(kw_b[0].get("key", "")) if kw_b else ""
+
+        def _all(agg: str) -> list[str]:
+            return [str(b.get("key", "")) for b in bucket.get(agg, {}).get("buckets", [])]
+
+        return {
+            "title": _first("title_kw"),
+            "language": _first("language_kw"),
+            "content_type": _first("content_type_kw"),
+            "speakers": _all("speakers_kw"),
+            "tags": _all("tags_kw"),
+            "duration": float(bucket.get("max_duration", {}).get("value") or 0.0),
+            "file_size": int(bucket.get("max_file_size", {}).get("value") or 0),
+            "upload_time": str(bucket.get("max_upload_time", {}).get("value_as_string") or ""),
+            "file_id": int(bucket.get("min_file_id", {}).get("value") or 0),
+        }
+
+    def _phase2_lookup(
+        self,
+        phase2_resp: dict[str, Any],
+        query: str,
+    ) -> dict[str, dict[str, Any]]:
+        """Build a file_uuid → hit-details lookup from a Phase 2 BM25 response.
+
+        Args:
+            phase2_resp: OpenSearch collapse query response.
+            query: Original query string (for inner-hit processing).
+
+        Returns:
+            Dict mapping file_uuid to occurrence/highlight details.
+        """
+        lookup: dict[str, dict[str, Any]] = {}
+        for outer_hit in phase2_resp.get("hits", {}).get("hits", []):
+            src = outer_hit.get("_source", {})
+            fid = src.get("file_uuid", "")
+            if not fid:
+                continue
+            inner_data = outer_hit.get("inner_hits", {}).get("segments", {}).get("hits", {})
+            occs, title_hl, msrcs, kw_cnt, sem_cnt, score = self._process_inner_hits(
+                inner_data.get("hits", []), 1.0, query
+            )
+            lookup[fid] = {
+                "occurrences": occs,
+                "title_highlighted": title_hl,
+                "match_sources": msrcs,
+                "keyword_count": kw_cnt,
+                "semantic_count": sem_cnt,
+                "best_score": score,
+            }
+        return lookup
+
+    @staticmethod
+    def _sort_buckets(
+        sort_by: str,
+        sort_order: str,
+        buckets: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Sort aggregation buckets by the requested metadata field.
+
+        Args:
+            sort_by: Field to sort by (duration, file_size, upload_time, filename).
+            sort_order: 'asc' or 'desc'.
+            buckets: Raw aggregation bucket list from Phase 1.
+
+        Returns:
+            Sorted list of buckets.
+        """
+
+        def _key(b: dict[str, Any]) -> Any:
+            if sort_by == "duration":
+                return b.get("max_duration", {}).get("value") or 0.0
+            if sort_by == "file_size":
+                return b.get("max_file_size", {}).get("value") or 0
+            if sort_by in ("upload_time", "completed_at"):
+                return b.get("max_upload_time", {}).get("value_as_string") or ""
+            if sort_by == "filename":
+                kw_b = b.get("title_kw", {}).get("buckets", [])
+                return (kw_b[0].get("key") or "").lower() if kw_b else ""
+            return 0
+
+        return sorted(buckets, key=_key, reverse=sort_order != "asc")
+
+    def _build_search_hit_from_bucket(
+        self,
+        bucket: dict[str, Any],
+        p2: dict[str, Any] | None,
+        query_lower: str,
+    ) -> SearchHit | None:
+        """Merge Phase 1 metadata and Phase 2 highlights into a SearchHit.
+
+        Args:
+            bucket: Phase 1 aggregation bucket for one file.
+            p2: Phase 2 lookup entry for the same file (may be None).
+            query_lower: Lower-cased query for speaker-match detection.
+
+        Returns:
+            SearchHit, or None if the file has no usable occurrences.
+        """
+        meta = self._bucket_metadata(bucket)
+        file_uuid = bucket["key"]
+        title = meta["title"]
+
+        if p2 and p2["occurrences"]:
+            occurrences = p2["occurrences"]
+            title_highlighted = p2["title_highlighted"] or title
+            match_sources: list[str] = list(p2["match_sources"])
+            keyword_count: int = p2["keyword_count"]
+            semantic_count: int = p2["semantic_count"]
+            best_score: float = p2["best_score"]
+        else:
+            occurrences = []
+            title_highlighted = title
+            match_sources = ["semantic"]
+            keyword_count = 0
+            semantic_count = 1
+            best_score = 0.5
+
+        if not occurrences:
+            return None
+
+        speakers: list[str] = meta["speakers"]
+        if query_lower:
+            for speaker_name in speakers:
+                ql_in_sp = query_lower in speaker_name.lower()
+                sp_in_ql = speaker_name.lower() in query_lower
+                if (ql_in_sp or sp_in_ql) and "metadata_speaker" not in match_sources:
+                    match_sources.append("metadata_speaker")
+                    break
+
+        is_semantic_only = keyword_count == 0
+        semantic_confidence = ""
+        if is_semantic_only:
+            if "semantic" not in match_sources:
+                match_sources.append("semantic")
+            threshold = getattr(settings, "SEARCH_SEMANTIC_HIGH_CONFIDENCE", 0.010)
+            semantic_confidence = "high" if best_score >= threshold else "low"
+
+        has_both = keyword_count > 0 and semantic_count > 0
+        total_occurrences = max(len(occurrences), keyword_count + semantic_count)
+
+        return SearchHit(
+            file_uuid=file_uuid,
+            file_id=meta["file_id"],
+            title=title,
+            speakers=speakers,
+            tags=meta["tags"],
+            upload_time=meta["upload_time"],
+            language=meta["language"],
+            content_type=meta["content_type"],
+            relevance_score=best_score,
+            occurrences=occurrences,
+            total_occurrences=total_occurrences,
+            title_highlighted=title_highlighted,
+            keyword_occurrences=keyword_count,
+            semantic_only=is_semantic_only,
+            semantic_confidence=semantic_confidence,
+            match_sources=match_sources,
+            duration=meta["duration"],
+            file_size=meta["file_size"],
+            semantic_occurrences=semantic_count,
+            has_both_match_types=has_both,
+        )
+
+    def _apply_semantic_highlights(self, results: list[SearchHit], query: str) -> None:
+        """Apply semantic highlights to semantic-only occurrences in-place.
+
+        Args:
+            results: List of SearchHit objects to mutate.
+            query: Original query string.
+        """
+        if not query:
+            return
+        highlight_ctx = QueryHighlightContext.from_query(query)
+        sem_words: set[str] = set()
+        for hit in results:
+            for occ in hit.occurrences:
+                if not occ.has_keyword_match:
+                    occ.snippet = _add_semantic_highlights(
+                        occ.snippet, query, sem_words, highlight_ctx
+                    )
+
+    def _search_with_two_phase(
+        self,
+        query: str,
+        search_query: str,
+        filters: list[dict[str, Any]],
+        page: int,
+        page_size: int,
+        sort_by: str,
+        sort_order: str,
+        search_mode: str,
+        filters_applied: dict[str, Any],
+        start_time: float,
+        has_speaker_filter: bool,
+    ) -> SearchResponse:
+        """Two-phase search for non-relevance sorts with hybrid mode.
+
+        Phase 1: Hybrid aggregation to discover ALL matching file UUIDs with
+        their metadata. Eliminates the 200-file cap for metadata-field sorts.
+
+        Phase 2: BM25 collapse on current page's file UUIDs to get proper
+        snippet highlights and occurrence details.
+
+        This is the industry-standard pattern used by large-scale search
+        systems when combining semantic ranking with metadata-field sorting.
+
+        Args:
+            query: Original query (for display/caching).
+            search_query: Cleaned query (operators removed).
+            filters: OpenSearch filter clauses.
+            page: Page number (1-indexed).
+            page_size: Results per page.
+            sort_by: Non-relevance sort field.
+            sort_order: Sort direction.
+            search_mode: Search mode string.
+            filters_applied: Filter metadata for response.
+            start_time: Timestamp for elapsed time.
+            has_speaker_filter: Whether a speaker filter is active.
+
+        Returns:
+            SearchResponse with correctly sorted and paginated results.
+        """
+        client = get_opensearch_client()
+        if not client:
+            return self._empty_response(query, page, page_size)
+
+        model_id = self._get_neural_model_id()
+        if not model_id:
+            # Fall back to single-phase BM25
+            return self._search_with_collapse(
+                query=query,
+                search_query=search_query,
+                filters=filters,
+                page=page,
+                page_size=page_size,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                search_mode=search_mode,
+                filters_applied=filters_applied,
+                start_time=start_time,
+                has_speaker_filter=has_speaker_filter,
+                use_neural=False,
+            )
+
+        search_fields = self._get_search_fields(has_speaker_filter)
+        text_query_clause = self._build_text_query(search_query, search_fields)
+
+        # ── Phase 1: Hybrid aggregation ──────────────────────────────────────
+        # Collect ALL matching file UUIDs with metadata sub-aggregations.
+        # We request up to 5000 unique files (sufficient for any real dataset).
+        t_p1 = time.time()
+        phase1_body: dict[str, Any] = {
+            "query": {
+                "hybrid": {
+                    "queries": [
+                        {
+                            "bool": {
+                                "must": [text_query_clause],
+                                "filter": filters,
+                            }
+                        },
+                        {
+                            "bool": {
+                                "must": [
+                                    {
+                                        "neural": {
+                                            "embedding": {
+                                                "query_text": search_query or query,
+                                                "model_id": model_id,
+                                                "k": settings.SEARCH_RRF_WINDOW_SIZE,
+                                            }
+                                        }
+                                    }
+                                ],
+                                "filter": filters,
+                            }
+                        },
+                    ]
+                }
+            },
+            "size": 0,
+            "track_total_hits": False,
+            "aggs": {
+                "by_file": {
+                    "terms": {
+                        "field": "file_uuid",
+                        "size": 5000,
+                    },
+                    "aggs": {
+                        "max_duration": {"max": {"field": "duration"}},
+                        "max_file_size": {"max": {"field": "file_size"}},
+                        "max_upload_time": {"max": {"field": "upload_time"}},
+                        "min_file_id": {"min": {"field": "file_id"}},
+                        "title_kw": {"terms": {"field": "title.keyword", "size": 1}},
+                        "language_kw": {"terms": {"field": "language", "size": 1}},
+                        "content_type_kw": {"terms": {"field": "content_type", "size": 1}},
+                        "speakers_kw": {"terms": {"field": "speakers", "size": 10}},
+                        "tags_kw": {"terms": {"field": "tags", "size": 20}},
+                    },
+                }
+            },
+        }
+
+        try:
+            phase1_resp = client.search(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body=phase1_body,
+                params={"search_pipeline": settings.OPENSEARCH_SEARCH_PIPELINE},
+            )
+        except Exception as e:
+            logger.warning(f"Two-phase Phase 1 failed, falling back to single-phase: {e}")
+            return self._search_with_collapse(
+                query=query,
+                search_query=search_query,
+                filters=filters,
+                page=page,
+                page_size=page_size,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                search_mode=search_mode,
+                filters_applied=filters_applied,
+                start_time=start_time,
+                has_speaker_filter=has_speaker_filter,
+                use_neural=False,
+            )
+
+        p1_ms = round((time.time() - t_p1) * 1000)
+
+        # Extract file metadata from aggregation buckets
+        buckets = phase1_resp.get("aggregations", {}).get("by_file", {}).get("buckets", [])
+        if not buckets:
+            return self._sort_and_paginate(
+                query,
+                [],
+                sort_by,
+                sort_order,
+                search_mode,
+                page,
+                page_size,
+                filters_applied,
+                start_time,
+            )
+
+        sorted_buckets = self._sort_buckets(sort_by, sort_order, buckets)
+
+        total_files = len(sorted_buckets)
+        total_pages = max(1, (total_files + page_size - 1) // page_size)
+        start_idx = (page - 1) * page_size
+        page_buckets = sorted_buckets[start_idx : start_idx + page_size]
+        page_file_uuids = [b["key"] for b in page_buckets]
+
+        if not page_file_uuids:
+            elapsed_ms = round((time.time() - start_time) * 1000, 1)
+            return SearchResponse(
+                query=query,
+                results=[],
+                total_results=0,
+                total_files=total_files,
+                page=page,
+                page_size=page_size,
+                total_pages=total_pages,
+                search_time_ms=elapsed_ms,
+                filters_applied=filters_applied,
+                search_mode=search_mode,
+            )
+
+        # ── Phase 2: BM25 collapse on page file UUIDs ────────────────────────
+        # Fetch highlighted snippets for just the current page's files.
+        t_p2 = time.time()
+        highlight_fields = self._build_highlight_fields(has_speaker_filter, use_exact=True)
+        bm25_fields = self._get_search_fields(has_speaker_filter, use_exact=True)
+        p2_text_query = self._build_text_query(search_query, bm25_fields)
+
+        phase2_body: dict[str, Any] = {
+            "query": {
+                "bool": {
+                    "must": [p2_text_query],
+                    "filter": [{"terms": {"file_uuid": page_file_uuids}}],
+                }
+            },
+            "collapse": {
+                "field": "file_uuid",
+                "inner_hits": {
+                    "name": "segments",
+                    "size": SEARCH_MAX_SNIPPETS_PER_FILE,
+                    "sort": [{"_score": {"order": "desc"}}],
+                    "highlight": {"fields": highlight_fields},
+                    "_source": {"excludes": ["embedding"]},
+                },
+                "max_concurrent_group_searches": settings.SEARCH_COLLAPSE_MAX_CONCURRENT,
+            },
+            "size": len(page_file_uuids),
+            "_source": {"excludes": ["embedding"]},
+            "track_total_hits": False,
+        }
+
+        try:
+            phase2_resp = client.search(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body=phase2_body,
+            )
+        except Exception as e:
+            logger.warning(f"Two-phase Phase 2 failed: {e}")
+            phase2_resp = {"hits": {"hits": []}}
+
+        p2_ms = round((time.time() - t_p2) * 1000)
+
+        # Build lookup: file_uuid → (occurrences, title_highlighted, match_sources, ...)
+        p2_hits_by_uuid = self._phase2_lookup(phase2_resp, query)
+
+        # ── Merge Phase 1 metadata + Phase 2 highlights ──────────────────────
+        query_lower = query.lower().strip() if query else ""
+        results: list[SearchHit] = []
+        for bucket in page_buckets:
+            hit = self._build_search_hit_from_bucket(
+                bucket, p2_hits_by_uuid.get(bucket["key"]), query_lower
+            )
+            if hit is not None:
+                results.append(hit)
+
+        self._normalize_relevance_percent(results)
+        self._apply_semantic_highlights(results, query)
+
+        elapsed_ms = round((time.time() - start_time) * 1000, 1)
+        total_results = sum(
+            h.keyword_occurrences if h.keyword_occurrences > 0 else h.total_occurrences
+            for h in results
+        )
+
+        logger.info(
+            f"TWO-PHASE SEARCH: p1={p1_ms}ms p2={p2_ms}ms "
+            f"total_files={total_files} page_files={len(results)} sort={sort_by} query='{query}'"
+        )
+
+        return SearchResponse(
+            query=query,
+            results=results,
+            total_results=total_results,
+            total_files=total_files,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+            search_time_ms=elapsed_ms,
+            filters_applied=filters_applied,
+            search_mode=search_mode,
+        )
+
     def _search_with_collapse(
         self,
         query: str,
@@ -1557,6 +2055,23 @@ class HybridSearchService:
         Returns:
             SearchResponse with grouped results.
         """
+        # For non-relevance sorts with hybrid mode: use two-phase approach to
+        # avoid the over-fetch cap and ensure ALL matching files are sorted.
+        if sort_by != "relevance" and use_neural:
+            return self._search_with_two_phase(
+                query=query,
+                search_query=search_query,
+                filters=filters,
+                page=page,
+                page_size=page_size,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                search_mode=search_mode,
+                filters_applied=filters_applied,
+                start_time=start_time,
+                has_speaker_filter=has_speaker_filter,
+            )
+
         client = get_opensearch_client()
         if not client:
             return self._empty_response(query, page, page_size)
