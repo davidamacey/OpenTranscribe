@@ -1,6 +1,8 @@
 import datetime
 import logging
 import os
+import time
+from collections.abc import Generator
 from typing import Any
 
 from opensearchpy import OpenSearch
@@ -12,6 +14,28 @@ from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
 
 # Setup logging
 logger = logging.getLogger(__name__)
+
+# Cache for get_active_speaker_index() — avoids hundreds of OpenSearch
+# round-trips during batch re-clustering (#17).
+_active_index_cache: tuple[str, float] | None = None
+_ACTIVE_INDEX_CACHE_TTL = 30.0  # seconds
+
+# Flag to avoid redundant ensure_indices_exist() calls during batch operations.
+_indices_verified = False
+
+# Lazy singleton for SentenceTransformer model (~80MB) — loaded once.
+_sentence_transformer_model = None
+
+
+def _get_sentence_transformer():
+    """Lazy singleton for SentenceTransformer model."""
+    global _sentence_transformer_model
+    if _sentence_transformer_model is None:
+        from sentence_transformers import SentenceTransformer
+
+        _sentence_transformer_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _sentence_transformer_model
+
 
 # Initialize the OpenSearch client
 opensearch_client: OpenSearch | None
@@ -73,14 +97,79 @@ def get_speaker_embedding_dimension() -> int:
     return EmbeddingModeService.get_embedding_dimension()
 
 
-def _repair_index(index_name: str) -> bool:
+def get_active_speaker_index() -> str:
+    """Return the index that currently holds the majority of speaker embeddings.
+
+    During v4 migration, new transcriptions write to 'speakers_v4' while
+    the bulk of existing embeddings remain in 'speakers' (v3).  Only after
+    finalization does 'speakers_v4' get swapped into 'speakers'.
+
+    Logic: use whichever index has more documents.  This correctly handles:
+      - v3 mode (no migration): speakers has data, v4 doesn't exist → speakers
+      - v4 pre-finalization: speakers (v3) has bulk data, v4 has few → speakers
+      - v4 post-finalization: v4 swapped into speakers, v4 deleted → speakers
+      - Fresh v4 install (no v3 data): speakers empty, v4 has data → v4
+
+    Results are cached for 30s to avoid hundreds of round-trips during
+    batch re-clustering.
+    """
+    global _active_index_cache
+
+    now = time.monotonic()
+    if _active_index_cache is not None:
+        cached_index, cached_at = _active_index_cache
+        if now - cached_at < _ACTIVE_INDEX_CACHE_TTL:
+            return cached_index
+
+    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    main_index = settings.OPENSEARCH_SPEAKER_INDEX
+
+    if not opensearch_client:
+        return main_index
+
+    result = main_index
+    try:
+        main_count = 0
+        v4_count = 0
+
+        if opensearch_client.indices.exists(index=main_index):
+            main_count = opensearch_client.count(index=main_index)["count"]
+
+        if opensearch_client.indices.exists(index=v4_index):
+            v4_count = opensearch_client.count(index=v4_index)["count"]
+
+        if v4_count > main_count:
+            logger.debug(
+                "Using v4 index '%s' (%d docs > %d in main)",
+                v4_index,
+                v4_count,
+                main_count,
+            )
+            result = v4_index
+
+    except Exception as e:
+        logger.debug("Error detecting active speaker index: %s", e)
+
+    _active_index_cache = (result, now)
+    return result
+
+
+def invalidate_active_speaker_index_cache() -> None:
+    """Force the next call to get_active_speaker_index() to re-query OpenSearch."""
+    global _active_index_cache
+    _active_index_cache = None
+
+
+def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
     """Attempt to repair a corrupted OpenSearch index.
 
     Tries close/reopen first (fixes stale file handles on HNSW vector segments),
-    then falls back to force merge if close/reopen is insufficient.
+    then falls back to force merge if close/reopen is insufficient. As a last
+    resort for kNN speaker indices, rebuilds from PostgreSQL data.
 
     Args:
         index_name: Name of the index to repair.
+        db: Optional SQLAlchemy session for DB-based rebuild (Strategy 3).
 
     Returns:
         True if the index was successfully repaired.
@@ -105,8 +194,287 @@ def _repair_index(index_name: str) -> bool:
         logger.info(f"Index {index_name} repaired via force merge")
         return True
     except Exception as e:
-        logger.error(f"All repair strategies failed for {index_name}: {e}")
-        return False
+        logger.warning(f"Force merge failed for {index_name}: {e}")
+
+    # Strategy 3: For kNN indices, rebuild from PostgreSQL data (last resort)
+    try:
+        mapping = opensearch_client.indices.get_mapping(index=index_name)
+        properties = mapping.get(index_name, {}).get("mappings", {}).get("properties", {})
+        has_knn = any(
+            prop.get("type") == "knn_vector"
+            for prop in properties.values()
+            if isinstance(prop, dict)
+        )
+        if has_knn and index_name == settings.OPENSEARCH_SPEAKER_INDEX and db is not None:
+            logger.info(f"Attempting rebuild of kNN index {index_name} from PostgreSQL data...")
+            result = rebuild_speaker_index(db)
+            if result.get("status") == "rebuilt":
+                logger.info(
+                    f"Index {index_name} rebuilt from DB: {result.get('speakers_indexed', 0)} speakers"
+                )
+                return True
+    except Exception as rebuild_err:
+        logger.error(f"Rebuild from DB failed for {index_name}: {rebuild_err}")
+
+    logger.error(f"All repair strategies failed for {index_name}")
+    return False
+
+
+def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
+    """Rebuild the speakers index from PostgreSQL + speakers_v4 data.
+
+    Creates a temporary index, copies valid speaker data from the working
+    speakers_v4 index, then swaps it in as the new speakers index. This is
+    the nuclear option for when the speakers index has corrupted kNN segments
+    that cannot be repaired via close/reopen or force-merge.
+
+    Args:
+        db: SQLAlchemy Session for querying Speaker rows.
+
+    Returns:
+        Dict with rebuild status and count of speakers indexed.
+    """
+    from sqlalchemy.orm import Session as SASession
+
+    if not isinstance(db, SASession):
+        return {"status": "error", "message": "Invalid database session", "speakers_indexed": 0}
+
+    if not opensearch_client:
+        return {
+            "status": "error",
+            "message": "OpenSearch client not available",
+            "speakers_indexed": 0,
+        }
+
+    from app.models.media import Speaker
+
+    speaker_index = settings.OPENSEARCH_SPEAKER_INDEX
+    v4_index = f"{speaker_index}_v4"
+    rebuild_index = f"{speaker_index}_rebuild"
+
+    try:
+        # Step 1: Query speakers with cluster_id from PostgreSQL
+        speakers = db.query(Speaker).filter(Speaker.cluster_id.isnot(None)).all()
+        logger.info(f"Rebuild: found {len(speakers)} speakers with cluster assignments in DB")
+
+        # Step 2: Build a lookup of speaker_uuid -> Speaker from DB
+        speaker_map = {str(s.uuid): s for s in speakers}
+
+        # Step 3: Fetch embeddings from speakers_v4 index
+        docs_to_index: list[dict[str, Any]] = []
+        if opensearch_client.indices.exists(index=v4_index):
+            # Paginate through all speaker docs in v4 index
+            search_after = None
+            while True:
+                query: dict[str, Any] = {
+                    "size": 500,
+                    "query": {
+                        "bool": {
+                            "must_not": [
+                                {"exists": {"field": "document_type"}},
+                            ],
+                        }
+                    },
+                    "sort": [{"_id": "asc"}],
+                    "_source": [
+                        "speaker_uuid",
+                        "speaker_id",
+                        "user_id",
+                        "name",
+                        "display_name",
+                        "profile_id",
+                        "profile_uuid",
+                        "collection_ids",
+                        "media_file_id",
+                        "segment_count",
+                        "embedding",
+                    ],
+                }
+                if search_after:
+                    query["search_after"] = search_after
+
+                response = opensearch_client.search(index=v4_index, body=query)
+                hits = response["hits"]["hits"]
+                if not hits:
+                    break
+
+                for hit in hits:
+                    source = hit["_source"]
+                    speaker_uuid = source.get("speaker_uuid")
+                    embedding = source.get("embedding")
+                    if speaker_uuid and embedding and speaker_uuid in speaker_map:
+                        docs_to_index.append(source)
+
+                search_after = hits[-1]["sort"]
+
+            logger.info(f"Rebuild: fetched {len(docs_to_index)} embeddings from {v4_index}")
+        else:
+            logger.warning(f"Rebuild: {v4_index} index does not exist, no embeddings to recover")
+
+        # Step 4: Create temporary rebuild index with correct mapping
+        if opensearch_client.indices.exists(index=rebuild_index):
+            opensearch_client.indices.delete(index=rebuild_index)
+
+        speaker_index_config = {
+            "settings": {
+                "index": {
+                    "number_of_shards": 1,
+                    "number_of_replicas": 0,
+                    "knn": True,
+                }
+            },
+            "mappings": {
+                "properties": {
+                    "speaker_id": {"type": "integer"},
+                    "speaker_uuid": {"type": "keyword"},
+                    "profile_id": {"type": "integer"},
+                    "profile_uuid": {"type": "keyword"},
+                    "user_id": {"type": "integer"},
+                    "name": {"type": "keyword"},
+                    "collection_ids": {"type": "integer"},
+                    "media_file_id": {"type": "integer"},
+                    "segment_count": {"type": "integer"},
+                    "created_at": {"type": "date"},
+                    "updated_at": {"type": "date"},
+                    "embedding": {
+                        "type": "knn_vector",
+                        "dimension": get_speaker_embedding_dimension(),
+                        "method": {
+                            "name": "hnsw",
+                            "space_type": "cosinesimil",
+                            "engine": "lucene",
+                            "parameters": {
+                                "ef_construction": 128,
+                                "m": 24,
+                            },
+                        },
+                    },
+                }
+            },
+        }
+
+        opensearch_client.indices.create(index=rebuild_index, body=speaker_index_config)
+        logger.info(f"Rebuild: created temporary index {rebuild_index}")
+
+        # Step 5: Bulk-index documents into rebuild index
+        indexed_count = 0
+        if docs_to_index:
+            bulk_body: list[dict[str, Any]] = []
+            for source in docs_to_index:
+                bulk_body.append(
+                    {
+                        "index": {
+                            "_index": rebuild_index,
+                            "_id": str(source["speaker_uuid"]),
+                        }
+                    }
+                )
+                doc = {
+                    "speaker_id": source.get("speaker_id"),
+                    "speaker_uuid": str(source["speaker_uuid"]),
+                    "profile_id": source.get("profile_id"),
+                    "profile_uuid": str(source["profile_uuid"])
+                    if source.get("profile_uuid")
+                    else None,
+                    "user_id": source.get("user_id"),
+                    "name": source.get("name"),
+                    "display_name": source.get("display_name"),
+                    "collection_ids": source.get("collection_ids", []),
+                    "media_file_id": source.get("media_file_id"),
+                    "segment_count": source.get("segment_count", 1),
+                    "created_at": datetime.datetime.now().isoformat(),
+                    "updated_at": datetime.datetime.now().isoformat(),
+                    "embedding": source["embedding"],
+                }
+                bulk_body.append(doc)
+
+            # Bulk index in batches of 500
+            batch_size = 1000  # 500 action pairs
+            for i in range(0, len(bulk_body), batch_size):
+                batch = bulk_body[i : i + batch_size]
+                resp = opensearch_client.bulk(body=batch, refresh="wait_for")
+                if not resp.get("errors"):
+                    indexed_count += len(batch) // 2
+                else:
+                    # Count successes individually
+                    for item in resp.get("items", []):
+                        if item.get("index", {}).get("status") in (200, 201):
+                            indexed_count += 1
+
+        logger.info(f"Rebuild: indexed {indexed_count} speakers into {rebuild_index}")
+
+        # Step 6: Delete the corrupted speakers index
+        if opensearch_client.indices.exists(index=speaker_index):
+            opensearch_client.indices.delete(index=speaker_index)
+            logger.info(f"Rebuild: deleted corrupted index {speaker_index}")
+
+        # Step 7: Create new speakers index with correct mapping
+        opensearch_client.indices.create(index=speaker_index, body=speaker_index_config)
+        logger.info(f"Rebuild: created fresh index {speaker_index}")
+
+        # Step 8: Copy data from rebuild index to new speakers index
+        if indexed_count > 0:
+            # Read all docs from rebuild index and bulk-index into new speakers index
+            search_after = None
+            copy_count = 0
+            while True:
+                query = {
+                    "size": 500,
+                    "query": {"match_all": {}},
+                    "sort": [{"_id": "asc"}],
+                }
+                if search_after:
+                    query["search_after"] = search_after
+
+                response = opensearch_client.search(index=rebuild_index, body=query)
+                hits = response["hits"]["hits"]
+                if not hits:
+                    break
+
+                copy_bulk: list[dict[str, Any]] = []
+                for hit in hits:
+                    copy_bulk.append(
+                        {
+                            "index": {
+                                "_index": speaker_index,
+                                "_id": hit["_id"],
+                            }
+                        }
+                    )
+                    copy_bulk.append(hit["_source"])
+
+                resp = opensearch_client.bulk(body=copy_bulk, refresh="wait_for")
+                if not resp.get("errors"):
+                    copy_count += len(hits)
+
+                search_after = hits[-1]["sort"]
+
+            logger.info(f"Rebuild: copied {copy_count} docs to new {speaker_index}")
+
+        # Step 9: Clean up rebuild index
+        if opensearch_client.indices.exists(index=rebuild_index):
+            opensearch_client.indices.delete(index=rebuild_index)
+            logger.info(f"Rebuild: deleted temporary index {rebuild_index}")
+
+        logger.info(f"Speaker index rebuild complete: {indexed_count} speakers re-indexed")
+        return {
+            "status": "rebuilt",
+            "speakers_indexed": indexed_count,
+        }
+
+    except Exception as e:
+        # Clean up rebuild index on failure
+        try:
+            if opensearch_client.indices.exists(index=rebuild_index):
+                opensearch_client.indices.delete(index=rebuild_index)
+        except Exception as cleanup_err:
+            logger.debug("Failed to clean up rebuild index: %s", cleanup_err)
+        logger.error(f"Speaker index rebuild failed: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "speakers_indexed": 0,
+        }
 
 
 def _is_index_corruption_error(error: Exception) -> bool:
@@ -857,16 +1225,10 @@ def search_transcripts(  # noqa: C901
         if use_semantic and query:
             # Compute the query embedding using sentence-transformers
             try:
-                from sentence_transformers import SentenceTransformer
-
-                # Load the model from the default cache location
-                # The cache location is controlled by SENTENCE_TRANSFORMERS_HOME environment variable
-                # which is set to /home/appuser/.cache/sentence-transformers in Dockerfile
-                # This ensures consistency with the volume mount: ${MODEL_CACHE_DIR}/sentence-transformers
-                embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+                embedding_model = _get_sentence_transformer()
 
                 # Generate embedding for the query
-                query_embedding = embedding_model.encode(query).tolist()
+                query_embedding = embedding_model.encode(query, normalize_embeddings=True).tolist()
                 logger.info(f"Generated embedding for query: {query[:30]}...")
             except ImportError:
                 logger.warning(
@@ -1164,6 +1526,7 @@ def find_speaker_across_media(speaker_uuid: str, user_id: int) -> list[dict[str,
         speaker_name = speaker_doc["_source"]["name"]
 
         # Search for transcripts containing this speaker
+        size_limit = 100
         query = {
             "query": {
                 "bool": {
@@ -1173,11 +1536,19 @@ def find_speaker_across_media(speaker_uuid: str, user_id: int) -> list[dict[str,
                     ]
                 }
             },
-            "size": 100,  # Get up to 100 media files
+            "size": size_limit,  # Max media files returned; increase if users have very large libraries
             "_source": ["file_id", "file_uuid", "title", "upload_time"],
         }
 
         response = opensearch_client.search(index=settings.OPENSEARCH_TRANSCRIPT_INDEX, body=query)
+
+        total_hits = response["hits"]["total"]["value"]
+        if total_hits > size_limit:
+            logger.warning(
+                "Results truncated: %d hits but size limit is %d",
+                total_hits,
+                size_limit,
+            )
 
         # Process results
         results = []
@@ -1353,6 +1724,7 @@ def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[st
         # Ensure indices exist before searching
         ensure_indices_exist()
 
+        size_limit = 1000
         query = {
             "query": {
                 "bool": {
@@ -1362,7 +1734,7 @@ def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[st
                     ]
                 }
             },
-            "size": 1000,  # Adjust based on expected collection size
+            "size": size_limit,  # Upper bound for speakers per collection; log warning if exceeded
             "_source": [
                 "speaker_id",
                 "speaker_uuid",
@@ -1376,6 +1748,14 @@ def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[st
         }
 
         response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+
+        total_hits = response["hits"]["total"]["value"]
+        if total_hits > size_limit:
+            logger.warning(
+                "Results truncated: %d hits but size limit is %d",
+                total_hits,
+                size_limit,
+            )
 
         speakers = []
         for hit in response["hits"]["hits"]:
@@ -1442,19 +1822,22 @@ def merge_speaker_embeddings(
         logger.error(f"Error merging speaker embeddings: {e}")
 
 
-def cleanup_orphaned_embeddings(user_id: int) -> int:
-    """
-    Clean up embeddings that are no longer associated with valid speakers
+def cleanup_orphaned_embeddings(user_id: int) -> dict:
+    """Count potentially orphaned speaker embeddings.
+
+    NOTE: This is a diagnostic stub. Actual cleanup requires database
+    validation and is not yet implemented. Use
+    ``cleanup_orphaned_speaker_embeddings()`` for real orphan removal.
 
     Args:
-        user_id: User ID to clean up for
+        user_id: User ID to inspect.
 
     Returns:
-        Number of cleaned up embeddings
+        Dict with embedding_count and diagnostic status.
     """
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized")
-        return 0
+        return {"embedding_count": 0, "status": "diagnostic_only"}
 
     try:
         # Ensure indices exist before searching
@@ -1469,16 +1852,16 @@ def cleanup_orphaned_embeddings(user_id: int) -> int:
 
         response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
 
-        # This function would need to be called with database context
-        # to verify which speakers still exist
-        logger.info(f"Found {len(response['hits']['hits'])} embeddings for user {user_id}")
+        count = len(response["hits"]["hits"])
+        logger.info(
+            f"Found {count} embeddings for user {user_id} (diagnostic only, no cleanup performed)"
+        )
 
-        # Return count for now - actual cleanup would require database validation
-        return len(response["hits"]["hits"])
+        return {"embedding_count": count, "status": "diagnostic_only"}
 
     except Exception as e:
-        logger.error(f"Error cleaning up orphaned embeddings: {e}")
-        return 0
+        logger.error(f"Error counting orphaned embeddings: {e}")
+        return {"embedding_count": 0, "status": "diagnostic_only"}
 
 
 def get_speaker_document(speaker_uuid: str) -> dict[str, Any] | None:
@@ -1520,8 +1903,11 @@ def get_speaker_document(speaker_uuid: str) -> dict[str, Any] | None:
 
 
 def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
-    """
-    Get the embedding vector for a speaker from OpenSearch
+    """Get the embedding vector for a speaker from the active index.
+
+    Queries only the active speaker index (v3 or v4, whichever holds the
+    bulk of embeddings).  No cross-index fallback — this guarantees all
+    returned embeddings have the same dimensionality.
 
     Args:
         speaker_uuid: UUID of the speaker
@@ -1534,18 +1920,15 @@ def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
         return None
 
     try:
-        # Ensure indices exist before searching
         ensure_indices_exist()
 
-        response = opensearch_client.get(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_uuid)
-        )
+        active_index = get_active_speaker_index()
+        response = opensearch_client.get(index=active_index, id=str(speaker_uuid))
 
         if response and "_source" in response:
             embedding = response["_source"].get("embedding")
             if embedding is not None:
-                return list(embedding)  # Explicit conversion to list[float]
-            return None
+                return list(embedding)
 
         return None
 
@@ -1554,23 +1937,22 @@ def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
             logger.warning(
                 f"Index corruption detected getting speaker {speaker_uuid}, attempting repair..."
             )
-            if _repair_index(settings.OPENSEARCH_SPEAKER_INDEX):
+            active_index = get_active_speaker_index()
+            if _repair_index(active_index):
                 try:
-                    response = opensearch_client.get(
-                        index=settings.OPENSEARCH_SPEAKER_INDEX,
-                        id=str(speaker_uuid),
-                    )
+                    response = opensearch_client.get(index=active_index, id=str(speaker_uuid))
                     if response and "_source" in response:
                         embedding = response["_source"].get("embedding")
                         if embedding is not None:
                             return list(embedding)
-                    return None
                 except Exception as retry_err:
                     logger.error(
                         f"Retry after repair failed for speaker {speaker_uuid}: {retry_err}"
                     )
-                    return None
-        logger.error(f"Error getting speaker embedding: {e}")
+            return None
+        # NotFoundError is expected for speakers not in active index
+        if "NotFoundError" not in type(e).__name__:
+            logger.error(f"Error getting speaker embedding: {e}")
         return None
 
 
@@ -1751,6 +2133,7 @@ def store_cluster_embedding(
     user_id: int,
     embedding: list[float],
     label: str | None = None,
+    refresh: str | bool = "wait_for",
 ) -> bool:
     """Store a cluster centroid embedding in OpenSearch.
 
@@ -1759,16 +2142,23 @@ def store_cluster_embedding(
         user_id: Owner user ID.
         embedding: L2-normalized centroid embedding vector.
         label: Optional cluster label.
+        refresh: Index refresh policy. Use ``False`` during batch operations
+            and issue a single ``indices.refresh()`` at the end.
 
     Returns:
         True if successful, False otherwise.
     """
+    global _indices_verified
+
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized")
         return False
 
     try:
-        ensure_indices_exist()
+        if not _indices_verified:
+            ensure_indices_exist()
+            _indices_verified = True
+        active_index = get_active_speaker_index()
 
         doc = {
             "document_type": "cluster",
@@ -1781,10 +2171,10 @@ def store_cluster_embedding(
             doc["label"] = label
 
         opensearch_client.index(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=active_index,
             body=doc,
             id=f"cluster_{cluster_uuid}",
-            refresh="wait_for",
+            refresh=refresh,
         )
 
         logger.info(f"Stored cluster {cluster_uuid} centroid in OpenSearch")
@@ -1809,8 +2199,9 @@ def delete_cluster_embedding(cluster_uuid: str) -> bool:
         return False
 
     try:
+        active_index = get_active_speaker_index()
         opensearch_client.delete(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=active_index,
             id=f"cluster_{cluster_uuid}",
         )
         logger.info(f"Removed cluster {cluster_uuid} embedding from OpenSearch")
@@ -1825,7 +2216,7 @@ def find_matching_clusters(
     embedding: list[float],
     user_id: int,
     k: int = 5,
-    threshold: float = 0.65,
+    threshold: float = 0.75,
 ) -> list[dict]:
     """Find matching cluster centroids for a speaker embedding using kNN.
 
@@ -1843,6 +2234,7 @@ def find_matching_clusters(
         return []
 
     try:
+        active_index = get_active_speaker_index()
         query = {
             "size": k,
             "query": {
@@ -1863,18 +2255,22 @@ def find_matching_clusters(
             },
         }
 
-        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+        response = opensearch_client.search(index=active_index, body=query)
 
         matches = []
         for hit in response["hits"]["hits"]:
             score = hit["_score"]
-            if score < threshold:
+            # OpenSearch Lucene engine with cosinesimil space returns:
+            #   score = (1 + cosine_similarity) / 2
+            # Convert back to raw cosine similarity for threshold comparison.
+            cosine_sim = 2.0 * score - 1.0
+            if cosine_sim < threshold:
                 continue
             source = hit["_source"]
             matches.append(
                 {
                     "cluster_uuid": source.get("cluster_uuid"),
-                    "similarity": float(score),
+                    "similarity": float(cosine_sim),
                     "label": source.get("label"),
                 }
             )
@@ -1890,6 +2286,7 @@ def msearch_speaker_similarities(
     speaker_data: list[dict],
     user_id: int,
     k: int = 10,
+    batch_size: int = 50,
 ) -> list[list[dict]]:
     """Batch kNN search for building a similarity graph.
 
@@ -1897,6 +2294,7 @@ def msearch_speaker_similarities(
         speaker_data: List of dicts with speaker_uuid and embedding.
         user_id: Owner user ID.
         k: Number of nearest neighbors per query.
+        batch_size: Number of speakers per msearch request.
 
     Returns:
         List of result lists, one per input embedding.
@@ -1905,73 +2303,186 @@ def msearch_speaker_similarities(
         return [[] for _ in speaker_data]
 
     try:
-        # Build msearch body
-        body_parts: list[str] = []
-        for sd in speaker_data:
-            header = {"index": settings.OPENSEARCH_SPEAKER_INDEX}
-            query = {
-                "size": k,
-                "query": {
-                    "knn": {
-                        "embedding": {
-                            "vector": sd["embedding"],
-                            "k": k,
-                            "filter": {
-                                "bool": {
-                                    "filter": [
-                                        {"term": {"user_id": user_id}},
-                                        {
-                                            "bool": {
-                                                "must_not": [
-                                                    {"exists": {"field": "document_type"}},
-                                                ]
-                                            }
-                                        },
-                                    ]
-                                }
-                            },
+        import json
+
+        active_index = get_active_speaker_index()
+        all_results: list[list[dict]] = []
+
+        # Process in batches to avoid memory issues
+        for batch_start in range(0, len(speaker_data), batch_size):
+            batch = speaker_data[batch_start : batch_start + batch_size]
+
+            # Build msearch body for this batch
+            body_parts: list[str] = []
+            for sd in batch:
+                header = {"index": active_index}
+                query = {
+                    "size": k,
+                    "query": {
+                        "knn": {
+                            "embedding": {
+                                "vector": sd["embedding"],
+                                "k": k,
+                                "filter": {
+                                    "bool": {
+                                        "filter": [
+                                            {"term": {"user_id": user_id}},
+                                            {
+                                                "bool": {
+                                                    "must_not": [
+                                                        {"exists": {"field": "document_type"}},
+                                                    ]
+                                                }
+                                            },
+                                        ]
+                                    }
+                                },
+                            }
                         }
-                    }
-                },
-            }
-            import json
+                    },
+                }
+                body_parts.append(json.dumps(header))
+                body_parts.append(json.dumps(query))
 
-            body_parts.append(json.dumps(header))
-            body_parts.append(json.dumps(query))
+            msearch_body = "\n".join(body_parts) + "\n"
+            response = opensearch_client.msearch(body=msearch_body)
 
-        msearch_body = "\n".join(body_parts) + "\n"
-        response = opensearch_client.msearch(body=msearch_body)
+            for resp in response.get("responses", []):
+                hits: list[dict] = []
+                for hit in resp.get("hits", {}).get("hits", []):
+                    source = hit.get("_source", {})
+                    hits.append(
+                        {
+                            "speaker_uuid": source.get("speaker_uuid"),
+                            "similarity": float(hit["_score"]),
+                            "speaker_id": source.get("speaker_id"),
+                        }
+                    )
+                all_results.append(hits)
 
-        results: list[list[dict]] = []
-        for resp in response.get("responses", []):
-            hits: list[dict] = []
-            for hit in resp.get("hits", {}).get("hits", []):
-                source = hit.get("_source", {})
-                hits.append(
-                    {
-                        "speaker_uuid": source.get("speaker_uuid"),
-                        "similarity": float(hit["_score"]),
-                        "speaker_id": source.get("speaker_id"),
-                    }
-                )
-            results.append(hits)
-
-        return results
+        return all_results
 
     except Exception as e:
         logger.error(f"Error in msearch speaker similarities: {e}")
         return [[] for _ in speaker_data]
 
 
+def iter_speaker_embeddings(
+    user_id: int,
+    speaker_uuids: list[str] | None = None,
+    batch_size: int = 200,
+) -> Generator[list[dict[str, Any]], None, None]:
+    """Yield batches of speaker embeddings from the active index.
+
+    If *speaker_uuids* is provided, only those speakers are fetched (via
+    mget).  Otherwise all non-cluster speaker docs for *user_id* are
+    scrolled.  Embeddings are never accumulated — each batch is yielded
+    and can be discarded by the caller.
+
+    Yields:
+        Lists of dicts with keys: speaker_uuid, embedding, speaker_id,
+        profile_id, display_name.
+    """
+    if not opensearch_client:
+        return
+
+    active_index = get_active_speaker_index()
+
+    if speaker_uuids is not None:
+        # Fetch specific speakers via mget in batches
+        for i in range(0, len(speaker_uuids), batch_size):
+            chunk = speaker_uuids[i : i + batch_size]
+            try:
+                response = opensearch_client.mget(
+                    index=active_index,
+                    body={"ids": chunk},
+                )
+                batch: list[dict[str, Any]] = []
+                for doc in response.get("docs", []):
+                    if doc.get("found") and "_source" in doc:
+                        source = doc["_source"]
+                        if "embedding" in source and "speaker_uuid" in source:
+                            batch.append(
+                                {
+                                    "speaker_uuid": source["speaker_uuid"],
+                                    "embedding": source["embedding"],
+                                    "speaker_id": source.get("speaker_id"),
+                                    "profile_id": source.get("profile_id"),
+                                    "display_name": source.get("display_name"),
+                                }
+                            )
+                if batch:
+                    yield batch
+            except Exception as e:
+                logger.warning("mget batch failed: %s", e)
+                continue
+    else:
+        # Scroll all speakers for user
+        search_after = None
+        while True:
+            query: dict = {
+                "size": batch_size,
+                "query": {
+                    "bool": {
+                        "filter": [{"term": {"user_id": user_id}}],
+                        "must_not": [{"exists": {"field": "document_type"}}],
+                    }
+                },
+                "sort": [{"_id": "asc"}],
+                "_source": [
+                    "speaker_uuid",
+                    "embedding",
+                    "speaker_id",
+                    "profile_id",
+                    "display_name",
+                ],
+            }
+            if search_after is not None:
+                query["search_after"] = search_after
+
+            try:
+                response = opensearch_client.search(index=active_index, body=query)
+            except Exception as e:
+                logger.error("Scroll failed: %s", e)
+                break
+
+            hits = response["hits"]["hits"]
+            if not hits:
+                break
+
+            batch = []
+            for hit in hits:
+                source = hit["_source"]
+                if "embedding" in source and "speaker_uuid" in source:
+                    batch.append(
+                        {
+                            "speaker_uuid": source["speaker_uuid"],
+                            "embedding": source["embedding"],
+                            "speaker_id": source.get("speaker_id"),
+                            "profile_id": source.get("profile_id"),
+                            "display_name": source.get("display_name"),
+                        }
+                    )
+            if batch:
+                yield batch
+
+            search_after = hits[-1]["sort"]
+            if len(hits) < batch_size:
+                break
+
+
 def get_all_speaker_embeddings(
     user_id: int,
-    limit: int = 10000,
+    page_size: int = 500,
 ) -> list[dict]:
     """Fetch all speaker embeddings for a user from OpenSearch.
 
+    Uses search_after pagination to handle arbitrarily large result sets
+    instead of a hard limit.
+
     Args:
         user_id: Owner user ID.
-        limit: Maximum number of embeddings to return.
+        page_size: Number of documents per page (scroll batch size).
 
     Returns:
         List of dicts with speaker_uuid and embedding.
@@ -1981,38 +2492,66 @@ def get_all_speaker_embeddings(
         return []
 
     try:
-        query = {
-            "size": limit,
-            "query": {
-                "bool": {
-                    "filter": [
-                        {"term": {"user_id": user_id}},
-                    ],
-                    "must_not": [
-                        {"exists": {"field": "document_type"}},
-                    ],
-                }
-            },
-            "_source": ["speaker_uuid", "embedding", "speaker_id", "profile_id", "display_name"],
-        }
+        active_index = get_active_speaker_index()
+        results: list[dict] = []
+        search_after = None
 
-        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
-
-        results = []
-        for hit in response["hits"]["hits"]:
-            source = hit["_source"]
-            if "embedding" in source and "speaker_uuid" in source:
-                results.append(
-                    {
-                        "speaker_uuid": source["speaker_uuid"],
-                        "embedding": source["embedding"],
-                        "speaker_id": source.get("speaker_id"),
-                        "profile_id": source.get("profile_id"),
-                        "display_name": source.get("display_name"),
+        while True:
+            query: dict = {
+                "size": page_size,
+                "query": {
+                    "bool": {
+                        "filter": [
+                            {"term": {"user_id": user_id}},
+                        ],
+                        "must_not": [
+                            {"exists": {"field": "document_type"}},
+                        ],
                     }
-                )
+                },
+                "sort": [{"_id": "asc"}],
+                "_source": [
+                    "speaker_uuid",
+                    "embedding",
+                    "speaker_id",
+                    "profile_id",
+                    "display_name",
+                ],
+            }
 
-        logger.info(f"Fetched {len(results)} speaker embeddings for user {user_id}")
+            if search_after is not None:
+                query["search_after"] = search_after
+
+            response = opensearch_client.search(index=active_index, body=query)
+
+            hits = response["hits"]["hits"]
+            if not hits:
+                break
+
+            for hit in hits:
+                source = hit["_source"]
+                if "embedding" in source and "speaker_uuid" in source:
+                    results.append(
+                        {
+                            "speaker_uuid": source["speaker_uuid"],
+                            "embedding": source["embedding"],
+                            "speaker_id": source.get("speaker_id"),
+                            "profile_id": source.get("profile_id"),
+                            "display_name": source.get("display_name"),
+                        }
+                    )
+
+            # Use the sort value of the last hit for search_after
+            search_after = hits[-1]["sort"]
+
+            # If we got fewer results than page_size, we're done
+            if len(hits) < page_size:
+                break
+
+        logger.info(
+            f"Fetched {len(results)} speaker embeddings for user {user_id} "
+            f"from index '{active_index}'"
+        )
         return results
 
     except Exception as e:
@@ -2256,11 +2795,12 @@ def update_cluster_embedding(
 
     try:
         ensure_indices_exist()
+        active_index = get_active_speaker_index()
 
         # Fetch existing document to preserve user_id
         doc_id = f"cluster_{cluster_uuid}"
         try:
-            existing = opensearch_client.get(index=settings.OPENSEARCH_SPEAKER_INDEX, id=doc_id)
+            existing = opensearch_client.get(index=active_index, id=doc_id)
             user_id = existing["_source"].get("user_id")
             existing_label = existing["_source"].get("label")
         except Exception:
@@ -2277,7 +2817,7 @@ def update_cluster_embedding(
         }
 
         opensearch_client.index(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=active_index,
             body=doc,
             id=doc_id,
             refresh="wait_for",

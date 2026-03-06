@@ -11,8 +11,10 @@ export interface SpeakerCluster {
   promoted_to_profile_id: number | null;
   promoted_to_profile_uuid: string | null;
   promoted_to_profile_name: string | null;
+  promoted_to_profile_avatar_url: string | null;
   quality_score: number | null;
-  representative_clip_uuid: string | null;
+  min_similarity: number | null;
+  separation_score: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +28,7 @@ export interface SpeakerClusterMember {
   media_file_uuid: string | null;
   media_file_title: string | null;
   confidence: number;
+  margin: number | null;
   verified: boolean;
   predicted_gender: string | null;
   predicted_age_range: string | null;
@@ -53,7 +56,6 @@ export interface SpeakerInboxItem {
   verified: boolean;
   predicted_gender: string | null;
   predicted_age_range: string | null;
-  audio_clip_uuid: string | null;
   created_at: string | null;
 }
 
@@ -63,11 +65,13 @@ export interface PaginatedResponse<T> {
   page: number;
   per_page: number;
   pages: number;
+  labeled_count?: number;
+  unlabeled_count?: number;
 }
 
 export interface BatchVerifyRequest {
   speaker_uuids: string[];
-  action: 'accept' | 'assign' | 'name';
+  action: 'accept' | 'assign' | 'name' | 'skip';
   profile_uuid?: string;
   display_name?: string;
 }
@@ -82,4 +86,18 @@ export interface ReclusterResponse {
   status: string;
   task_id: string | null;
   message: string;
+}
+
+export interface SpeakerProfile {
+  uuid: string;
+  name: string;
+  description: string | null;
+  embedding_count: number;
+  instance_count?: number;
+  media_count?: number;
+  predicted_gender: string | null;
+  source_cluster_id: number | null;
+  created_at: string;
+  updated_at: string;
+  avatar_url?: string | null;
 }

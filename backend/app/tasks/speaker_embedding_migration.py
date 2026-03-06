@@ -106,19 +106,117 @@ def _bulk_update_embeddings(
         summary["failed"] += len(normalized_embeddings)
 
 
-@celery_app.task(name="normalize_speaker_embeddings", bind=True, queue="cpu")
-def normalize_speaker_embeddings_task(self, batch_size: int = SCROLL_BATCH_SIZE) -> dict[str, Any]:
+def _sample_check_normalized(client: Any, index_name: str, sample_size: int = 50) -> bool:
+    """Check a random sample of embeddings to see if normalization is needed.
+
+    Returns True if all sampled vectors are already L2-normalized,
+    meaning a full scan can be skipped.
     """
-    Normalize all speaker embeddings in OpenSearch to L2 unit vectors.
+    try:
+        resp = client.search(
+            index=index_name,
+            body={
+                "size": sample_size,
+                "query": {"function_score": {"query": {"match_all": {}}, "random_score": {}}},
+                "_source": ["embedding"],
+            },
+        )
+        hits = resp.get("hits", {}).get("hits", [])
+        if not hits:
+            return True  # empty index — nothing to do
 
-    Uses the scroll API for efficient processing of large datasets and
-    bulk updates for optimal write performance.
+        for hit in hits:
+            emb = hit.get("_source", {}).get("embedding")
+            if emb and not _is_normalized(emb):
+                return False
+        return True
+    except Exception as e:
+        logger.warning("Sample normalization check failed for %s: %s", index_name, e)
+        return False  # be safe — run full scan
 
-    Args:
-        batch_size: Number of embeddings to process per batch.
 
-    Returns:
-        Dictionary with migration statistics.
+def _normalize_index(
+    client: Any,
+    index_name: str,
+    batch_size: int,
+    summary: dict[str, Any],
+) -> None:
+    """Normalize all embeddings in a single OpenSearch index."""
+    try:
+        if not client.indices.exists(index=index_name):
+            logger.info(f"Index {index_name} does not exist, skipping")
+            return
+    except Exception as e:
+        logger.error(f"Error checking index {index_name}: {e}")
+        return
+
+    # Fast pre-check: sample random vectors. If all normalized, skip full scan.
+    if _sample_check_normalized(client, index_name):
+        logger.info(
+            "Index %s: sample check passed — all embeddings already normalized, skipping full scan",
+            index_name,
+        )
+        return
+
+    logger.info("Index %s: unnormalized vectors detected, running full scan", index_name)
+
+    scroll_id = None
+    try:
+        response = client.search(
+            index=index_name,
+            body={"size": batch_size, "query": {"match_all": {}}, "_source": ["embedding"]},
+            scroll=SCROLL_TIMEOUT,
+        )
+
+        scroll_id = response.get("_scroll_id")
+        hits = response.get("hits", {}).get("hits", [])
+
+        while hits:
+            summary["batches_processed"] += 1
+            doc_ids, embeddings_to_normalize = _process_hits_batch(hits, summary)
+
+            if embeddings_to_normalize:
+                normalized = _normalize_embeddings_batch(embeddings_to_normalize)
+                _bulk_update_embeddings(client, index_name, doc_ids, normalized, summary)
+
+            if summary["batches_processed"] % 10 == 0:
+                logger.info(
+                    "Embedding normalization progress [%s]: %d checked, "
+                    "%d normalized, %d already OK",
+                    index_name,
+                    summary["total_found"],
+                    summary["normalized"],
+                    summary["already_normalized"],
+                )
+
+            response = client.scroll(scroll_id=scroll_id, scroll=SCROLL_TIMEOUT)
+            scroll_id = response.get("_scroll_id")
+            hits = response.get("hits", {}).get("hits", [])
+
+        try:
+            client.indices.refresh(index=index_name)
+        except Exception as e:
+            logger.warning(f"Failed to refresh {index_name} after normalization: {e}")
+
+    except Exception as e:
+        logger.error(f"Error normalizing index {index_name}: {e}")
+        summary.setdefault("errors", []).append(str(e))
+
+    finally:
+        if scroll_id:
+            with suppress(Exception):
+                client.clear_scroll(scroll_id=scroll_id)
+
+
+@celery_app.task(name="migration.normalize_embeddings", bind=True, queue="cpu")
+def normalize_speaker_embeddings_task(self, batch_size: int = SCROLL_BATCH_SIZE) -> dict[str, Any]:
+    """Normalize all speaker/cluster/profile embeddings to L2 unit vectors.
+
+    Scans the main speaker index AND the active speaker index (which
+    holds cluster centroids). Idempotent — already-normalized vectors
+    are skipped (tolerance 0.01).
+
+    Runs automatically on startup via the FastAPI lifespan hook.
     """
     summary: dict[str, Any] = {
         "total_found": 0,
@@ -134,72 +232,28 @@ def normalize_speaker_embeddings_task(self, batch_size: int = SCROLL_BATCH_SIZE)
         summary["error"] = "OpenSearch client not available"
         return summary
 
-    index_name = settings.OPENSEARCH_SPEAKER_INDEX
-
-    # Check if index exists
+    # Collect all indices that may hold embeddings
+    indices_to_scan: set[str] = set()
+    indices_to_scan.add(settings.OPENSEARCH_SPEAKER_INDEX)
     try:
-        if not client.indices.exists(index=index_name):
-            logger.info(f"Speaker index {index_name} does not exist, nothing to migrate")
-            return summary
+        from app.services.opensearch_service import get_active_speaker_index
+
+        active = get_active_speaker_index()
+        indices_to_scan.add(active)
     except Exception as e:
-        logger.error(f"Error checking speaker index: {e}")
-        summary["error"] = str(e)
-        return summary
+        logger.debug("Could not detect active speaker index: %s", e)
 
-    scroll_id = None
-    try:
-        # Initialize scroll
-        response = client.search(
-            index=index_name,
-            body={"size": batch_size, "query": {"match_all": {}}, "_source": ["embedding"]},
-            scroll=SCROLL_TIMEOUT,
-        )
+    logger.info("Starting embedding normalization across indices: %s", indices_to_scan)
 
-        scroll_id = response.get("_scroll_id")
-        hits = response.get("hits", {}).get("hits", [])
+    for index_name in indices_to_scan:
+        _normalize_index(client, index_name, batch_size, summary)
 
-        while hits:
-            summary["batches_processed"] += 1
-
-            # Process batch
-            doc_ids, embeddings_to_normalize = _process_hits_batch(hits, summary)
-
-            if embeddings_to_normalize:
-                normalized = _normalize_embeddings_batch(embeddings_to_normalize)
-                _bulk_update_embeddings(client, index_name, doc_ids, normalized, summary)
-
-            # Log progress every 10 batches
-            if summary["batches_processed"] % 10 == 0:
-                logger.info(
-                    f"Embedding normalization progress: {summary['total_found']} checked, "
-                    f"{summary['normalized']} normalized, {summary['already_normalized']} already OK"
-                )
-
-            # Get next batch
-            response = client.scroll(scroll_id=scroll_id, scroll=SCROLL_TIMEOUT)
-            scroll_id = response.get("_scroll_id")
-            hits = response.get("hits", {}).get("hits", [])
-
-        # Refresh index to make changes visible
-        try:
-            client.indices.refresh(index=index_name)
-        except Exception as e:
-            logger.warning(f"Failed to refresh index after normalization: {e}")
-
-        logger.info(
-            f"Speaker embedding normalization completed: "
-            f"{summary['total_found']} total, {summary['normalized']} normalized, "
-            f"{summary['already_normalized']} already normalized, {summary['failed']} failed"
-        )
-
-    except Exception as e:
-        logger.error(f"Error during embedding normalization: {e}")
-        summary["error"] = str(e)
-
-    finally:
-        # Clear scroll context
-        if scroll_id:
-            with suppress(Exception):
-                client.clear_scroll(scroll_id=scroll_id)
-
+    logger.info(
+        "Speaker embedding normalization completed: "
+        "%d total, %d normalized, %d already normalized, %d failed",
+        summary["total_found"],
+        summary["normalized"],
+        summary["already_normalized"],
+        summary["failed"],
+    )
     return summary

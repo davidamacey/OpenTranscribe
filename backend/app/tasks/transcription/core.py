@@ -917,6 +917,18 @@ def _process_transcription_result(
         except Exception as e:
             logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
 
+    # --- Speaker clustering ---
+    # Only dispatch if this is the normal pipeline (not selective reprocessing,
+    # which dispatches these from trigger_automatic_summarization)
+    if not downstream_tasks or "speaker_clustering" not in downstream_tasks:
+        try:
+            from app.tasks.speaker_clustering import cluster_speakers_for_file
+
+            cluster_speakers_for_file.delay(str(ctx.file_uuid), ctx.user_id)
+            logger.info(f"Dispatched speaker clustering for {ctx.file_uuid}")
+        except Exception as e:
+            logger.warning(f"Failed to dispatch speaker clustering: {e}")
+
     return {"status": "success", "file_id": ctx.file_id, "segments": len(processed_segments)}
 
 
@@ -1007,7 +1019,7 @@ def trigger_automatic_summarization(
         file_uuid: File UUID string
         tasks_to_run: Optional list of specific stages to run. None = run all tasks.
             Valid values: 'analytics', 'speaker_llm', 'summarization',
-            'topic_extraction', 'search_indexing'
+            'topic_extraction', 'search_indexing', 'speaker_clustering'
     """
     try:
         # Analytics computation
@@ -1057,6 +1069,34 @@ def trigger_automatic_summarization(
             logger.info(
                 f"Automatic topic extraction task {topic_task.id} started for file {file_id}"
             )
+
+        # Speaker clustering (selective reprocessing only)
+        _clustering_stages = {"speaker_clustering"}
+        if tasks_to_run is not None and _clustering_stages & set(tasks_to_run):
+            try:
+                from app.db.session_utils import session_scope
+                from app.models.media import MediaFile
+
+                with session_scope() as _db:
+                    _mf = _db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+                    if not _mf:
+                        logger.warning(f"File {file_uuid} not found for clustering dispatch")
+                    else:
+                        _uid = int(_mf.user_id)
+
+                        if "speaker_clustering" in tasks_to_run:
+                            try:
+                                from app.tasks.speaker_clustering import cluster_speakers_for_file
+
+                                cluster_speakers_for_file.delay(file_uuid, _uid)
+                                logger.info(
+                                    f"Selective speaker clustering dispatched for file {file_id}"
+                                )
+                            except Exception as sc_err:
+                                logger.warning(f"Failed to dispatch speaker clustering: {sc_err}")
+
+            except Exception as e:
+                logger.warning(f"Failed to look up file for clustering dispatch: {e}")
     except Exception as e:
         logger.warning(f"Failed to start automatic tasks for file {file_id}: {e}")
 
@@ -1158,7 +1198,7 @@ def _handle_outer_exception(
     return {"status": "error", "message": error_msg}
 
 
-@celery_app.task(bind=True, name="transcription.process_file")
+@celery_app.task(bind=True, name="transcription.process_file", priority=5)
 def transcribe_audio_task(
     self,
     file_uuid: str,

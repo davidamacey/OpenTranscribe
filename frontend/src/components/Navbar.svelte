@@ -52,6 +52,7 @@
   $: currentPath = $page.url.pathname;
   $: isGalleryActive = currentPath === '/' || (currentPath as string) === '';
   $: isTasksActive = currentPath === '/file-status' || currentPath.startsWith('/file-status');
+  $: isSpeakersActive = currentPath === '/speakers' || currentPath.startsWith('/speakers/');
   $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
 
   // User dropdown state
@@ -335,6 +336,7 @@
         href="/speakers"
         title={$t('nav.speakers')}
         class="nav-link"
+        class:active={isSpeakersActive}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -722,6 +724,11 @@
   .nav-link:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
     color: var(--primary-color);
+  }
+
+  .nav-link.active {
+    color: var(--primary-color);
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
   }
 
   /* Focus states for accessibility */

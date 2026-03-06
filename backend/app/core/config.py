@@ -375,6 +375,11 @@ class Settings(BaseSettings):
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
     GPU_DEVICE_ID: int = _int_env("GPU_DEVICE_ID", 0)  # Host GPU index (Docker maps to device 0)
+    GPU_CLUSTERING_DEVICE: int | None = (
+        int(os.environ["GPU_CLUSTERING_DEVICE"])
+        if os.environ.get("GPU_CLUSTERING_DEVICE")
+        else None
+    )  # Dedicated GPU for speaker clustering (falls back to GPU_DEVICE_ID)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
 
     # AI Models settings

@@ -28,6 +28,12 @@
     total_files: number;
   }
 
+  interface IndexHealthEntry {
+    status: 'green' | 'red';
+    doc_count: number;
+    error: string | null;
+  }
+
   let models: EmbeddingModel[] = [];
   let selectedModelId = '';
   let currentModelId = '';
@@ -36,6 +42,8 @@
   let isReindexing = false;
   let isSwitchingModel = false;
   let isStopping = false;
+  let isRepairing = false;
+  let indexHealth: Record<string, IndexHealthEntry> | null = null;
 
   // Live reindex progress
   let reindexProgress: ReindexProgress | null = null;
@@ -63,7 +71,7 @@
   }
 
   onMount(async () => {
-    await Promise.all([loadModels(), loadStatus()]);
+    await Promise.all([loadModels(), loadStatus(), loadIndexHealth()]);
     isLoading = false;
 
     // Listen for WebSocket events
@@ -167,6 +175,32 @@
     } catch (e: any) {
       toastStore.error(e?.response?.data?.detail || 'Failed to stop re-indexing');
       isStopping = false;
+    }
+  }
+
+  async function loadIndexHealth() {
+    try {
+      const res = await axiosInstance.get('/search/index-health');
+      indexHealth = res.data;
+    } catch (e) {
+      console.error('Failed to load index health:', e);
+      indexHealth = {};
+    }
+  }
+
+  async function handleRepairIndices() {
+    if (!confirm($t('settings.search.repairConfirm') || 'This will rebuild corrupted OpenSearch indices from the database. Continue?')) {
+      return;
+    }
+    isRepairing = true;
+    try {
+      const res = await axiosInstance.post('/search/repair-indices');
+      toastStore.success($t('settings.search.repairSuccess') || res.data.message || 'Indices repaired successfully');
+      await loadIndexHealth();
+    } catch (e: any) {
+      toastStore.error($t('settings.search.repairError') || e?.response?.data?.detail || 'Failed to repair indices');
+    } finally {
+      isRepairing = false;
     }
   }
 
@@ -291,6 +325,49 @@
 
     <div class="section-divider"></div>
   {/if}
+
+  <!-- Index Health -->
+  <h4 class="subsection-title">{$t('settings.search.indexHealth') || 'Index Health'}</h4>
+  <p class="health-desc">{$t('settings.search.indexHealthDesc') || 'Status of OpenSearch indices. Red indices may need repair.'}</p>
+
+  {#if indexHealth}
+    <div class="health-grid">
+      {#each Object.entries(indexHealth) as [indexName, info]}
+        <div class="health-item">
+          <span class="health-dot" class:green={info.status === 'green'} class:red={info.status === 'red'}></span>
+          <span class="health-name">{indexName}</span>
+          <span class="health-detail">
+            {#if info.status === 'green'}
+              {$t('settings.search.indexGreen') || 'Healthy'} ({info.doc_count} docs)
+            {:else}
+              {$t('settings.search.indexRed') || 'Error'}
+            {/if}
+          </span>
+        </div>
+      {/each}
+    </div>
+
+    {#if Object.values(indexHealth).some(i => i.status === 'red')}
+      <div class="form-actions">
+        <button
+          class="btn btn-primary"
+          on:click={handleRepairIndices}
+          disabled={isRepairing}
+        >
+          {#if isRepairing}
+            <span class="spinner"></span>
+            {$t('settings.search.repairing') || 'Repairing...'}
+          {:else}
+            {$t('settings.search.repairIndices') || 'Repair Indices'}
+          {/if}
+        </button>
+      </div>
+    {/if}
+  {:else}
+    <p class="health-desc">Loading health status...</p>
+  {/if}
+
+  <div class="section-divider"></div>
 
   <!-- Embedding Model Selection -->
   <h4 class="subsection-title">{$t('search.embeddingModel') || 'Embedding Model'}</h4>
@@ -623,5 +700,52 @@
       margin-left: 0%;
       width: 30%;
     }
+  }
+
+  /* Index Health styles */
+  .health-desc {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin: 0 0 0.75rem;
+  }
+
+  .health-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .health-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .health-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .health-dot.green {
+    background-color: #22c55e;
+  }
+
+  .health-dot.red {
+    background-color: #ef4444;
+  }
+
+  .health-name {
+    font-weight: 500;
+    color: var(--text-color);
+    min-width: 140px;
+  }
+
+  .health-detail {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
   }
 </style>

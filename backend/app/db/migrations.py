@@ -149,8 +149,29 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
         "WHERE table_name = 'speaker_cluster')"
     )
+    has_speaker_clustering_indexes = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+        "WHERE indexname = 'idx_speaker_cluster_member_speaker_id')"
+    )
+    has_cluster_quality_metrics = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker_cluster' AND column_name = 'min_similarity')"
+    )
+    has_avatar_path = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker_profile' AND column_name = 'avatar_path')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v270: profile avatar_path column
+    if has_speaker_cluster and has_cluster_quality_metrics and has_avatar_path:
+        return "v270_add_profile_avatar"
+    # v260: cluster quality metrics (min_similarity, separation_score, margin)
+    if has_speaker_cluster and has_cluster_quality_metrics:
+        return "v260_add_cluster_quality_metrics"
+    # v250: speaker clustering FK indexes
+    if has_speaker_cluster and has_speaker_clustering_indexes:
+        return "v250_add_speaker_clustering_indexes"
     # v220: speaker clustering tables
     if has_speaker_cluster:
         return "v220_add_speaker_clusters"

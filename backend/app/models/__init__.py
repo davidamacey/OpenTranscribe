@@ -16,7 +16,6 @@ from .media import FileStatus
 from .media import FileTag
 from .media import MediaFile
 from .media import Speaker
-from .media import SpeakerAudioClip
 from .media import SpeakerCluster
 from .media import SpeakerClusterMember
 from .media import SpeakerCollection
@@ -52,7 +51,6 @@ __all__ = [
     "CollectionMember",
     "SpeakerCluster",
     "SpeakerClusterMember",
-    "SpeakerAudioClip",
     "SpeakerMatch",
     "SpeakerCollection",
     "SpeakerCollectionMember",

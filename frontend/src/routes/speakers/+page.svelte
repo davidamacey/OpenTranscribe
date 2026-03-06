@@ -1,26 +1,43 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { fade } from 'svelte/transition';
   import { t } from '$stores/locale';
+  import { toastStore } from '$stores/toast';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SpeakerClusterCard from '$components/speakers/SpeakerClusterCard.svelte';
   import SpeakerInboxItem from '$components/speakers/SpeakerInboxItem.svelte';
+  import { browser } from '$app/environment';
+
+  // Dynamic import: Plyr is browser-only (breaks SSR on page refresh)
+  let PlyrMiniPlayer: typeof import('$components/PlyrMiniPlayer.svelte').default | null = null;
+  if (browser) {
+    import('$components/PlyrMiniPlayer.svelte').then(m => { PlyrMiniPlayer = m.default; });
+  }
   import {
     listClusters,
     getClusterDetail,
     updateCluster,
     deleteCluster,
     promoteCluster,
+    mergeClusters,
+    splitCluster,
     triggerRecluster,
     getUnverifiedSpeakers,
-    batchVerifySpeakers
+    batchVerifySpeakers,
+    getSpeakerMediaPreview,
+    updateProfile,
+    deleteProfile,
+    listProfiles,
+    uploadProfileAvatar,
+    deleteProfileAvatar
   } from '$lib/api/speakerClusters';
+  import type { SpeakerMediaPreviewData } from '$lib/api/speakerClusters';
   import type {
     SpeakerCluster,
-    SpeakerClusterDetail,
     SpeakerClusterMember,
     SpeakerInboxItem as InboxItem,
-    PaginatedResponse
+    SpeakerProfile
   } from '$lib/types/speakerCluster';
-  import axiosInstance from '$lib/axios';
 
   type Tab = 'clusters' | 'profiles' | 'inbox';
   let activeTab: Tab = 'clusters';
@@ -35,9 +52,32 @@
   let clusterMembers: Record<string, SpeakerClusterMember[]> = {};
   let loadingClusters = false;
   let reclustering = false;
+  let reclusterTimeout: ReturnType<typeof setTimeout> | null = null;
+  let labeledCount = 0;
+  let unlabeledCount = 0;
+
+  // Collapsible sections state
+  let identifiedCollapsed = false;
+  let unidentifiedCollapsed = false;
+
+  // Avatar upload state
+  let avatarUploading: Set<string> = new Set();
+
+  // Derived arrays for collapsible sections
+  $: identifiedClusters = clusters.filter(c => c.promoted_to_profile_name || c.label);
+  $: unidentifiedClusters = clusters.filter(c => !(c.promoted_to_profile_name || c.label));
+
+  // Merge state
+  let mergeMode = false;
+  let mergeSourceUuid: string | null = null;
+
+  // Split state
+  let splitMode = false;
+  let splitTargetUuid: string | null = null;
+  let splitSelectedMembers: Set<string> = new Set();
 
   // Profiles state
-  let profiles: Record<string, unknown>[] = [];
+  let profiles: SpeakerProfile[] = [];
   let loadingProfiles = false;
 
   // Inbox state
@@ -46,61 +86,202 @@
   let inboxPage = 1;
   let inboxPages = 0;
   let loadingInbox = false;
+  let inboxActionInProgress: Set<string> = new Set();
 
-  let error = '';
+  // Search debounce
+  let searchTimeout: ReturnType<typeof setTimeout>;
 
-  onMount(() => {
+  // Delete modal state
+  let showDeleteModal = false;
+  let deleteTargetUuid = '';
+
+  // Profile edit/delete state
+  let editingProfileUuid: string | null = null;
+  let editProfileName = '';
+  let deleteProfileUuid = '';
+  let showDeleteProfileModal = false;
+
+  // Sticky floating player state
+  let speakerPreviewData: SpeakerMediaPreviewData | null = null;
+  let previewCurrentTime = 0;
+
+  // Promote modal state
+  let showPromoteModal = false;
+  let promoteTargetUuid = '';
+  let promoteNameInput = '';
+
+  // Clustering progress state (via WebSocket)
+  let clusteringProgress: { step: number; total_steps: number; message: string; progress: number } | null = null;
+
+  // --- WebSocket event handlers ---
+
+  function handleClusteringProgress(event: Event) {
+    const detail = (event as CustomEvent).detail;
+    if (detail?.progress != null && detail?.total_steps != null) {
+      clusteringProgress = detail;
+      reclustering = detail.running !== false;
+    }
+  }
+
+  function handleClusteringComplete(_event: Event) {
+    if (reclusterTimeout) clearTimeout(reclusterTimeout);
+    reclustering = false;
+    clusteringProgress = null;
     loadClusters();
+    toastStore.success($t('speakers.reclusterComplete'));
+  }
+
+  function handleClusteringFileComplete() {
+    if (activeTab === 'clusters') loadClusters();
+  }
+
+  onMount(async () => {
+    // Restore collapse state from localStorage
+    try {
+      const saved = localStorage.getItem('speakers-cluster-sections-collapse');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        identifiedCollapsed = parsed.identified ?? false;
+        unidentifiedCollapsed = parsed.unidentified ?? false;
+      }
+    } catch { /* ignore */ }
+
+    const results = await Promise.allSettled([
+      loadClusters(true),
+      loadProfiles(true),
+      loadInbox(true)
+    ]);
+    const failures = results.filter(r => r.status === 'rejected');
+    if (failures.length > 0) {
+      toastStore.error($t('speakers.error.loadSections', { count: failures.length }));
+    }
+    window.addEventListener('clustering-progress', handleClusteringProgress);
+    window.addEventListener('clustering-complete', handleClusteringComplete);
+    window.addEventListener('clustering-file-complete', handleClusteringFileComplete);
   });
+
+  onDestroy(() => {
+    window.removeEventListener('clustering-progress', handleClusteringProgress);
+    window.removeEventListener('clustering-complete', handleClusteringComplete);
+    window.removeEventListener('clustering-file-complete', handleClusteringFileComplete);
+    clearTimeout(searchTimeout);
+    if (reclusterTimeout) clearTimeout(reclusterTimeout);
+  });
+
+  // --- Section collapse ---
+
+  function toggleSection(section: 'identified' | 'unidentified') {
+    if (section === 'identified') identifiedCollapsed = !identifiedCollapsed;
+    else unidentifiedCollapsed = !unidentifiedCollapsed;
+    try {
+      localStorage.setItem('speakers-cluster-sections-collapse', JSON.stringify({
+        identified: identifiedCollapsed,
+        unidentified: unidentifiedCollapsed
+      }));
+    } catch { /* ignore */ }
+  }
+
+  function getInitials(name: string): string {
+    return name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  }
+
+  async function handleAvatarUpload(profileUuid: string, event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    input.value = '';
+
+    // Validate type
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      toastStore.error($t('speakers.avatar.invalidType'));
+      return;
+    }
+    // Validate size (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toastStore.error($t('speakers.avatar.tooLarge'));
+      return;
+    }
+
+    if (avatarUploading.has(profileUuid)) return;
+    avatarUploading.add(profileUuid);
+    avatarUploading = avatarUploading;
+
+    try {
+      const result = await uploadProfileAvatar(profileUuid, file);
+      // Update the profile in the local array
+      profiles = profiles.map(p => p.uuid === profileUuid ? { ...p, avatar_url: result.avatar_url } : p);
+      toastStore.success($t('speakers.avatar.uploaded'));
+    } catch {
+      toastStore.error($t('speakers.avatar.error'));
+    } finally {
+      avatarUploading.delete(profileUuid);
+      avatarUploading = avatarUploading;
+    }
+  }
+
+  // --- Tab switching ---
 
   function switchTab(tab: Tab) {
     activeTab = tab;
-    error = '';
-    if (tab === 'clusters' && clusters.length === 0) loadClusters();
-    if (tab === 'profiles' && profiles.length === 0) loadProfiles();
-    if (tab === 'inbox' && inboxItems.length === 0) loadInbox();
+    mergeMode = false;
+    mergeSourceUuid = null;
+    splitMode = false;
+    splitTargetUuid = null;
+    splitSelectedMembers = new Set();
+    speakerPreviewData = null;
+    if (tab === 'clusters') loadClusters();
+    if (tab === 'profiles') loadProfiles();
+    if (tab === 'inbox') loadInbox();
   }
 
-  async function loadClusters() {
+  // --- Data loading ---
+
+  async function loadClusters(silent = false) {
     loadingClusters = true;
-    error = '';
     try {
       const res = await listClusters(clusterPage, 20, clusterSearch || undefined);
       clusters = res.items;
       clusterTotal = res.total;
       clusterPages = res.pages;
-    } catch (e) {
-      error = 'Failed to load clusters';
+      labeledCount = res.labeled_count ?? 0;
+      unlabeledCount = res.unlabeled_count ?? 0;
+    } catch (err) {
+      if (!silent) toastStore.error($t('speakers.error.loadClusters'));
+      throw err;
     } finally {
       loadingClusters = false;
     }
   }
 
-  async function loadProfiles() {
+  async function loadProfiles(silent = false) {
     loadingProfiles = true;
     try {
-      const res = await axiosInstance.get('/speaker-profiles/profiles');
-      profiles = res.data;
-    } catch (e) {
-      error = 'Failed to load profiles';
+      profiles = await listProfiles();
+    } catch (err) {
+      if (!silent) toastStore.error($t('speakers.error.loadProfiles'));
+      throw err;
     } finally {
       loadingProfiles = false;
     }
   }
 
-  async function loadInbox() {
+  async function loadInbox(silent = false) {
     loadingInbox = true;
     try {
       const res = await getUnverifiedSpeakers(inboxPage, 20);
       inboxItems = res.items;
       inboxTotal = res.total;
       inboxPages = res.pages;
-    } catch (e) {
-      error = 'Failed to load inbox';
+    } catch (err) {
+      if (!silent) toastStore.error($t('speakers.error.loadInbox'));
+      throw err;
     } finally {
       loadingInbox = false;
     }
   }
+
+  // --- Cluster actions ---
 
   async function handleClusterExpand(e: CustomEvent<{ uuid: string }>) {
     const uuid = e.detail.uuid;
@@ -121,83 +302,329 @@
       await updateCluster(e.detail.uuid, { label: e.detail.label });
       await loadClusters();
     } catch {
-      error = 'Failed to update cluster';
+      toastStore.error($t('speakers.error.updateCluster'));
     }
   }
 
-  async function handleClusterPromote(e: CustomEvent<{ uuid: string }>) {
-    const name = prompt('Enter profile name:');
-    if (!name) return;
-    try {
-      await promoteCluster(e.detail.uuid, name);
-      await loadClusters();
-    } catch {
-      error = 'Failed to promote cluster';
-    }
-  }
-
+  // Delete cluster (modal)
   async function handleClusterDelete(e: CustomEvent<{ uuid: string }>) {
-    if (!confirm('Delete this cluster?')) return;
+    deleteTargetUuid = e.detail.uuid;
+    showDeleteModal = true;
+  }
+
+  async function confirmDelete() {
     try {
-      await deleteCluster(e.detail.uuid);
+      await deleteCluster(deleteTargetUuid);
+      toastStore.success($t('speakers.cluster.deleted'));
+      await loadClusters();
+      if (clusterPage > clusterPages && clusterPages > 0) {
+        clusterPage = clusterPages;
+        await loadClusters();
+      }
+    } catch {
+      toastStore.error($t('speakers.error.delete'));
+    }
+    showDeleteModal = false;
+    deleteTargetUuid = '';
+  }
+
+  // Promote cluster (modal with text input)
+  async function handleClusterPromote(e: CustomEvent<{ uuid: string }>) {
+    promoteTargetUuid = e.detail.uuid;
+    promoteNameInput = clusters.find(c => c.uuid === promoteTargetUuid)?.label || '';
+    showPromoteModal = true;
+  }
+
+  async function confirmPromote() {
+    if (!promoteNameInput.trim()) return;
+    try {
+      await promoteCluster(promoteTargetUuid, promoteNameInput.trim());
+      toastStore.success($t('speakers.cluster.promoted'));
       await loadClusters();
     } catch {
-      error = 'Failed to delete cluster';
+      toastStore.error($t('speakers.error.promote'));
+    }
+    showPromoteModal = false;
+  }
+
+  // Merge flow
+  async function handleClusterMerge(e: CustomEvent<{ uuid: string }>) {
+    if (mergeMode && mergeSourceUuid) {
+      // Second click: this is the target
+      const targetUuid = e.detail.uuid;
+      if (targetUuid === mergeSourceUuid) {
+        toastStore.error($t('speakers.merge.cannotSelf'));
+        return;
+      }
+      try {
+        await mergeClusters(mergeSourceUuid, targetUuid);
+        toastStore.success($t('speakers.merge.success'));
+        mergeMode = false;
+        mergeSourceUuid = null;
+        await loadClusters();
+        if (clusterPage > clusterPages && clusterPages > 0) {
+          clusterPage = clusterPages;
+          await loadClusters();
+        }
+      } catch {
+        mergeMode = false;
+        mergeSourceUuid = null;
+        toastStore.error($t('speakers.merge.error'));
+      }
+    } else {
+      // First click: enter merge mode
+      mergeSourceUuid = e.detail.uuid;
+      mergeMode = true;
+      // Auto-expand both sections so user can pick any target
+      identifiedCollapsed = false;
+      unidentifiedCollapsed = false;
+      toastStore.info($t('speakers.merge.selectTarget'));
     }
   }
 
+  function cancelMerge() {
+    mergeMode = false;
+    mergeSourceUuid = null;
+  }
+
+  // Split flow
+  async function handleClusterSplit(e: CustomEvent<{ uuid: string }>) {
+    const uuid = e.detail.uuid;
+    // Auto-expand both sections during split mode
+    identifiedCollapsed = false;
+    unidentifiedCollapsed = false;
+    // Auto-expand to show members
+    if (expandedCluster !== uuid) {
+      expandedCluster = uuid;
+      if (!clusterMembers[uuid]) {
+        try {
+          const detail = await getClusterDetail(uuid);
+          clusterMembers[uuid] = detail.members;
+          clusterMembers = clusterMembers;
+        } catch {
+          toastStore.error($t('speakers.error.loadClusters'));
+          return;
+        }
+      }
+    }
+    splitTargetUuid = uuid;
+    splitMode = true;
+    splitSelectedMembers = new Set();
+  }
+
+  async function confirmSplit() {
+    if (!splitTargetUuid || splitSelectedMembers.size === 0) return;
+    try {
+      await splitCluster(splitTargetUuid, Array.from(splitSelectedMembers));
+      toastStore.success($t('speakers.split.success'));
+      splitMode = false;
+      splitTargetUuid = null;
+      splitSelectedMembers = new Set();
+      await loadClusters();
+    } catch {
+      splitMode = false;
+      splitTargetUuid = null;
+      splitSelectedMembers = new Set();
+      toastStore.error($t('speakers.split.error'));
+    }
+  }
+
+  function cancelSplit() {
+    splitMode = false;
+    splitTargetUuid = null;
+    splitSelectedMembers = new Set();
+  }
+
+  function toggleSplitMember(speakerUuid: string) {
+    if (splitSelectedMembers.has(speakerUuid)) {
+      splitSelectedMembers.delete(speakerUuid);
+    } else {
+      splitSelectedMembers.add(speakerUuid);
+    }
+    splitSelectedMembers = splitSelectedMembers;
+  }
+
+  // Recluster
   async function handleRecluster() {
     reclustering = true;
+    if (reclusterTimeout) clearTimeout(reclusterTimeout);
+    reclusterTimeout = setTimeout(() => {
+      if (reclustering) {
+        reclustering = false;
+        clusteringProgress = null;
+        toastStore.error($t('speakers.error.reclusterTimeout'));
+      }
+    }, 5 * 60 * 1000);
     try {
       await triggerRecluster();
-      setTimeout(loadClusters, 3000);
     } catch {
-      error = 'Failed to start re-clustering';
-    } finally {
       reclustering = false;
+      if (reclusterTimeout) clearTimeout(reclusterTimeout);
+      toastStore.error($t('speakers.error.recluster'));
     }
   }
+
+  // --- Profile management ---
+
+  function startEditProfile(profile: SpeakerProfile) {
+    editingProfileUuid = profile.uuid;
+    editProfileName = profile.name || '';
+  }
+
+  function cancelEditProfile() {
+    editingProfileUuid = null;
+    editProfileName = '';
+  }
+
+  async function saveProfile(uuid: string) {
+    if (!editProfileName.trim()) { cancelEditProfile(); return; }
+    try {
+      await updateProfile(uuid, { name: editProfileName.trim() });
+      await loadProfiles();
+    } catch {
+      toastStore.error($t('speakers.error.updateProfile'));
+    }
+    cancelEditProfile();
+  }
+
+  function confirmDeleteProfile(uuid: string) {
+    deleteProfileUuid = uuid;
+    showDeleteProfileModal = true;
+  }
+
+  async function handleDeleteProfile() {
+    try {
+      await deleteProfile(deleteProfileUuid);
+      toastStore.success($t('speakers.profiles.deleted'));
+      await loadProfiles();
+    } catch {
+      toastStore.error($t('speakers.error.deleteProfile'));
+    }
+    showDeleteProfileModal = false;
+    deleteProfileUuid = '';
+  }
+
+  // --- Sticky floating player ---
+
+  // Prefetch cache for speaker media previews (hover-triggered)
+  const previewCache = new Map<string, { data: SpeakerMediaPreviewData; ts: number }>();
+  const prefetchInFlight = new Set<string>();
+  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+  function prefetchSpeakerPreview(speakerUuid: string) {
+    const cached = previewCache.get(speakerUuid);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) return;
+    if (prefetchInFlight.has(speakerUuid)) return;
+    prefetchInFlight.add(speakerUuid);
+    getSpeakerMediaPreview(speakerUuid)
+      .then(data => {
+        previewCache.set(speakerUuid, { data, ts: Date.now() });
+      })
+      .catch(() => { /* silent prefetch failure */ })
+      .finally(() => { prefetchInFlight.delete(speakerUuid); });
+  }
+
+  async function openSpeakerPreview(speakerUuid: string) {
+    try {
+      const cached = previewCache.get(speakerUuid);
+      if (cached && Date.now() - cached.ts < CACHE_TTL) {
+        speakerPreviewData = cached.data;
+      } else {
+        speakerPreviewData = await getSpeakerMediaPreview(speakerUuid);
+        previewCache.set(speakerUuid, { data: speakerPreviewData, ts: Date.now() });
+      }
+      previewCurrentTime = speakerPreviewData?.start_time ?? 0;
+    } catch {
+      toastStore.error($t('speakers.inbox.previewUnavailable'));
+      speakerPreviewData = null;
+    }
+  }
+
+  function closeSpeakerPreview() {
+    speakerPreviewData = null;
+  }
+
+  function handlePreviewTimeUpdate(e: CustomEvent<{ currentTime: number }>) {
+    previewCurrentTime = e.detail.currentTime;
+  }
+
+  function formatPlaybackTime(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  // --- Inbox ---
 
   async function handleInboxAction(e: CustomEvent<{ type: string; speaker_uuid: string }>) {
     const { type, speaker_uuid } = e.detail;
-    if (type === 'accept') {
-      try {
-        await batchVerifySpeakers([speaker_uuid], 'accept');
+    if (inboxActionInProgress.has(speaker_uuid)) return;
+    inboxActionInProgress.add(speaker_uuid);
+    inboxActionInProgress = inboxActionInProgress; // trigger reactivity
+    try {
+      if (type === 'accept') {
+        const item = inboxItems.find(i => i.speaker_uuid === speaker_uuid);
+        await batchVerifySpeakers([speaker_uuid], 'accept', undefined, item?.suggested_name || undefined);
         inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
-        inboxTotal--;
-      } catch {
-        error = 'Failed to accept speaker';
+        inboxTotal = Math.max(0, inboxTotal - 1);
+        toastStore.success($t('speakers.inbox.accepted'));
+      } else if (type === 'skip') {
+        await batchVerifySpeakers([speaker_uuid], 'skip');
+        inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
+        inboxTotal = Math.max(0, inboxTotal - 1);
       }
-    } else if (type === 'skip') {
-      inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
+    } catch {
+      toastStore.error($t('speakers.error.verify'));
+    } finally {
+      inboxActionInProgress.delete(speaker_uuid);
+      inboxActionInProgress = inboxActionInProgress;
     }
   }
 
+  // --- Search debounce ---
+
+  function handleClusterSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      clusterPage = 1;
+      loadClusters();
+    }, 300);
+  }
+
+  // --- Keyboard shortcuts ---
+
   function handleKeydown(e: KeyboardEvent) {
-    if (activeTab !== 'inbox' || !inboxItems.length) return;
-    if (e.key === 'a' || e.key === 'A') {
-      const first = inboxItems[0];
-      if (first?.suggested_name) {
-        handleInboxAction(
-          new CustomEvent('action', { detail: { type: 'accept', speaker_uuid: first.speaker_uuid } })
-        );
-      }
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+    // Escape cancels merge/split mode from any tab
+    if (e.key === 'Escape') {
+      if (mergeMode) { cancelMerge(); return; }
+      if (splitMode) { cancelSplit(); return; }
+      if (speakerPreviewData) { speakerPreviewData = null; return; }
     }
-    if (e.key === 's' || e.key === 'S') {
-      const first = inboxItems[0];
+
+    if (activeTab !== 'inbox' || !inboxItems.length) return;
+
+    const first = inboxItems[0];
+    if ((e.key === 'a' || e.key === 'A') && first?.suggested_name) {
+      handleInboxAction(
+        new CustomEvent('action', { detail: { type: 'accept', speaker_uuid: first.speaker_uuid } })
+      );
+    } else if (e.key === 's' || e.key === 'S' || e.key === 'n' || e.key === 'N') {
       if (first) {
         handleInboxAction(
           new CustomEvent('action', { detail: { type: 'skip', speaker_uuid: first.speaker_uuid } })
         );
       }
+    } else if (e.key === 'p' || e.key === 'P') {
+      if (first) openSpeakerPreview(first.speaker_uuid);
     }
   }
-
-  function handleClusterSearch() {
-    clusterPage = 1;
-    loadClusters();
-  }
 </script>
+
+<svelte:head>
+  <title>{$t('speakers.title')} - OpenTranscribe</title>
+</svelte:head>
 
 <svelte:window on:keydown={handleKeydown} />
 
@@ -227,10 +654,6 @@
     </button>
   </div>
 
-  {#if error}
-    <div class="error-bar">{error}</div>
-  {/if}
-
   <!-- Clusters Tab -->
   {#if activeTab === 'clusters'}
     <div class="tab-content">
@@ -238,59 +661,193 @@
         <input
           type="text"
           class="search-input"
-          placeholder="Search clusters..."
+          placeholder={$t('speakers.searchPlaceholder')}
           bind:value={clusterSearch}
           on:input={handleClusterSearch}
         />
-        <button class="btn-recluster" on:click={handleRecluster} disabled={reclustering}>
+        <button class="btn-recluster" on:click={handleRecluster} disabled={reclustering} title={$t('speakers.tooltip.recluster')}>
           {reclustering ? $t('speakers.clusters.reclustering') : $t('speakers.clusters.recluster')}
         </button>
       </div>
 
+      {#if reclustering && clusteringProgress}
+        <div class="clustering-progress">
+          {#if clusteringProgress.total_steps === 0}
+            <!-- Queued state: waiting for GPU -->
+            <div class="progress-bar">
+              <div class="progress-fill queued-pulse" style="width: 100%"></div>
+            </div>
+            <span class="progress-text">{clusteringProgress.message}</span>
+          {:else}
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: {clusteringProgress.progress * 100}%"></div>
+            </div>
+            <span class="progress-text">
+              {clusteringProgress.message} ({Math.round(clusteringProgress.progress * 100)}%)
+            </span>
+          {/if}
+        </div>
+      {/if}
+
       {#if loadingClusters}
-        <div class="loading">Loading clusters...</div>
+        <div class="loading">{$t('speakers.loadingClusters')}</div>
       {:else if clusters.length === 0}
         <div class="empty-state">
-          <p>{$t('speakers.clusters.empty')}</p>
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="10" /><path d="M8 12h8" /><path d="M12 8v8" />
+            </svg>
+          </div>
+          <p class="empty-title">{$t('speakers.clusters.emptyTitle')}</p>
+          <p class="empty-desc">{$t('speakers.clusters.emptyDesc')}</p>
         </div>
       {:else}
+        {#if mergeMode}
+          <div class="merge-banner">
+            <span>{$t('speakers.merge.selectTargetWithName', { name: clusters.find(c => c.uuid === mergeSourceUuid)?.label || $t('speakers.cluster.unlabeled') })}</span>
+            <button class="btn-cancel-merge" on:click={cancelMerge}>{$t('modal.cancel')}</button>
+          </div>
+        {/if}
+
         <div class="cluster-list">
-          {#each clusters as cluster (cluster.uuid)}
-            <SpeakerClusterCard
-              {cluster}
-              expanded={expandedCluster === cluster.uuid}
-              on:expand={handleClusterExpand}
-              on:update={handleClusterUpdate}
-              on:promote={handleClusterPromote}
-              on:delete={handleClusterDelete}
-            >
-              <div slot="members">
-                {#if clusterMembers[cluster.uuid]}
-                  <div class="member-list">
-                    {#each clusterMembers[cluster.uuid] as member}
-                      <div class="member-row">
-                        <span class="member-name">{member.display_name || member.speaker_name}</span>
-                        <span class="member-file">{member.media_file_title || ''}</span>
-                        <span class="member-confidence">{(member.confidence * 100).toFixed(0)}%</span>
-                        {#if member.verified}
-                          <span class="verified-badge">Verified</span>
+          {#if labeledCount > 0}
+            <button class="section-heading-btn identified" on:click={() => toggleSection('identified')} title={identifiedCollapsed ? $t('speakers.tooltip.expandSection') : $t('speakers.tooltip.collapseSection')}>
+              <span class="section-chevron" class:collapsed={identifiedCollapsed}>{identifiedCollapsed ? '▸' : '▾'}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              {$t('speakers.cluster.identifiedSpeakers')} ({labeledCount})
+            </button>
+            {#if !identifiedCollapsed}
+              {#if identifiedClusters.length > 0}
+                {#each identifiedClusters as cluster (cluster.uuid)}
+                  <div class:merge-source-highlight={mergeMode && mergeSourceUuid === cluster.uuid}>
+                    <SpeakerClusterCard
+                      {cluster}
+                      expanded={expandedCluster === cluster.uuid}
+                      on:expand={handleClusterExpand}
+                      on:update={handleClusterUpdate}
+                      on:promote={handleClusterPromote}
+                      on:delete={handleClusterDelete}
+                      on:merge={handleClusterMerge}
+                      on:split={handleClusterSplit}
+                    >
+                      <div slot="members">
+                        {#if clusterMembers[cluster.uuid]}
+                          {#if splitMode && splitTargetUuid === cluster.uuid}
+                            <div class="split-banner">
+                              <span>{$t('speakers.split.selectMembersCount', { selected: splitSelectedMembers.size, total: clusterMembers[cluster.uuid]?.length || 0 })}</span>
+                            </div>
+                          {/if}
+                          <div class="member-list">
+                            {#each clusterMembers[cluster.uuid] as member}
+                              <div class="member-row" class:split-selectable={splitMode && splitTargetUuid === cluster.uuid}>
+                                {#if splitMode && splitTargetUuid === cluster.uuid}
+                                  <input type="checkbox" checked={splitSelectedMembers.has(member.speaker_uuid)} on:change={() => toggleSplitMember(member.speaker_uuid)} />
+                                {/if}
+                                {#if member.has_audio_clip}
+                                  <button class="member-play-btn" on:click|stopPropagation={() => openSpeakerPreview(member.speaker_uuid)} on:mouseenter={() => prefetchSpeakerPreview(member.speaker_uuid)} title={$t('speakers.audioClip.play')}>
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z" /></svg>
+                                  </button>
+                                {/if}
+                                <span class="member-name">{member.display_name || member.speaker_name}</span>
+                                <span class="member-file">{member.media_file_title || ''}</span>
+                                <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
+                                {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
+                              </div>
+                            {/each}
+                          </div>
+                          {#if splitMode && splitTargetUuid === cluster.uuid}
+                            <div class="split-actions">
+                              <button class="btn-cancel" on:click={cancelSplit}>{$t('modal.cancel')}</button>
+                              <button class="btn-confirm" on:click={confirmSplit} disabled={splitSelectedMembers.size === 0 || splitSelectedMembers.size === (clusterMembers[splitTargetUuid]?.length || 0)}>{$t('speakers.split.confirm', { count: splitSelectedMembers.size })}</button>
+                            </div>
+                          {/if}
+                        {:else}
+                          <div class="loading-members">{$t('speakers.members.loading')}</div>
                         {/if}
                       </div>
-                    {/each}
+                    </SpeakerClusterCard>
                   </div>
-                {:else}
-                  <div class="loading-members">Loading members...</div>
-                {/if}
-              </div>
-            </SpeakerClusterCard>
-          {/each}
+                {/each}
+              {:else}
+                <div class="section-empty-note">{$t('speakers.section.allOnOtherPages')}</div>
+              {/if}
+            {/if}
+          {/if}
+
+          {#if unlabeledCount > 0}
+            <button class="section-heading-btn unidentified" on:click={() => toggleSection('unidentified')} title={unidentifiedCollapsed ? $t('speakers.tooltip.expandSection') : $t('speakers.tooltip.collapseSection')}>
+              <span class="section-chevron" class:collapsed={unidentifiedCollapsed}>{unidentifiedCollapsed ? '▸' : '▾'}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              {$t('speakers.cluster.unidentifiedClusters')} ({unlabeledCount})
+            </button>
+            {#if !unidentifiedCollapsed}
+              {#if unidentifiedClusters.length > 0}
+                {#each unidentifiedClusters as cluster (cluster.uuid)}
+                  <div class:merge-source-highlight={mergeMode && mergeSourceUuid === cluster.uuid}>
+                    <SpeakerClusterCard
+                      {cluster}
+                      expanded={expandedCluster === cluster.uuid}
+                      on:expand={handleClusterExpand}
+                      on:update={handleClusterUpdate}
+                      on:promote={handleClusterPromote}
+                      on:delete={handleClusterDelete}
+                      on:merge={handleClusterMerge}
+                      on:split={handleClusterSplit}
+                    >
+                      <div slot="members">
+                        {#if clusterMembers[cluster.uuid]}
+                          {#if splitMode && splitTargetUuid === cluster.uuid}
+                            <div class="split-banner">
+                              <span>{$t('speakers.split.selectMembersCount', { selected: splitSelectedMembers.size, total: clusterMembers[cluster.uuid]?.length || 0 })}</span>
+                            </div>
+                          {/if}
+                          <div class="member-list">
+                            {#each clusterMembers[cluster.uuid] as member}
+                              <div class="member-row" class:split-selectable={splitMode && splitTargetUuid === cluster.uuid}>
+                                {#if splitMode && splitTargetUuid === cluster.uuid}
+                                  <input type="checkbox" checked={splitSelectedMembers.has(member.speaker_uuid)} on:change={() => toggleSplitMember(member.speaker_uuid)} />
+                                {/if}
+                                {#if member.has_audio_clip}
+                                  <button class="member-play-btn" on:click|stopPropagation={() => openSpeakerPreview(member.speaker_uuid)} on:mouseenter={() => prefetchSpeakerPreview(member.speaker_uuid)} title={$t('speakers.audioClip.play')}>
+                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z" /></svg>
+                                  </button>
+                                {/if}
+                                <span class="member-name">{member.display_name || member.speaker_name}</span>
+                                <span class="member-file">{member.media_file_title || ''}</span>
+                                <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
+                                {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
+                              </div>
+                            {/each}
+                          </div>
+                          {#if splitMode && splitTargetUuid === cluster.uuid}
+                            <div class="split-actions">
+                              <button class="btn-cancel" on:click={cancelSplit}>{$t('modal.cancel')}</button>
+                              <button class="btn-confirm" on:click={confirmSplit} disabled={splitSelectedMembers.size === 0 || splitSelectedMembers.size === (clusterMembers[splitTargetUuid]?.length || 0)}>{$t('speakers.split.confirm', { count: splitSelectedMembers.size })}</button>
+                            </div>
+                          {/if}
+                        {:else}
+                          <div class="loading-members">{$t('speakers.members.loading')}</div>
+                        {/if}
+                      </div>
+                    </SpeakerClusterCard>
+                  </div>
+                {/each}
+              {:else}
+                <div class="section-empty-note">{$t('speakers.section.allOnOtherPages')}</div>
+              {/if}
+            {/if}
+          {/if}
         </div>
 
         {#if clusterPages > 1}
           <div class="pagination">
-            <button disabled={clusterPage <= 1} on:click={() => { clusterPage--; loadClusters(); }}>Prev</button>
-            <span>Page {clusterPage} of {clusterPages}</span>
-            <button disabled={clusterPage >= clusterPages} on:click={() => { clusterPage++; loadClusters(); }}>Next</button>
+            <button disabled={clusterPage <= 1} on:click={() => { clusterPage--; loadClusters(); }}>
+              {$t('speakers.pagination.prev')}
+            </button>
+            <span>{$t('speakers.pagination.pageOf', { page: clusterPage, pages: clusterPages })}</span>
+            <button disabled={clusterPage >= clusterPages} on:click={() => { clusterPage++; loadClusters(); }}>
+              {$t('speakers.pagination.next')}
+            </button>
           </div>
         {/if}
       {/if}
@@ -301,25 +858,80 @@
   {#if activeTab === 'profiles'}
     <div class="tab-content">
       {#if loadingProfiles}
-        <div class="loading">Loading profiles...</div>
+        <div class="loading">{$t('speakers.loadingProfiles')}</div>
       {:else if profiles.length === 0}
         <div class="empty-state">
-          <p>{$t('speakers.profiles.empty')}</p>
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+          </div>
+          <p class="empty-title">{$t('speakers.profiles.emptyTitle')}</p>
+          <p class="empty-desc">{$t('speakers.profiles.emptyDesc')}</p>
         </div>
       {:else}
         <div class="profile-list">
-          {#each profiles as profile}
+          {#each profiles as profile (profile.uuid)}
             <div class="profile-card">
-              <div class="profile-name">{profile.name || 'Unnamed'}</div>
+              <div class="profile-header">
+                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                <!-- svelte-ignore a11y-no-static-element-interactions -->
+                <div class="profile-avatar-wrapper" on:click|stopPropagation={() => { if (!avatarUploading.has(profile.uuid)) { const el = document.getElementById('avatar-input-' + profile.uuid); el?.click(); } }} title={$t('speakers.tooltip.uploadAvatar')}>
+                  {#if avatarUploading.has(profile.uuid)}
+                    <div class="avatar-spinner"><div class="spinner"></div></div>
+                  {:else if profile.avatar_url}
+                    <img class="profile-avatar" src={profile.avatar_url} alt={profile.name} />
+                    <div class="avatar-overlay">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    </div>
+                  {:else}
+                    <div class="avatar-initials">{getInitials(profile.name || '?')}</div>
+                    <div class="avatar-overlay">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    </div>
+                  {/if}
+                  <input id="avatar-input-{profile.uuid}" type="file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" on:change={(e) => handleAvatarUpload(profile.uuid, e)} />
+                </div>
+                {#if editingProfileUuid === profile.uuid}
+                  <!-- svelte-ignore a11y-autofocus -->
+                  <input class="profile-edit-input" bind:value={editProfileName}
+                    on:keydown={(e) => { if (e.key === 'Enter') saveProfile(profile.uuid); if (e.key === 'Escape') cancelEditProfile(); }}
+                    on:blur={() => saveProfile(profile.uuid)}
+                    autofocus />
+                {:else}
+                  <div class="profile-name">{profile.name || $t('speakers.profiles.unnamed')}</div>
+                {/if}
+                <div class="profile-actions">
+                  <button class="icon-btn" on:click={() => startEditProfile(profile)} title={$t('speakers.profiles.edit')}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    </svg>
+                  </button>
+                  <button class="icon-btn danger" on:click={() => confirmDeleteProfile(profile.uuid)} title={$t('speakers.profiles.deleteBtn')}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
               {#if profile.description}
                 <div class="profile-desc">{profile.description}</div>
               {/if}
               <div class="profile-meta">
-                {#if profile.embedding_count}
-                  <span>{profile.embedding_count} embeddings</span>
-                {/if}
+                <span class="meta-stat" title="{$t('speakers.profiles.instances')}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                  {profile.instance_count || 0}
+                </span>
+                <span class="meta-stat" title="{$t('speakers.profiles.files')}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  {profile.media_count || 0}
+                </span>
                 {#if profile.predicted_gender}
-                  <span class="attribute">{profile.predicted_gender}</span>
+                  <span class="meta-stat" title={$t('speakers.profiles.gender')}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+                    {profile.predicted_gender.charAt(0).toUpperCase() + profile.predicted_gender.slice(1)}
+                  </span>
                 {/if}
               </div>
             </div>
@@ -332,35 +944,147 @@
   <!-- Inbox Tab -->
   {#if activeTab === 'inbox'}
     <div class="tab-content">
-      {#if activeTab === 'inbox'}
-        <div class="inbox-hint">
-          Keyboard shortcuts: <kbd>A</kbd> Accept &middot; <kbd>S</kbd> Skip
-        </div>
-      {/if}
+      <div class="inbox-hint">
+        {$t('speakers.keyboard.hint')}
+      </div>
       {#if loadingInbox}
-        <div class="loading">Loading inbox...</div>
+        <div class="loading">{$t('speakers.loadingInbox')}</div>
       {:else if inboxItems.length === 0}
         <div class="empty-state">
-          <p>{$t('speakers.inbox.empty')}</p>
+          <div class="empty-icon success">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          </div>
+          <p class="empty-title">{$t('speakers.inbox.emptyTitle')}</p>
+          <p class="empty-desc">{profiles.length > 0 ? $t('speakers.inbox.emptyAllVerified') : $t('speakers.inbox.emptyNoProfiles')}</p>
         </div>
       {:else}
         <div class="inbox-list">
-          {#each inboxItems as item (item.speaker_uuid)}
-            <SpeakerInboxItem {item} on:action={handleInboxAction} />
+          {#each inboxItems as item, idx (item.speaker_uuid)}
+            <SpeakerInboxItem
+              {item}
+              actionInProgress={inboxActionInProgress.has(item.speaker_uuid)}
+              on:action={handleInboxAction}
+              on:preview={(e) => openSpeakerPreview(e.detail.speaker_uuid)}
+              on:prefetch={(e) => prefetchSpeakerPreview(e.detail.speaker_uuid)}
+            />
           {/each}
         </div>
 
         {#if inboxPages > 1}
           <div class="pagination">
-            <button disabled={inboxPage <= 1} on:click={() => { inboxPage--; loadInbox(); }}>Prev</button>
-            <span>Page {inboxPage} of {inboxPages}</span>
-            <button disabled={inboxPage >= inboxPages} on:click={() => { inboxPage++; loadInbox(); }}>Next</button>
+            <button disabled={inboxPage <= 1} on:click={() => { inboxPage--; loadInbox(); }}>
+              {$t('speakers.pagination.prev')}
+            </button>
+            <span>{$t('speakers.pagination.pageOf', { page: inboxPage, pages: inboxPages })}</span>
+            <button disabled={inboxPage >= inboxPages} on:click={() => { inboxPage++; loadInbox(); }}>
+              {$t('speakers.pagination.next')}
+            </button>
           </div>
         {/if}
       {/if}
     </div>
   {/if}
+
+  <!-- Delete Cluster Confirmation Modal -->
+  <ConfirmationModal
+    isOpen={showDeleteModal}
+    title={$t('speakers.delete.title')}
+    message={$t('speakers.delete.message')}
+    confirmText={$t('modal.delete')}
+    confirmButtonClass="confirm-button delete-confirm"
+    on:confirm={confirmDelete}
+    on:cancel={() => { showDeleteModal = false; }}
+    on:close={() => { showDeleteModal = false; }}
+  />
+
+  <!-- Delete Profile Confirmation Modal -->
+  <ConfirmationModal
+    isOpen={showDeleteProfileModal}
+    title={$t('speakers.profiles.deleteTitle')}
+    message={$t('speakers.profiles.deleteMessage')}
+    confirmText={$t('modal.delete')}
+    confirmButtonClass="confirm-button delete-confirm"
+    on:confirm={handleDeleteProfile}
+    on:cancel={() => { showDeleteProfileModal = false; }}
+    on:close={() => { showDeleteProfileModal = false; }}
+  />
+
+  <!-- Promote Modal (inline with text input) -->
+  {#if showPromoteModal}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="modal-backdrop" on:click|self={() => { showPromoteModal = false; }} transition:fade={{ duration: 200 }}>
+      <div class="promote-modal" transition:fade={{ duration: 200, delay: 100 }}>
+        <h3>{$t('speakers.promote.title')}</h3>
+        <p>{$t('speakers.promote.description')}</p>
+        <!-- svelte-ignore a11y-autofocus -->
+        <input
+          class="promote-modal-input"
+          bind:value={promoteNameInput}
+          placeholder={$t('speakers.promote.namePlaceholder')}
+          on:keydown={(e) => { if (e.key === 'Enter') confirmPromote(); if (e.key === 'Escape') { showPromoteModal = false; } }}
+          autofocus
+        />
+        <div class="promote-modal-actions">
+          <button class="btn-cancel" on:click={() => { showPromoteModal = false; }}>{$t('modal.cancel')}</button>
+          <button class="btn-confirm" on:click={confirmPromote} disabled={!promoteNameInput.trim()}>{$t('speakers.promote.confirm')}</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
+
+<!-- Sticky Floating Preview Player -->
+{#if speakerPreviewData}
+  <div class="sticky-preview" transition:fade={{ duration: 150 }}>
+    <div class="preview-header">
+      <div class="preview-info">
+        <span class="preview-title">
+          {speakerPreviewData.speaker_name}
+        </span>
+        <span class="preview-playback-info">
+          <span class="preview-time">{formatPlaybackTime(previewCurrentTime)}</span>
+          <span class="preview-separator">|</span>
+          <span class="preview-file-name">{speakerPreviewData.file_name}</span>
+        </span>
+      </div>
+      <div class="preview-actions">
+        <a class="preview-detail-link" href="/files/{speakerPreviewData.file_uuid}?t={previewCurrentTime || speakerPreviewData.start_time}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          {$t('search.jumpTo')}
+        </a>
+        <button class="preview-close" on:click={closeSpeakerPreview} title={$t('speakers.preview.close')} aria-label={$t('speakers.preview.closeAriaLabel')}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="preview-player-container">
+      {#key `${speakerPreviewData.media_url}:${speakerPreviewData.start_time}`}
+        {#if PlyrMiniPlayer}
+          <svelte:component this={PlyrMiniPlayer}
+            mediaUrl={speakerPreviewData.media_url || ''}
+            contentType={speakerPreviewData.content_type}
+            startTime={speakerPreviewData.start_time}
+            endTime={speakerPreviewData.end_time}
+            autoplay={true}
+            fileId={speakerPreviewData.file_uuid}
+            compact={true}
+            on:timeupdate={handlePreviewTimeUpdate}
+          />
+        {/if}
+      {/key}
+    </div>
+  </div>
+{/if}
 
 <style>
   .speakers-page {
@@ -372,61 +1096,58 @@
   .page-header h1 {
     font-size: 24px;
     font-weight: 600;
-    color: var(--color-text-primary, #111827);
+    color: var(--text-color);
     margin: 0 0 16px 0;
   }
 
   .tabs {
     display: flex;
-    border-bottom: 2px solid var(--color-border, #e5e7eb);
+    border-bottom: 2px solid var(--border-color);
     margin-bottom: 20px;
   }
 
   .tab {
     padding: 10px 20px;
     border: none;
+    border-radius: 0;
     background: none;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--text-secondary, #6b7280);
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -2px;
-    transition: all 0.15s ease;
+    transition: color 0.15s ease, border-bottom-color 0.15s ease;
     display: flex;
     align-items: center;
     gap: 8px;
+    box-shadow: none;
   }
 
-  .tab:hover {
-    color: var(--color-text-primary, #111827);
+  .tab:hover,
+  .tab:focus {
+    color: var(--text-color, #111827);
+    background: none;
+    transform: none;
+    box-shadow: none;
   }
 
   .tab.active {
-    color: var(--color-primary, #3b82f6);
-    border-bottom-color: var(--color-primary, #3b82f6);
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
   }
 
   .badge {
     font-size: 11px;
     padding: 1px 7px;
     border-radius: 10px;
-    background: var(--color-bg-tertiary, #e5e7eb);
-    color: var(--color-text-secondary, #6b7280);
+    background: var(--hover-color);
+    color: var(--text-secondary);
   }
 
   .badge.alert {
-    background: var(--color-danger, #ef4444);
+    background: var(--error-color, #ef4444);
     color: white;
-  }
-
-  .error-bar {
-    padding: 8px 16px;
-    background: #fef2f2;
-    color: #dc2626;
-    border-radius: 6px;
-    margin-bottom: 16px;
-    font-size: 14px;
   }
 
   .toolbar {
@@ -438,22 +1159,28 @@
   .search-input {
     flex: 1;
     padding: 8px 12px;
-    border: 1px solid var(--color-border, #d1d5db);
+    border: 1px solid var(--input-border);
     border-radius: 6px;
-    background: var(--color-bg-primary, #ffffff);
-    color: var(--color-text-primary, #111827);
+    background: var(--input-background);
+    color: var(--text-color);
     font-size: 14px;
   }
 
   .search-input::placeholder {
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary);
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--input-focus-border);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
   }
 
   .btn-recluster {
     padding: 8px 16px;
     border-radius: 6px;
-    border: 1px solid var(--color-primary, #3b82f6);
-    background: var(--color-primary, #3b82f6);
+    border: 1px solid var(--primary-color);
+    background: var(--primary-color);
     color: white;
     font-size: 14px;
     cursor: pointer;
@@ -462,6 +1189,8 @@
 
   .btn-recluster:hover:not(:disabled) {
     opacity: 0.9;
+    transform: none;
+    box-shadow: none;
   }
 
   .btn-recluster:disabled {
@@ -469,22 +1198,142 @@
     cursor: not-allowed;
   }
 
+  .clustering-progress {
+    margin-top: 12px;
+  }
+
+  .progress-bar {
+    height: 6px;
+    background: var(--hover-color);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+
+  .progress-fill.queued-pulse {
+    opacity: 0.4;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.6; }
+  }
+
+  .progress-text {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
   .loading {
     text-align: center;
     padding: 40px;
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary);
   }
 
   .empty-state {
     text-align: center;
     padding: 60px 20px;
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary);
+  }
+
+  .empty-icon {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+    opacity: 0.5;
+  }
+
+  .empty-icon.success {
+    color: var(--success-color, #059669);
+    opacity: 0.7;
+  }
+
+  .empty-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0 0 8px;
+  }
+
+  .empty-desc {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 400px;
+    margin: 0 auto;
   }
 
   .cluster-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .section-heading-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 16px 0 4px;
+    padding: 4px 4px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+    box-shadow: none;
+  }
+
+  .section-heading-btn:hover {
+    background: var(--hover-color, #f9fafb);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .section-heading-btn:first-child {
+    margin-top: 0;
+  }
+
+  .section-heading-btn.identified {
+    color: var(--success-color, #059669);
+  }
+
+  .section-heading-btn.unidentified {
+    color: var(--text-secondary, #6b7280);
+  }
+
+  .section-heading-btn svg {
+    opacity: 0.7;
+  }
+
+  .section-chevron {
+    font-size: 12px;
+    width: 16px;
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+
+  .section-empty-note {
+    padding: 12px 24px;
+    font-size: 13px;
+    color: var(--text-secondary, #6b7280);
+    font-style: italic;
   }
 
   .member-list {
@@ -503,17 +1352,17 @@
   }
 
   .member-row:hover {
-    background: var(--color-bg-hover, #f9fafb);
+    background: var(--hover-color);
   }
 
   .member-name {
     font-weight: 500;
-    color: var(--color-text-primary, #111827);
+    color: var(--text-color);
     min-width: 120px;
   }
 
   .member-file {
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -521,7 +1370,7 @@
   }
 
   .member-confidence {
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--text-secondary);
     font-size: 12px;
   }
 
@@ -529,13 +1378,13 @@
     font-size: 11px;
     padding: 1px 6px;
     border-radius: 8px;
-    background: #d1fae5;
-    color: #059669;
+    background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
+    color: var(--success-color, #059669);
   }
 
   .loading-members {
     padding: 12px;
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary);
     font-size: 13px;
   }
 
@@ -547,55 +1396,141 @@
 
   .profile-card {
     padding: 16px;
-    border: 1px solid var(--color-border, #e5e7eb);
+    border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 8px;
-    background: var(--color-bg-primary, #ffffff);
+    background: var(--card-background, #fff);
+    transition: box-shadow 0.15s ease;
+  }
+
+  .profile-card:hover {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .profile-avatar-wrapper {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .profile-avatar-wrapper:hover .avatar-overlay {
+    opacity: 1;
+  }
+
+  .profile-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .avatar-initials {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--primary-color, #3b82f6);
+    background: color-mix(in srgb, var(--primary-color, #3b82f6) 20%, transparent);
+  }
+
+  .avatar-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    color: white;
+  }
+
+  .avatar-spinner {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--primary-color, #3b82f6) 20%, transparent);
+  }
+
+  .avatar-spinner .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color, #e5e7eb);
+    border-top-color: var(--primary-color, #3b82f6);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .profile-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
   .profile-name {
     font-weight: 600;
     font-size: 15px;
-    color: var(--color-text-primary, #111827);
+    color: var(--text-color);
+    flex: 1;
+    min-width: 0;
   }
 
   .profile-desc {
     margin-top: 4px;
     font-size: 13px;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .profile-meta {
     margin-top: 8px;
     display: flex;
-    gap: 8px;
+    align-items: center;
+    gap: 10px;
     font-size: 12px;
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary);
+    flex-wrap: wrap;
   }
 
-  .attribute {
-    text-transform: capitalize;
+  .meta-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+    cursor: default;
   }
+
+  .meta-stat svg {
+    opacity: 0.6;
+    flex-shrink: 0;
+  }
+
 
   .inbox-hint {
     padding: 8px 16px;
-    background: var(--color-bg-tertiary, #f3f4f6);
+    background: var(--hover-color);
     border-radius: 6px;
     font-size: 13px;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--text-secondary);
     margin-bottom: 12px;
   }
 
-  .inbox-hint kbd {
-    padding: 1px 6px;
-    background: var(--color-bg-primary, #ffffff);
-    border: 1px solid var(--color-border, #d1d5db);
-    border-radius: 3px;
-    font-family: monospace;
-    font-size: 12px;
-  }
-
   .inbox-list {
-    border: 1px solid var(--color-border, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
   }
@@ -607,20 +1542,388 @@
     gap: 16px;
     margin-top: 16px;
     font-size: 14px;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .pagination button {
     padding: 6px 14px;
-    border: 1px solid var(--color-border, #d1d5db);
+    border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 6px;
-    background: var(--color-bg-primary, #ffffff);
-    color: var(--color-text-primary, #374151);
+    background: var(--card-background, #fff);
+    color: var(--text-color, #111827);
     cursor: pointer;
+    box-shadow: none;
+    font-size: 14px;
+  }
+
+  .pagination button:hover:not(:disabled) {
+    background: var(--hover-color, #f3f4f6);
+    transform: none;
+    box-shadow: none;
   }
 
   .pagination button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  /* Promote modal */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1200;
+  }
+
+  .promote-modal {
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  }
+
+  .promote-modal h3 {
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .promote-modal p {
+    margin: 0 0 16px;
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  .promote-modal-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-background);
+    color: var(--text-color);
+    font-size: 14px;
+    margin-bottom: 8px;
+    box-sizing: border-box;
+  }
+
+  .promote-modal-input:focus {
+    outline: none;
+    border-color: var(--input-focus-border);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
+  }
+
+  .promote-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .btn-cancel {
+    padding: 8px 16px;
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 8px;
+    background: var(--card-background, #fff);
+    color: var(--text-color, #111827);
+    cursor: pointer;
+    font-size: 14px;
+    box-shadow: none;
+  }
+
+  .btn-cancel:hover {
+    background: var(--hover-color, #f3f4f6);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-confirm {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    background: var(--primary-color, #3b82f6);
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    box-shadow: none;
+  }
+
+  .btn-confirm:hover:not(:disabled) {
+    background: var(--primary-hover, #2563eb);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-confirm:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .merge-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
+    border: 1px solid var(--primary-color, #3b82f6);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: var(--primary-color, #3b82f6);
+  }
+
+  .btn-cancel-merge {
+    padding: 4px 12px;
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 6px;
+    background: var(--card-background, #fff);
+    color: var(--text-color, #111827);
+    cursor: pointer;
+    font-size: 13px;
+    box-shadow: none;
+  }
+
+  .btn-cancel-merge:hover {
+    background: var(--hover-color, #f3f4f6);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .merge-source-highlight {
+    outline: 2px solid var(--primary-color, #3b82f6);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  .split-banner {
+    padding: 8px 12px;
+    background: var(--color-warning-bg, rgba(245, 158, 11, 0.1));
+    border: 1px solid var(--color-warning-border, rgba(245, 158, 11, 0.3));
+    border-radius: 6px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--warning-color, #f59e0b);
+  }
+
+  .split-selectable {
+    cursor: pointer;
+  }
+
+  .split-selectable:hover {
+    background: var(--hover-color, #f3f4f6);
+  }
+
+  /* Style checkboxes for dark mode */
+  .split-selectable input[type="checkbox"] {
+    accent-color: var(--primary-color, #3b82f6);
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+
+  .split-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color, #e5e7eb);
+    margin-top: 8px;
+  }
+
+
+  .profile-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    padding: 0;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #e5e7eb);
+    background: var(--card-background, #fff);
+    color: var(--text-secondary, #6b7280);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: none;
+    font-size: 0;
+  }
+
+  .icon-btn:hover {
+    background: var(--hover-color, #f3f4f6);
+    color: var(--text-color, #111827);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .icon-btn.danger:hover {
+    color: var(--error-color, #ef4444);
+    background: color-mix(in srgb, var(--error-color, #ef4444) 10%, transparent);
+    border-color: color-mix(in srgb, var(--error-color, #ef4444) 30%, transparent);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .profile-edit-input {
+    flex: 1;
+    padding: 4px 8px;
+    border: 2px solid var(--primary-color, #3b82f6);
+    border-radius: 6px;
+    background: var(--input-background, #fff);
+    color: var(--text-color, #111827);
+    font-size: 15px;
+    font-weight: 600;
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
+  }
+
+  .member-play-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--border-color, #e5e7eb);
+    background: var(--card-background, #fff);
+    color: var(--text-secondary, #6b7280);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    box-shadow: none;
+    font-size: 0;
+  }
+
+  .member-play-btn:hover {
+    background: var(--primary-color, #3b82f6);
+    color: white;
+    border-color: var(--primary-color, #3b82f6);
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Sticky Floating Preview Player */
+  .sticky-preview {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    width: 400px;
+    max-width: calc(100vw - 2rem);
+    background: var(--surface-color, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+    z-index: 1000;
+    overflow: hidden;
+  }
+
+  .preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface-color, #f9fafb);
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+  }
+
+  .preview-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .preview-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-color, #111827);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .preview-playback-info {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+  }
+
+  .preview-time {
+    font-family: monospace;
+    font-weight: 600;
+    color: var(--primary-color, #4f46e5);
+  }
+
+  .preview-separator {
+    color: var(--text-secondary, #9ca3af);
+  }
+
+  .preview-file-name {
+    color: var(--text-secondary, #6b7280);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .preview-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    margin-left: 0.5rem;
+  }
+
+  .preview-detail-link {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--primary-color, #4f46e5);
+    text-decoration: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }
+
+  .preview-detail-link:hover {
+    background: color-mix(in srgb, var(--primary-color, #4f46e5) 8%, transparent);
+  }
+
+  .preview-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 0.2s ease, background 0.2s ease;
+  }
+
+  .preview-close:hover {
+    color: var(--text-color);
+    background: var(--button-hover, var(--background-color));
   }
 </style>

@@ -187,6 +187,11 @@ NOTIFICATION_TYPE_REINDEX_STOPPED = "reindex_stopped"
 NOTIFICATION_TYPE_MIGRATION_PROGRESS = "migration_progress"
 NOTIFICATION_TYPE_MIGRATION_COMPLETE = "migration_complete"
 
+# Speaker clustering notification types
+NOTIFICATION_TYPE_CLUSTERING_PROGRESS = "clustering_progress"
+NOTIFICATION_TYPE_CLUSTERING_COMPLETE = "clustering_complete"
+NOTIFICATION_TYPE_CLUSTERING_FILE_COMPLETE = "clustering_file_complete"
+
 # Progress tracking intervals
 PROGRESS_UPDATE_INTERVAL = 1000  # milliseconds
 DOWNLOAD_CHECK_INTERVAL = 1000  # milliseconds

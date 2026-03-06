@@ -1077,13 +1077,16 @@ class HybridSearchService:
         sort_order: str,
         page: int,
         page_size: int,
+        use_search_pipeline: bool = False,
     ) -> int:
-        """Apply sort and pagination to a search body for non-relevance sorts.
+        """Apply sort and pagination to a search body.
 
         For relevance sorts, OpenSearch's default _score ordering is used and
-        pagination is handled client-side via over-fetch. For non-relevance sorts,
-        a native sort clause and `from` parameter are added so OpenSearch handles
-        both sorting and pagination server-side.
+        pagination is handled client-side via over-fetch. For non-relevance sorts
+        with a search pipeline (hybrid/RRF), over-fetch is used because the RRF
+        normalization pipeline does not support mixing _score with other sort
+        criteria. For BM25-only non-relevance sorts, native sort and pagination
+        are applied server-side.
 
         Args:
             body: Search body dict (modified in place).
@@ -1091,6 +1094,8 @@ class HybridSearchService:
             sort_order: Sort direction ("asc" or "desc").
             page: Page number (1-indexed).
             page_size: Results per page.
+            use_search_pipeline: If True, a search pipeline (RRF) is active
+                and _score cannot be mixed with other sort criteria.
 
         Returns:
             The outer_size to use for the query.
@@ -1098,6 +1103,12 @@ class HybridSearchService:
         if sort_by == "relevance":
             return min(page_size * 5, 200)
 
+        if use_search_pipeline:
+            # Hybrid/RRF mode: cannot mix _score with other sort criteria.
+            # Over-fetch results and sort client-side in _sort_and_paginate().
+            return min(page_size * 5, 200)
+
+        # BM25-only: server-side sort with _score as tiebreaker is safe
         sort_map = {
             "upload_time": "upload_time",
             "completed_at": "upload_time",
@@ -1205,7 +1216,9 @@ class HybridSearchService:
                         }
                     },
                 }
-                body["size"] = self._apply_sort_clause(body, sort_by, sort_order, page, page_size)
+                body["size"] = self._apply_sort_clause(
+                    body, sort_by, sort_order, page, page_size, use_search_pipeline=True
+                )
                 return body
 
         # BM25-only collapse
@@ -1251,14 +1264,17 @@ class HybridSearchService:
         search_fields = self._get_search_fields(has_speaker_filter, use_exact=True)
         text_query_clause = self._build_text_query(query, search_fields)
 
-        if highlight_fields is None:
-            highlight_fields = self._build_highlight_fields(has_speaker_filter)
+        # Always rebuild highlight fields with use_exact=True to match BM25
+        # search fields (content.exact). OpenSearch's unified highlighter uses
+        # require_field_match=true by default, so highlight fields must match
+        # the fields being queried.
+        bm25_highlight_fields = self._build_highlight_fields(has_speaker_filter, use_exact=True)
 
         inner_hits_config: dict[str, Any] = {
             "name": "segments",
             "size": SEARCH_MAX_SNIPPETS_PER_FILE,
             "sort": [{"_score": {"order": "desc"}}],
-            "highlight": {"fields": highlight_fields},
+            "highlight": {"fields": bm25_highlight_fields},
             "_source": {"excludes": ["embedding"]},
         }
 
@@ -1277,7 +1293,7 @@ class HybridSearchService:
                 }
             },
             "collapse": collapse_config,
-            "highlight": {"fields": highlight_fields},
+            "highlight": {"fields": bm25_highlight_fields},
             "_source": {"excludes": ["embedding"]},
             "track_total_hits": False,
             "aggs": {
@@ -1590,8 +1606,30 @@ class HybridSearchService:
                 params=search_params,
             )
         except Exception as e:
-            logger.error(f"Collapsed search failed: {e}")
-            return self._empty_response(query, page, page_size)
+            if use_neural:
+                # Hybrid search failed — fall back to BM25-only so users
+                # still get results instead of an empty page.
+                logger.warning(f"Hybrid search failed, falling back to BM25: {e}")
+                try:
+                    fallback_body = self._build_collapsed_bm25_body(
+                        search_query,
+                        filters,
+                        page,
+                        page_size,
+                        has_speaker_filter,
+                        sort_by=sort_by,
+                        sort_order=sort_order,
+                    )
+                    response = client.search(
+                        index=settings.OPENSEARCH_CHUNKS_INDEX,
+                        body=fallback_body,
+                    )
+                except Exception as e2:
+                    logger.error(f"BM25 fallback also failed: {e2}")
+                    return self._empty_response(query, page, page_size)
+            else:
+                logger.error(f"Collapsed search failed: {e}")
+                return self._empty_response(query, page, page_size)
 
         opensearch_ms = round((time.time() - t_opensearch) * 1000)
 
@@ -1619,41 +1657,24 @@ class HybridSearchService:
         if len(grouped) < total_files_est:
             total_files_est = len(grouped)
 
-        # Sort and paginate
+        # Sort and paginate — always client-side for consistent behavior.
+        # Hybrid/RRF over-fetches results (sort clause omitted to avoid pipeline
+        # incompatibility), and BM25-only server-side sort may not cover all files
+        # after semantic suppression. Unified path keeps logic simple.
         t_sort = time.time()
-
-        if sort_by != "relevance":
-            # Non-relevance sorts: OpenSearch already sorted and paginated server-side
-            total_results = sum(h.total_occurrences for h in grouped)
-            result = SearchResponse(
-                query=query,
-                results=grouped,
-                total_results=total_results,
-                total_files=max(total_files_est, len(grouped)),
-                total_pages=max(1, (total_files_est + page_size - 1) // page_size),
-                page=page,
-                page_size=page_size,
-                search_time_ms=round((time.time() - start_time) * 1000, 1),
-                filters_applied=filters_applied,
-                search_mode=search_mode,
-            )
-        else:
-            # Relevance sort: paginate client-side from over-fetched results
-            result = self._sort_and_paginate(
-                query,
-                grouped,
-                sort_by,
-                sort_order,
-                search_mode,
-                page,
-                page_size,
-                filters_applied,
-                start_time,
-            )
-            # Cap total_files to what we actually have for relevance sort
-            # (over-fetch limit means we can't guarantee results beyond it)
-            result.total_files = len(grouped)
-            result.total_pages = max(1, (result.total_files + page_size - 1) // page_size)
+        result = self._sort_and_paginate(
+            query,
+            grouped,
+            sort_by,
+            sort_order,
+            search_mode,
+            page,
+            page_size,
+            filters_applied,
+            start_time,
+        )
+        result.total_files = len(grouped)
+        result.total_pages = max(1, (result.total_files + page_size - 1) // page_size)
         sort_ms = round((time.time() - t_sort) * 1000)
 
         # Deferred semantic highlighting for current page

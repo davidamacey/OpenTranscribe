@@ -218,6 +218,18 @@ def dispatch_task_by_name(
         from app.tasks.topic_extraction import extract_topics_task
 
         extract_topics_task.delay(file_uuid=file_uuid, force_regenerate=True)
+    elif stage == "speaker_clustering":
+        if user_id is None:
+            from app.db.session_utils import session_scope
+            from app.utils.uuid_helpers import get_file_by_uuid
+
+            with session_scope() as db:
+                media_file = get_file_by_uuid(db, file_uuid)
+                user_id = int(media_file.user_id)
+
+        from app.tasks.speaker_clustering import cluster_speakers_for_file
+
+        cluster_speakers_for_file.delay(file_uuid, user_id)
     else:
         logger.warning(f"Unknown stage '{stage}' for dispatch")
 

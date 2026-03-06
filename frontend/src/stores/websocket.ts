@@ -27,6 +27,9 @@ export type NotificationType =
   | 'reindex_stopped'
   | 'migration_progress'
   | 'migration_complete'
+  | 'clustering_progress'
+  | 'clustering_complete'
+  | 'clustering_file_complete'
   | 'cache_invalidate'
   | 'collection_shared'
   | 'collection_share_revoked'
@@ -278,6 +281,26 @@ function createWebSocketStore() {
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(
                   new CustomEvent('speaker-processing-complete', { detail: data.data })
+                );
+              }
+              return;
+            } else if (data.type === 'clustering_progress') {
+              // Speaker clustering progress — dispatch event for SpeakersPage
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('clustering-progress', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'clustering_complete') {
+              // Speaker clustering complete — dispatch event for SpeakersPage
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('clustering-complete', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'clustering_file_complete') {
+              // Per-file clustering complete — dispatch event for SpeakersPage
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('clustering-file-complete', { detail: data.data })
                 );
               }
               return;

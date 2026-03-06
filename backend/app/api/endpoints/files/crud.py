@@ -611,6 +611,45 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
         except Exception as cache_err:
             logger.debug(f"Cache invalidation after delete failed: {cache_err}")
 
+        # Clean up orphaned empty clusters (non-promoted) after CASCADE deletes speakers.
+        # CASCADE on speaker_cluster_member removes membership rows but does NOT
+        # decrement the denormalized member_count column, so we check actual
+        # remaining members via a NOT EXISTS subquery instead.
+        try:
+            from sqlalchemy import exists
+
+            from app.models.media import SpeakerCluster
+            from app.models.media import SpeakerClusterMember
+
+            has_members = (
+                exists()
+                .where(SpeakerClusterMember.cluster_id == SpeakerCluster.id)
+                .correlate(SpeakerCluster)
+            )
+            empty_clusters = (
+                db.query(SpeakerCluster)
+                .filter(
+                    SpeakerCluster.user_id == owner_id,
+                    ~has_members,
+                    SpeakerCluster.promoted_to_profile_id.is_(None),
+                )
+                .all()
+            )
+            if empty_clusters:
+                for cluster in empty_clusters:
+                    try:
+                        from app.services.opensearch_service import delete_cluster_embedding
+
+                        delete_cluster_embedding(str(cluster.uuid))
+                    except Exception as embed_err:
+                        logger.debug(f"Could not delete cluster embedding: {embed_err}")
+                    db.delete(cluster)
+                db.commit()
+                logger.info(f"Cleaned up {len(empty_clusters)} empty clusters after file deletion")
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"Failed to clean up empty clusters: {e}")
+
     except Exception as e:
         logger.error(f"Failed to delete file {file_id} from database: {e}")
         db.rollback()

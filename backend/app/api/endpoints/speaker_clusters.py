@@ -8,7 +8,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
-from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
@@ -26,6 +25,13 @@ from app.services.speaker_clustering_service import SpeakerClusteringService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Fixed-path routes MUST be defined before wildcard /{cluster_uuid} routes.
+# FastAPI matches routes in declaration order, so a wildcard defined first
+# would swallow paths like /recluster, /stats, /unverified/inbox, etc.
+# ---------------------------------------------------------------------------
 
 
 @router.get("", response_model=dict[str, Any])
@@ -48,8 +54,174 @@ def list_clusters(
             search=search,
         )
     except Exception as e:
-        logger.error(f"Error listing clusters: {e}")
+        logger.error("Error listing clusters: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.post("/recluster", response_model=dict[str, Any])
+def trigger_recluster(
+    data: ReclusterRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Trigger full re-clustering of all speakers."""
+    try:
+        from app.tasks.speaker_clustering import recluster_all_speakers
+
+        threshold = data.threshold if data and data.threshold is not None else None
+        user_id = int(current_user.id)
+        task = recluster_all_speakers.delay(user_id, threshold)
+
+        # Send immediate "queued" notification so the UI shows status while
+        # the task waits for the GPU worker to pick it up.
+        try:
+            from app.tasks.speaker_clustering import _send_clustering_progress
+
+            _send_clustering_progress(
+                user_id,
+                step=0,
+                total_steps=0,
+                message="Queued — waiting for GPU...",
+                progress=0.0,
+                running=True,
+            )
+        except Exception as e:
+            logger.debug("Initial progress notification failed (non-critical): %s", e)
+
+        return {
+            "status": "started",
+            "task_id": task.id,
+            "message": "Re-clustering started in background",
+        }
+    except Exception as e:
+        logger.error("Error triggering recluster: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to start re-clustering") from e
+
+
+@router.get("/unverified/inbox", response_model=dict[str, Any])
+def get_unverified_inbox(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get paginated list of unverified speakers for the inbox."""
+    service = SpeakerClusteringService(db)
+    return service.get_unverified_speakers(
+        user_id=int(current_user.id),
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.post("/batch-verify", response_model=dict[str, Any])
+def batch_verify(
+    data: BatchVerifyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Batch verify multiple speakers."""
+    service = SpeakerClusteringService(db)
+    return service.batch_verify_speakers(
+        speaker_uuids=[str(u) for u in data.speaker_uuids],
+        user_id=int(current_user.id),
+        action=data.action,
+        profile_uuid=str(data.profile_uuid) if data.profile_uuid else None,
+        display_name=data.display_name,
+    )
+
+
+@router.get("/speakers/{speaker_uuid}/media-preview")
+def get_speaker_media_preview(
+    speaker_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get presigned URL and segment timestamps for speaker media preview.
+
+    Returns the source media file URL and the longest transcript segment
+    for this speaker so the player can seek directly to their voice.
+    """
+    speaker = (
+        db.query(Speaker)
+        .filter(Speaker.uuid == speaker_uuid, Speaker.user_id == int(current_user.id))
+        .first()
+    )
+    if not speaker:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+
+    media_file = speaker.media_file
+    if not media_file:
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    # Presigned URL for source media (1 hour TTL)
+    from app.services.minio_service import get_file_url
+
+    try:
+        media_presigned_url = get_file_url(media_file.storage_path, expires=3600)
+    except Exception as e:
+        logger.warning("Failed to generate presigned URL for %s: %s", media_file.storage_path, e)
+        media_presigned_url = None
+
+    # Longest transcript segment for this speaker
+    from app.models.media import TranscriptSegment
+
+    best_seg = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.speaker_id == speaker.id)
+        .order_by((TranscriptSegment.end_time - TranscriptSegment.start_time).desc())
+        .first()
+    )
+    seg_start = float(best_seg.start_time) if best_seg else 0.0
+    seg_end = float(best_seg.end_time) if best_seg else 0.0
+
+    return {
+        "speaker_uuid": str(speaker.uuid),
+        "speaker_name": speaker.display_name or speaker.name,
+        "file_uuid": str(media_file.uuid),
+        "file_name": media_file.filename,
+        "content_type": media_file.content_type or "audio/unknown",
+        "start_time": seg_start,
+        "end_time": seg_end,
+        "media_url": media_presigned_url,
+    }
+
+
+@router.get("/stats")
+def get_clustering_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get aggregate speaker clustering statistics."""
+    user_id = int(current_user.id)
+    total_speakers = db.query(Speaker).filter(Speaker.user_id == user_id).count()
+    clustered = (
+        db.query(Speaker)
+        .filter(
+            Speaker.user_id == user_id,
+            Speaker.cluster_id.isnot(None),
+        )
+        .count()
+    )
+    total_clusters = (
+        db.query(SpeakerCluster)
+        .filter(
+            SpeakerCluster.user_id == user_id,
+        )
+        .count()
+    )
+
+    return {
+        "total_speakers": total_speakers,
+        "clustered_speakers": clustered,
+        "total_clusters": total_clusters,
+        "coverage_pct": round(clustered / total_speakers * 100, 1) if total_speakers else 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Wildcard routes -- these MUST come after all fixed-path routes above.
+# ---------------------------------------------------------------------------
 
 
 @router.get("/{cluster_uuid}", response_model=dict[str, Any])
@@ -87,7 +259,7 @@ def update_cluster(
             raise HTTPException(status_code=404, detail="Cluster not found")
 
         if data.label is not None:
-            cluster.label = data.label  # type: ignore[assignment]
+            cluster.label = data.label if data.label else None  # type: ignore[assignment]
         if data.description is not None:
             cluster.description = data.description  # type: ignore[assignment]
 
@@ -105,7 +277,7 @@ def update_cluster(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating cluster: {e}")
+        logger.error("Error updating cluster: %s", e)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
@@ -146,7 +318,7 @@ def delete_cluster(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting cluster: {e}")
+        logger.error("Error deleting cluster: %s", e)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
@@ -221,88 +393,3 @@ def split_cluster(
         "member_count": int(new_cluster.member_count),
         "message": "Cluster split successfully",
     }
-
-
-@router.post("/recluster", response_model=dict[str, Any])
-def trigger_recluster(
-    data: ReclusterRequest | None = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """Trigger full re-clustering of all speakers."""
-    try:
-        from app.tasks.speaker_clustering import recluster_all_speakers
-
-        threshold = data.threshold if data and data.threshold else None
-        task = recluster_all_speakers.delay(int(current_user.id), threshold)
-
-        return {
-            "status": "started",
-            "task_id": task.id,
-            "message": "Re-clustering started in background",
-        }
-    except Exception as e:
-        logger.error(f"Error triggering recluster: {e}")
-        raise HTTPException(status_code=500, detail="Failed to start re-clustering") from e
-
-
-@router.get("/unverified/inbox", response_model=dict[str, Any])
-def get_unverified_inbox(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """Get paginated list of unverified speakers for the inbox."""
-    service = SpeakerClusteringService(db)
-    return service.get_unverified_speakers(
-        user_id=int(current_user.id),
-        page=page,
-        per_page=per_page,
-    )
-
-
-@router.post("/batch-verify", response_model=dict[str, Any])
-def batch_verify(
-    data: BatchVerifyRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """Batch verify multiple speakers."""
-    service = SpeakerClusteringService(db)
-    return service.batch_verify_speakers(
-        speaker_uuids=[str(u) for u in data.speaker_uuids],
-        user_id=int(current_user.id),
-        action=data.action,
-        profile_uuid=str(data.profile_uuid) if data.profile_uuid else None,
-        display_name=data.display_name,
-    )
-
-
-@router.get("/speakers/{speaker_uuid}/audio-clip")
-def get_speaker_audio_clip(
-    speaker_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """Get audio clip stream URL for a speaker."""
-    speaker = (
-        db.query(Speaker)
-        .filter(Speaker.uuid == speaker_uuid, Speaker.user_id == int(current_user.id))
-        .first()
-    )
-    if not speaker:
-        raise HTTPException(status_code=404, detail="Speaker not found")
-
-    from app.services.speaker_audio_clip_service import SpeakerAudioClipService
-
-    clip_service = SpeakerAudioClipService(db)
-    clip = clip_service.get_representative_clip(int(speaker.id))
-    if not clip:
-        raise HTTPException(status_code=404, detail="No audio clip available")
-
-    url = clip_service.get_clip_stream_url(str(clip.uuid))
-    if not url:
-        raise HTTPException(status_code=404, detail="Could not generate stream URL")
-
-    return RedirectResponse(url=url)

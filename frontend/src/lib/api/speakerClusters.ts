@@ -91,7 +91,7 @@ export async function getUnverifiedSpeakers(
 
 export async function batchVerifySpeakers(
   speakerUuids: string[],
-  action: 'accept' | 'assign' | 'name',
+  action: 'accept' | 'assign' | 'name' | 'skip',
   profileUuid?: string,
   displayName?: string
 ): Promise<BatchVerifyResponse> {
@@ -104,6 +104,78 @@ export async function batchVerifySpeakers(
   return response.data;
 }
 
-export function getAudioClipUrl(speakerUuid: string): string {
-  return `/api/speaker-clusters/speakers/${speakerUuid}/audio-clip`;
+export interface SpeakerMediaPreviewData {
+  speaker_uuid: string;
+  speaker_name: string;
+  file_uuid: string;
+  file_name: string;
+  content_type: string;
+  start_time: number;
+  end_time: number;
+  media_url: string | null;
+}
+
+export async function getSpeakerMediaPreview(
+  speakerUuid: string
+): Promise<SpeakerMediaPreviewData> {
+  const response = await axiosInstance.get(
+    `/speaker-clusters/speakers/${speakerUuid}/media-preview`
+  );
+  return response.data;
+}
+
+export async function updateProfile(
+  uuid: string,
+  data: { name?: string; description?: string }
+): Promise<any> {
+  const params = new URLSearchParams();
+  if (data.name) params.set('name', data.name);
+  if (data.description !== undefined) params.set('description', data.description);
+  const response = await axiosInstance.put(
+    `/speaker-profiles/profiles/${uuid}?${params.toString()}`
+  );
+  return response.data;
+}
+
+export async function deleteProfile(uuid: string): Promise<void> {
+  await axiosInstance.delete(`/speaker-profiles/profiles/${uuid}`);
+}
+
+/**
+ * Merge a source speaker into a target speaker
+ * @param sourceUuid - UUID of the speaker to merge (will be deleted)
+ * @param targetUuid - UUID of the speaker to keep (will receive all segments)
+ * @returns Updated target speaker
+ */
+export async function mergeSpeakers(
+  sourceUuid: string,
+  targetUuid: string
+): Promise<import('$lib/types/speaker').MergeSpeakersResponse> {
+  const response = await axiosInstance.post(`/speakers/${sourceUuid}/merge/${targetUuid}`);
+  return response.data;
+}
+
+export async function listProfiles(): Promise<
+  import('$lib/types/speakerCluster').SpeakerProfile[]
+> {
+  const response = await axiosInstance.get('/speaker-profiles/profiles');
+  return response.data;
+}
+
+export async function uploadProfileAvatar(
+  profileUuid: string,
+  file: File
+): Promise<{ uuid: string; avatar_url: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await axiosInstance.post(
+    `/speaker-profiles/profiles/${profileUuid}/avatar`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
+  );
+  return response.data;
+}
+
+export async function deleteProfileAvatar(profileUuid: string): Promise<void> {
+  await axiosInstance.delete(`/speaker-profiles/profiles/${profileUuid}/avatar`);
 }

@@ -161,16 +161,77 @@ async def _run_thumbnail_migration():
         logger.error(f"Error scheduling thumbnail migration: {e}")
 
 
-async def _run_speaker_embedding_normalization():
-    """Schedule speaker embedding L2 normalization after a delay."""
+async def _run_one_time_embedding_normalization():
+    """One-time migration: normalize legacy embeddings for users upgrading.
+
+    Checks a DB flag first — if already done, returns immediately.
+    After successful normalization, sets the flag so it never runs again.
+    """
     try:
-        await asyncio.sleep(60)  # Wait for OpenSearch and other startup tasks
+        await asyncio.sleep(60)
+
+        from app.db.base import SessionLocal
+        from app.models.system_settings import SystemSettings
+
+        db = SessionLocal()
+        try:
+            flag = (
+                db.query(SystemSettings)
+                .filter(SystemSettings.key == "embedding_normalization_done")
+                .first()
+            )
+            if flag and flag.value == "true":
+                logger.info("Embedding normalization already completed — skipping")
+                return
+        finally:
+            db.close()
+
         from app.tasks.speaker_embedding_migration import normalize_speaker_embeddings_task
 
-        result = normalize_speaker_embeddings_task.delay()
-        logger.info(f"Speaker embedding normalization task scheduled: {result.id}")
+        result = normalize_speaker_embeddings_task.apply(throw=False)
+        if result and result.result and result.result.get("normalized", 0) == 0:
+            # All vectors already normalized — set flag
+            db = SessionLocal()
+            try:
+                setting = (
+                    db.query(SystemSettings)
+                    .filter(SystemSettings.key == "embedding_normalization_done")
+                    .first()
+                )
+                if not setting:
+                    setting = SystemSettings(
+                        key="embedding_normalization_done",
+                        value="true",
+                        description="One-time embedding L2 normalization migration completed",
+                    )
+                    db.add(setting)
+                else:
+                    setting.value = "true"
+                db.commit()
+                logger.info("Embedding normalization flag set — will not run again")
+            finally:
+                db.close()
+        elif result and result.result:
+            stats = result.result
+            logger.info(
+                "Embedding normalization migrated %d vectors (checked %d)",
+                stats.get("normalized", 0),
+                stats.get("total_found", 0),
+            )
+            # Set flag after successful migration
+            db = SessionLocal()
+            try:
+                setting = SystemSettings(
+                    key="embedding_normalization_done",
+                    value="true",
+                    description="One-time embedding L2 normalization migration completed",
+                )
+                db.merge(setting)
+                db.commit()
+            finally:
+                db.close()
     except Exception as e:
-        logger.error(f"Error scheduling speaker embedding normalization: {e}")
+        logger.error(f"Embedding normalization migration error: {e}")
 
 
 # NOTE: Search settings (model ID, dimension) are now managed by OpenSearch
@@ -326,7 +387,7 @@ async def lifespan(app: FastAPI):
     search_maintenance = asyncio.create_task(_run_search_maintenance())
     thumbnail_migration = asyncio.create_task(_run_thumbnail_migration())
     neural_search_task = asyncio.create_task(_initialize_neural_search())
-    embedding_normalization = asyncio.create_task(_run_speaker_embedding_normalization())
+    embedding_migration = asyncio.create_task(_run_one_time_embedding_normalization())
 
     yield
 
@@ -337,7 +398,7 @@ async def lifespan(app: FastAPI):
         search_maintenance,
         thumbnail_migration,
         neural_search_task,
-        embedding_normalization,
+        embedding_migration,
     ]:
         if not task.done():
             task.cancel()

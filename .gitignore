@@ -148,6 +148,7 @@ Thumbs.db
 
 # Docker
 .docker/
+backend/VERSION  # Ghost file created by Docker bind mount (real VERSION is at repo root)
 
 # Test files
 test-output/

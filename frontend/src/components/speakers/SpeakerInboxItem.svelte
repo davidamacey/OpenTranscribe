@@ -1,112 +1,148 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { SpeakerInboxItem as InboxItemType } from '$lib/types/speakerCluster';
-  import AudioClipPlayer from './AudioClipPlayer.svelte';
-  import { getAudioClipUrl } from '$lib/api/speakerClusters';
+  import { t } from '$stores/locale';
 
   export let item: InboxItemType;
+  export let actionInProgress = false;
 
   const dispatch = createEventDispatcher();
 
   function confidenceColor(confidence: number | null): string {
-    if (confidence === null) return 'var(--color-text-tertiary, #9ca3af)';
-    if (confidence >= 0.75) return '#10b981';
-    if (confidence >= 0.5) return '#f59e0b';
-    return '#ef4444';
+    if (confidence === null) return 'var(--text-secondary)';
+    if (confidence >= 0.75) return 'var(--success-color, #10b981)';
+    if (confidence >= 0.5) return 'var(--warning-color, #f59e0b)';
+    return 'var(--error-color, #ef4444)';
+  }
+
+  function sourceLabel(source: string | null): string {
+    if (!source) return '';
+    const key = `speakers.inbox.source.${source}`;
+    const translated = $t(key);
+    return translated !== key ? translated : source.replace(/_/g, ' ');
+  }
+
+  function sourceClass(source: string | null): string {
+    if (source === 'profile_match') return 'source-profile';
+    if (source === 'voice_match') return 'source-voice';
+    if (source === 'llm_analysis') return 'source-llm';
+    return '';
   }
 </script>
 
 <div class="inbox-item">
-  <div class="item-left">
-    {#if item.audio_clip_uuid}
-      <AudioClipPlayer clipUrl={getAudioClipUrl(item.speaker_uuid)} small />
-    {:else}
-      <div class="no-clip-placeholder" title="No audio clip available">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" opacity="0.3">
-          <path d="M8 1a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V4a3 3 0 0 0-3-3z" />
-          <path d="M3 7a1 1 0 0 0-2 0 7 7 0 0 0 6 6.93V15H5a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H9v-1.07A7 7 0 0 0 15 7a1 1 0 1 0-2 0 5 5 0 0 1-10 0z" />
+  <div class="inbox-row">
+    <div class="item-left">
+      <button
+        class="preview-toggle"
+        on:click={() => dispatch('preview', { speaker_uuid: item.speaker_uuid })}
+        on:mouseenter={() => dispatch('prefetch', { speaker_uuid: item.speaker_uuid })}
+        title={$t('speakers.inbox.previewTitle')}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11.04-6.86a1 1 0 0 0 0-1.72L9.5 4.28a1 1 0 0 0-1.5.86z"></path>
         </svg>
-      </div>
-    {/if}
-    <div class="item-info">
-      <div class="speaker-name">{item.speaker_name}</div>
-      {#if item.suggested_name}
-        <div class="suggestion">
-          <span class="suggestion-label">Suggestion:</span>
-          <span class="suggestion-name">{item.suggested_name}</span>
-          {#if item.confidence !== null}
-            <span class="confidence" style="color: {confidenceColor(item.confidence)}">
-              {(item.confidence * 100).toFixed(0)}%
-            </span>
+      </button>
+      <div class="item-info">
+        <div class="speaker-name">{item.speaker_name}</div>
+        {#if item.suggested_name}
+          <div class="suggestion">
+            <span class="suggestion-label">{$t('speakers.inbox.suggestion')}</span>
+            <span class="suggestion-name">{item.suggested_name}</span>
+            {#if item.confidence != null && !isNaN(item.confidence)}
+              <span class="confidence" style="color: {confidenceColor(item.confidence)}">
+                {(item.confidence * 100).toFixed(0)}%
+              </span>
+            {/if}
+            {#if item.suggestion_source}
+              <span class="source-badge {sourceClass(item.suggestion_source)}">{sourceLabel(item.suggestion_source)}</span>
+            {/if}
+          </div>
+        {/if}
+        <div class="meta">
+          {#if item.media_file_title}
+            <span class="file-title">{item.media_file_title}</span>
           {/if}
-          {#if item.suggestion_source}
-            <span class="source-badge">{item.suggestion_source}</span>
+          {#if item.predicted_gender}
+            <span class="attribute">{item.predicted_gender}</span>
+          {/if}
+          {#if item.cluster_label}
+            <span class="cluster-tag">{$t('speakers.inbox.clusterLabel')} {item.cluster_label}</span>
+          {:else if item.cluster_member_count > 1}
+            <span class="cluster-tag">{item.cluster_member_count} {$t('speakers.inbox.similar')}</span>
           {/if}
         </div>
-      {/if}
-      <div class="meta">
-        {#if item.media_file_title}
-          <span class="file-title">{item.media_file_title}</span>
-        {/if}
-        {#if item.predicted_gender}
-          <span class="attribute">{item.predicted_gender}</span>
-        {/if}
-        {#if item.cluster_label}
-          <span class="cluster-tag">Cluster: {item.cluster_label}</span>
-        {:else if item.cluster_member_count > 1}
-          <span class="cluster-tag">{item.cluster_member_count} similar</span>
-        {/if}
       </div>
     </div>
-  </div>
-  <div class="item-actions">
-    {#if item.suggested_name}
+    <div class="item-actions">
+      {#if item.suggested_name}
+        <button
+          class="action-btn accept"
+          disabled={actionInProgress}
+          on:click={() => dispatch('action', { type: 'accept', speaker_uuid: item.speaker_uuid })}
+          title={$t('speakers.inbox.acceptTitle')}
+        >
+          {$t('speakers.inbox.accept')}
+        </button>
+      {/if}
       <button
-        class="action-btn accept"
-        on:click={() => dispatch('action', { type: 'accept', speaker_uuid: item.speaker_uuid })}
-        title="Accept suggestion (A)"
+        class="action-btn skip"
+        disabled={actionInProgress}
+        on:click={() => dispatch('action', { type: 'skip', speaker_uuid: item.speaker_uuid })}
+        title={$t('speakers.inbox.skipTitle')}
       >
-        Accept
+        {$t('speakers.inbox.skip')}
       </button>
-    {/if}
-    <button
-      class="action-btn skip"
-      on:click={() => dispatch('action', { type: 'skip', speaker_uuid: item.speaker_uuid })}
-      title="Skip (S)"
-    >
-      Skip
-    </button>
+    </div>
   </div>
 </div>
 
 <style>
   .inbox-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--color-border, #e5e7eb);
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
     transition: background 0.1s ease;
   }
 
   .inbox-item:hover {
-    background: var(--color-bg-hover, #f9fafb);
+    background: var(--hover-color, #f9fafb);
+  }
+
+  .inbox-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
   }
 
   .item-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     flex: 1;
     min-width: 0;
   }
 
-  .no-clip-placeholder {
-    width: 24px;
-    height: 24px;
+  .preview-toggle {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--primary-color, #4f46e5);
+    cursor: pointer;
+    transition: all 0.15s;
+    box-shadow: none;
+  }
+
+  .preview-toggle:hover {
+    background: color-mix(in srgb, var(--primary-color, #4f46e5) 10%, transparent);
+    transform: scale(1.1);
+    box-shadow: none;
   }
 
   .item-info {
@@ -116,7 +152,7 @@
 
   .speaker-name {
     font-weight: 500;
-    color: var(--color-text-primary, #111827);
+    color: var(--text-color, #111827);
     font-size: 14px;
   }
 
@@ -129,11 +165,11 @@
   }
 
   .suggestion-label {
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary, #9ca3af);
   }
 
   .suggestion-name {
-    color: var(--color-primary, #3b82f6);
+    color: var(--primary-color, #3b82f6);
     font-weight: 500;
   }
 
@@ -146,8 +182,23 @@
     font-size: 11px;
     padding: 1px 6px;
     border-radius: 8px;
-    background: var(--color-bg-tertiary, #f3f4f6);
-    color: var(--color-text-tertiary, #9ca3af);
+    background: var(--hover-color, #f3f4f6);
+    color: var(--text-secondary, #9ca3af);
+  }
+
+  .source-badge.source-profile {
+    background: color-mix(in srgb, var(--success-color, #10b981) 10%, transparent);
+    color: var(--success-color, #10b981);
+  }
+
+  .source-badge.source-voice {
+    background: color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
+    color: var(--primary-color, #3b82f6);
+  }
+
+  .source-badge.source-llm {
+    background: color-mix(in srgb, var(--text-secondary, #9ca3af) 10%, transparent);
+    color: var(--text-secondary, #9ca3af);
   }
 
   .meta {
@@ -156,7 +207,7 @@
     gap: 8px;
     margin-top: 3px;
     font-size: 12px;
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary, #9ca3af);
   }
 
   .file-title {
@@ -173,7 +224,7 @@
   .cluster-tag {
     padding: 1px 6px;
     border-radius: 8px;
-    background: var(--color-bg-tertiary, #f3f4f6);
+    background: var(--hover-color, #f3f4f6);
   }
 
   .item-actions {
@@ -185,25 +236,49 @@
   .action-btn {
     padding: 4px 12px;
     border-radius: 6px;
-    border: 1px solid var(--color-border, #d1d5db);
-    background: var(--color-bg-secondary, #f9fafb);
-    color: var(--color-text-primary, #374151);
+    border: 1px solid var(--border-color, #d1d5db);
+    background: var(--hover-color, #f9fafb);
+    color: var(--text-color, #374151);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.15s ease;
+    box-shadow: none;
+  }
+
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   .action-btn:hover {
-    background: var(--color-bg-hover, #f3f4f6);
+    background: var(--border-color, #e5e7eb);
+    transform: none;
+    box-shadow: none;
   }
 
   .action-btn.accept {
-    background: #10b981;
+    background: var(--success-color, #10b981);
     color: white;
-    border-color: #10b981;
+    border-color: var(--success-color, #10b981);
   }
 
   .action-btn.accept:hover {
-    background: #059669;
+    opacity: 0.9;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .action-btn.skip {
+    background: var(--card-background, #fff);
+    color: var(--text-secondary, #6b7280);
+    border-color: var(--border-color, #d1d5db);
+  }
+
+  .action-btn.skip:hover {
+    background: var(--hover-color, #f3f4f6);
+    color: var(--text-color, #374151);
+    transform: none;
+    box-shadow: none;
   }
 </style>

@@ -195,6 +195,9 @@ class SpeakerProfile(Base):
     )  # Number of speakers contributing to this embedding
     last_embedding_update = Column(DateTime(timezone=True), nullable=True)
 
+    # Avatar image path in MinIO
+    avatar_path = Column(String(512), nullable=True)
+
     # AI-predicted attributes (consensus from linked speakers)
     predicted_gender = Column(String(20), nullable=True)  # "male", "female", "unknown"
     predicted_age_range = Column(
@@ -209,10 +212,12 @@ class SpeakerProfile(Base):
         Integer, ForeignKey("speaker_cluster.id", ondelete="SET NULL"), nullable=True
     )
 
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_speaker_profile_user_name"),)
+
     # Relationships
     user = relationship("User", back_populates="speaker_profiles")
     speaker_instances = relationship(
-        "Speaker", back_populates="profile", cascade="all, delete-orphan"
+        "Speaker", back_populates="profile", cascade="save-update, merge"
     )
     speaker_collections = relationship(
         "SpeakerCollectionMember",
@@ -486,6 +491,8 @@ class SpeakerCluster(Base):
     )
     representative_speaker_id = Column(Integer, nullable=True)
     quality_score = Column(Float, nullable=True)
+    min_similarity = Column(Float, nullable=True)
+    separation_score = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -512,6 +519,7 @@ class SpeakerClusterMember(Base):
     )
     speaker_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
     confidence = Column(Float, default=0.0)
+    margin = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -519,30 +527,6 @@ class SpeakerClusterMember(Base):
     speaker = relationship("Speaker")
 
     __table_args__ = (UniqueConstraint("cluster_id", "speaker_id", name="uq_cluster_speaker"),)
-
-
-class SpeakerAudioClip(Base):
-    """Short audio clip of a speaker for identification."""
-
-    __tablename__ = "speaker_audio_clip"
-
-    id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
-    )
-    speaker_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
-    media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
-    storage_path = Column(String(512), nullable=False)
-    start_time = Column(Float, nullable=False)
-    end_time = Column(Float, nullable=False)
-    duration = Column(Float, nullable=False)
-    is_representative = Column(Boolean, default=False)
-    quality_score = Column(Float, default=0.0)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relationships
-    speaker = relationship("Speaker", backref="audio_clips")
-    media_file = relationship("MediaFile")
 
 
 class SpeakerMatch(Base):

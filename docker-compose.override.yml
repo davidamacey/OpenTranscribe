@@ -29,6 +29,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - ./VERSION:/app/VERSION:ro  # Version file (re-mounted since ./backend:/app shadows base)
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
@@ -41,6 +42,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - ./VERSION:/app/VERSION:ro  # Version file (re-mounted since ./backend:/app shadows base)
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
 
@@ -51,6 +53,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - ./VERSION:/app/VERSION:ro  # Version file (re-mounted since ./backend:/app shadows base)
 
   celery-nlp-worker:
     image: opentranscribe-backend:latest
@@ -59,6 +62,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - ./VERSION:/app/VERSION:ro  # Version file (re-mounted since ./backend:/app shadows base)
 
   celery-embedding-worker:
     image: opentranscribe-backend:latest
@@ -67,6 +71,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - ./VERSION:/app/VERSION:ro  # Version file (re-mounted since ./backend:/app shadows base)
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 
   celery-beat:
@@ -76,6 +81,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - ./VERSION:/app/VERSION:ro  # Version file (re-mounted since ./backend:/app shadows base)
 
   frontend:
     image: opentranscribe-frontend:latest
@@ -114,6 +120,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - ./VERSION:/app/VERSION:ro  # Version file (re-mounted since ./backend:/app shadows base)
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data

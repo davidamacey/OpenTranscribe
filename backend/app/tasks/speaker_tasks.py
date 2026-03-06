@@ -783,7 +783,7 @@ def extract_speaker_embeddings_task(
         db.close()
 
 
-@celery_app.task(bind=True, name="update_speaker_embedding_on_reassignment")
+@celery_app.task(bind=True, name="update_speaker_embedding_on_reassignment", priority=5)
 def update_speaker_embedding_on_reassignment(
     self,
     segment_uuid: str,

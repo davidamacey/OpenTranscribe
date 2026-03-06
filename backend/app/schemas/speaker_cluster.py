@@ -1,4 +1,4 @@
-"""Pydantic schemas for speaker clustering and audio clips."""
+"""Pydantic schemas for speaker clustering."""
 
 from datetime import datetime
 from typing import Optional
@@ -59,7 +59,6 @@ class SpeakerClusterResponse(SpeakerClusterBase):
     promoted_to_profile_uuid: Optional[UUID] = None
     promoted_to_profile_name: Optional[str] = None
     quality_score: Optional[float] = None
-    representative_clip_uuid: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -71,33 +70,6 @@ class SpeakerClusterDetailResponse(SpeakerClusterResponse):
     """Detailed response schema with members."""
 
     members: list[SpeakerClusterMemberResponse] = []
-    representative_clip: Optional["SpeakerAudioClipResponse"] = None
-
-
-# --- Speaker Audio Clip ---
-
-
-class SpeakerAudioClipBase(BaseModel):
-    """Base schema for audio clips."""
-
-    start_time: float
-    end_time: float
-    duration: float
-    is_representative: bool = False
-    quality_score: float = 0.0
-
-
-class SpeakerAudioClipResponse(SpeakerAudioClipBase):
-    """Response schema for an audio clip."""
-
-    uuid: UUID
-    speaker_uuid: Optional[UUID] = None
-    media_file_uuid: Optional[UUID] = None
-    stream_url: Optional[str] = None
-    created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 
 # --- Speaker Inbox ---
@@ -121,7 +93,6 @@ class SpeakerInboxItem(BaseModel):
     verified: bool = False
     predicted_gender: Optional[str] = None
     predicted_age_range: Optional[str] = None
-    audio_clip_uuid: Optional[UUID] = None
     created_at: Optional[datetime] = None
 
     class Config:
@@ -134,12 +105,12 @@ class SpeakerInboxItem(BaseModel):
 class BatchVerifyRequest(BaseModel):
     """Request schema for batch speaker verification."""
 
-    speaker_uuids: list[UUID]
+    speaker_uuids: list[UUID] = Field(..., min_length=1)
     profile_uuid: Optional[UUID] = None
     display_name: Optional[str] = None
     action: str = Field(
         default="accept",
-        description="Action: 'accept' (apply suggestion), 'assign' (assign to profile), 'name' (set display_name)",
+        description="Action: 'accept' (apply suggestion), 'assign' (assign to profile), 'name' (set display_name), 'skip' (mark as reviewed/skipped)",
     )
 
 
@@ -154,9 +125,11 @@ class BatchVerifyResponse(BaseModel):
 class ReclusterRequest(BaseModel):
     """Request schema for triggering re-clustering."""
 
-    force: bool = False
+    force: bool = Field(
+        default=False, description="Reserved for future use. Currently has no effect."
+    )
     threshold: Optional[float] = Field(
-        None, ge=0.0, le=1.0, description="Clustering threshold (default 0.65)"
+        None, ge=0.0, le=1.0, description="Clustering threshold (default 0.75)"
     )
 
 

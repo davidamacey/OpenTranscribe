@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { SpeakerCluster } from '$lib/types/speakerCluster';
-  import AudioClipPlayer from './AudioClipPlayer.svelte';
-  import { getAudioClipUrl } from '$lib/api/speakerClusters';
+  import { t } from '$stores/locale';
 
   export let cluster: SpeakerCluster;
   export let expanded = false;
+  export let actionInProgress = false;
+  export let loading = false;
 
   const dispatch = createEventDispatcher();
 
@@ -26,8 +27,9 @@
 
   function saveLabel() {
     editingLabel = false;
-    if (labelInput !== cluster.label) {
-      dispatch('update', { uuid: cluster.uuid, label: labelInput });
+    const normalizedLabel = labelInput.trim() || null;
+    if (normalizedLabel !== cluster.label) {
+      dispatch('update', { uuid: cluster.uuid, label: normalizedLabel });
     }
   }
 
@@ -42,17 +44,24 @@
   }
 
   function qualityColor(score: number | null): string {
-    if (score === null) return 'var(--color-text-tertiary, #9ca3af)';
-    if (score >= 0.8) return '#10b981';
-    if (score >= 0.6) return '#f59e0b';
-    return '#ef4444';
+    if (score === null) return 'var(--text-secondary)';
+    if (score >= 0.8) return 'var(--success-color, #10b981)';
+    if (score >= 0.6) return 'var(--warning-color, #f59e0b)';
+    return 'var(--error-color, #ef4444)';
   }
 </script>
 
 <div class="cluster-card" class:expanded>
-  <div class="card-header" on:click={toggleExpand} on:keydown={toggleExpand} role="button" tabindex="0">
+  <div class="card-header" on:click={toggleExpand} on:keydown={toggleExpand} role="button" tabindex="0" title={$t('speakers.tooltip.expandCluster')}>
     <div class="header-left">
       <span class="expand-icon">{expanded ? '▾' : '▸'}</span>
+      {#if cluster.promoted_to_profile_avatar_url}
+        <img
+          class="cluster-avatar"
+          src={cluster.promoted_to_profile_avatar_url}
+          alt=""
+        />
+      {/if}
       {#if editingLabel}
         <!-- svelte-ignore a11y-autofocus -->
         <input
@@ -62,47 +71,62 @@
           on:keydown={handleKeydown}
           on:click|stopPropagation
           autofocus
-          placeholder="Enter label..."
+          maxlength="200"
+          placeholder={$t('speakers.cluster.editLabel')}
         />
       {:else}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <span class="cluster-label" on:dblclick|stopPropagation={startEdit}>
-          {cluster.label || 'Unlabeled Cluster'}
+        <span class="cluster-label" on:dblclick|stopPropagation={startEdit} title={$t('speakers.tooltip.editLabel')}>
+          {cluster.label || cluster.promoted_to_profile_name || $t('speakers.cluster.unlabeled')}
         </span>
       {/if}
     </div>
     <div class="header-right">
-      {#if cluster.quality_score !== null}
-        <span class="quality-badge" style="color: {qualityColor(cluster.quality_score)}">
-          Q: {(cluster.quality_score * 100).toFixed(0)}%
+      {#if cluster.quality_score != null && !isNaN(cluster.quality_score)}
+        <span class="quality-badge" style="color: {qualityColor(cluster.quality_score)}" title={$t('speakers.tooltip.qualityScore')}>
+          {$t('speakers.cluster.matchPercent', { score: (cluster.quality_score * 100).toFixed(0) })}
         </span>
       {/if}
-      <span class="member-count">{cluster.member_count} speakers</span>
+      <span class="member-count" title={$t('speakers.tooltip.memberCount')}>{$t('speakers.cluster.memberCount', { count: cluster.member_count })}</span>
       {#if cluster.promoted_to_profile_name}
-        <span class="promoted-badge">Profile: {cluster.promoted_to_profile_name}</span>
+        <span class="promoted-badge">{$t('speakers.cluster.profile', { name: cluster.promoted_to_profile_name })}</span>
       {/if}
     </div>
   </div>
 
   {#if expanded}
     <div class="card-body">
-      <slot name="members" />
+      {#if loading}
+        <div class="skeleton-members">
+          {#each Array(Math.min(cluster.member_count, 3)) as _}
+            <div class="skeleton-row">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-text">
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line short"></div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <slot name="members" />
+      {/if}
       <div class="card-actions">
         {#if !cluster.promoted_to_profile_id}
-          <button class="action-btn promote" on:click={() => dispatch('promote', { uuid: cluster.uuid })}>
-            Promote to Profile
+          <button class="action-btn promote" disabled={actionInProgress} on:click={() => dispatch('promote', { uuid: cluster.uuid })} title={$t('speakers.tooltip.promoteToProfile')}>
+            {$t('speakers.promote.title')}
           </button>
         {/if}
-        <button class="action-btn merge" on:click={() => dispatch('merge', { uuid: cluster.uuid })}>
-          Merge
+        <button class="action-btn merge" disabled={actionInProgress} on:click={() => dispatch('merge', { uuid: cluster.uuid })} title={$t('speakers.tooltip.mergeClusters')}>
+          {$t('speakers.cluster.merge')}
         </button>
         {#if cluster.member_count > 1}
-          <button class="action-btn split" on:click={() => dispatch('split', { uuid: cluster.uuid })}>
-            Split
+          <button class="action-btn split" disabled={actionInProgress} on:click={() => dispatch('split', { uuid: cluster.uuid })} title={$t('speakers.tooltip.splitCluster')}>
+            {$t('speakers.cluster.split')}
           </button>
         {/if}
-        <button class="action-btn delete" on:click={() => dispatch('delete', { uuid: cluster.uuid })}>
-          Delete
+        <button class="action-btn delete" disabled={actionInProgress} on:click={() => dispatch('delete', { uuid: cluster.uuid })} title={$t('speakers.tooltip.deleteCluster')}>
+          {$t('speakers.cluster.deleteBtn')}
         </button>
       </div>
     </div>
@@ -111,9 +135,9 @@
 
 <style>
   .cluster-card {
-    border: 1px solid var(--color-border, #e5e7eb);
+    border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 8px;
-    background: var(--color-bg-primary, #ffffff);
+    background: var(--card-background, #ffffff);
     overflow: hidden;
     transition: box-shadow 0.15s ease;
   }
@@ -132,7 +156,7 @@
   }
 
   .card-header:hover {
-    background: var(--color-bg-hover, #f9fafb);
+    background: var(--hover-color, #f9fafb);
   }
 
   .header-left {
@@ -144,14 +168,14 @@
   }
 
   .expand-icon {
-    color: var(--color-text-tertiary, #9ca3af);
+    color: var(--text-secondary, #9ca3af);
     font-size: 12px;
     width: 16px;
   }
 
   .cluster-label {
     font-weight: 500;
-    color: var(--color-text-primary, #111827);
+    color: var(--text-color, #111827);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -159,12 +183,12 @@
 
   .label-input {
     font-weight: 500;
-    border: 1px solid var(--color-primary, #3b82f6);
+    border: 1px solid var(--primary-color, #3b82f6);
     border-radius: 4px;
     padding: 2px 6px;
     font-size: inherit;
-    background: var(--color-bg-primary, #ffffff);
-    color: var(--color-text-primary, #111827);
+    background: var(--card-background, #ffffff);
+    color: var(--text-color, #111827);
     outline: none;
   }
 
@@ -176,13 +200,18 @@
   }
 
   .quality-badge {
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: currentColor;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    white-space: nowrap;
   }
 
   .member-count {
     font-size: 13px;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--text-secondary, #6b7280);
     white-space: nowrap;
   }
 
@@ -190,13 +219,13 @@
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 10px;
-    background: var(--color-success-bg, #d1fae5);
-    color: var(--color-success, #059669);
+    background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
+    color: var(--success-color, #059669);
     white-space: nowrap;
   }
 
   .card-body {
-    border-top: 1px solid var(--color-border, #e5e7eb);
+    border-top: 1px solid var(--border-color, #e5e7eb);
     padding: 12px 16px;
   }
 
@@ -205,28 +234,34 @@
     gap: 8px;
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px solid var(--color-border, #e5e7eb);
+    border-top: 1px solid var(--border-color, #e5e7eb);
   }
 
   .action-btn {
     padding: 4px 12px;
     border-radius: 6px;
-    border: 1px solid var(--color-border, #d1d5db);
-    background: var(--color-bg-secondary, #f9fafb);
-    color: var(--color-text-primary, #374151);
+    border: 1px solid var(--border-color, #d1d5db);
+    background: var(--hover-color, #f9fafb);
+    color: var(--text-color, #374151);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
 
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
   .action-btn:hover {
-    background: var(--color-bg-hover, #f3f4f6);
+    background: var(--border-color, #e5e7eb);
   }
 
   .action-btn.promote {
-    background: var(--color-primary, #3b82f6);
+    background: var(--primary-color, #3b82f6);
     color: white;
-    border-color: var(--color-primary, #3b82f6);
+    border-color: var(--primary-color, #3b82f6);
   }
 
   .action-btn.promote:hover {
@@ -234,12 +269,64 @@
   }
 
   .action-btn.delete {
-    color: var(--color-danger, #ef4444);
-    border-color: var(--color-danger, #ef4444);
+    color: var(--error-color, #ef4444);
+    border-color: var(--error-color, #ef4444);
   }
 
   .action-btn.delete:hover {
-    background: var(--color-danger, #ef4444);
+    background: var(--error-color, #ef4444);
     color: white;
+  }
+
+  .skeleton-members {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+  }
+
+  .skeleton-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--border-color, #e5e7eb);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .skeleton-line {
+    height: 12px;
+    border-radius: 4px;
+    background: var(--border-color, #e5e7eb);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-line.short {
+    width: 60%;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
+
+  .cluster-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
   }
 </style>

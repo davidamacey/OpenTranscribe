@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
-  import { mergeSpeakers } from '$lib/api/speakers';
+  import { mergeSpeakers } from '$lib/api/speakerClusters';
   import { toastStore } from '$stores/toast';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker } from '$lib/types/speaker';

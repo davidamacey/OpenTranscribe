@@ -778,7 +778,7 @@ def _extract_speaker_embedding_from_prepared(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(bind=True, name="extract_v4_embeddings_batch", queue="gpu")
+@celery_app.task(bind=True, name="extract_v4_embeddings_batch", queue="gpu", priority=5)
 def extract_v4_embeddings_batch_task(
     self,
     file_uuids: list[str],
@@ -892,7 +892,7 @@ def extract_v4_embeddings_batch_task(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(bind=True, name="extract_v4_embeddings", queue="gpu")
+@celery_app.task(bind=True, name="extract_v4_embeddings", queue="gpu", priority=5)
 def extract_v4_embeddings_task(
     self,
     file_uuid: str,

@@ -9,6 +9,7 @@ from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
@@ -16,6 +17,7 @@ from app.core.config import settings
 from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
+from app.db.base import get_db
 from app.models.user import User
 from app.schemas.search import SetEmbeddingModelSchema
 
@@ -514,6 +516,140 @@ def reindex_status(
         "current_model": get_search_embedding_model(),
         "current_dimension": get_search_embedding_dimension(),
         "last_indexed_at": last_indexed_at,
+    }
+
+
+# =============================================================================
+# Index Health & Repair Endpoints
+# =============================================================================
+
+
+@router.get("/index-health")
+def get_index_health(
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """Return health status of each OpenSearch index.
+
+    Tests each index with a simple match_all query (size=0) and
+    returns per-index status with doc counts.
+
+    Returns:
+        Dict with per-index health: {index_name: {status, doc_count, error}}.
+    """
+    from app.services.opensearch_service import opensearch_client
+
+    indices = [
+        settings.OPENSEARCH_SPEAKER_INDEX,
+        settings.OPENSEARCH_TRANSCRIPT_INDEX,
+        f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4",
+        settings.OPENSEARCH_CHUNKS_INDEX,
+    ]
+
+    health: dict[str, Any] = {}
+
+    if not opensearch_client:
+        for idx in indices:
+            health[idx] = {
+                "status": "red",
+                "doc_count": 0,
+                "error": "OpenSearch client not initialized",
+            }
+        return health
+
+    for idx in indices:
+        try:
+            if not opensearch_client.indices.exists(index=idx):
+                health[idx] = {
+                    "status": "red",
+                    "doc_count": 0,
+                    "error": "Index does not exist",
+                }
+                continue
+
+            response = opensearch_client.search(
+                index=idx,
+                body={"query": {"match_all": {}}, "size": 0},
+            )
+            doc_count = response.get("hits", {}).get("total", {}).get("value", 0)
+            health[idx] = {
+                "status": "green",
+                "doc_count": doc_count,
+                "error": None,
+            }
+        except Exception as e:
+            health[idx] = {
+                "status": "red",
+                "doc_count": 0,
+                "error": str(e)[:200],
+            }
+
+    return health
+
+
+@router.post("/repair-indices")
+def repair_indices(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Repair corrupted OpenSearch indices.
+
+    For the speakers index (kNN), rebuilds from PostgreSQL data.
+    For other indices, attempts close/reopen and force merge strategies.
+
+    Returns:
+        Dict with per-index repair results.
+    """
+    from app.services.opensearch_service import _repair_index
+    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import rebuild_speaker_index
+
+    if not opensearch_client:
+        raise HTTPException(status_code=503, detail="OpenSearch client not available")
+
+    indices = [
+        settings.OPENSEARCH_SPEAKER_INDEX,
+        settings.OPENSEARCH_TRANSCRIPT_INDEX,
+        f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4",
+        settings.OPENSEARCH_CHUNKS_INDEX,
+    ]
+
+    results: dict[str, str] = {}
+    speakers_indexed = 0
+
+    for idx in indices:
+        try:
+            if not opensearch_client.indices.exists(index=idx):
+                results[idx] = "missing"
+                continue
+            # Test if index is healthy
+            opensearch_client.search(index=idx, body={"query": {"match_all": {}}, "size": 0})
+            results[idx] = "healthy"
+        except Exception:
+            # Index is unhealthy, attempt repair
+            if idx == settings.OPENSEARCH_SPEAKER_INDEX:
+                try:
+                    rebuild_result = rebuild_speaker_index(db)
+                    if rebuild_result.get("status") == "rebuilt":
+                        results[idx] = "rebuilt"
+                        speakers_indexed = rebuild_result.get("speakers_indexed", 0)
+                    else:
+                        results[idx] = "failed"
+                except Exception as e:
+                    logger.error(f"Failed to rebuild speakers index: {e}")
+                    results[idx] = "failed"
+            else:
+                repaired = _repair_index(idx)
+                results[idx] = "repaired" if repaired else "failed"
+
+    any_failed = any(v == "failed" for v in results.values())
+
+    return {
+        "status": "partial_failure" if any_failed else "success",
+        "indices": results,
+        "speakers_indexed": speakers_indexed,
+        "message": (
+            "Some indices could not be repaired." if any_failed else "Index repair complete."
+        ),
     }
 
 

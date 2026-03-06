@@ -4,8 +4,10 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import File
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import UploadFile
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -17,7 +19,6 @@ from app.models.media import SpeakerCollection
 from app.models.media import SpeakerCollectionMember
 from app.models.media import SpeakerProfile
 from app.models.user import User
-from app.services.opensearch_service import find_speaker_across_media
 from app.services.opensearch_service import update_speaker_collections
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import ConfidenceLevel
@@ -57,13 +58,40 @@ def list_speaker_profiles(
 
         profiles = query.all()
 
+        from sqlalchemy import func as sa_func
+
         result = []
         for profile in profiles:
-            # Count speaker instances
+            # Count unique media files where this profile's speakers appear
+            media_count = (
+                db.query(sa_func.count(sa_func.distinct(Speaker.media_file_id)))
+                .filter(Speaker.profile_id == profile.id)
+                .scalar()
+            ) or 0
+
+            # Count speaker instances (one per media file where profile appears)
             instance_count = db.query(Speaker).filter(Speaker.profile_id == profile.id).count()
 
-            # Get media files where this speaker appears
-            media_files = find_speaker_across_media(str(profile.uuid), int(current_user.id))
+            # Get the most common predicted_gender from profile speakers
+            gender_row = (
+                db.query(Speaker.predicted_gender, sa_func.count().label("cnt"))
+                .filter(
+                    Speaker.profile_id == profile.id,
+                    Speaker.predicted_gender.isnot(None),
+                )
+                .group_by(Speaker.predicted_gender)
+                .order_by(sa_func.count().desc())
+                .first()
+            )
+
+            avatar_url = None
+            if profile.avatar_path:
+                try:
+                    from app.services.minio_service import get_file_url
+
+                    avatar_url = get_file_url(profile.avatar_path, expires=3600)
+                except Exception:
+                    logger.warning(f"Failed to get avatar URL for profile {profile.uuid}")
 
             result.append(
                 {
@@ -73,8 +101,9 @@ def list_speaker_profiles(
                     "created_at": profile.created_at.isoformat(),
                     "updated_at": profile.updated_at.isoformat(),
                     "instance_count": instance_count,
-                    "media_count": len(media_files),
-                    "media_files": media_files[:5],  # Show first 5 media files
+                    "media_count": media_count,
+                    "predicted_gender": gender_row[0] if gender_row else None,
+                    "avatar_url": avatar_url,
                 }
             )
 
@@ -455,6 +484,15 @@ def delete_speaker_profile(
             speaker.profile_id = None  # type: ignore[assignment]
             speaker.verified = False  # type: ignore[assignment]
 
+        # Delete avatar from MinIO if exists
+        if profile.avatar_path:
+            try:
+                from app.services.minio_service import delete_file
+
+                delete_file(profile.avatar_path)
+            except Exception:
+                logger.warning(f"Failed to delete avatar for profile {profile.uuid}")
+
         # Delete the profile
         db.delete(profile)
         db.commit()
@@ -465,6 +503,111 @@ def delete_speaker_profile(
         raise
     except Exception as e:
         logger.error(f"Error deleting speaker profile: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2MB
+
+
+@router.post("/profiles/{profile_uuid}/avatar", response_model=dict[str, Any])
+async def upload_profile_avatar(
+    profile_uuid: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Upload an avatar image for a speaker profile."""
+    try:
+        profile = get_speaker_profile_by_uuid(db, profile_uuid)
+        if profile.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+
+        # Validate content type
+        if file.content_type not in ALLOWED_AVATAR_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_AVATAR_TYPES)}",
+            )
+
+        # Read and validate size
+        content = await file.read()
+        if len(content) > MAX_AVATAR_SIZE:
+            raise HTTPException(status_code=400, detail="File too large. Maximum size is 2MB.")
+
+        # Determine extension from content type
+        ext_map = {
+            "image/jpeg": "jpg",
+            "image/png": "png",
+            "image/gif": "gif",
+            "image/webp": "webp",
+        }
+        ext = ext_map.get(file.content_type, "jpg")
+
+        # Delete old avatar if exists
+        if profile.avatar_path:
+            try:
+                from app.services.minio_service import delete_file
+
+                delete_file(profile.avatar_path)
+            except Exception:
+                logger.warning(f"Failed to delete old avatar for profile {profile.uuid}")
+
+        # Upload to MinIO
+        import io
+
+        from app.services.minio_service import get_file_url
+        from app.services.minio_service import upload_file
+
+        object_name = f"avatars/{current_user.id}/{profile.uuid}.{ext}"
+        upload_file(io.BytesIO(content), len(content), object_name, file.content_type)
+
+        # Update profile
+        profile.avatar_path = object_name  # type: ignore[assignment]
+        db.commit()
+        db.refresh(profile)
+
+        avatar_url = get_file_url(object_name, expires=3600)
+        return {"uuid": str(profile.uuid), "avatar_url": avatar_url}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading avatar: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.delete("/profiles/{profile_uuid}/avatar", status_code=status.HTTP_204_NO_CONTENT)
+def delete_profile_avatar(
+    profile_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Remove a speaker profile's avatar."""
+    try:
+        profile = get_speaker_profile_by_uuid(db, profile_uuid)
+        if profile.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+
+        if profile.avatar_path:
+            try:
+                from app.services.minio_service import delete_file
+
+                delete_file(profile.avatar_path)
+            except Exception:
+                logger.warning(f"Failed to delete avatar file for profile {profile.uuid}")
+
+            profile.avatar_path = None  # type: ignore[assignment]
+            db.commit()
+
+        return None
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting avatar: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
