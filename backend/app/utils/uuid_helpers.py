@@ -11,6 +11,7 @@ Performance Notes:
 - UUIDs only exposed in API layer (Pydantic schemas)
 """
 
+from typing import Any
 from typing import TypeVar
 from uuid import UUID
 
@@ -193,6 +194,17 @@ def get_prompt_by_uuid(db: Session, uuid: UUID | str) -> SummaryPrompt:
 def get_llm_config_by_uuid(db: Session, uuid: UUID | str) -> UserLLMSettings:
     """Get LLM configuration by UUID"""
     return get_by_uuid(db, UserLLMSettings, uuid, error_message="LLM configuration not found")
+
+
+def get_asr_config_by_uuid(db: Session, uuid: "UUID | str") -> "Any":
+    """Get ASR configuration by UUID.
+
+    Uses a lazy import so the function is available even before the
+    UserASRSettings model has been created by the companion agent.
+    """
+    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+
+    return get_by_uuid(db, UserASRSettings, uuid, error_message="ASR configuration not found")
 
 
 # Permission checking helpers

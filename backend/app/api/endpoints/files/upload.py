@@ -139,9 +139,15 @@ def start_transcription_task(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    user_id: int | None = None,
+    db=None,
 ) -> None:
     """
     Start the background transcription and waveform generation tasks in parallel.
+
+    Routes the transcription task to the appropriate queue based on the user's active
+    ASR provider configuration: cloud providers use the 'cloud-asr' queue while the
+    local GPU provider uses the 'gpu' queue.
 
     Args:
         file_id: Database ID of the media file
@@ -149,6 +155,8 @@ def start_transcription_task(
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
+        user_id: Optional user ID used to resolve the active ASR provider
+        db: Optional database session used to resolve the active ASR provider
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         # Check if migration lock is active — tasks will self-retry via the gate
@@ -160,17 +168,40 @@ def start_transcription_task(
                 "processed automatically after migration completes"
             )
 
-        # Launch GPU transcription task with speaker parameters
-        transcribe_audio_task.delay(
-            file_uuid,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers,
-            num_speakers=num_speakers,
+        # Determine which queue to use based on the user's active ASR config
+        task_queue = "gpu"
+        if user_id is not None and db is not None:
+            try:
+                from app.services.asr.factory import ASRProviderFactory
+
+                provider = ASRProviderFactory.create_for_user(user_id, db)
+                if provider.provider_name != "local":
+                    task_queue = "cloud-asr"
+                    logger.info(
+                        f"Routing transcription for file {file_id} to 'cloud-asr' queue "
+                        f"(provider: {provider.provider_name})"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to resolve ASR provider for user {user_id}, "
+                    f"defaulting to 'gpu' queue: {e}"
+                )
+
+        # Launch transcription task on the resolved queue with speaker parameters
+        transcribe_audio_task.apply_async(
+            args=[file_uuid],
+            kwargs={
+                "min_speakers": min_speakers,
+                "max_speakers": max_speakers,
+                "num_speakers": num_speakers,
+            },
+            queue=task_queue,
         )
         # Launch CPU waveform generation task in parallel
         generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
         logger.info(
-            f"Started parallel tasks for file {file_id}: transcription (GPU) and waveform (CPU)"
+            f"Started parallel tasks for file {file_id}: "
+            f"transcription ({task_queue}) and waveform (CPU)"
         )
     else:
         logger.info("Skipping Celery task in test environment")
@@ -411,7 +442,13 @@ async def process_file_upload(
 
         # Start background transcription and waveform generation in parallel
         start_transcription_task(
-            int(db_file.id), str(db_file.uuid), min_speakers, max_speakers, num_speakers
+            int(db_file.id),
+            str(db_file.uuid),
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            user_id=int(current_user.id),
+            db=db,
         )
 
         logger.info(f"File processed: {file.filename} (ID: {db_file.id})")

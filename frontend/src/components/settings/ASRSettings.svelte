@@ -1,0 +1,667 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import {
+    ASRSettingsApi,
+    type UserASRSettingsResponse,
+    type ASRProviderInfo,
+  } from '../../lib/api/asrSettings';
+  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import ASRConfigModal from './ASRConfigModal.svelte';
+  import { toastStore } from '../../stores/toast';
+  import { t } from '$stores/locale';
+
+  export let onSettingsChange: (() => void) | null = null;
+
+  let loading = false;
+  let saving = false;
+  let testing = false;
+
+  let configurations: UserASRSettingsResponse[] = [];
+  let activeConfigurationId: string | null = null;
+  let providers: ASRProviderInfo[] = [];
+  let usingLocalDefault = true;
+
+  let showConfigModal = false;
+  let editingConfiguration: UserASRSettingsResponse | null = null;
+
+  let showDeleteModal = false;
+  let configToDelete: UserASRSettingsResponse | null = null;
+  let showDeleteAllModal = false;
+
+  let testingConfigId: string | null = null;
+
+  onMount(async () => {
+    await loadData();
+  });
+
+  async function loadData() {
+    loading = true;
+    try {
+      const [providersResp, settingsResp] = await Promise.all([
+        ASRSettingsApi.getProviders(),
+        ASRSettingsApi.getSettings().catch(() => ({ configurations: [], active_configuration_id: undefined, total: 0 })),
+      ]);
+      providers = providersResp.providers;
+      configurations = settingsResp.configurations;
+      activeConfigurationId = settingsResp.active_configuration_id || null;
+      usingLocalDefault = configurations.length === 0 || !activeConfigurationId;
+    } catch (err: any) {
+      console.error('Error loading ASR settings:', err);
+      const detail = (err as any).response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : $t('settings.asrProvider.loadError'), 5000);
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function activateConfiguration(uuid: string) {
+    if (uuid === activeConfigurationId) return;
+    saving = true;
+    try {
+      await ASRSettingsApi.setActive(uuid);
+      activeConfigurationId = uuid;
+      usingLocalDefault = false;
+      toastStore.success($t('settings.asrProvider.setActive') + ' — ' + (configurations.find(c => c.uuid === uuid)?.name || ''));
+      if (onSettingsChange) onSettingsChange();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : 'Failed to activate ASR configuration', 5000);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function testConfiguration(config: UserASRSettingsResponse) {
+    testingConfigId = config.uuid;
+    testing = true;
+    try {
+      const result = await ASRSettingsApi.testSavedConfig(config.uuid);
+      // Refresh to pick up updated test_status
+      await loadData();
+      if (result.success) {
+        toastStore.success(`${config.name}: ${result.message}`, 5000);
+      } else {
+        toastStore.error(`${config.name}: ${result.message}`, 8000);
+      }
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(`${config.name}: ${typeof detail === 'string' ? detail : 'Test failed'}`, 8000);
+    } finally {
+      testing = false;
+      testingConfigId = null;
+    }
+  }
+
+  function openCreateModal() {
+    editingConfiguration = null;
+    showConfigModal = true;
+  }
+
+  function openEditModal(config: UserASRSettingsResponse) {
+    editingConfiguration = config;
+    showConfigModal = true;
+  }
+
+  function confirmDelete(config: UserASRSettingsResponse) {
+    configToDelete = config;
+    showDeleteModal = true;
+  }
+
+  async function deleteConfiguration() {
+    if (!configToDelete) return;
+    saving = true;
+    try {
+      await ASRSettingsApi.deleteConfig(configToDelete.uuid);
+      configurations = configurations.filter(c => c.uuid !== configToDelete!.uuid);
+      if (configToDelete.uuid === activeConfigurationId) {
+        activeConfigurationId = null;
+        usingLocalDefault = true;
+      }
+      toastStore.success(`"${configToDelete.name}" deleted`);
+      configToDelete = null;
+      showDeleteModal = false;
+      if (onSettingsChange) onSettingsChange();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : 'Failed to delete configuration', 5000);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function deleteAllConfigurations() {
+    saving = true;
+    try {
+      await ASRSettingsApi.deleteAll();
+      configurations = [];
+      activeConfigurationId = null;
+      usingLocalDefault = true;
+      showDeleteAllModal = false;
+      toastStore.success($t('settings.asrProvider.deletedAll'));
+      if (onSettingsChange) onSettingsChange();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : 'Failed to delete configurations', 5000);
+    } finally {
+      saving = false;
+    }
+  }
+
+  function handleConfigSaved(event: CustomEvent<UserASRSettingsResponse>) {
+    const saved = event.detail;
+    const idx = configurations.findIndex(c => c.uuid === saved.uuid);
+    if (idx !== -1) {
+      configurations[idx] = saved;
+      configurations = [...configurations];
+    } else {
+      configurations = [...configurations, saved];
+    }
+    // When the backend marks this config as active (e.g. first config auto-activates),
+    // update our local active pointer. If it's not active, leave the current active alone.
+    if (saved.is_active) {
+      activeConfigurationId = saved.uuid;
+      usingLocalDefault = false;
+    } else if (configurations.length === 1) {
+      // Only one config and it is not active — revert to local default
+      activeConfigurationId = null;
+      usingLocalDefault = true;
+    }
+    if (onSettingsChange) onSettingsChange();
+  }
+
+  function getActiveConfig(): UserASRSettingsResponse | null {
+    return configurations.find(c => c.uuid === activeConfigurationId) || null;
+  }
+
+  function getTestStatusIcon(config: UserASRSettingsResponse): string {
+    if (config.test_status === 'success') return '✓';
+    if (config.test_status === 'failed') return '✗';
+    return '';
+  }
+
+  function getTestStatusClass(config: UserASRSettingsResponse): string {
+    if (config.test_status === 'success') return 'test-success';
+    if (config.test_status === 'failed') return 'test-failed';
+    return '';
+  }
+
+  $: if (showConfigModal || showDeleteModal || showDeleteAllModal) {
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = '';
+  }
+</script>
+
+<div class="asr-settings">
+  {#if loading}
+    <div class="loading">{$t('settings.asrProvider.loading')}</div>
+  {:else}
+    <!-- Active provider status bar -->
+    <div class="status-bar" class:local={usingLocalDefault}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+      </svg>
+      {#if usingLocalDefault}
+        {$t('settings.asrProvider.usingLocalDefault')}
+      {:else}
+        {$t('settings.asrProvider.currentProvider')}: <strong>{getActiveConfig()?.name || ''}</strong>
+        ({ASRSettingsApi.getProviderDisplayName(getActiveConfig()?.provider || '')} — {getActiveConfig()?.model_name || ''})
+      {/if}
+    </div>
+
+    <!-- Section header -->
+    <div class="section-header">
+      <h4>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+        </svg>
+        {$t('settings.asrProvider.title')}
+      </h4>
+      {#if configurations.length > 0}
+        <button class="add-button" on:click={openCreateModal} disabled={saving}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          {$t('settings.asrProvider.addConfig')}
+        </button>
+      {/if}
+    </div>
+
+    {#if configurations.length > 0}
+      <div class="config-list">
+        {#each configurations as config (config.uuid)}
+          <div class="config-card" class:active={config.uuid === activeConfigurationId}>
+            <div class="config-info">
+              <div class="config-badges">
+                <span class="badge provider-badge">{ASRSettingsApi.getProviderDisplayName(config.provider)}</span>
+                {#if config.uuid === activeConfigurationId}
+                  <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
+                {/if}
+                {#if config.test_status && config.test_status !== 'untested'}
+                  <span class="badge test-badge {getTestStatusClass(config)}">{getTestStatusIcon(config)} {$t(`settings.asrProvider.status.${config.test_status === 'success' ? 'connected' : 'failed'}`)}</span>
+                {/if}
+              </div>
+              <div class="config-name">{config.name}</div>
+              <div class="config-model">{config.model_name}</div>
+            </div>
+
+            <div class="config-actions">
+              {#if config.uuid !== activeConfigurationId}
+                <button
+                  class="btn-activate"
+                  on:click={() => activateConfiguration(config.uuid)}
+                  disabled={saving}
+                  title={$t('settings.asrProvider.setActive')}
+                >
+                  {$t('settings.asrProvider.setActive')}
+                </button>
+              {/if}
+              <button
+                class="btn-icon btn-test"
+                on:click={() => testConfiguration(config)}
+                disabled={testing}
+                title={$t('settings.asrProvider.testConnection')}
+              >
+                {#if testing && testingConfigId === config.uuid}
+                  <span class="spinner-sm"></span>
+                {:else}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                    <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                  </svg>
+                {/if}
+              </button>
+              <button
+                class="btn-icon btn-edit"
+                on:click={() => openEditModal(config)}
+                disabled={saving}
+                title={$t('settings.asrProvider.editConfig')}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </button>
+              <button
+                class="btn-icon btn-delete"
+                on:click={() => confirmDelete(config)}
+                disabled={saving}
+                title={$t('settings.asrProvider.deleteConfirmTitle')}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3,6 5,6 21,6"/>
+                  <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      <div class="delete-all-section">
+        <button class="btn-delete-all" on:click={() => showDeleteAllModal = true} disabled={saving}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3,6 5,6 21,6"/>
+            <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+          </svg>
+          {$t('settings.asrProvider.deleteAll')}
+        </button>
+      </div>
+    {:else}
+      <div class="empty-state">
+        <div class="empty-icon">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <h4>{$t('settings.asrProvider.emptyTitle')}</h4>
+        <p>{$t('settings.asrProvider.emptyDescription')}</p>
+        <button class="btn-add-first" on:click={openCreateModal}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          {$t('settings.asrProvider.addConfig')}
+        </button>
+      </div>
+    {/if}
+  {/if}
+</div>
+
+<ASRConfigModal
+  bind:show={showConfigModal}
+  editingConfig={editingConfiguration}
+  {providers}
+  on:saved={handleConfigSaved}
+  on:close={() => { showConfigModal = false; editingConfiguration = null; }}
+/>
+
+<ConfirmationModal
+  bind:isOpen={showDeleteModal}
+  title={$t('settings.asrProvider.deleteConfirmTitle')}
+  message={configToDelete ? $t('settings.asrProvider.deleteConfirmMessage', { name: configToDelete.name }) : ''}
+  confirmText="Delete"
+  cancelText={$t('common.cancel')}
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={deleteConfiguration}
+  on:cancel={() => { configToDelete = null; showDeleteModal = false; }}
+  on:close={() => { configToDelete = null; showDeleteModal = false; }}
+/>
+
+<ConfirmationModal
+  bind:isOpen={showDeleteAllModal}
+  title={$t('settings.asrProvider.deleteAllConfirmTitle')}
+  message={$t('settings.asrProvider.deleteAllConfirmMessage')}
+  confirmText={$t('settings.asrProvider.deleteAll')}
+  cancelText={$t('common.cancel')}
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={deleteAllConfigurations}
+  on:cancel={() => showDeleteAllModal = false}
+  on:close={() => showDeleteAllModal = false}
+/>
+
+<style>
+  .asr-settings {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1.25rem;
+    font-size: 0.8125rem;
+    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+    color: var(--primary-color, #3b82f6);
+    border: 1px solid var(--primary-border, rgba(59, 130, 246, 0.2));
+  }
+
+  .status-bar.local {
+    background: var(--card-bg);
+    color: var(--text-muted);
+    border-color: var(--border-color);
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .section-header h4 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .add-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: background 0.2s;
+  }
+
+  .add-button:hover:not(:disabled) {
+    background: #2563eb;
+  }
+
+  .config-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .config-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    transition: all 0.15s ease;
+    gap: 1rem;
+  }
+
+  .config-card.active {
+    border-color: var(--primary-color, #3b82f6);
+    background: var(--primary-bg, rgba(59, 130, 246, 0.05));
+  }
+
+  .config-card:hover:not(.active) {
+    border-color: var(--border-hover, #6b7280);
+  }
+
+  .config-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .config-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-bottom: 0.375rem;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+
+  .provider-badge {
+    background: rgba(99, 102, 241, 0.12);
+    color: #6366f1;
+  }
+
+  .active-badge {
+    background: var(--success-bg, rgba(16, 185, 129, 0.1));
+    color: var(--success-color, #10b981);
+    border: 1px solid var(--success-border, rgba(16, 185, 129, 0.2));
+  }
+
+  .test-badge { font-size: 0.7rem; }
+  .test-badge.test-success { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+  .test-badge.test-failed { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+  .config-name {
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: var(--text-color);
+  }
+
+  .config-model {
+    font-size: 0.775rem;
+    color: var(--text-muted);
+    margin-top: 0.1rem;
+  }
+
+  .config-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .btn-activate {
+    padding: 0.375rem 0.75rem;
+    border-radius: 5px;
+    font-size: 0.775rem;
+    font-weight: 500;
+    cursor: pointer;
+    background: var(--success-color, #10b981);
+    color: white;
+    border: none;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-activate:hover:not(:disabled) { background: #059669; }
+
+  .btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid;
+  }
+
+  .btn-test {
+    background: transparent;
+    border-color: #3b82f6;
+    color: #3b82f6;
+  }
+
+  .btn-test:hover:not(:disabled) {
+    background: #3b82f6;
+    color: white;
+  }
+
+  .btn-edit {
+    background: transparent;
+    border-color: var(--border-color);
+    color: var(--text-color);
+  }
+
+  .btn-edit:hover:not(:disabled) {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+
+  .btn-delete {
+    background: transparent;
+    border-color: var(--error-color, #ef4444);
+    color: var(--error-color, #ef4444);
+  }
+
+  .btn-delete:hover:not(:disabled) {
+    background: var(--error-color, #ef4444);
+    color: white;
+  }
+
+  .delete-all-section {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+  }
+
+  .btn-delete-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: background 0.2s;
+  }
+
+  .btn-delete-all:hover:not(:disabled) { background: #dc2626; }
+
+  .empty-state {
+    text-align: center;
+    padding: 2.5rem 2rem;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+  }
+
+  .empty-icon {
+    margin-bottom: 0.875rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  .empty-state h4 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .empty-state p {
+    margin: 0 0 1.25rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .btn-add-first {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.5rem 1.1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: background 0.2s;
+  }
+
+  .btn-add-first:hover { background: #2563eb; }
+
+  .spinner-sm {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+</style>

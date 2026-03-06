@@ -1,0 +1,101 @@
+# =============================================================================
+# OpenTranscribe Backend - Lite Dockerfile (API-only, no GPU required)
+# Multi-stage build for cloud-only ASR deployments (~2 GB vs 8.9 GB full image)
+# No faster-whisper, no ctranslate2, no CUDA — uses cloud ASR providers instead
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build Stage - Install Python dependencies with compilation
+# -----------------------------------------------------------------------------
+FROM python:3.13-slim-trixie AS builder
+
+WORKDIR /build
+
+# Install build dependencies (only in this stage)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only requirements first for better layer caching
+COPY requirements-lite.txt .
+
+# Upgrade pip to latest version first (security fix for CVE-2025-8869)
+RUN pip install --user --no-cache-dir --upgrade pip
+
+# Install Python dependencies (CPU-only, no CUDA packages)
+# Use --user to install to /root/.local which we'll copy to final stage
+RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements-lite.txt
+
+# -----------------------------------------------------------------------------
+# Stage 2: Runtime Stage - Minimal production image with non-root user
+# -----------------------------------------------------------------------------
+FROM python:3.13-slim-trixie
+
+# OCI annotations for container metadata and compliance
+LABEL org.opencontainers.image.title="OpenTranscribe Backend Lite" \
+      org.opencontainers.image.description="Cloud-only ASR backend (no GPU required) with multi-provider support" \
+      org.opencontainers.image.vendor="OpenTranscribe" \
+      org.opencontainers.image.authors="OpenTranscribe Contributors" \
+      org.opencontainers.image.licenses="AGPL-3.0" \
+      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
+      org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
+
+# Install only runtime dependencies (no build tools, no CUDA libraries)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    libimage-exiftool-perl \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user for security
+# No video group needed (no GPU access required in lite mode)
+RUN groupadd -r appuser && \
+    useradd -r -g appuser -u 1000 -m -s /bin/bash appuser && \
+    mkdir -p /app /app/models /app/temp && \
+    chown -R appuser:appuser /app && \
+    mkdir -p /home/appuser/.cache/huggingface \
+             /home/appuser/.cache/torch \
+             /home/appuser/.cache/nltk_data \
+             /home/appuser/.cache/sentence-transformers \
+             /home/appuser/.cache/yt-dlp && \
+    chown -R appuser:appuser /home/appuser/.cache
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python packages from builder stage
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# Ensure scripts in .local are usable by adding to PATH
+# No LD_LIBRARY_PATH needed (no CUDA/cuDNN in lite mode)
+# Set cache directories to user home
+ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HOME=/home/appuser/.cache/huggingface \
+    TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface/transformers \
+    TORCH_HOME=/home/appuser/.cache/torch \
+    NLTK_DATA=/home/appuser/.cache/nltk_data \
+    SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/sentence-transformers \
+    DEPLOYMENT_MODE=lite
+
+# Copy application code
+COPY --chown=appuser:appuser . .
+
+# Switch to non-root user
+USER appuser
+
+# Expose application port
+EXPOSE 8080
+
+# Health check to verify the application is responding
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Command to run the application in production (no reload)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

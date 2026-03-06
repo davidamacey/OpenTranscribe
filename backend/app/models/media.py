@@ -124,6 +124,11 @@ class MediaFile(Base):
     diarization_model = Column(String, nullable=True)  # e.g., "pyannote/speaker-diarization-3.1"
     embedding_mode = Column(String, nullable=True)  # "v3" (512d) or "v4" (256d)
 
+    # ASR provider tracking
+    asr_provider = Column(String, nullable=True)  # Provider used (local/deepgram/etc.)
+    asr_model = Column(String, nullable=True)  # Model used for transcription
+    diarization_provider = Column(String, nullable=True)  # Provider used for diarization
+
     # Upload batch tracking
     upload_batch_id = Column(
         Integer, ForeignKey("upload_batch.id", ondelete="SET NULL"), nullable=True, index=True
@@ -176,6 +181,7 @@ class TranscriptSegment(Base):
     words = Column(
         JSONB, nullable=True
     )  # Word-level timestamps: [{"word": "...", "start": 0.1, "end": 0.25, "score": 0.95}]
+    confidence = Column(Float, nullable=True)  # ASR confidence score (0.0–1.0)
 
     # Relationships
     media_file = relationship("MediaFile", back_populates="transcript_segments")

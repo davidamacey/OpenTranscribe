@@ -1273,6 +1273,8 @@
   "metadata.transcriptStatus": "Статус транскрипции",
   "metadata.aiSummaryStatus": "Статус ИИ-сводки",
   "metadata.language": "Язык",
+  "metadata.asrEngine": "Движок транскрипции",
+  "metadata.asrModel": "Модель транскрипции",
   "metadata.createdDate": "Дата создания",
   "metadata.resolution": "Разрешение",
   "metadata.frameRate": "Частота кадров",
@@ -2522,5 +2524,14 @@
   "groups.descriptionHint": "Необязательно — кратко опишите цель группы",
   "groups.searchPlaceholder": "Поиск групп...",
   "groups.clearSearch": "Очистить поиск",
-  "groups.noSearchResults": "Нет групп, соответствующих поиску"
+  "groups.noSearchResults": "Нет групп, соответствующих поиску",
+  "transcript.segmentLowConfidence": "Низкая достоверность",
+  "settings.asrProvider.loadError": "Не удалось загрузить настройки ASR",
+  "settings.asrProvider.deleteConfirmTitle": "Удалить конфигурацию ASR",
+  "settings.asrProvider.deleteConfirmMessage": "Удалить конфигурацию ASR «{{name}}»? Это действие нельзя отменить.",
+  "settings.asrProvider.providerLockedOnEdit": "Провайдер не может быть изменён после создания. Создайте новую конфигурацию для смены провайдера.",
+  "settings.customVocabulary.removeTerm": "Удалить термин",
+  "settings.customVocabulary.enable": "Включить",
+  "settings.customVocabulary.disable": "Отключить",
+  "settings.customVocabulary.hideBulkImport": "Скрыть"
 }

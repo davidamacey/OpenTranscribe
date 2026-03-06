@@ -1,0 +1,93 @@
+# API-Lite deployment overlay — cloud-only ASR, no GPU required
+# Usage: docker compose -f docker-compose.yml -f docker-compose.lite.yml up -d
+#
+# Disables: GPU workers (no faster-whisper, no PyTorch+CUDA)
+# Adds: cloud-asr worker (CPU-only, concurrency=4)
+# All backend services use the lite Docker image (~2 GB vs 8.9 GB)
+
+services:
+  # Disable GPU workers
+  celery-worker:
+    deploy:
+      replicas: 0
+
+  celery-worker-gpu-scaled:
+    # Disable GPU-scaled worker in lite mode — cloud ASR replaces GPU workers.
+    # profiles: cannot be unset via overlay; use deploy.replicas: 0 instead.
+    deploy:
+      replicas: 0
+
+  # Cloud ASR worker — handles the 'cloud-asr' queue
+  celery-cloud-worker:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    pull_policy: ${PULL_POLICY:-always}
+    command: >
+      celery -A app.core.celery worker
+        -Q cloud-asr
+        -c ${CLOUD_ASR_WORKER_CONCURRENCY:-4}
+        -n cloud-asr@%h
+        --loglevel=info
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET=${MINIO_BUCKET:-transcribe-app}
+      - ASR_PROVIDER=${ASR_PROVIDER:-deepgram}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_CLOUD_CREDENTIALS=${GOOGLE_CLOUD_CREDENTIALS:-}
+      - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY:-}
+      - AZURE_SPEECH_REGION=${AZURE_SPEECH_REGION:-eastus}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - SPEECHMATICS_API_KEY=${SPEECHMATICS_API_KEY:-}
+      - GLADIA_API_KEY=${GLADIA_API_KEY:-}
+      - DEPLOYMENT_MODE=lite
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - OPENSEARCH_ENABLED=${OPENSEARCH_ENABLED:-true}
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+    depends_on:
+      - redis
+      - postgres
+      - minio
+    restart: unless-stopped
+    mem_limit: 6g
+    networks:
+      - app-network
+
+  # Override all backend workers to use the lite image
+  backend:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    environment:
+      - DEPLOYMENT_MODE=lite
+
+  celery-cpu-worker:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    environment:
+      - DEPLOYMENT_MODE=lite
+
+  celery-nlp-worker:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    environment:
+      - DEPLOYMENT_MODE=lite
+
+  celery-download-worker:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    environment:
+      - DEPLOYMENT_MODE=lite
+
+  celery-beat:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    environment:
+      - DEPLOYMENT_MODE=lite
+
+networks:
+  app-network:
+    external: true

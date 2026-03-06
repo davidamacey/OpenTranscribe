@@ -1,6 +1,5 @@
 import datetime
 import logging
-import os
 import time
 from collections.abc import Generator
 from typing import Any
@@ -37,23 +36,27 @@ def _get_sentence_transformer():
     return _sentence_transformer_model
 
 
-# Initialize the OpenSearch client
+# Initialize the OpenSearch client (skipped when OPENSEARCH_ENABLED=false)
 opensearch_client: OpenSearch | None
-try:
-    opensearch_client = OpenSearch(
-        hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
-        http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-        use_ssl=False,
-        verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-        connection_class=RequestsHttpConnection,
-    )
-    logger.info("OpenSearch client initialized successfully")
-except (ConnectionError, ValueError) as e:
-    logger.error(f"Configuration error initializing OpenSearch client: {e}")
+if not settings.OPENSEARCH_ENABLED:
+    logger.info("OpenSearch is disabled (OPENSEARCH_ENABLED=false), skipping client initialization")
     opensearch_client = None
-except Exception as e:
-    logger.error(f"Unexpected error initializing OpenSearch client: {e}")
-    opensearch_client = None
+else:
+    try:
+        opensearch_client = OpenSearch(
+            hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
+            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
+            use_ssl=False,
+            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+            connection_class=RequestsHttpConnection,
+        )
+        logger.info("OpenSearch client initialized successfully")
+    except (ConnectionError, ValueError) as e:
+        logger.error(f"Configuration error initializing OpenSearch client: {e}")
+        opensearch_client = None
+    except Exception as e:
+        logger.error(f"Unexpected error initializing OpenSearch client: {e}")
+        opensearch_client = None
 
 
 def get_opensearch_client() -> "OpenSearch | None":
@@ -537,6 +540,8 @@ def ensure_indices_exist():
     """
     Ensure the transcript and speaker indices exist, creating them if necessary
     """
+    if not settings.OPENSEARCH_ENABLED:
+        return
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping index creation")
         return
@@ -1163,21 +1168,13 @@ def search_transcripts(  # noqa: C901
     Returns:
         List of matching documents
     """
-    # Return mock data in test environment
-    if os.environ.get("SKIP_OPENSEARCH") or not opensearch_client:
-        logger.warning(
-            "OpenSearch client not initialized or in test environment, returning mock data"
-        )
-        # Return mock search results for testing
-        return [
-            {
-                "file_id": 1,
-                "title": "Test Recording",
-                "speakers": ["Speaker 1", "Speaker 2"],
-                "upload_time": "2025-05-05T10:00:00",
-                "snippet": "This is a mock search result for testing purposes...",
-            }
-        ]
+    # Return empty results when OpenSearch is disabled or unavailable
+    if not settings.OPENSEARCH_ENABLED:
+        logger.debug("OpenSearch is disabled, returning empty search results")
+        return []
+    if not opensearch_client:
+        logger.debug("OpenSearch client not initialized, returning empty search results")
+        return []
 
     try:
         # Build the search query

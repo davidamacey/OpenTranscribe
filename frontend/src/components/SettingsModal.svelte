@@ -25,6 +25,8 @@
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
+  import ASRSettings from '$components/settings/ASRSettings.svelte';
+  import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';
@@ -170,7 +172,9 @@
         { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
-        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' }
+        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
+        { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic' },
+        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list' }
       ]
     },
     {
@@ -1118,6 +1122,24 @@
               <h3 class="section-title">{$t('autoLabel.title')}</h3>
               <p class="section-description">{$t('autoLabel.description')}</p>
               <AutoLabelSettings />
+            </div>
+          {/if}
+
+          <!-- ASR Provider Section -->
+          {#if activeSection === 'asr-provider'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.asrProvider.title')}</h3>
+              <p class="section-description">{$t('settings.asrProvider.description')}</p>
+              <ASRSettings />
+            </div>
+          {/if}
+
+          <!-- Custom Vocabulary Section -->
+          {#if activeSection === 'custom-vocabulary'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.customVocabulary.title')}</h3>
+              <p class="section-description">{$t('settings.customVocabulary.description')}</p>
+              <CustomVocabularySettings />
             </div>
           {/if}
 

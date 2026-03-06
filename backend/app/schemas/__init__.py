@@ -4,6 +4,13 @@ Pydantic schemas for OpenTranscribe API.
 This package contains validation schemas for request/response models.
 """
 
+from .asr_settings import ASRProvider
+from .asr_settings import ASRProviderCatalog
+from .asr_settings import ASRSettingsList
+from .asr_settings import ASRStatusResponse
+from .asr_settings import UserASRSettingsCreate
+from .asr_settings import UserASRSettingsResponse
+from .asr_settings import UserASRSettingsUpdate
 from .auth_config import AuthConfigAuditResponse
 from .auth_config import AuthConfigBase
 from .auth_config import AuthConfigCategoryResponse
@@ -21,6 +28,10 @@ from .auth_config import MFAConfig
 from .auth_config import PasswordPolicyConfig
 from .auth_config import PKIConfig
 from .auth_config import SessionConfig
+from .custom_vocabulary import CustomVocabularyBulkImport
+from .custom_vocabulary import CustomVocabularyCreate
+from .custom_vocabulary import CustomVocabularyResponse
+from .custom_vocabulary import CustomVocabularyUpdate
 from .download_settings import DownloadSettings
 from .download_settings import DownloadSettingsUpdate
 from .download_settings import DownloadSystemDefaults
@@ -147,6 +158,17 @@ __all__ = [
     "TranscriptionSettings",
     "TranscriptionSettingsUpdate",
     "TranscriptionSystemDefaults",
+    "ASRProvider",
+    "UserASRSettingsCreate",
+    "UserASRSettingsUpdate",
+    "UserASRSettingsResponse",
+    "ASRSettingsList",
+    "ASRStatusResponse",
+    "ASRProviderCatalog",
+    "CustomVocabularyCreate",
+    "CustomVocabularyUpdate",
+    "CustomVocabularyResponse",
+    "CustomVocabularyBulkImport",
     # Auth config schemas
     "AuthConfigBase",
     "AuthConfigCreate",

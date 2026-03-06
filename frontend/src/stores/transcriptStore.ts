@@ -5,6 +5,7 @@ export interface TranscriptSegment {
   start_time: number;
   end_time: number;
   text: string;
+  confidence?: number; // ASR confidence score (0.0 - 1.0)
   speaker_id?: string; // UUID
   speaker_label?: string;
   resolved_speaker_name?: string;

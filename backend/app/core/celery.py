@@ -93,6 +93,12 @@ celery_app.conf.update(
         "extract_v4_embeddings_batch": {"queue": "gpu"},
         "app.tasks.speaker_clustering.recluster_all_speakers": {"queue": "gpu"},
         "app.tasks.speaker_clustering.cluster_speakers_for_file": {"queue": "cpu"},
+        # NOTE: "transcribe_audio" is intentionally NOT listed here so that
+        # apply_async(queue=task_queue) in upload.py / reprocess.py can route it
+        # to either "gpu" (local) or "cloud-asr" (cloud provider) at call time.
+        # A static task_routes entry would override the per-call queue argument.
+        # Cloud ASR Queue - Cloud API transcription tasks (concurrency configurable)
+        "transcription.process_file_cloud": {"queue": "cloud-asr"},
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
         "download.media_url": {"queue": "download"},
         "download.media_playlist": {"queue": "download"},

@@ -171,6 +171,18 @@
         file.processed_at = response.data.processed_at;
         file.analytics = response.data.analytics;
 
+        // Persist ASR provider/model so MetadataDisplay can show them after
+        // transcription completes without requiring a full page refresh.
+        if (response.data.asr_provider !== undefined) {
+          file.asr_provider = response.data.asr_provider;
+        }
+        if (response.data.asr_model !== undefined) {
+          file.asr_model = response.data.asr_model;
+        }
+        if (response.data.language !== undefined) {
+          file.language = response.data.language;
+        }
+
         // Update collections if they changed
         collections = response.data.collections || [];
 

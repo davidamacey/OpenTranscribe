@@ -230,6 +230,10 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
                     "upload_time": media_file.upload_time.isoformat()
                     if media_file.upload_time
                     else None,
+                    # ASR provider metadata — allows the frontend to display
+                    # "Transcribed by Deepgram Nova-3" without a follow-up API call.
+                    "asr_provider": media_file.asr_provider,
+                    "asr_model": media_file.asr_model,
                     # Add formatted fields that the frontend expects
                     "formatted_duration": FormattingService.format_duration(media_file.duration),
                     "formatted_upload_date": FormattingService.format_upload_date(

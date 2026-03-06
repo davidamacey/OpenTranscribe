@@ -8,6 +8,9 @@ from app.models.media import Speaker
 
 logger = logging.getLogger(__name__)
 
+# Fallback speaker label used when a segment has no speaker attribution.
+_FALLBACK_SPEAKER = "SPEAKER_00"
+
 
 def normalize_speaker_label(speaker_id: str) -> str:
     """
@@ -32,19 +35,31 @@ def extract_unique_speakers(segments: list[dict[str, Any]]) -> set[str]:
     """
     Extract unique speaker IDs from transcription segments.
 
+    Segments whose ``speaker`` field is None (e.g. from cloud providers that don't
+    support diarization) are assigned the canonical fallback label ``SPEAKER_00``
+    so that a corresponding DB speaker record is always created.  This prevents
+    ``process_segments_with_speakers`` from generating an ad-hoc label (via
+    ``i % 2``) that is absent from *speaker_mapping*, which would leave every
+    such segment with ``speaker_id = NULL`` in the database.
+
     Args:
         segments: List of transcription segments
 
     Returns:
-        Set of unique speaker IDs
+        Set of unique speaker IDs (all non-None, all normalised to SPEAKER_XX format)
     """
     unique_speakers = set()
 
     for segment in segments:
         if "speaker" in segment and segment["speaker"] is not None:
             normalized_speaker = normalize_speaker_label(segment["speaker"])
+        else:
+            # No speaker label from the provider — assign a consistent fallback so
+            # a DB speaker row is created and the FK constraint can be satisfied.
+            normalized_speaker = _FALLBACK_SPEAKER
             segment["speaker"] = normalized_speaker  # Update in place
-            unique_speakers.add(normalized_speaker)
+
+        unique_speakers.add(normalized_speaker)
 
     return unique_speakers
 
@@ -152,16 +167,20 @@ def process_segments_with_speakers(
     """
     processed_segments = []
 
-    for i, segment in enumerate(segments):
+    for _, segment in enumerate(segments):
         # Get basic segment info
         segment_start = segment.get("start", 0.0)
         segment_end = segment.get("end", 0.0)
         segment_text = segment.get("text", "")
 
-        # Get speaker ID with fallback
+        # Get speaker ID with fallback.
+        # extract_unique_speakers() guarantees every segment already has a non-None
+        # speaker label, so this branch is only reached if process_segments_with_speakers
+        # is called without a prior extract_unique_speakers pass.  Use SPEAKER_00 for
+        # consistency with the canonical fallback defined there.
         speaker_id = segment.get("speaker")
         if speaker_id is None:
-            speaker_id = f"SPEAKER_{i % 2}"  # Fallback assignment
+            speaker_id = "SPEAKER_00"
 
         speaker_id = normalize_speaker_label(speaker_id)
         speaker_db_id = speaker_mapping.get(speaker_id)

@@ -750,6 +750,9 @@
                         searchMatches,
                         currentMatchIndex
                       )}
+                      {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
+                        <span class="low-confidence-dot" title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}>●</span>
+                      {/if}
                     </div>
                   </button>
                   <button
@@ -1571,6 +1574,14 @@
     height: 20px;
     background: rgba(107, 114, 128, 0.3);
     border-radius: 1px;
+  }
+
+  .low-confidence-dot {
+    color: var(--warning-color, #f59e0b);
+    font-size: 0.6rem;
+    vertical-align: super;
+    margin-left: 2px;
+    cursor: help;
   }
 
   .edit-button {

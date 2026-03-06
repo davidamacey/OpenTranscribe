@@ -284,6 +284,7 @@ class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
 
     media_file_id: UUID
     speaker: Optional[Speaker] = None
+    confidence: Optional[float] = None  # ASR confidence score (0.0–1.0)
 
     # Formatted fields for frontend display
     formatted_timestamp: Optional[str] = None  # e.g., "0:45.2"
@@ -376,6 +377,11 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     whisper_model: Optional[str] = None
     diarization_model: Optional[str] = None
     embedding_mode: Optional[str] = None
+
+    # ASR provider tracking
+    asr_provider: Optional[str] = None  # Provider used (local/deepgram/etc.)
+    asr_model: Optional[str] = None  # Model used for transcription
+    diarization_provider: Optional[str] = None  # Provider used for diarization
 
     # Error handling fields
     error_category: Optional[str] = None  # Error category for user-friendly handling

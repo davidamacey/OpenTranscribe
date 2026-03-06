@@ -70,9 +70,15 @@ def start_reprocessing_task(
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     downstream_tasks: list[str] | None = None,
+    user_id: int | None = None,
+    db=None,
 ) -> None:
     """
     Start the background reprocessing task.
+
+    Routes the task to the appropriate queue based on the user's active ASR provider
+    configuration: cloud providers use the 'cloud-asr' queue while the local GPU
+    provider uses the 'gpu' queue.
 
     Args:
         file_uuid: UUID of the media file to reprocess
@@ -80,17 +86,41 @@ def start_reprocessing_task(
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
         downstream_tasks: Optional list of downstream pipeline stage names to run after transcription
+        user_id: Optional user ID used to resolve the active ASR provider
+        db: Optional database session used to resolve the active ASR provider
     """
     import os
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        # Determine which queue to use based on the user's active ASR config
+        task_queue = "gpu"
+        if user_id is not None and db is not None:
+            try:
+                from app.services.asr.factory import ASRProviderFactory
+
+                provider = ASRProviderFactory.create_for_user(user_id, db)
+                if provider.provider_name != "local":
+                    task_queue = "cloud-asr"
+                    logger.info(
+                        f"Routing reprocess transcription for file {file_uuid} to 'cloud-asr' "
+                        f"queue (provider: {provider.provider_name})"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to resolve ASR provider for user {user_id}, "
+                    f"defaulting to 'gpu' queue: {e}"
+                )
+
         # Use the same transcription task with speaker parameters - it will handle reprocessing
-        transcribe_audio_task.delay(
-            file_uuid,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers,
-            num_speakers=num_speakers,
-            downstream_tasks=downstream_tasks,
+        transcribe_audio_task.apply_async(
+            args=[file_uuid],
+            kwargs={
+                "min_speakers": min_speakers,
+                "max_speakers": max_speakers,
+                "num_speakers": num_speakers,
+                "downstream_tasks": downstream_tasks,
+            },
+            queue=task_queue,
         )
     else:
         logger.info("Skipping Celery task in test environment")
@@ -269,6 +299,7 @@ def dispatch_selective_tasks(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             downstream_tasks=downstream if downstream else None,
+            user_id=user_id,
         )
     elif "rediarize" in stages:
         from app.tasks.rediarize_task import rediarize_task
@@ -405,7 +436,14 @@ async def process_file_reprocess(
             db.refresh(media_file)
 
             # Start background reprocessing task with speaker parameters
-            start_reprocessing_task(file_uuid, min_speakers, max_speakers, num_speakers)
+            start_reprocessing_task(
+                file_uuid,
+                min_speakers,
+                max_speakers,
+                num_speakers,
+                user_id=int(current_user.id),
+                db=db,
+            )
 
             logger.info(
                 f"Reprocessing task started for file {file_uuid} (id: {file_id}, attempt {media_file.retry_count})"

@@ -16,6 +16,8 @@ export type SettingsSection =
   | 'auto-labeling'
   | 'search-indexing'
   | 'groups'
+  | 'asr-provider'
+  | 'custom-vocabulary'
   // System sections (visible to all users)
   | 'system-statistics'
   // Admin sections
@@ -53,6 +55,8 @@ const initialState: SettingsModalState = {
     'auto-labeling': false,
     'search-indexing': false,
     groups: false,
+    'asr-provider': false,
+    'custom-vocabulary': false,
     'system-statistics': false,
     'admin-users': false,
     'admin-task-health': false,

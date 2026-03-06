@@ -115,6 +115,20 @@
           </div>
         {/if}
 
+        {#if file && file.asr_provider}
+          <div class="metadata-item">
+            <span class="metadata-label">{$t('metadata.asrEngine')}:</span>
+            <span class="metadata-value">{file.asr_provider}</span>
+          </div>
+        {/if}
+
+        {#if file && file.asr_model}
+          <div class="metadata-item">
+            <span class="metadata-label">{$t('metadata.asrModel')}:</span>
+            <span class="metadata-value">{file.asr_model}</span>
+          </div>
+        {/if}
+
         <div class="metadata-item">
           <span class="metadata-label">{$t('metadata.createdDate')}:</span>
           <span class="metadata-value">{file && 'creation_date' in file && file.creation_date ? new Date(file.creation_date).toLocaleDateString() : $t('metadata.unknown')}</span>

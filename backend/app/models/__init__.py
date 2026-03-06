@@ -6,6 +6,7 @@ This package contains database models for all entities in the system.
 
 from .auth_config import AuthConfig
 from .auth_config import AuthConfigAudit
+from .custom_vocabulary import CustomVocabulary
 from .group import UserGroup
 from .group import UserGroupMember
 from .media import Analytics
@@ -34,6 +35,7 @@ from .topic import TopicSuggestion
 from .upload_batch import UploadBatch
 from .upload_session import UploadSession
 from .user import User
+from .user_asr_settings import UserASRSettings
 from .user_llm_settings import UserLLMSettings
 from .user_mfa import UserMFA
 
@@ -59,6 +61,8 @@ __all__ = [
     "SummaryPrompt",
     "UserSetting",
     "UserLLMSettings",
+    "UserASRSettings",
+    "CustomVocabulary",
     "TopicSuggestion",
     "RefreshToken",
     "UserMFA",

@@ -1,0 +1,1 @@
+./opentr.sh start dev --gpu-scale && docker compose stop celery-beat

@@ -42,6 +42,7 @@ show_help() {
   echo "  --pull               - Force pull prod images from Docker Hub"
   echo "  --gpu-scale          - Enable multi-GPU worker scaling"
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
+  echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod)"
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod)"
@@ -78,13 +79,15 @@ show_help() {
   echo "Examples:"
   echo "  ./opentr.sh start                            # Start in development mode"
   echo "  ./opentr.sh start dev --gpu-scale            # Dev with multi-GPU scaling"
-  echo "  ./opentr.sh start dev --gpu-scale --nas     # Multi-GPU + NAS/NVMe storage"
+  echo "  ./opentr.sh start dev --gpu-scale --nas      # Multi-GPU + NAS/NVMe storage"
+  echo "  ./opentr.sh start dev --lite                 # Cloud-only ASR mode (no GPU)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
   echo "  ./opentr.sh start prod --build               # Production with local build (test before push)"
   echo "  ./opentr.sh start prod --build --with-pki    # Production with PKI (requires nginx)"
   echo "  ./opentr.sh reset dev                        # Reset development environment"
+  echo "  ./opentr.sh reset dev --lite                 # Reset in cloud-only ASR mode"
   echo "  ./opentr.sh logs backend                     # View backend logs"
   echo "  ./opentr.sh restart-backend                  # Restart backend services only"
   echo ""
@@ -181,6 +184,7 @@ start_app() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
+  LITE_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -198,6 +202,10 @@ start_app() {
         ;;
       --nas)
         NAS_FLAG="--nas"
+        shift
+        ;;
+      --lite)
+        LITE_FLAG="--lite"
         shift
         ;;
       --with-pki)
@@ -241,11 +249,23 @@ start_app() {
     echo "🎯 Multi-GPU scaling enabled"
   fi
 
+  if [ -n "$LITE_FLAG" ]; then
+    echo "☁️  Lite mode enabled (cloud-only ASR, no GPU required)"
+  fi
+
   # Ensure Docker is running
   check_docker
 
-  # Detect and configure hardware
-  detect_and_configure_hardware
+  # Detect and configure hardware (skipped in lite mode — no GPU needed)
+  if [ -z "$LITE_FLAG" ]; then
+    detect_and_configure_hardware
+  else
+    echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
+    export DOCKER_RUNTIME=""
+    export TORCH_DEVICE="cpu"
+    export COMPUTE_TYPE="int8"
+    export USE_GPU="false"
+  fi
 
   # Set build environment
   export BUILD_ENV="$ENVIRONMENT"
@@ -338,6 +358,12 @@ start_app() {
     else
       echo "⚠️  --nas specified but docker-compose.nas.yml not found"
     fi
+  fi
+
+  # Add lite overlay if requested (cloud-only ASR, no GPU)
+  if [ -n "$LITE_FLAG" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.lite.yml"
+    echo "☁️  Adding lite overlay (docker-compose.lite.yml)"
   fi
 
   # Add NGINX reverse proxy if NGINX_SERVER_NAME is set (production only)
@@ -450,6 +476,8 @@ start_app() {
   echo "- Frontend logs: docker compose logs -f frontend"
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "- GPU scaled workers: docker compose logs -f celery-worker-gpu-scaled"
+  elif [ -n "$LITE_FLAG" ]; then
+    echo "- Cloud ASR worker logs: docker compose logs -f celery-cloud-worker"
   else
     echo "- Celery worker logs: docker compose logs -f celery-worker"
   fi
@@ -472,6 +500,7 @@ reset_and_init() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
+  LITE_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -489,6 +518,10 @@ reset_and_init() {
         ;;
       --nas)
         NAS_FLAG="--nas"
+        shift
+        ;;
+      --lite)
+        LITE_FLAG="--lite"
         shift
         ;;
       --with-pki)
@@ -532,11 +565,23 @@ reset_and_init() {
     echo "🎯 Multi-GPU scaling enabled"
   fi
 
+  if [ -n "$LITE_FLAG" ]; then
+    echo "☁️  Lite mode enabled (cloud-only ASR, no GPU required)"
+  fi
+
   # Ensure Docker is running
   check_docker
 
-  # Detect and configure hardware
-  detect_and_configure_hardware
+  # Detect and configure hardware (skipped in lite mode — no GPU needed)
+  if [ -z "$LITE_FLAG" ]; then
+    detect_and_configure_hardware
+  else
+    echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
+    export DOCKER_RUNTIME=""
+    export TORCH_DEVICE="cpu"
+    export COMPUTE_TYPE="int8"
+    export USE_GPU="false"
+  fi
 
   # Set build environment
   export BUILD_ENV="$ENVIRONMENT"
@@ -619,6 +664,12 @@ reset_and_init() {
     else
       echo "⚠️  --nas specified but docker-compose.nas.yml not found"
     fi
+  fi
+
+  # Add lite overlay if requested (cloud-only ASR, no GPU)
+  if [ -n "$LITE_FLAG" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.lite.yml"
+    echo "☁️  Adding lite overlay (docker-compose.lite.yml)"
   fi
 
   # Add NGINX reverse proxy if NGINX_SERVER_NAME is set (production only)
