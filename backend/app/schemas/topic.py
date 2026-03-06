@@ -93,6 +93,15 @@ class TopicSuggestionResponse(UUIDBaseSchema):
     # Metadata
     status: str = Field(..., description="Suggestion status")
 
+    # Auto-apply tracking
+    auto_applied_tags: list[str] = Field(default_factory=list, description="Auto-applied tag names")
+    auto_applied_collections: list[str] = Field(
+        default_factory=list, description="Auto-applied collection names"
+    )
+    auto_apply_completed_at: Optional[datetime] = Field(
+        None, description="When auto-apply completed"
+    )
+
     # Timestamps
     created_at: datetime = Field(..., description="Creation timestamp")
 
@@ -150,3 +159,23 @@ class LLMSuggestionResponse(BaseModel):
 
     suggested_collections: list[SuggestedCollection]
     suggested_tags: list[SuggestedTag]
+
+
+class AutoLabelSettingsSchema(BaseModel):
+    """User auto-label settings."""
+
+    enabled: bool = Field(True, description="Master enable/disable")
+    confidence_threshold: float = Field(
+        0.75, ge=0.5, le=1.0, description="Confidence threshold for auto-apply"
+    )
+    tags_enabled: bool = Field(True, description="Auto-apply tags")
+    collections_enabled: bool = Field(True, description="Auto-apply collections")
+    bulk_grouping_enabled: bool = Field(True, description="Group bulk imports by topic")
+
+
+class RetroactiveAutoLabelRequest(BaseModel):
+    """Request to retroactively apply auto-labeling."""
+
+    file_uuids: Optional[list[str]] = Field(
+        None, max_length=500, description="Specific file UUIDs to process (all if omitted)"
+    )

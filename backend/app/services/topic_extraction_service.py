@@ -553,6 +553,29 @@ IMPORTANT GUIDELINES:
                 f"Stored {len(suggested_tags)} tags and {len(suggested_collections)} collections for file {media_file.id}"
             )
 
+            # Auto-apply high-confidence suggestions if enabled
+            try:
+                from app.services.auto_label_service import AutoLabelService
+
+                auto_label_service = AutoLabelService(self.db)
+                user_settings = auto_label_service.get_user_auto_label_settings(
+                    int(media_file.user_id)
+                )
+
+                if user_settings.get("enabled", True):
+                    threshold = user_settings.get("confidence_threshold", 0.75)
+                    auto_label_service.auto_apply_suggestions(
+                        media_file=media_file,
+                        suggestion=suggestion,
+                        user_id=int(media_file.user_id),
+                        confidence_threshold=threshold,
+                        apply_tags=user_settings.get("tags_enabled", True),
+                        apply_collections=user_settings.get("collections_enabled", True),
+                    )
+                    logger.info(f"Auto-applied suggestions for file {media_file.id}")
+            except Exception as e:
+                logger.warning(f"Auto-apply failed for file {media_file.id}: {e}")
+
             return suggestion  # type: ignore[no-any-return]
 
         except Exception as e:

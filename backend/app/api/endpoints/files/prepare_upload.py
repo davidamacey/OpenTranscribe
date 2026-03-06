@@ -11,13 +11,16 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.files.upload import create_media_file_record
+from app.core.constants import TAG_SOURCE_MANUAL
 from app.db.base import get_db
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import Tag
+from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
+from app.services.auto_label_service import AutoLabelService
 from app.utils.file_hash import check_duplicate_by_hash
 from app.utils.file_hash import cleanup_failed_duplicates
 
@@ -47,6 +50,43 @@ class FileMetadata:
         self.content_type = content_type
         self.file_hash: str | None = None
         self.extracted_from_video = extracted_from_video
+
+
+def get_or_create_upload_batch(
+    db: Session, batch_uuid: UUID, user_id: int, source: str = "multi_upload"
+) -> UploadBatch:
+    """Get an existing UploadBatch by UUID or create a new one.
+
+    Uses the client-provided UUID as the batch identifier. If a batch with
+    that UUID already exists for this user, returns it. Otherwise creates a new one.
+
+    Args:
+        db: Database session
+        batch_uuid: Client-generated UUID for the batch
+        user_id: Owner user ID
+        source: Upload source type (multi_upload, playlist, url_batch)
+
+    Returns:
+        UploadBatch record
+    """
+    batch = (
+        db.query(UploadBatch)
+        .filter(UploadBatch.uuid == batch_uuid, UploadBatch.user_id == user_id)
+        .first()
+    )
+    if batch:
+        return batch  # type: ignore[return-value, no-any-return]
+
+    batch = UploadBatch(
+        uuid=batch_uuid,
+        user_id=user_id,
+        source=source,
+        file_count=0,
+    )
+    db.add(batch)
+    db.flush()
+    logger.info(f"Created upload batch {batch_uuid} for user {user_id}")
+    return batch  # type: ignore[return-value, no-any-return]
 
 
 def add_file_to_collections(
@@ -83,21 +123,25 @@ def add_file_to_collections(
 def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
     """Add tags to a media file, creating tags if they don't exist.
 
-    Uses atomic get-or-create pattern for race-condition safety.
+    Uses SAVEPOINTs for race-condition safety without corrupting the
+    enclosing transaction.
     """
     for name in tag_names:
         name = name.strip()[:50]
         if not name:
             continue
 
+        normalized = AutoLabelService.normalize_name(name)
+
         tag = db.query(Tag).filter(Tag.name == name).first()
         if not tag:
             try:
-                tag = Tag(name=name)
+                nested = db.begin_nested()
+                tag = Tag(name=name, source=TAG_SOURCE_MANUAL, normalized_name=normalized)
                 db.add(tag)
                 db.flush()
             except IntegrityError:
-                db.rollback()
+                nested.rollback()
                 tag = db.query(Tag).filter(Tag.name == name).first()
                 if not tag:
                     continue
@@ -108,7 +152,7 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
             .first()
         )
         if not existing:
-            db.add(FileTag(media_file_id=file_id, tag_id=tag.id))
+            db.add(FileTag(media_file_id=file_id, tag_id=tag.id, source=TAG_SOURCE_MANUAL))
 
     db.flush()
 
@@ -159,6 +203,16 @@ async def prepare_upload(
             db.commit()
             logger.info(f"Stored extracted video metadata for {request.filename}")
 
+        # Link file to upload batch if a batch UUID was provided
+        if request.upload_batch_id:
+            batch = get_or_create_upload_batch(
+                db, request.upload_batch_id, int(current_user.id), source="multi_upload"
+            )
+            db_file.upload_batch_id = batch.id  # type: ignore[assignment]
+            batch.file_count = (batch.file_count or 0) + 1  # type: ignore[assignment]
+            db.flush()
+            logger.info(f"Linked file {db_file.id} to upload batch {request.upload_batch_id}")
+
         # Assign to collections if specified
         if request.collection_ids:
             add_file_to_collections(
@@ -169,9 +223,8 @@ async def prepare_upload(
         if request.tag_names:
             add_tags_to_file(db, int(db_file.id), request.tag_names)
 
-        # Commit collection and tag assignments
-        if request.collection_ids or request.tag_names:
-            db.commit()
+        # Commit all assignments (batch, collections, tags)
+        db.commit()
 
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
 

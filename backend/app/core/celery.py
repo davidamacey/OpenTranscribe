@@ -61,6 +61,7 @@ celery_app = Celery(
         "app.tasks.rediarize_task",
         "app.tasks.speaker_clustering",
         "app.tasks.upload_cleanup",
+        "app.tasks.auto_labeling",
     ],
 )
 
@@ -113,6 +114,8 @@ celery_app.conf.update(
         "extract_speaker_embeddings": {"queue": "nlp"},
         "ai.extract_topics": {"queue": "nlp"},
         "ai.extract_topics_batch": {"queue": "nlp"},
+        "ai.group_batch_files": {"queue": "nlp"},
+        "ai.retroactive_auto_label": {"queue": "nlp"},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         "index_transcript_search": {"queue": "embedding"},
         "update_file_access_index": {"queue": "embedding"},

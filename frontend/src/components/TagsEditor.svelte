@@ -10,7 +10,7 @@
 
   /** @type {string} */
   export let fileId = "";
-  /** @type {Array<{uuid: string, name: string}>} */
+  /** @type {Array<{uuid: string, name: string, source?: string}>} */
   export let tags = [];
   /** @type {Array<{name: string, confidence: number, rationale?: string}>} */
   export let aiSuggestions = [];
@@ -19,6 +19,10 @@
   $: filteredAISuggestions = aiSuggestions.filter(suggestion =>
     !tags.some(tag => tag.name.toLowerCase() === suggestion.name.toLowerCase())
   );
+
+  $: autoAppliedTagNames = tags
+    .filter(tag => tag.source === 'auto_ai')
+    .map(tag => tag.name);
 
   // Ensure tags are always in the correct format
   $: {
@@ -29,10 +33,11 @@
           // Convert string tag to object format with a temporary UUID
           return { uuid: `temp-${tag}`, name: tag };
         } else if (tag && typeof tag === 'object') {
-          // Ensure tag object has required properties - preserve uuid
+          // Ensure tag object has required properties - preserve uuid and source
           return {
             uuid: tag.uuid !== undefined ? tag.uuid : `temp-${tag.name}`,
-            name: tag.name || ''
+            name: tag.name || '',
+            source: tag.source || undefined
           };
         }
         return tag;
@@ -339,7 +344,12 @@
       <span class="no-tags">{$t('tags.noTagsYet')}</span>
     {/if}
     {#each tags.filter(t => t && t.uuid !== undefined) as tag (tag.uuid)}
-      <span class="tag">
+      <span class="tag" class:ai-tag={tag.source === 'auto_ai'}>
+        {#if tag.source === 'auto_ai'}
+          <span class="ai-icon" title={$t('autoLabel.autoAppliedTag')}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </span>
+        {/if}
         {tag.name}
         <button class="tag-remove" on:click={() => removeTag(tag.uuid)} title={$t('tags.removeTag')}>×</button>
       </span>
@@ -373,6 +383,7 @@
     suggestions={filteredAISuggestions}
     type="tag"
     {loading}
+    autoAppliedTags={autoAppliedTagNames}
     on:accept={handleAcceptAISuggestion}
   />
 
@@ -411,6 +422,13 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+  }
+
+  .no-tags {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-style: italic;
+    padding: 0.5rem 0;
   }
 
   .tags-list {
@@ -527,5 +545,21 @@
   .dropdown-label {
     color: var(--text-light);
     font-size: 0.8rem;
+  }
+
+  .ai-tag {
+    background-color: rgba(168, 85, 247, 0.1);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .ai-icon {
+    color: var(--ai-accent-color, #a855f7);
+    display: flex;
+    align-items: center;
+  }
+
+  :global([data-theme='dark']) .ai-tag {
+    background-color: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.4);
   }
 </style>

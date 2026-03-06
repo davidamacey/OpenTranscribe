@@ -134,6 +134,11 @@ class PrepareUploadRequest(BaseModel):
     tag_names: Optional[list[str]] = Field(
         None, description="Tag names to apply to the file after creation"
     )
+    upload_batch_id: Optional[UUID] = Field(
+        None,
+        description="Client-generated UUID to group files uploaded together into a batch. "
+        "All files sharing the same upload_batch_id will be linked to the same UploadBatch record.",
+    )
 
     @field_validator("min_speakers", "max_speakers", "num_speakers")
     @classmethod
@@ -412,6 +417,8 @@ class TagBase(BaseModel):
 class Tag(TagBase, UUIDBaseSchema):
     """Tag with UUID as public identifier"""
 
+    source: Optional[str] = None
+
 
 class TagWithCount(Tag):
     """Tag with usage count for filtering UI"""
@@ -599,6 +606,7 @@ class Collection(CollectionBase, UUIDBaseSchema):
     user_id: UUID
     default_prompt_id: Optional[UUID] = None
     default_prompt_name: Optional[str] = None
+    source: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

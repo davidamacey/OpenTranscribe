@@ -195,6 +195,49 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             suggestion_id=str(suggestion.uuid),
         )
 
+        # Check if this file is part of a batch and trigger grouping
+        try:
+            if media_file.upload_batch_id:
+                from app.models.upload_batch import UploadBatch
+
+                batch = (
+                    db.query(UploadBatch)
+                    .filter(UploadBatch.id == media_file.upload_batch_id)
+                    .first()
+                )
+                if batch and batch.grouping_status == "pending":
+                    # Check if all batch files have completed topic extraction
+                    from app.models.media import MediaFile
+                    from app.models.topic import TopicSuggestion
+
+                    batch_files = (
+                        db.query(MediaFile).filter(MediaFile.upload_batch_id == batch.id).all()
+                    )
+                    batch_file_ids = [bf.id for bf in batch_files]
+                    completed_count = (
+                        db.query(TopicSuggestion)
+                        .filter(TopicSuggestion.media_file_id.in_(batch_file_ids))
+                        .count()
+                    )
+                    if completed_count >= len(batch_files) and len(batch_files) >= 2:
+                        # Atomic compare-and-swap to prevent duplicate dispatches
+                        rows_updated = (
+                            db.query(UploadBatch)
+                            .filter(
+                                UploadBatch.id == batch.id,
+                                UploadBatch.grouping_status == "pending",
+                            )
+                            .update({"grouping_status": "processing"})
+                        )
+                        db.commit()
+                        if rows_updated > 0:
+                            from app.tasks.auto_labeling import group_batch_files_task
+
+                            group_batch_files_task.delay(batch.id, user_id)
+                            logger.info(f"Triggered batch grouping for batch {batch.id}")
+        except Exception as e:
+            logger.warning(f"Batch grouping check failed: {e}")
+
         logger.info(
             f"Successfully extracted {tag_count} tags and {collection_count} collections for file {file_id}"
         )

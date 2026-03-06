@@ -164,6 +164,10 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     has_upload_session = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'upload_session')"
     )
+    has_auto_labeling = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'tag' AND column_name = 'normalized_name')"
+    )
 
     # Return the highest version stamp that matches (newest first)
     # v280: upload_session table for TUS resumable uploads
@@ -178,6 +182,9 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # v250: speaker clustering FK indexes
     if has_speaker_cluster and has_speaker_clustering_indexes:
         return "v250_add_speaker_clustering_indexes"
+    # v230: auto-labeling support
+    if has_auto_labeling:
+        return "v230_add_auto_labeling"
     # v220: speaker clustering tables
     if has_speaker_cluster:
         return "v220_add_speaker_clusters"

@@ -42,6 +42,8 @@ export interface UploadItem {
   // Organization parameters
   collectionIds?: string[];
   tagNames?: string[];
+  // Batch grouping
+  uploadBatchId?: string;
 }
 
 // Upload configuration constants
@@ -144,7 +146,8 @@ class UploadService {
       numSpeakers?: number | null;
     },
     collectionIds?: string[],
-    tagNames?: string[]
+    tagNames?: string[],
+    uploadBatchId?: string
   ): string {
     const id = this.generateId();
     const uploadName = name || this.getSourceName(source);
@@ -163,6 +166,7 @@ class UploadService {
       numSpeakers: speakerParams?.numSpeakers,
       collectionIds,
       tagNames,
+      uploadBatchId,
     };
 
     this.uploads.set(id, upload);
@@ -180,8 +184,20 @@ class UploadService {
   addMultipleFiles(files: File[], collectionIds?: string[], tagNames?: string[]): string[] {
     const uploadIds: string[] = [];
 
+    // Generate a shared batch UUID when uploading 2+ files together
+    // so they are linked as a batch for downstream topic grouping
+    const batchId = files.length >= 2 ? crypto.randomUUID() : undefined;
+
     files.forEach((file) => {
-      const id = this.addUpload('file', file, undefined, undefined, collectionIds, tagNames);
+      const id = this.addUpload(
+        'file',
+        file,
+        undefined,
+        undefined,
+        collectionIds,
+        tagNames,
+        batchId
+      );
       uploadIds.push(id);
     });
 
@@ -361,6 +377,7 @@ class UploadService {
       file_hash: fileHash || null,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
+      upload_batch_id: upload.uploadBatchId || undefined,
     });
 
     const { file_id: fileId, is_duplicate } = prepareResponse.data;

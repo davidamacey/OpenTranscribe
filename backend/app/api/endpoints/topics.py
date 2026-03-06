@@ -18,11 +18,13 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.db.base import get_db
 from app.models.topic import TopicSuggestion
 from app.models.user import User
 from app.schemas.topic import ApplyTopicSuggestionsRequest
 from app.schemas.topic import ExtractTopicsRequest
+from app.schemas.topic import RetroactiveAutoLabelRequest
 from app.schemas.topic import SuggestedCollection
 from app.schemas.topic import SuggestedTag
 from app.schemas.topic import TopicSuggestionResponse
@@ -46,7 +48,7 @@ async def batch_extract_topics(
     force_regenerate: bool = Body(False, embed=True),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-) -> dict[str, str | int | list[str]]:
+) -> dict[str, str | int | list[str] | None]:
     """
     Extract AI suggestions for multiple files in batch
 
@@ -91,6 +93,40 @@ async def batch_extract_topics(
             detail="LLM provider not configured. Configure LLM settings first.",
         )
 
+    # For multi-file batches, ensure files are linked to an UploadBatch
+    # so that downstream batch grouping in extract_topics_task works
+    batch_uuid_str: str | None = None
+    if len(verified_uuids) >= 2:
+        from app.models.media import MediaFile
+        from app.models.upload_batch import UploadBatch
+
+        # Check if all files already share a batch
+        batch_files = db.query(MediaFile).filter(MediaFile.uuid.in_(verified_uuids)).all()
+        batch_ids = {mf.upload_batch_id for mf in batch_files if mf.upload_batch_id}
+
+        if len(batch_ids) != 1:
+            # Files don't share a single batch -- create one and link them
+            import uuid as uuid_pkg
+
+            batch = UploadBatch(
+                uuid=uuid_pkg.uuid4(),
+                user_id=int(current_user.id),
+                source="batch_extract",
+                file_count=len(batch_files),
+            )
+            db.add(batch)
+            db.flush()
+
+            for mf in batch_files:
+                mf.upload_batch_id = batch.id  # type: ignore[assignment]
+
+            db.commit()
+            batch_uuid_str = str(batch.uuid)
+            logger.info(
+                f"Created upload batch {batch.uuid} for {len(batch_files)} files "
+                f"via batch_extract_topics"
+            )
+
     # Trigger batch task
     task = batch_extract_topics_task.delay(
         file_uuids=verified_uuids,
@@ -101,17 +137,93 @@ async def batch_extract_topics(
         f"Triggered batch AI suggestion extraction for {len(verified_uuids)} files, task_id: {task.id}"
     )
 
-    return {
+    result: dict[str, str | int | list[str] | None] = {
         "message": "Batch AI suggestion extraction started",
         "task_id": task.id,
         "file_count": len(verified_uuids),
         "files": verified_uuids,
+    }
+    if batch_uuid_str:
+        result["upload_batch_id"] = batch_uuid_str
+
+    return result
+
+
+@router.post("/retroactive-auto-label", status_code=status.HTTP_202_ACCEPTED)
+async def retroactive_auto_label(
+    request_data: RetroactiveAutoLabelRequest = Body(default=RetroactiveAutoLabelRequest()),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """Apply auto-labeling to existing files with pending suggestions."""
+    from app.tasks.auto_labeling import retroactive_auto_label_task
+
+    task = retroactive_auto_label_task.delay(
+        user_id=int(current_user.id),
+        file_uuids=request_data.file_uuids,
+    )
+
+    return {
+        "message": "Retroactive auto-labeling started",
+        "task_id": task.id,
     }
 
 
 # =============================================================================
 # PARAMETERIZED ROUTES - /{file_uuid}/* patterns
 # =============================================================================
+
+
+@router.post("/{file_uuid}/auto-label")
+async def auto_label_single_file(
+    file_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """Apply auto-labeling to a single file's pending suggestions."""
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+
+    from app.services.auto_label_service import AutoLabelService
+
+    service = AutoLabelService(db)
+    user_settings = service.get_user_auto_label_settings(int(current_user.id))
+
+    if not user_settings.get("enabled"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Auto-labeling is disabled in your settings",
+        )
+
+    suggestion = (
+        db.query(TopicSuggestion)
+        .filter(TopicSuggestion.media_file_id == int(media_file.id))
+        .first()
+    )
+
+    if not suggestion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No AI suggestions found for this file",
+        )
+
+    result = service.auto_apply_suggestions(
+        media_file=media_file,
+        suggestion=suggestion,
+        user_id=int(current_user.id),
+        confidence_threshold=user_settings.get(
+            "confidence_threshold", DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
+        ),
+        apply_tags=user_settings.get("tags_enabled", True),
+        apply_collections=user_settings.get("collections_enabled", True),
+    )
+
+    return {
+        "message": "Auto-labeling applied",
+        "tags_applied": len(result["auto_applied_tags"]),
+        "collections_applied": len(result["auto_applied_collections"]),
+        "tags_skipped": len(result["skipped_tags"]),
+        "collections_skipped": len(result["skipped_collections"]),
+    }
 
 
 @router.get("/{file_uuid}/suggestions", response_model=TopicSuggestionResponse)
@@ -167,6 +279,9 @@ async def get_topic_suggestions(
         suggested_tags=suggested_tags,
         suggested_collections=suggested_collections,
         status=str(suggestion.status),
+        auto_applied_tags=suggestion.auto_applied_tags or [],
+        auto_applied_collections=suggestion.auto_applied_collections or [],
+        auto_apply_completed_at=suggestion.auto_apply_completed_at,
         created_at=datetime.fromisoformat(str(suggestion.created_at))
         if isinstance(suggestion.created_at, str)
         else suggestion.created_at,  # type: ignore[arg-type]

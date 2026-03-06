@@ -31,6 +31,7 @@ from .prompt import UserSetting
 from .refresh_token import RefreshToken
 from .sharing import CollectionShare
 from .topic import TopicSuggestion
+from .upload_batch import UploadBatch
 from .upload_session import UploadSession
 from .user import User
 from .user_llm_settings import UserLLMSettings
@@ -67,5 +68,6 @@ __all__ = [
     "UserGroup",
     "UserGroupMember",
     "CollectionShare",
+    "UploadBatch",
     "UploadSession",
 ]

@@ -124,8 +124,14 @@ class MediaFile(Base):
     diarization_model = Column(String, nullable=True)  # e.g., "pyannote/speaker-diarization-3.1"
     embedding_mode = Column(String, nullable=True)  # "v3" (512d) or "v4" (256d)
 
+    # Upload batch tracking
+    upload_batch_id = Column(
+        Integer, ForeignKey("upload_batch.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Relationships
     user = relationship("User", back_populates="media_files")
+    upload_batch = relationship("UploadBatch", back_populates="media_files")
     transcript_segments = relationship(
         "TranscriptSegment", back_populates="media_file", cascade="all, delete-orphan"
     )
@@ -304,6 +310,8 @@ class Tag(Base):
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
     name = Column(String, unique=True, nullable=False)
+    source = Column(String(50), nullable=True)  # "manual" | "auto_ai" | "ai_accepted"
+    normalized_name = Column(String, nullable=True, index=True)
 
 
 class FileTag(Base):
@@ -315,6 +323,9 @@ class FileTag(Base):
     )
     media_file_id = Column(Integer, ForeignKey("media_file.id"))
     tag_id = Column(Integer, ForeignKey("tag.id"))
+    source = Column(String(50), nullable=True)  # "manual" | "auto_ai" | "ai_accepted"
+    ai_confidence = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     media_file = relationship("MediaFile", back_populates="file_tags")
@@ -377,6 +388,7 @@ class Collection(Base):
         nullable=True,
         index=True,
     )
+    source = Column(String(50), nullable=True)  # "manual" | "auto_ai" | "bulk_group"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -404,6 +416,8 @@ class CollectionMember(Base):
     )
     collection_id = Column(Integer, ForeignKey("collection.id", ondelete="CASCADE"), nullable=False)
     media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
+    source = Column(String(50), nullable=True)  # "manual" | "auto_ai" | "bulk_group"
+    ai_confidence = Column(Float, nullable=True)
     added_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Unique constraint
