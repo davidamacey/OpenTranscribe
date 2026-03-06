@@ -64,7 +64,7 @@ async def get_llm_status(
                     {
                         "provider": "unknown",
                         "model": "unknown",
-                        "message": f"LLM service error: {str(e)}",
+                        "message": "LLM service encountered an error. Check server logs for details.",
                     }
                 )
         else:
@@ -85,7 +85,7 @@ async def get_llm_status(
             "user_id": current_user.id,
             "provider": None,
             "model": None,
-            "message": f"Error checking LLM status: {str(e)}",
+            "message": "An error occurred while checking LLM status. Check server logs for details.",
         }
 
 
@@ -109,8 +109,11 @@ async def get_available_providers(
         }
 
     except Exception as e:
-        logger.error(f"Error getting LLM providers: {e}")
-        raise HTTPException(status_code=500, detail=f"Error getting LLM providers: {str(e)}") from e
+        logger.error("Error getting LLM providers: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.post("/test-connection")
@@ -148,7 +151,7 @@ async def test_llm_connection(
         logger.error(f"Error testing LLM connection: {e}")
         return {
             "success": False,
-            "message": f"Connection test failed: {str(e)}",
+            "message": "Connection test failed due to an unexpected error. Check server logs for details.",
             "provider": "unknown",
-            "model": "unknown",
+            "model": None,
         }

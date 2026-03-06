@@ -124,19 +124,27 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
     """
     Get unique speakers by display name for filter use with media file counts.
 
+    Includes speakers from both owned and shared files so that shared-collection
+    speakers appear in the filter sidebar.
+
     Uses DISTINCT ON to pick a deterministic representative speaker per display
     name (the one with the lowest id), then counts media files per display name.
 
     Returns list of dicts with uuid, name, display_name, and media_count.
     """
     from sqlalchemy import func
+    from sqlalchemy import select
+
+    from app.services.permission_service import PermissionService
+
+    accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, int(current_user.id))
 
     # Step 1: Get one representative speaker per display_name using DISTINCT ON
     # This gives deterministic UUID selection (lowest id wins)
     representative_speakers = (
         db.query(Speaker)
         .filter(
-            Speaker.user_id == current_user.id,
+            Speaker.media_file_id.in_(select(accessible_sq)),
             Speaker.display_name.isnot(None),
             Speaker.display_name != "",
             ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
@@ -153,7 +161,7 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
             func.count(func.distinct(Speaker.media_file_id)).label("media_count"),
         )
         .filter(
-            Speaker.user_id == current_user.id,
+            Speaker.media_file_id.in_(select(accessible_sq)),
             Speaker.display_name.isnot(None),
             Speaker.display_name != "",
             ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),

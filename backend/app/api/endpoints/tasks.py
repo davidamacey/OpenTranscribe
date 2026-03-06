@@ -258,10 +258,10 @@ async def task_system_health(
             "timestamp": datetime.now(timezone.utc),
         }
     except Exception as e:
-        logger.error(f"Error in task_system_health: {e}")
+        logger.error("Error in task_system_health: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -317,10 +317,10 @@ async def recover_all_stuck_tasks(
             "message": f"Successfully recovered {recovered_count} of {len(stuck_tasks)} tasks",
         }
     except Exception as e:
-        logger.error(f"Error in recover_all_stuck_tasks: {e}")
+        logger.error("Error in recover_all_stuck_tasks: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -354,10 +354,10 @@ async def trigger_startup_recovery(
             "message": "Startup recovery task scheduled successfully",
         }
     except Exception as e:
-        logger.error(f"Error triggering startup recovery: {e}")
+        logger.error("Error triggering startup recovery: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -387,10 +387,10 @@ async def trigger_all_user_file_recovery(
 
         return {"success": True, "message": "File recovery scheduled for all users"}
     except Exception as e:
-        logger.error(f"Error triggering all user file recovery: {e}")
+        logger.error("Error triggering all user file recovery: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -432,10 +432,10 @@ async def trigger_user_file_recovery(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error triggering user file recovery: {e}")
+        logger.error("Error triggering user file recovery: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -490,10 +490,10 @@ async def recover_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in recover_task: {e}")
+        logger.error("Error in recover_task: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -524,10 +524,10 @@ async def fix_inconsistent_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in fix_inconsistent_file: {e}")
+        logger.error("Error in fix_inconsistent_file: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -562,10 +562,10 @@ async def fix_all_inconsistent_files(
             "message": f"Successfully fixed {fixed_count} of {len(inconsistent_files)} files",
         }
     except Exception as e:
-        logger.error(f"Error in fix_all_inconsistent_files: {e}")
+        logger.error("Error in fix_all_inconsistent_files: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -640,10 +640,10 @@ async def retry_file_processing(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in retry_file_processing: {e}")
+        logger.error("Error in retry_file_processing: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -709,8 +709,8 @@ def get_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_task: {e}")
+        logger.error("Error in get_task: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e

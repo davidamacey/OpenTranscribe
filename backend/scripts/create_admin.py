@@ -55,7 +55,8 @@ def create_admin_user():
 
         db.add(admin_user)
         db.commit()
-        print(f"Admin user created with email: {admin_email} and password: admin")
+        print(f"Admin user created with email: {admin_email}")
+        print("IMPORTANT: Change the default password immediately after first login.")
 
     except Exception as e:
         print(f"Error creating admin user: {e}")

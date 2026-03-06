@@ -130,9 +130,12 @@ async def trigger_summarization(
         }
 
     except Exception as e:
-        logger.error(f"Failed to start summarization task for file {file_id}: {e}")
+        logger.error(
+            "Failed to start summarization task for file %s: %s", file_id, e, exc_info=True
+        )
         raise HTTPException(
-            status_code=500, detail=f"Failed to start summarization: {str(e)}"
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -202,8 +205,11 @@ async def get_file_summary(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to retrieve summary for file {file_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve summary: {str(e)}") from e
+        logger.error("Failed to retrieve summary for file %s: %s", file_id, e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.post("/search", response_model=SummarySearchResponse)
@@ -262,8 +268,11 @@ async def search_summaries(
         )
 
     except Exception as e:
-        logger.error(f"Summary search failed for user {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}") from e
+        logger.error("Summary search failed for user %s: %s", current_user.id, e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.get("/analytics", response_model=SummaryAnalyticsResponse)
@@ -313,8 +322,13 @@ async def get_summary_analytics(
         return SummaryAnalyticsResponse(**analytics)
 
     except Exception as e:
-        logger.error(f"Analytics generation failed for user {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Analytics generation failed: {str(e)}") from e
+        logger.error(
+            "Analytics generation failed for user %s: %s", current_user.id, e, exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.post("/{file_uuid}/identify-speakers", response_model=SpeakerIdentificationResponse)
@@ -379,9 +393,12 @@ async def identify_speakers(
         )
 
     except Exception as e:
-        logger.error(f"Failed to start speaker identification for file {file_id}: {e}")
+        logger.error(
+            "Failed to start speaker identification for file %s: %s", file_id, e, exc_info=True
+        )
         raise HTTPException(
-            status_code=500, detail=f"Failed to start speaker identification: {str(e)}"
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -437,5 +454,8 @@ async def delete_summary(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete summary for file {file_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete summary: {str(e)}") from e
+        logger.error("Failed to delete summary for file %s: %s", file_id, e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e

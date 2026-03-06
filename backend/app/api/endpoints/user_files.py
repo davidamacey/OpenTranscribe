@@ -180,10 +180,10 @@ def get_user_file_status(
         }
 
     except Exception as e:
-        logger.error(f"Error getting user file status: {e}")
+        logger.error("Error getting user file status: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving file status: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -312,10 +312,10 @@ def get_file_detailed_status(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting file detailed status: {e}")
+        logger.error("Error getting file detailed status: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving file details: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -401,10 +401,10 @@ async def retry_file_processing(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrying file processing: {e}")
+        logger.error("Error retrying file processing: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrying file: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -441,10 +441,10 @@ async def request_user_recovery(
         }
 
     except Exception as e:
-        logger.error(f"Error requesting user recovery: {e}")
+        logger.error("Error requesting user recovery: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error requesting recovery: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 

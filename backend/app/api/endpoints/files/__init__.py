@@ -347,10 +347,12 @@ def list_media_files(
 
 @router.get("/metadata-filters", response_model=dict)
 def get_metadata_filters_endpoint(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+    ownership: str = Query("all", pattern="^(mine|shared|all)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get available metadata filters like formats, codecs, etc."""
-    return get_metadata_filters(db, int(current_user.id))
+    return get_metadata_filters(db, int(current_user.id), ownership=ownership)
 
 
 # =============================================================================

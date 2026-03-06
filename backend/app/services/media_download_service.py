@@ -33,6 +33,7 @@ from app.services.minio_service import upload_file
 from app.services.protected_media_providers import PROTECTED_MEDIA_PROVIDERS
 from app.services.protected_media_providers import ProtectedMediaProvider
 from app.utils.thumbnail import generate_and_upload_thumbnail_sync
+from app.utils.url_validation import is_safe_url
 
 logger = logging.getLogger(__name__)
 
@@ -768,15 +769,24 @@ class MediaDownloadService:
 
     def is_valid_media_url(self, url: str) -> bool:
         """
-        Validate if URL is a valid media URL (any HTTP/HTTPS URL).
+        Validate if URL is a valid and safe media URL.
+
+        Checks both URL format (HTTP/HTTPS) and SSRF safety
+        (blocks private IPs, localhost, cloud metadata endpoints).
 
         Args:
             url: URL to validate
 
         Returns:
-            True if valid media URL, False otherwise
+            True if valid and safe media URL, False otherwise
         """
-        return bool(GENERIC_URL_PATTERN.match(url.strip()))
+        if not GENERIC_URL_PATTERN.match(url.strip()):
+            return False
+        safe, reason = is_safe_url(url)
+        if not safe:
+            logger.warning("SSRF blocked: %s for URL: %s", reason, url[:200])
+            return False
+        return True
 
     def is_youtube_url(self, url: str) -> bool:
         """

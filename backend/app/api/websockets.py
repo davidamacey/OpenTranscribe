@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 from typing import Optional
@@ -11,7 +12,6 @@ from fastapi import WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
-from ..core.security import get_token_from_cookie
 from ..core.security import verify_token
 from ..db.base import get_db
 from ..models.user import User
@@ -29,7 +29,7 @@ class ConnectionManager:
         self.active_connections: dict[int, list[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, user_id: int):
-        await websocket.accept()
+        """Register a WebSocket connection for a user (accept() must be called before this)."""
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
         self.active_connections[user_id].append(websocket)
@@ -125,49 +125,69 @@ async def publish_notification(user_id: int, notification_type: str, data: dict)
         logger.error(f"Failed to publish notification to Redis: {e}")
 
 
-# Authenticate WebSocket connection
-async def get_user_from_websocket(
-    websocket: WebSocket, db: Session = Depends(get_db)
-) -> Optional[User]:
+def _try_authenticate_token(token: str, db: Session) -> Optional[User]:
+    """Validate a JWT token and return the corresponding User, or None."""
     try:
-        # Get token from cookie or query param
-        token = None
-        if "token" in websocket.query_params:
-            token = websocket.query_params["token"]
-        else:
-            cookies = websocket.headers.get("cookie", "")
-            token = get_token_from_cookie(cookies)
-
-        if not token:
-            return None
-
-        # Verify token and get user
         payload = verify_token(token)
-        user_identifier = payload.get("sub")  # This is now a UUID string
+        user_identifier = payload.get("sub")  # UUID string
         if not user_identifier:
             return None
-
-        # Get user from database using UUID
         user = db.query(User).filter(User.uuid == user_identifier).first()
         return user  # type: ignore[no-any-return]
     except Exception as e:
-        logger.error(f"WebSocket authentication error: {str(e)}")
+        logger.error(f"WebSocket token authentication error: {str(e)}")
         return None
 
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)):
+    """WebSocket endpoint with first-message authentication.
+
+    Authentication flow:
+    1. Accept the raw WebSocket connection.
+    2. Try cookie-based auth (``access_token`` cookie).
+    3. If no cookie, wait up to 10 s for a first-message ``authenticate`` frame.
+    4. On success, register the connection and proceed with the normal
+       message loop; on failure, close with an appropriate error code.
+    """
     # Initialize Redis subscriber if not already running
     await setup_redis()
 
-    # Authenticate the connection
-    user = await get_user_from_websocket(websocket, db)
+    # Accept the connection first, then authenticate
+    await websocket.accept()
 
+    user: Optional[User] = None
+
+    # 1. Try cookie-based auth
+    token = websocket.cookies.get("access_token")
+    if token:
+        user = _try_authenticate_token(token, db)
+
+    # 2. If no cookie auth, wait for first-message authentication
     if not user:
-        await websocket.close(code=1008, reason="Authentication failed")
-        return
+        try:
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+            data = json.loads(raw)
+            if data.get("type") != "authenticate" or not data.get("token"):
+                await websocket.close(code=4001, reason="Authentication required")
+                return
+            user = _try_authenticate_token(data["token"], db)
+            if not user:
+                await websocket.close(code=4003, reason="Invalid token")
+                return
+        except asyncio.TimeoutError:
+            await websocket.close(code=4001, reason="Authentication timeout")
+            return
+        except (json.JSONDecodeError, WebSocketDisconnect):
+            with contextlib.suppress(Exception):
+                await websocket.close(code=4002, reason="Invalid message")
+            return
+        except Exception:
+            with contextlib.suppress(Exception):
+                await websocket.close(code=4003, reason="Authentication error")
+            return
 
-    # Accept the connection
+    # Register the authenticated connection
     await manager.connect(websocket, int(user.id))
 
     # Send initial connection status
@@ -182,9 +202,16 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
 
     try:
         while True:
-            # Wait for messages (we don't process client messages currently)
-            # but keep the connection alive
+            # Wait for messages (keep the connection alive)
             data = await websocket.receive_text()
+            # Silently drop auth messages that arrive in the echo loop
+            # (e.g. from cookie-auth clients that also send first-message auth)
+            try:
+                msg = json.loads(data)
+                if isinstance(msg, dict) and msg.get("type") == "authenticate":
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
             # Echo back for debugging/heartbeat
             await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:

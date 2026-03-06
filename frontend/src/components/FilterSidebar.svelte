@@ -374,7 +374,7 @@
       const data = await apiCache.getOrFetch(
         cacheKey.metadataFilters(),
         async () => {
-          const response = await axiosInstance.get('/files/metadata-filters');
+          const response = await axiosInstance.get('/files/metadata-filters', { params: { ownership: 'all' } });
           return response.data;
         },
         CacheTTL.METADATA

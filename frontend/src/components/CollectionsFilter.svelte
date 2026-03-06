@@ -30,7 +30,7 @@
       const data = await apiCache.getOrFetch(
         cacheKey.collections(),
         async () => {
-          const response = await axiosInstance.get('/collections');
+          const response = await axiosInstance.get('/collections', { params: { ownership: 'all' } });
           // Sort collections by media_count descending (most used first)
           return (response.data || []).sort((a: any, b: any) => {
             return (b.media_count || 0) - (a.media_count || 0);

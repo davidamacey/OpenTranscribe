@@ -49,7 +49,7 @@
 
     return entries.map(([key, value]) => `
       <div class="field-group depth-${depth}">
-        <div class="field-title">${formatFieldName(key)}</div>
+        <div class="field-title">${escapeHtml(formatFieldName(key))}</div>
         <div class="field-content">${renderValueWithIndex(value, depth + 1, globalIndex)}</div>
       </div>
     `).join('');
@@ -168,7 +168,7 @@
 
     return entries.map(([key, value]) => `
       <div class="field-group depth-${depth}">
-        <div class="field-title">${formatFieldName(key)}</div>
+        <div class="field-title">${escapeHtml(formatFieldName(key))}</div>
         <div class="field-content">${renderValue(value, depth + 1)}</div>
       </div>
     `).join('');
@@ -199,22 +199,30 @@
     const globalIndex = { count: 0 };
 
     return {
-      bluf: summary.bluf ? highlightWithGlobalIndex(summary.bluf, globalIndex) : null,
-      briefSummary: summary.brief_summary ? highlightWithGlobalIndex(summary.brief_summary, globalIndex) : null,
+      bluf: summary.bluf ? highlightWithGlobalIndex(escapeHtml(summary.bluf), globalIndex) : null,
+      briefSummary: summary.brief_summary ? highlightWithGlobalIndex(escapeHtml(summary.brief_summary), globalIndex) : null,
       keyDecisions: (summary.key_decisions || []).map(decision =>
-        highlightWithGlobalIndex(extractText(decision), globalIndex)
+        highlightWithGlobalIndex(escapeHtml(extractText(decision)), globalIndex)
       ),
       followUpItems: (summary.follow_up_items || []).map(item =>
-        highlightWithGlobalIndex(extractText(item), globalIndex)
+        highlightWithGlobalIndex(escapeHtml(extractText(item)), globalIndex)
       ),
       majorTopics: (summary.major_topics || []).map(topic => ({
         ...topic,
-        topic: highlightWithGlobalIndex(topic.topic || '', globalIndex),
-        key_points: (topic.key_points || []).map(point => highlightWithGlobalIndex(point || '', globalIndex)),
-        participants: (topic.participants || []).map(p => highlightWithGlobalIndex(p || '', globalIndex))
+        topic: highlightWithGlobalIndex(escapeHtml(topic.topic || ''), globalIndex),
+        key_points: (topic.key_points || []).map(point => highlightWithGlobalIndex(escapeHtml(point || ''), globalIndex)),
+        participants: (topic.participants || []).map(p => highlightWithGlobalIndex(escapeHtml(p || ''), globalIndex))
       }))
     };
   }
+
+  // Pre-escape topics for the non-highlighted path
+  $: escapedTopics = (summary.major_topics || []).map(topic => ({
+    ...topic,
+    topic: escapeHtml(topic.topic || ''),
+    key_points: (topic.key_points || []).map((p: string) => escapeHtml(p || '')),
+    participants: (topic.participants || []).map((p: string) => escapeHtml(p || ''))
+  }));
 
   let highlightedContent: any = null;
   let customHighlightedContent: string = '';
@@ -244,20 +252,20 @@
     <section class="bluf-section">
       <h3 class="section-title">{$t('summary.executiveSummary')}</h3>
       <div class="bluf-content">
-        {@html highlightedContent?.bluf || summary.bluf}
+        {@html highlightedContent?.bluf || escapeHtml(summary.bluf || '')}
       </div>
     </section>
 
     <section class="brief-summary-section">
       <h3 class="section-title">{$t('summary.briefSummary')}</h3>
       <div class="brief-summary-content">
-        {@html highlightedContent?.briefSummary || summary.brief_summary}
+        {@html highlightedContent?.briefSummary || escapeHtml(summary.brief_summary || '')}
       </div>
     </section>
 
     {#if summary.major_topics && summary.major_topics.length > 0}
       <TopicsList
-        topics={highlightedContent?.majorTopics || summary.major_topics}
+        topics={highlightedContent?.majorTopics || escapedTopics}
       />
     {/if}
 
@@ -268,7 +276,7 @@
           {#each (highlightedContent?.keyDecisions || summary.key_decisions) as decision}
             <div class="key-decision-item">
               <div class="decision-bullet">✓</div>
-              <div class="decision-text">{@html extractText(decision)}</div>
+              <div class="decision-text">{@html highlightedContent ? decision : escapeHtml(extractText(decision))}</div>
             </div>
           {/each}
         </div>
@@ -282,7 +290,7 @@
           {#each (highlightedContent?.followUpItems || summary.follow_up_items) as item}
             <div class="follow-up-item">
               <div class="follow-up-bullet">→</div>
-              <div class="follow-up-text">{@html extractText(item)}</div>
+              <div class="follow-up-text">{@html highlightedContent ? item : escapeHtml(extractText(item))}</div>
             </div>
           {/each}
         </div>

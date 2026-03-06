@@ -54,13 +54,41 @@ def _validate_production_secrets():
             "Set KEYCLOAK_VERIFY_AUDIENCE=true and configure KEYCLOAK_AUDIENCE for proper token validation."
         )
 
-    # Warn about PKI enabled without trusted proxies
+    # Enforce PKI trusted proxies in production, warn in development
     if settings.PKI_ENABLED and not settings.PKI_TRUSTED_PROXIES:
+        if is_production:
+            logger.critical(
+                "PKI_ENABLED=true but PKI_TRUSTED_PROXIES is empty! "
+                "Any client can inject fake certificate headers. Refusing to start."
+            )
+            raise ValueError("PKI_TRUSTED_PROXIES must be set when PKI_ENABLED=true in production")
+        else:
+            logger.warning(
+                "SECURITY WARNING: PKI_ENABLED=true but PKI_TRUSTED_PROXIES is empty! "
+                "This allows any client to inject PKI certificate headers. "
+                "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses "
+                "(e.g., '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')."
+            )
+
+    # Check Redis password in production
+    if is_production and not settings.REDIS_PASSWORD:
+        logger.critical("REDIS_PASSWORD must be set in production!")
+        raise ValueError("REDIS_PASSWORD is required in production environment")
+
+    # Check debug mode in production
+    if is_production and settings.DEBUG:
+        logger.critical("DEBUG=true in production environment!")
+        raise ValueError("DEBUG must be false in production environment")
+
+    # Warn about insecure presigned URLs in production
+    if (
+        is_production
+        and settings.MINIO_PUBLIC_URL
+        and not settings.MINIO_PUBLIC_URL.startswith("https://")
+    ):
         logger.warning(
-            "SECURITY WARNING: PKI_ENABLED=true but PKI_TRUSTED_PROXIES is empty! "
-            "This allows any client to inject PKI certificate headers. "
-            "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses "
-            "(e.g., '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')."
+            "SECURITY WARNING: MINIO_PUBLIC_URL uses HTTP instead of HTTPS. "
+            "Presigned URLs will be served over an insecure connection in production."
         )
 
     if is_production:
@@ -427,8 +455,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Accept-Language",
+        "X-Request-ID",
+        "X-CSRF-Token",
+    ],
 )
 
 # Configure maximum upload size (50GB)

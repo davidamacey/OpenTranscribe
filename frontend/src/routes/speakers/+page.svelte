@@ -1068,8 +1068,8 @@
       </div>
     </div>
     <div class="preview-player-container">
-      {#key `${speakerPreviewData.media_url}:${speakerPreviewData.start_time}`}
-        {#if PlyrMiniPlayer}
+      {#key `${speakerPreviewData?.media_url}:${speakerPreviewData?.start_time}`}
+        {#if PlyrMiniPlayer && speakerPreviewData}
           <svelte:component this={PlyrMiniPlayer}
             mediaUrl={speakerPreviewData.media_url || ''}
             contentType={speakerPreviewData.content_type}

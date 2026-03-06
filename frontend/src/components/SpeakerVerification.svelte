@@ -996,10 +996,6 @@
       width: 100%;
     }
 
-    .modal-footer {
-      flex-direction: column-reverse;
-    }
-
     .modal-button {
       width: 100%;
     }

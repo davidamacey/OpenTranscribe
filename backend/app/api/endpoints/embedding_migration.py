@@ -54,8 +54,11 @@ async def get_migration_status(
         return status
 
     except Exception as e:
-        logger.error(f"Error getting migration status: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error("Error getting migration status: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.get("/progress")
@@ -78,8 +81,11 @@ async def get_migration_progress(
     try:
         return migration_progress.get_status()
     except Exception as e:
-        logger.error(f"Error getting migration progress: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error("Error getting migration progress: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.post("/start")
@@ -143,8 +149,11 @@ async def start_migration(
         }
 
     except Exception as e:
-        logger.error(f"Error starting migration: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error("Error starting migration: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.post("/stop")
@@ -186,8 +195,11 @@ async def stop_migration(
             }
 
     except Exception as e:
-        logger.error(f"Error stopping migration: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error("Error stopping migration: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.post("/finalize")
@@ -233,8 +245,11 @@ async def finalize_migration(
         }
 
     except Exception as e:
-        logger.error(f"Error starting finalization: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error("Error starting finalization: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.delete("/progress")
@@ -271,8 +286,11 @@ async def clear_progress(
             }
 
     except Exception as e:
-        logger.error(f"Error clearing progress: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error("Error clearing progress: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.get("/mode")

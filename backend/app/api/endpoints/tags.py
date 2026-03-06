@@ -74,12 +74,17 @@ def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_cu
     List all available tags for the current user with usage counts, sorted by most used
     """
     try:
-        # Get tags with usage counts for files owned by this user
+        from sqlalchemy import select
+
+        from app.services.permission_service import PermissionService
+
+        # Get tags with usage counts for files accessible by this user (owned + shared)
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, int(current_user.id))
         tag_counts = (
             db.query(Tag, func.count(FileTag.id).label("usage_count"))
             .outerjoin(FileTag)
             .outerjoin(MediaFile)
-            .filter((MediaFile.user_id == current_user.id) | (MediaFile.id.is_(None)))
+            .filter((MediaFile.id.in_(select(accessible_sq))) | (MediaFile.id.is_(None)))
             .group_by(Tag.id)
             .order_by(func.count(FileTag.id).desc(), Tag.name)
             .all()

@@ -375,8 +375,11 @@ def stop_reindex(
             "message": "Stop signal sent. Reindex will stop after the current file completes.",
         }
     except Exception as e:
-        logger.error(f"Failed to request reindex stop: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error("Failed to request reindex stop: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 def _check_reindex_task_active(user_id: int) -> bool:
@@ -577,10 +580,11 @@ def get_index_health(
                 "error": None,
             }
         except Exception as e:
+            logger.error("Index health check failed for %s: %s", idx, e)
             health[idx] = {
                 "status": "red",
                 "doc_count": 0,
-                "error": str(e)[:200],
+                "error": "Index query failed. Check server logs for details.",
             }
 
     return health

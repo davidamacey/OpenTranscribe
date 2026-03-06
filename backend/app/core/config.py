@@ -498,7 +498,14 @@ class Settings(BaseSettings):
     PKI_OCSP_TIMEOUT_SECONDS: int = _int_env("PKI_OCSP_TIMEOUT_SECONDS", 5)
     PKI_CRL_CACHE_SECONDS: int = _int_env("PKI_CRL_CACHE_SECONDS", 3600)  # Cache CRL for 1 hour
     # Soft-fail allows authentication if revocation check fails (network issues)
-    PKI_REVOCATION_SOFT_FAIL: bool = os.getenv("PKI_REVOCATION_SOFT_FAIL", "true").lower() == "true"
+    # Defaults to false in production (strict revocation checking)
+    PKI_REVOCATION_SOFT_FAIL: bool = (
+        os.getenv(
+            "PKI_REVOCATION_SOFT_FAIL",
+            "false" if ENVIRONMENT.lower() in ("production", "prod") else "true",
+        ).lower()
+        == "true"
+    )
     # Maximum cache size for OCSP responses (LRU eviction when exceeded)
     PKI_OCSP_CACHE_MAX_SIZE: int = _int_env("PKI_OCSP_CACHE_MAX_SIZE", 1000)
     # Maximum cache size for CRLs (LRU eviction when exceeded)

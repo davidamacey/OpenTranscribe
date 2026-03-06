@@ -234,11 +234,11 @@ async def update_config_category(
         }
 
     except Exception as e:
-        logger.error(f"Failed to update {category} config: {e}")
+        logger.error("Failed to update %s config: %s", category, e, exc_info=True)
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update configuration: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -350,11 +350,11 @@ async def migrate_from_env(
         }
 
     except Exception as e:
-        logger.error(f"Migration failed: {e}")
+        logger.error("Migration failed: %s", e, exc_info=True)
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Migration failed: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -440,7 +440,7 @@ async def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestRespons
         logger.warning(f"LDAP connection test failed: {e}")
         return AuthMethodTestResponse(
             success=False,
-            message=f"LDAP connection failed: {str(e)}",
+            message="LDAP connection failed. Please verify server address, port, and credentials.",
         )
     except ImportError:
         return AuthMethodTestResponse(
@@ -451,7 +451,7 @@ async def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestRespons
         logger.error(f"LDAP connection test error: {e}")
         return AuthMethodTestResponse(
             success=False,
-            message=f"LDAP connection failed: {str(e)}",
+            message="LDAP connection failed due to an unexpected error. Check server logs for details.",
         )
 
 
@@ -510,18 +510,19 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
                 )
             else:
                 logger.warning(
-                    f"Keycloak connection test failed with status {response.status_code}"
+                    f"Keycloak connection test failed with status {response.status_code}: "
+                    f"{response.text[:200]}"
                 )
                 return AuthMethodTestResponse(
                     success=False,
-                    message=f"Keycloak returned status {response.status_code}: {response.text[:200]}",
+                    message=f"Keycloak returned HTTP status {response.status_code}. Check server logs for details.",
                 )
 
     except httpx.ConnectError as e:
         logger.warning(f"Keycloak connection test failed: {e}")
         return AuthMethodTestResponse(
             success=False,
-            message=f"Could not connect to Keycloak server: {str(e)}",
+            message="Could not connect to Keycloak server. Please verify the server URL and network connectivity.",
         )
     except httpx.TimeoutException:
         return AuthMethodTestResponse(
@@ -532,5 +533,5 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
         logger.error(f"Keycloak connection test error: {e}")
         return AuthMethodTestResponse(
             success=False,
-            message=f"Keycloak connection failed: {str(e)}",
+            message="Keycloak connection failed due to an unexpected error. Check server logs for details.",
         )

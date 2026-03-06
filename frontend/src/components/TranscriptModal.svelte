@@ -84,15 +84,22 @@
     return matches ? matches.length : 0;
   }
 
-  function highlightSearchTerms(text: string, query: string, matchIndex: number = -1): string {
-    if (!query.trim() || !text) return text;
+  function escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
 
+  function highlightSearchTerms(text: string, query: string, matchIndex: number = -1): string {
+    if (!query.trim() || !text) return escapeHtml(text);
+
+    const escaped = escapeHtml(text);
     const searchTerm = query.toLowerCase();
     const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`(${escapedTerm})`, 'gi');
 
     let currentMatch = 0;
-    return text.replace(regex, (match) => {
+    return escaped.replace(regex, (match) => {
       const isCurrentMatch = currentMatch === matchIndex;
       const matchClass = isCurrentMatch ? 'current-match' : 'search-match';
       const result = `<mark class="${matchClass}" data-match-index="${currentMatch}">${match}</mark>`;

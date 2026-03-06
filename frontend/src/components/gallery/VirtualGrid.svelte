@@ -34,6 +34,9 @@
   let boundScrollContainer: HTMLElement | null = null;
 
   $: totalHeight = totalRows * ROW_HEIGHT;
+  // When all rows are visible, let the container auto-size to avoid dead space
+  // from ROW_HEIGHT overestimating actual card height
+  $: allRowsVisible = visibleStartRow === 0 && visibleEndRow >= totalRows;
 
   $: {
     if (items && scrollContainer) {
@@ -184,7 +187,7 @@
   <div
     bind:this={virtualContainerEl}
     class="virtual-grid-container"
-    style="height: {totalHeight}px; position: relative;"
+    style="{allRowsVisible ? '' : `height: ${totalHeight}px;`} position: relative;"
   >
     <!-- Top spacer -->
     <div style="height: {topSpacerHeight}px;" aria-hidden="true"></div>
@@ -301,8 +304,8 @@
   }
 
   .virtual-grid-container {
-    overflow: hidden;
-    contain: layout style paint;
+    overflow: visible;
+    contain: layout style;
     padding-top: 0.5rem;
     margin-top: -0.5rem;
   }
@@ -311,6 +314,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 1.5rem;
+    padding: 0 2px 0.5rem;  /* Prevent edge clipping from hover/shadow */
   }
 
   .file-card {

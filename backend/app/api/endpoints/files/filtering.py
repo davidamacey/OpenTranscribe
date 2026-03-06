@@ -341,9 +341,9 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
     return query
 
 
-def get_metadata_filters(db: Session, user_id: int) -> dict:
+def get_metadata_filters(db: Session, user_id: int, ownership: str = "all") -> dict:
     """
-    Get available metadata filters for the user's files.
+    Get available metadata filters for the user's accessible files.
 
     Consolidated into 2 queries (was 6) — one for distinct values, one for
     all min/max ranges — so PostgreSQL scans the table at most twice.
@@ -351,10 +351,25 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
     Args:
         db: Database session
         user_id: User ID
+        ownership: 'mine', 'shared', or 'all' (default: 'all')
 
     Returns:
         Dictionary of available filter options
     """
+    from sqlalchemy import and_
+
+    from app.services.permission_service import PermissionService
+
+    # Build the file filter based on ownership
+    if ownership == "mine":
+        file_filter = MediaFile.user_id == user_id
+    elif ownership == "shared":
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, user_id)
+        file_filter = and_(MediaFile.id.in_(select(accessible_sq)), MediaFile.user_id != user_id)
+    else:  # "all"
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, user_id)
+        file_filter = MediaFile.id.in_(select(accessible_sq))
+
     format_text = cast(MediaFile.metadata_important["format"], String)
     codec_text = cast(MediaFile.metadata_important["codec"], String)
     width_text = cast(MediaFile.metadata_important["width"], String)
@@ -370,7 +385,7 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
                 codec_text.isnot(None), codec_text != "null"
             ),
         )
-        .filter(MediaFile.user_id == user_id)
+        .filter(file_filter)
         .first()
     )
 
@@ -389,7 +404,7 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
             func.min(MediaFile.file_size),
             func.max(MediaFile.file_size),
         )
-        .filter(MediaFile.user_id == user_id)
+        .filter(file_filter)
         .first()
     )
 

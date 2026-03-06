@@ -159,7 +159,7 @@ function createWebSocketStore() {
         // This ensures it works in dev, production, and when accessed from different computers
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/ws?token=${encodeURIComponent(token)}`;
+        const wsUrl = `${protocol}//${host}/api/ws`;
 
         // Create new WebSocket
         const socket = new WebSocket(wsUrl);
@@ -171,6 +171,9 @@ function createWebSocketStore() {
 
         // WebSocket event handlers
         socket.onopen = () => {
+          // Authenticate via first message instead of URL query parameter
+          // (security: prevents token exposure in server logs, browser history)
+          socket.send(JSON.stringify({ type: 'authenticate', token: token }));
           update((s: WebSocketState) => {
             s.status = 'connected';
             s.reconnectAttempts = 0;

@@ -539,10 +539,10 @@ async def get_admin_stats(
 
         return stats
     except Exception as e:
-        logger.error(f"Error getting admin stats: {e}")
+        logger.error("Error getting admin stats: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving admin statistics: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -565,10 +565,10 @@ def get_admin_users(
         )
         return users
     except Exception as e:
-        logger.error(f"Error getting admin users: {e}")
+        logger.error("Error getting admin users: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving users: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -592,10 +592,10 @@ def create_admin_user(
         logger.error(f"HTTP error creating user: {he.detail}")
         raise he
     except Exception as e:
-        logger.error(f"Error creating user: {e}")
+        logger.error("Error creating user: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating user: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e
 
 
@@ -1352,7 +1352,7 @@ async def get_audit_logs(
     except Exception as e:
         logger.error(f"Error querying audit logs: {e}")
         return {
-            "error": f"Failed to query audit logs: {str(e)}",
+            "error": "An internal error occurred while querying audit logs.",
             "logs": [],
             "total": 0,
         }
@@ -1451,8 +1451,8 @@ async def export_audit_logs(
         )
 
     except Exception as e:
-        logger.error(f"Error exporting audit logs: {e}")
+        logger.error("Error exporting audit logs: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to export audit logs: {str(e)}",
+            detail="An internal error occurred. Please try again.",
         ) from e

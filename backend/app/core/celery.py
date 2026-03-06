@@ -124,7 +124,8 @@ celery_app.conf.update(
         "ai.retroactive_auto_label": {"queue": "nlp"},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         "index_transcript_search": {"queue": "embedding"},
-        "update_file_access_index": {"queue": "embedding"},
+        # Access index updates are lightweight OpenSearch writes (no GPU/embedding needed)
+        "update_file_access_index": {"queue": "utility"},
         # Utility Queue - Lightweight maintenance tasks (concurrency=8)
         "system.startup_recovery": {"queue": "utility"},
         "system.recover_user_files": {"queue": "utility"},
