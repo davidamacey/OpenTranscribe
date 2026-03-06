@@ -1,0 +1,603 @@
+"""Factory for creating ASR provider instances."""
+from __future__ import annotations
+
+import logging
+import os
+
+from .base import ASRProvider
+from .local_provider import LocalASRProvider
+
+logger = logging.getLogger(__name__)
+
+# Providers that require a non-empty API key from env vars.
+_KEY_REQUIRED: dict[str, str] = {
+    "deepgram": "DEEPGRAM_API_KEY",
+    "assemblyai": "ASSEMBLYAI_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "azure": "AZURE_SPEECH_KEY",
+    "speechmatics": "SPEECHMATICS_API_KEY",
+    "gladia": "GLADIA_API_KEY",
+}
+
+ASR_PROVIDER_CATALOG: dict = {
+    "local": {
+        "id": "local",
+        "display_name": "Local (GPU)",
+        "requires_api_key": False,
+        "requires_region": False,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": True,
+        "supports_translation": True,
+        "description": "Local GPU transcription via faster-whisper + PyAnnote",
+        "models": [
+            {
+                "id": "large-v3-turbo",
+                "display_name": "Large V3 Turbo",
+                "description": "Default — 6× faster, ~6 GB VRAM",
+                "price_per_min_batch": 0,
+                "is_default": True,
+                "supports_diarization": True,
+                "supports_translation": True,
+            },
+            {
+                "id": "large-v3",
+                "display_name": "Large V3",
+                "description": "Best accuracy, ~10 GB VRAM, supports translation",
+                "price_per_min_batch": 0,
+                "supports_diarization": True,
+                "supports_translation": True,
+            },
+            {
+                "id": "large-v2",
+                "display_name": "Large V2",
+                "description": "Legacy, ~10 GB VRAM",
+                "price_per_min_batch": 0,
+                "supports_diarization": True,
+                "supports_translation": True,
+            },
+            {
+                "id": "medium",
+                "display_name": "Medium",
+                "description": "~5 GB VRAM",
+                "price_per_min_batch": 0,
+                "supports_diarization": True,
+            },
+            {
+                "id": "small",
+                "display_name": "Small",
+                "description": "~2 GB VRAM",
+                "price_per_min_batch": 0,
+                "supports_diarization": True,
+            },
+            {
+                "id": "base",
+                "display_name": "Base",
+                "description": "~1 GB VRAM",
+                "price_per_min_batch": 0,
+                "supports_diarization": True,
+            },
+            {
+                "id": "tiny",
+                "display_name": "Tiny",
+                "description": "Fastest, lowest accuracy",
+                "price_per_min_batch": 0,
+                "supports_diarization": True,
+            },
+        ],
+    },
+    "deepgram": {
+        "id": "deepgram",
+        "display_name": "Deepgram",
+        "requires_api_key": True,
+        "requires_region": False,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": True,
+        "supports_translation": False,
+        "description": "Nova-3 flagship model with medical terminology support",
+        "models": [
+            {
+                "id": "nova-3",
+                "display_name": "Nova-3",
+                "description": "Flagship, best accuracy, 36+ languages",
+                "price_per_min_batch": 0.0043,
+                "price_per_min_stream": 0.0077,
+                "languages": 36,
+                "is_default": True,
+                "supports_diarization": True,
+                "supports_vocabulary": True,
+            },
+            {
+                "id": "nova-3-medical",
+                "display_name": "Nova-3 Medical",
+                "description": "Medical terminology optimized, English only",
+                "price_per_min_batch": 0.0043,
+                "price_per_min_stream": 0.0077,
+                "languages": 1,
+                "is_medical": True,
+                "supports_diarization": True,
+                "supports_vocabulary": True,
+            },
+            {
+                "id": "nova-2",
+                "display_name": "Nova-2",
+                "description": "Legacy, stable, 36 languages",
+                "price_per_min_batch": 0.0043,
+                "price_per_min_stream": 0.0077,
+                "languages": 36,
+                "supports_diarization": True,
+                "supports_vocabulary": True,
+            },
+        ],
+    },
+    "assemblyai": {
+        "id": "assemblyai",
+        "display_name": "AssemblyAI",
+        "requires_api_key": True,
+        "requires_region": False,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": True,
+        "supports_translation": False,
+        "description": "Best-in-class diarization with Universal-2 and Slam-1 models",
+        "models": [
+            {
+                "id": "universal",
+                "display_name": "Universal",
+                "description": "Base model, English",
+                "price_per_min_batch": 0.0025,
+                "languages": 1,
+                "is_default": True,
+                "supports_diarization": True,
+            },
+            {
+                "id": "universal-multilingual",
+                "display_name": "Universal (99 languages)",
+                "description": "Auto language detection",
+                "price_per_min_batch": 0.0045,
+                "languages": 99,
+                "supports_diarization": True,
+            },
+            {
+                "id": "slam-1",
+                "display_name": "Slam-1",
+                "description": "Highest accuracy, English",
+                "price_per_min_batch": 0.0062,
+                "languages": 1,
+                "supports_diarization": True,
+            },
+            {
+                "id": "nano",
+                "display_name": "Nano",
+                "description": "Budget-friendly, English",
+                "price_per_min_batch": 0.002,
+                "languages": 1,
+                "supports_diarization": True,
+            },
+        ],
+    },
+    "openai": {
+        "id": "openai",
+        "display_name": "OpenAI",
+        "requires_api_key": True,
+        "requires_region": False,
+        "supports_custom_url": False,
+        "supports_diarization": False,
+        "supports_vocabulary": False,
+        "supports_translation": True,
+        "description": "Whisper-1 and GPT-4o Transcribe (25 MB file limit)",
+        "models": [
+            {
+                "id": "gpt-4o-transcribe",
+                "display_name": "GPT-4o Transcribe",
+                "description": "Higher accuracy than Whisper-1",
+                "price_per_min_batch": 0.006,
+                "is_default": True,
+                "max_file_size_mb": 25,
+                "supports_confidence": True,
+            },
+            {
+                "id": "gpt-4o-transcribe-diarize",
+                "display_name": "GPT-4o Transcribe + Diarize",
+                "description": "Built-in speaker labels",
+                "price_per_min_batch": 0.006,
+                "max_file_size_mb": 25,
+                "supports_diarization": True,
+            },
+            {
+                "id": "whisper-1",
+                "display_name": "Whisper-1",
+                "description": "99 languages, supports translation to English",
+                "price_per_min_batch": 0.006,
+                "languages": 99,
+                "max_file_size_mb": 25,
+                "supports_translation": True,
+            },
+        ],
+    },
+    "google": {
+        "id": "google",
+        "display_name": "Google Cloud Speech",
+        "requires_api_key": False,
+        "requires_region": False,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": False,
+        "supports_translation": False,
+        "description": "Chirp 3 model with 100+ language support (uses service account credentials)",
+        "models": [
+            {
+                "id": "chirp-3",
+                "display_name": "Chirp 3",
+                "description": "Best multilingual, 100+ languages",
+                "price_per_min_batch": 0.024,
+                "languages": 100,
+                "is_default": True,
+                "supports_diarization": True,
+            },
+            {
+                "id": "long",
+                "display_name": "Long Audio",
+                "description": "Optimised for long recordings",
+                "price_per_min_batch": 0.024,
+                "languages": 100,
+                "supports_diarization": True,
+            },
+            {
+                "id": "short",
+                "display_name": "Short Audio",
+                "description": "Optimised for short clips",
+                "price_per_min_batch": 0.024,
+                "languages": 100,
+                "supports_diarization": True,
+            },
+        ],
+    },
+    "azure": {
+        "id": "azure",
+        "display_name": "Azure Speech",
+        "requires_api_key": True,
+        "requires_region": True,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": False,
+        "supports_translation": False,
+        "description": "Azure Speech Services — Whisper and Standard models",
+        "models": [
+            {
+                "id": "whisper",
+                "display_name": "Azure Whisper",
+                "description": "Whisper via Azure, 99 languages",
+                "price_per_min_batch": 0.017,
+                "languages": 99,
+                "is_default": True,
+                "supports_diarization": True,
+            },
+            {
+                "id": "standard",
+                "display_name": "Standard",
+                "description": "Azure's own model, 100+ languages",
+                "price_per_min_batch": 0.017,
+                "languages": 100,
+                "supports_diarization": True,
+            },
+        ],
+    },
+    "aws": {
+        "id": "aws",
+        "display_name": "Amazon Transcribe",
+        "requires_api_key": False,
+        "requires_region": True,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": True,
+        "supports_translation": False,
+        "description": "Standard and Medical transcription (HIPAA-eligible)",
+        "models": [
+            {
+                "id": "standard",
+                "display_name": "Standard",
+                "description": "General purpose",
+                "price_per_min_batch": 0.024,
+                "is_default": True,
+                "supports_diarization": True,
+                "supports_vocabulary": True,
+            },
+            {
+                "id": "medical",
+                "display_name": "Medical",
+                "description": "HIPAA-eligible, medical vocabulary",
+                "price_per_min_batch": 0.075,
+                "is_medical": True,
+                "supports_diarization": True,
+                "supports_vocabulary": True,
+            },
+        ],
+    },
+    "speechmatics": {
+        "id": "speechmatics",
+        "display_name": "Speechmatics",
+        "requires_api_key": True,
+        "requires_region": False,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": True,
+        "supports_translation": False,
+        "description": "Enterprise-grade with 55+ languages and 3 diarization modes",
+        "models": [
+            {
+                "id": "standard",
+                "display_name": "Standard",
+                "description": "55+ languages, includes diarization",
+                "price_per_min_batch": 0.004,
+                "languages": 55,
+                "is_default": True,
+                "supports_diarization": True,
+                "supports_vocabulary": True,
+            },
+        ],
+    },
+    "gladia": {
+        "id": "gladia",
+        "display_name": "Gladia",
+        "requires_api_key": True,
+        "requires_region": False,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": True,
+        "supports_translation": False,
+        "description": "All features bundled, 100+ languages",
+        "models": [
+            {
+                "id": "standard",
+                "display_name": "Standard",
+                "description": "All features included, 100+ languages",
+                "price_per_min_batch": 0.010,
+                "languages": 100,
+                "is_default": True,
+                "supports_diarization": True,
+                "supports_vocabulary": True,
+            },
+        ],
+    },
+}
+
+
+class ASRProviderFactory:
+    @staticmethod
+    def create_for_user(user_id: int, db) -> ASRProvider:
+        """Load active ASR config from DB → env vars → default local.
+
+        Selection priority (highest to lowest):
+        1. User's active DB config (UserASRSettings referenced by active_asr_config_id setting)
+        2. ASR_PROVIDER env var (if set to a non-local provider)
+        3. LocalASRProvider (default fallback)
+        """
+        from app import models
+        from app.utils.encryption import decrypt_api_key
+
+        setting = (
+            db.query(models.UserSetting)
+            .filter(
+                models.UserSetting.user_id == user_id,
+                models.UserSetting.setting_key == "active_asr_config_id",
+            )
+            .first()
+        )
+        if setting and setting.setting_value:
+            try:
+                from app.models.user_asr_settings import UserASRSettings
+
+                cfg = (
+                    db.query(UserASRSettings)
+                    .filter(
+                        UserASRSettings.id == int(setting.setting_value),
+                        UserASRSettings.user_id == user_id,
+                        UserASRSettings.is_active == True,  # noqa: E712 — SQLAlchemy requires == not is
+                    )
+                    .first()
+                )
+                if cfg:
+                    # Explicit "local" provider in DB config — honour it without trying
+                    # to decrypt a (nonexistent) API key.
+                    if cfg.provider == "local":
+                        logger.info(
+                            "ASR provider for user %d: local (explicit DB config id=%s)",
+                            user_id,
+                            cfg.id,
+                        )
+                        return LocalASRProvider()
+
+                    api_key: str | None = None
+                    if cfg.api_key:
+                        api_key = decrypt_api_key(cfg.api_key)
+                        if not api_key:
+                            # Decryption returned empty — the stored key is corrupt or the
+                            # encryption secret changed.  Log and fall through to env/local.
+                            logger.error(
+                                "Decryption of stored API key returned empty for ASR config id=%s "
+                                "(user %d, provider=%s). Falling back to env/local provider.",
+                                cfg.id,
+                                user_id,
+                                cfg.provider,
+                            )
+                            # Fall through intentionally
+                        else:
+                            logger.info(
+                                "ASR provider for user %d: %s (DB config id=%s model=%s)",
+                                user_id,
+                                cfg.provider,
+                                cfg.id,
+                                cfg.model_name,
+                            )
+                            return ASRProviderFactory.create_from_config(
+                                provider=cfg.provider,
+                                api_key=api_key,
+                                model=cfg.model_name,
+                                base_url=cfg.base_url,
+                                region=cfg.region,
+                            )
+                    else:
+                        # No API key stored — valid for providers like Google (service account)
+                        # or AWS (IAM role).
+                        logger.info(
+                            "ASR provider for user %d: %s (DB config id=%s, no API key)",
+                            user_id,
+                            cfg.provider,
+                            cfg.id,
+                        )
+                        return ASRProviderFactory.create_from_config(
+                            provider=cfg.provider,
+                            api_key=None,
+                            model=cfg.model_name,
+                            base_url=cfg.base_url,
+                            region=cfg.region,
+                        )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load ASR config for user %d: %s — falling back to env/local",
+                    user_id,
+                    exc,
+                )
+
+        env_provider = os.getenv("ASR_PROVIDER", "local").lower()
+        if env_provider and env_provider != "local":
+            logger.info(
+                "ASR provider for user %d: %s (env var ASR_PROVIDER)", user_id, env_provider
+            )
+            return ASRProviderFactory._from_env(env_provider)
+
+        logger.debug("ASR provider for user %d: local (default)", user_id)
+        return LocalASRProvider()
+
+    @staticmethod
+    def _from_env(provider: str) -> ASRProvider:  # noqa: C901
+        """Instantiate a provider from environment variables.
+
+        For providers that require an API key, falls back to LocalASRProvider with a
+        warning when the corresponding env var is empty.  This prevents silent failures
+        where a mis-configured ASR_PROVIDER results in API calls with a blank key.
+        """
+        if provider in _KEY_REQUIRED:
+            env_var = _KEY_REQUIRED[provider]
+            api_key = os.getenv(env_var, "").strip()
+            if not api_key:
+                logger.warning(
+                    "ASR_PROVIDER=%s but %s is empty — falling back to local provider. "
+                    "Set %s or configure a DB ASR config to use %s.",
+                    provider,
+                    env_var,
+                    env_var,
+                    provider,
+                )
+                return LocalASRProvider()
+
+        if provider == "deepgram":
+            from .deepgram_provider import DeepgramProvider
+
+            return DeepgramProvider(
+                os.getenv("DEEPGRAM_API_KEY", ""), os.getenv("DEEPGRAM_MODEL", "nova-3")
+            )
+        if provider == "assemblyai":
+            from .assemblyai_provider import AssemblyAIProvider
+
+            return AssemblyAIProvider(
+                os.getenv("ASSEMBLYAI_API_KEY", ""), os.getenv("ASSEMBLYAI_MODEL", "universal")
+            )
+        if provider == "openai":
+            from .openai_provider import OpenAIASRProvider
+
+            return OpenAIASRProvider(
+                os.getenv("OPENAI_API_KEY", ""), os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe")
+            )
+        if provider == "google":
+            from .google_provider import GoogleASRProvider
+
+            return GoogleASRProvider(
+                model_name=os.getenv("GOOGLE_ASR_MODEL", "chirp-3"),
+                credentials_file=os.getenv("GOOGLE_CLOUD_CREDENTIALS"),
+            )
+        if provider == "azure":
+            from .azure_provider import AzureASRProvider
+
+            return AzureASRProvider(
+                os.getenv("AZURE_SPEECH_KEY", ""),
+                os.getenv("AZURE_SPEECH_REGION", "eastus"),
+                os.getenv("AZURE_ASR_MODEL", "whisper"),
+            )
+        if provider == "aws":
+            from .aws_provider import AWSTranscribeProvider
+
+            return AWSTranscribeProvider(
+                region=os.getenv("AWS_REGION", "us-east-1"),
+                model_name=os.getenv("AWS_ASR_MODEL", "standard"),
+                access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            )
+        if provider == "speechmatics":
+            from .speechmatics_provider import SpeechmaticsProvider
+
+            return SpeechmaticsProvider(
+                os.getenv("SPEECHMATICS_API_KEY", ""), os.getenv("SPEECHMATICS_MODEL", "standard")
+            )
+        if provider == "gladia":
+            from .gladia_provider import GladiaProvider
+
+            return GladiaProvider(
+                os.getenv("GLADIA_API_KEY", ""), os.getenv("GLADIA_MODEL", "standard")
+            )
+        logger.warning("Unknown ASR provider '%s', falling back to local", provider)
+        return LocalASRProvider()
+
+    @staticmethod
+    def create_from_config(
+        provider: str,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+        region: str | None = None,
+    ) -> ASRProvider:
+        """Create provider for connection testing (no DB lookup)."""
+        if provider == "local":
+            return LocalASRProvider()
+        if provider == "deepgram":
+            from .deepgram_provider import DeepgramProvider
+
+            return DeepgramProvider(api_key or "", model or "nova-3")
+        if provider == "assemblyai":
+            from .assemblyai_provider import AssemblyAIProvider
+
+            return AssemblyAIProvider(api_key or "", model or "universal")
+        if provider == "openai":
+            from .openai_provider import OpenAIASRProvider
+
+            return OpenAIASRProvider(api_key or "", model or "gpt-4o-transcribe")
+        if provider == "google":
+            from .google_provider import GoogleASRProvider
+
+            return GoogleASRProvider(api_key=api_key, model_name=model or "chirp-3")
+        if provider == "azure":
+            from .azure_provider import AzureASRProvider
+
+            return AzureASRProvider(api_key or "", region or "eastus", model or "whisper")
+        if provider == "aws":
+            from .aws_provider import AWSTranscribeProvider
+
+            return AWSTranscribeProvider(
+                region=region or "us-east-1", model_name=model or "standard"
+            )
+        if provider == "speechmatics":
+            from .speechmatics_provider import SpeechmaticsProvider
+
+            return SpeechmaticsProvider(api_key or "", model or "standard")
+        if provider == "gladia":
+            from .gladia_provider import GladiaProvider
+
+            return GladiaProvider(api_key or "", model or "standard")
+        logger.warning("Unknown provider '%s', falling back to local", provider)
+        return LocalASRProvider()
+
+    @staticmethod
+    def get_provider_catalog() -> dict:
+        return ASR_PROVIDER_CATALOG

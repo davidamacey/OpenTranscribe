@@ -30,6 +30,7 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
             end_time=segment["end"],
             text=segment["text"],
             speaker_id=segment["speaker_id"],
+            confidence=segment.get("confidence"),
         )
         db.add(db_segment)
 
@@ -38,7 +39,12 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
 
 
 def update_media_file_transcription_status(
-    db: Session, file_id: int, segments: list[dict[str, Any]], language: str = "en"
+    db: Session,
+    file_id: int,
+    segments: list[dict[str, Any]],
+    language: str = "en",
+    asr_provider: str | None = None,
+    asr_model: str | None = None,
 ) -> None:
     """
     Update media file with transcription completion metadata.
@@ -48,6 +54,8 @@ def update_media_file_transcription_status(
         file_id: Media file ID
         segments: List of transcript segments
         language: Detected language
+        asr_provider: Name of the ASR provider that ran the transcription (e.g. "deepgram")
+        asr_model: Model name used by the ASR provider (e.g. "nova-3")
     """
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
@@ -62,6 +70,12 @@ def update_media_file_transcription_status(
     media_file.language = language
     media_file.status = FileStatus.COMPLETED
     media_file.completed_at = datetime.datetime.now()
+
+    # Store ASR provider metadata when available
+    if asr_provider is not None and hasattr(media_file, "asr_provider"):
+        media_file.asr_provider = asr_provider
+    if asr_model is not None and hasattr(media_file, "asr_model"):
+        media_file.asr_model = asr_model
 
     db.commit()
     logger.info(f"Updated media file {file_id} transcription status")

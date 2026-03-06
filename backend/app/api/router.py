@@ -6,8 +6,10 @@ from fastapi.routing import APIRoute
 
 from . import websockets
 from .endpoints import admin
+from .endpoints import asr_settings
 from .endpoints import auth
 from .endpoints import comments
+from .endpoints import custom_vocabulary
 from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import media_collections
@@ -93,6 +95,10 @@ include_router_with_consistency(summarization.router, prefix="/files", tags=["su
 include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompts"])
 include_router_with_consistency(llm_settings.router, prefix="/llm-settings", tags=["llm-settings"])
 include_router_with_consistency(llm_status.router, prefix="/llm", tags=["llm-status"])
+include_router_with_consistency(asr_settings.router, prefix="/asr-settings", tags=["asr-settings"])
+include_router_with_consistency(
+    custom_vocabulary.router, prefix="/custom-vocabulary", tags=["custom-vocabulary"]
+)
 include_router_with_consistency(
     user_settings.router, prefix="/user-settings", tags=["user-settings"]
 )

@@ -64,3 +64,16 @@ yt-dlp>=2025.1.7
 sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2)
 # Note: nltk is installed as transitive dependency from transformers/whisperx
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
+
+# Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
+deepgram-sdk>=3.0.0
+assemblyai>=0.30.0
+google-cloud-speech>=2.24.0
+azure-cognitiveservices-speech>=1.35.0
+speechmatics-python>=1.11.0
+# boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
+boto3>=1.28.0
+# openai must be listed explicitly — no package in this requirements pulls it in
+openai>=1.0.0
+# requests is pulled in by many packages but listed explicitly for Gladia REST calls
+requests>=2.31.0

@@ -55,7 +55,12 @@ celery_app.conf.update(
         # GPU Queue - GPU-intensive AI tasks ONLY (concurrency=1, requires GPU)
         # WhisperX transcription + PyAnnote diarization - runs continuously without blocking
         "app.tasks.transcription.*": {"queue": "gpu"},
-        "transcribe_audio": {"queue": "gpu"},
+        # NOTE: "transcribe_audio" is intentionally NOT listed here so that
+        # apply_async(queue=task_queue) in upload.py / reprocess.py can route it
+        # to either "gpu" (local) or "cloud-asr" (cloud provider) at call time.
+        # A static task_routes entry would override the per-call queue argument.
+        # Cloud ASR Queue - Cloud API transcription tasks (concurrency configurable)
+        "transcription.process_file_cloud": {"queue": "cloud-asr"},
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
         # YouTube downloads in parallel, immediately dispatch to GPU when complete
         "process_youtube_url_task": {"queue": "download"},

@@ -18,7 +18,7 @@ fi
 
 # Maximum compose files list for stopping/removing all containers
 # Includes all possible compose files to ensure all containers are stopped
-MAX_COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.prod.yml -f docker-compose.gpu.yml -f docker-compose.gpu-scale.yml -f docker-compose.nginx.yml -f docker-compose.offline.yml"
+MAX_COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.prod.yml -f docker-compose.gpu.yml -f docker-compose.gpu-scale.yml -f docker-compose.lite.yml -f docker-compose.nginx.yml -f docker-compose.offline.yml"
 
 #######################
 # HELPER FUNCTIONS
@@ -31,19 +31,21 @@ show_help() {
   echo "Usage: ./opentr.sh [command] [options]"
   echo ""
   echo "Basic Commands:"
-  echo "  start [dev|prod] [--build] [--pull] [--gpu-scale]  - Start the application (dev mode by default)"
+  echo "  start [dev|prod] [--build] [--pull] [--gpu-scale] [--lite]  - Start the application (dev mode by default)"
   echo "                                                        --build: Build prod images locally (test before push)"
   echo "                                                        --pull:  Force pull prod images from Docker Hub"
   echo "                                                        --gpu-scale: Enable multi-GPU worker scaling"
+  echo "                                                        --lite:  Cloud-only ASR mode (no GPU required)"
   echo "  stop                                       - Stop OpenTranscribe containers"
   echo "  status                                     - Show container status"
   echo "  logs [service]                             - View logs (all services by default)"
   echo ""
   echo "Reset & Database Commands:"
-  echo "  reset [dev|prod] [--build] [--pull] [--gpu-scale]   - Reset and reinitialize (deletes all data!)"
+  echo "  reset [dev|prod] [--build] [--pull] [--gpu-scale] [--lite]  - Reset and reinitialize (deletes all data!)"
   echo "                                                        --build: Build prod images locally (test before push)"
   echo "                                                        --pull:  Force pull prod images from Docker Hub"
   echo "                                                        --gpu-scale: Enable multi-GPU worker scaling"
+  echo "                                                        --lite:  Cloud-only ASR mode (no GPU required)"
   echo "  backup              - Create a database backup"
   echo "  restore [file]      - Restore database from backup"
   echo ""
@@ -73,9 +75,11 @@ show_help() {
   echo "Examples:"
   echo "  ./opentr.sh start                    # Start in development mode"
   echo "  ./opentr.sh start dev --gpu-scale    # Start with multi-GPU scaling enabled"
+  echo "  ./opentr.sh start dev --lite         # Start in cloud-only ASR mode (no GPU)"
   echo "  ./opentr.sh start prod               # Start in production mode (pulls from Docker Hub)"
   echo "  ./opentr.sh start prod --build       # Test production build locally (before pushing)"
   echo "  ./opentr.sh reset dev                # Reset development environment"
+  echo "  ./opentr.sh reset dev --lite         # Reset in cloud-only ASR mode"
   echo "  ./opentr.sh logs backend             # View backend logs"
   echo "  ./opentr.sh restart-backend          # Restart backend services only"
   echo ""
@@ -168,6 +172,7 @@ start_app() {
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
   PULL_FLAG=""
+  LITE_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -181,6 +186,10 @@ start_app() {
         ;;
       --gpu-scale)
         GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      --lite)
+        LITE_FLAG="--lite"
         shift
         ;;
       *)
@@ -200,11 +209,23 @@ start_app() {
     echo "🎯 Multi-GPU scaling enabled"
   fi
 
+  if [ -n "$LITE_FLAG" ]; then
+    echo "☁️  Lite mode enabled (cloud-only ASR, no GPU required)"
+  fi
+
   # Ensure Docker is running
   check_docker
 
-  # Detect and configure hardware
-  detect_and_configure_hardware
+  # Detect and configure hardware (skipped in lite mode — no GPU needed)
+  if [ -z "$LITE_FLAG" ]; then
+    detect_and_configure_hardware
+  else
+    echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
+    export DOCKER_RUNTIME=""
+    export TORCH_DEVICE="cpu"
+    export COMPUTE_TYPE="int8"
+    export USE_GPU="false"
+  fi
 
   # Set build environment
   export BUILD_ENV="$ENVIRONMENT"
@@ -263,6 +284,12 @@ start_app() {
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
 
+  # Add lite overlay if requested (cloud-only ASR, no GPU)
+  if [ -n "$LITE_FLAG" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.lite.yml"
+    echo "☁️  Adding lite overlay (docker-compose.lite.yml)"
+  fi
+
   # Add NGINX reverse proxy if NGINX_SERVER_NAME is set
   if [ -n "$NGINX_SERVER_NAME" ]; then
     if [ -f "docker-compose.nginx.yml" ]; then
@@ -311,6 +338,8 @@ start_app() {
   echo "- Frontend logs: docker compose logs -f frontend"
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "- GPU scaled workers: docker compose logs -f celery-worker-gpu-scaled"
+  elif [ -n "$LITE_FLAG" ]; then
+    echo "- Cloud ASR worker logs: docker compose logs -f celery-cloud-worker"
   else
     echo "- Celery worker logs: docker compose logs -f celery-worker"
   fi
@@ -329,6 +358,7 @@ reset_and_init() {
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
   PULL_FLAG=""
+  LITE_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -342,6 +372,10 @@ reset_and_init() {
         ;;
       --gpu-scale)
         GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      --lite)
+        LITE_FLAG="--lite"
         shift
         ;;
       *)
@@ -361,11 +395,23 @@ reset_and_init() {
     echo "🎯 Multi-GPU scaling enabled"
   fi
 
+  if [ -n "$LITE_FLAG" ]; then
+    echo "☁️  Lite mode enabled (cloud-only ASR, no GPU required)"
+  fi
+
   # Ensure Docker is running
   check_docker
 
-  # Detect and configure hardware
-  detect_and_configure_hardware
+  # Detect and configure hardware (skipped in lite mode — no GPU needed)
+  if [ -z "$LITE_FLAG" ]; then
+    detect_and_configure_hardware
+  else
+    echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
+    export DOCKER_RUNTIME=""
+    export TORCH_DEVICE="cpu"
+    export COMPUTE_TYPE="int8"
+    export USE_GPU="false"
+  fi
 
   # Set build environment
   export BUILD_ENV="$ENVIRONMENT"
@@ -415,6 +461,12 @@ reset_and_init() {
   if [ -n "$GPU_SCALE_FLAG" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
+  fi
+
+  # Add lite overlay if requested (cloud-only ASR, no GPU)
+  if [ -n "$LITE_FLAG" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.lite.yml"
+    echo "☁️  Adding lite overlay (docker-compose.lite.yml)"
   fi
 
   # Add NGINX reverse proxy if NGINX_SERVER_NAME is set

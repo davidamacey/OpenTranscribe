@@ -4,6 +4,7 @@ SQLAlchemy ORM models for OpenTranscribe.
 This package contains database models for all entities in the system.
 """
 
+from .custom_vocabulary import CustomVocabulary
 from .media import Analytics
 from .media import Collection
 from .media import CollectionMember
@@ -24,6 +25,7 @@ from .prompt import UserSetting
 from .refresh_token import RefreshToken
 from .topic import TopicSuggestion
 from .user import User
+from .user_asr_settings import UserASRSettings
 from .user_llm_settings import UserLLMSettings
 from .user_mfa import UserMFA
 
@@ -46,6 +48,8 @@ __all__ = [
     "SummaryPrompt",
     "UserSetting",
     "UserLLMSettings",
+    "UserASRSettings",
+    "CustomVocabulary",
     "TopicSuggestion",
     "RefreshToken",
     "UserMFA",

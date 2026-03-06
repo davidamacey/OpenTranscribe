@@ -408,6 +408,46 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
 
+    # ===== ASR (Speech Recognition) Provider =====
+    ASR_PROVIDER: str = os.getenv("ASR_PROVIDER", "local")
+    DEEPGRAM_API_KEY: str = os.getenv("DEEPGRAM_API_KEY", "")
+    DEEPGRAM_MODEL: str = os.getenv("DEEPGRAM_MODEL", "nova-3")
+    ASSEMBLYAI_API_KEY: str = os.getenv("ASSEMBLYAI_API_KEY", "")
+    ASSEMBLYAI_MODEL: str = os.getenv("ASSEMBLYAI_MODEL", "universal")
+    # OpenAI ASR — reuses OPENAI_API_KEY defined above under LLM settings
+    OPENAI_ASR_API_KEY: str = os.getenv("OPENAI_ASR_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+    OPENAI_ASR_MODEL: str = os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe")
+    # Google Cloud Speech — credentials file path (service account JSON)
+    GOOGLE_ASR_API_KEY: str = os.getenv(
+        "GOOGLE_ASR_API_KEY", ""
+    )  # alias; prefer GOOGLE_CLOUD_CREDENTIALS
+    GOOGLE_CLOUD_CREDENTIALS: str = os.getenv("GOOGLE_CLOUD_CREDENTIALS", "")
+    GOOGLE_ASR_MODEL: str = os.getenv("GOOGLE_ASR_MODEL", "chirp-3")
+    AZURE_SPEECH_KEY: str = os.getenv("AZURE_SPEECH_KEY", "")
+    AZURE_SPEECH_REGION: str = os.getenv("AZURE_SPEECH_REGION", "eastus")
+    # AZURE_SPEECH_MODEL is the canonical name; AZURE_ASR_MODEL is the alias kept for env compat
+    AZURE_SPEECH_MODEL: str = os.getenv(
+        "AZURE_SPEECH_MODEL", os.getenv("AZURE_ASR_MODEL", "whisper")
+    )
+    AZURE_ASR_MODEL: str = os.getenv("AZURE_ASR_MODEL", "whisper")
+    # AWS Transcribe — credentials (can also use IAM role / instance profile)
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    AWS_ASR_MODEL: str = os.getenv("AWS_ASR_MODEL", "standard")
+    AWS_TRANSCRIBE_BUCKET: str = os.getenv("AWS_TRANSCRIBE_BUCKET", "")
+    SPEECHMATICS_API_KEY: str = os.getenv("SPEECHMATICS_API_KEY", "")
+    SPEECHMATICS_MODEL: str = os.getenv("SPEECHMATICS_MODEL", "standard")
+    GLADIA_API_KEY: str = os.getenv("GLADIA_API_KEY", "")
+    GLADIA_MODEL: str = os.getenv("GLADIA_MODEL", "standard")
+    CLOUD_ASR_EXTRACT_EMBEDDINGS: bool = (
+        os.getenv("CLOUD_ASR_EXTRACT_EMBEDDINGS", "true").lower() == "true"
+    )
+    DEPLOYMENT_MODE: str = os.getenv("DEPLOYMENT_MODE", "full")  # full or lite
+
+    # ===== OpenSearch Toggle =====
+    OPENSEARCH_ENABLED: bool = os.getenv("OPENSEARCH_ENABLED", "true").lower() == "true"
+
     # Performance optimization properties
     @property
     def effective_use_gpu(self) -> bool:

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy import inspect
+from sqlalchemy import text
 
 from alembic import command  # type: ignore[attr-defined]
 from alembic.config import Config
@@ -30,7 +31,7 @@ def get_alembic_config() -> Config:
     return config
 
 
-def run_migrations() -> None:
+def run_migrations() -> None:  # noqa: C901
     """
     Run database migrations on startup.
 
@@ -57,9 +58,13 @@ def run_migrations() -> None:
         has_keycloak_pki_columns = False
         # Check for FedRAMP security tables (v0.4.0)
         has_fedramp_tables = False
+        # Check for speaker_cluster table (v220+)
+        has_speaker_cluster = "speaker_cluster" in tables
+        # Check for cluster quality metrics columns (v260)
+        has_cluster_quality_metrics = False
+        # Check for ASR provider support tables (v270)
+        has_asr_settings = False
         if "user" in tables:
-            from sqlalchemy import text
-
             result = conn.execute(
                 text(
                     "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
@@ -86,6 +91,27 @@ def run_migrations() -> None:
             )
             has_fedramp_tables = bool(result.scalar())
 
+        if has_speaker_cluster:
+            # Check for min_similarity column (v260: cluster quality metrics)
+            result = conn.execute(
+                text(
+                    "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name='speaker_cluster' AND column_name='min_similarity')"
+                )
+            )
+            has_cluster_quality_metrics = bool(result.scalar())
+
+        # Check for user_asr_settings table (v270: ASR provider support) — unconditional:
+        # the ASR tables are independent of speaker_cluster and must be detectable even if
+        # the speaker_cluster table is absent (e.g. on databases where it was manually dropped).
+        result = conn.execute(
+            text(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'user_asr_settings')"
+            )
+        )
+        has_asr_settings = bool(result.scalar())
+
     # Determine what action to take (connection is now closed)
     if current_rev:
         # Alembic already tracking - just upgrade
@@ -94,7 +120,27 @@ def run_migrations() -> None:
         command.upgrade(config, "head")
     elif "user" in tables:
         # Existing database without Alembic tracking
-        if has_fedramp_tables:
+        # v270: ASR provider support tables (user_asr_settings presence is sufficient;
+        # has_asr_settings is now checked unconditionally so this works even if
+        # the speaker_cluster table was dropped or never existed on this database)
+        if has_asr_settings:
+            logger.info(
+                "Existing v270 database detected (has ASR provider support tables), stamping version..."
+            )
+            config = get_alembic_config()
+            command.stamp(config, "v270_add_asr_provider_support")
+            logger.info("Applying migrations to upgrade to current version...")
+            command.upgrade(config, "head")
+        # v260: cluster quality metrics columns
+        elif has_speaker_cluster and has_cluster_quality_metrics:
+            logger.info(
+                "Existing v260 database detected (has cluster quality metrics), stamping version..."
+            )
+            config = get_alembic_config()
+            command.stamp(config, "v260_add_cluster_quality_metrics")
+            logger.info("Applying migrations to upgrade to current version...")
+            command.upgrade(config, "head")
+        elif has_fedramp_tables:
             # Has v0.4.0 schema (FedRAMP security tables) - stamp as current
             logger.info(
                 "Existing v0.4.0 database detected (has FedRAMP tables), stamping version..."

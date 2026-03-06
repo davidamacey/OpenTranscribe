@@ -14,6 +14,8 @@
   import RetrySettings from '$components/settings/RetrySettings.svelte';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
+  import ASRSettings from '$components/settings/ASRSettings.svelte';
+  import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
@@ -128,7 +130,9 @@
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' }
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
+        { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic' },
+        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list' }
       ]
     }
   ];
@@ -1038,6 +1042,24 @@
               <h3 class="section-title">{$t('settings.llmProvider.title')}</h3>
               <p class="section-description">{$t('settings.llmProvider.description')}</p>
               <LLMSettings onSettingsChange={onAISettingsChange} />
+            </div>
+          {/if}
+
+          <!-- ASR Provider Section -->
+          {#if activeSection === 'asr-provider'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.asrProvider.title')}</h3>
+              <p class="section-description">{$t('settings.asrProvider.description')}</p>
+              <ASRSettings />
+            </div>
+          {/if}
+
+          <!-- Custom Vocabulary Section -->
+          {#if activeSection === 'custom-vocabulary'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.customVocabulary.title')}</h3>
+              <p class="section-description">{$t('settings.customVocabulary.description')}</p>
+              <CustomVocabularySettings />
             </div>
           {/if}
 

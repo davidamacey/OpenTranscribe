@@ -284,7 +284,7 @@ def _run_whisperx_pipeline(
             update_task_status(db, ctx.task_id, "in_progress", progress=progress)
         send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
 
-    return whisperx_service.process_full_pipeline(
+    raw_result = whisperx_service.process_full_pipeline(
         audio_file_path,
         settings.HUGGINGFACE_TOKEN,
         progress_callback=whisperx_progress_callback,
@@ -292,6 +292,12 @@ def _run_whisperx_pipeline(
         max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
         num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
     )
+    # Annotate the raw WhisperX result with provider/model metadata so that
+    # _process_transcription_result can persist it to media_file.asr_provider /
+    # media_file.asr_model.  Without this the local pipeline leaves those columns NULL.
+    raw_result.setdefault("asr_provider", "local")
+    raw_result.setdefault("asr_model", whisperx_service.model_name)
+    return raw_result
 
 
 def _process_transcription_result(
@@ -335,7 +341,12 @@ def _process_transcription_result(
     with session_scope() as db:
         save_transcript_segments(db, ctx.file_id, processed_segments)
         update_media_file_transcription_status(
-            db, ctx.file_id, processed_segments, result.get("language", "en")
+            db,
+            ctx.file_id,
+            processed_segments,
+            result.get("language", "en"),
+            asr_provider=result.get("asr_provider"),
+            asr_model=result.get("asr_model"),
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
 
@@ -465,6 +476,141 @@ def _extract_metadata_if_available(temp_file_path: str, ctx: TranscriptionContex
             db.commit()
 
 
+def _convert_asr_result_to_segments(result, media_file_id: int) -> list[dict]:
+    """
+    Convert an ASRResult from a cloud provider to the segment dict format used by storage.
+
+    Args:
+        result: ASRResult instance from a cloud ASR provider
+        media_file_id: ID of the media file (unused here, kept for signature clarity)
+
+    Returns:
+        List of segment dicts matching the format expected by save_transcript_segments
+        and process_segments_with_speakers.
+
+    Notes:
+        - Handles ``segment.words`` being None or an empty list (returns ``words: []``).
+        - Handles ``segment.speaker`` being None (non-diarized providers).
+        - Handles ``segment.confidence`` being None (mapped to None in output dict,
+          which ``save_transcript_segments`` accepts via ``.get("confidence")``).
+        - Each word dict uses the key ``"score"`` (not ``"confidence"``) to match
+          the WhisperX output convention expected by ``process_segments_with_speakers``.
+        - An empty ``result.segments`` list produces an empty return value, which is
+          then caught by ``_validate_transcription_result`` in the calling pipeline.
+    """
+    segments = []
+    for seg in result.segments:
+        words = []
+        for w in seg.words or []:
+            words.append(
+                {
+                    "word": w.word,
+                    "start": w.start,
+                    "end": w.end,
+                    "score": w.confidence if w.confidence is not None else 1.0,
+                }
+            )
+        segments.append(
+            {
+                "start": seg.start,
+                "end": seg.end,
+                "text": seg.text,
+                "speaker": seg.speaker,  # already SPEAKER_XX format or None
+                "confidence": seg.confidence,  # may be None — safe for .get("confidence")
+                "words": words,
+            }
+        )
+    return segments
+
+
+def _run_cloud_asr_pipeline(
+    ctx: TranscriptionContext,
+    audio_file_path: str,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    provider=None,
+) -> dict:
+    """
+    Run the cloud ASR transcription pipeline for a non-local provider.
+
+    Args:
+        ctx: Transcription context
+        audio_file_path: Path to the prepared audio file
+        min_speakers: Optional minimum speakers hint
+        max_speakers: Optional maximum speakers hint
+        num_speakers: Optional fixed speaker count
+        provider: Already-instantiated ASR provider (avoids a redundant DB lookup).
+            If None, a new provider is created from DB config (fallback path).
+
+    Returns:
+        Result dict with 'segments' and 'language' keys matching the WhisperX format
+    """
+    from app.services.asr.factory import ASRProviderFactory
+    from app.services.asr.types import ASRConfig
+
+    with session_scope() as db:
+        # Re-use the already-created provider if supplied; otherwise create a fresh one.
+        # This prevents a redundant DB round-trip when called from _process_file_in_temp_dir.
+        if provider is None:
+            provider = ASRProviderFactory.create_for_user(ctx.user_id, db)
+        user_lang_settings = _get_user_language_settings(db, ctx.user_id)
+
+        # Load active custom vocabulary terms for this user
+        from app.models.custom_vocabulary import CustomVocabulary
+
+        vocab_terms: list[str] = [
+            row.term
+            for row in db.query(CustomVocabulary.term)
+            .filter(
+                (CustomVocabulary.user_id == ctx.user_id) | CustomVocabulary.user_id.is_(None),
+                CustomVocabulary.is_active.is_(True),
+            )
+            .all()
+        ]
+
+    logger.info(
+        f"Running cloud ASR pipeline with provider '{provider.provider_name}' "
+        f"for file {ctx.file_id}"
+        + (f" ({len(vocab_terms)} vocabulary terms)" if vocab_terms else "")
+    )
+
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.4, "Running cloud ASR transcription")
+
+    # Only request diarization when the provider actually supports it; passing
+    # enable_diarization=True to a provider that doesn't support it (e.g. OpenAI
+    # whisper-1) wastes the parameter and can confuse the response parser.
+    config = ASRConfig(
+        language=user_lang_settings["source_language"],
+        min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
+        max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
+        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        enable_diarization=provider.supports_diarization(),
+        translate_to_english=user_lang_settings["translate_to_english"],
+        vocabulary=vocab_terms if vocab_terms else None,
+    )
+
+    def cloud_progress_callback(progress: float, message: str) -> None:
+        with session_scope() as db:
+            update_task_status(db, ctx.task_id, "in_progress", progress=progress)
+        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+
+    with session_scope() as db:
+        update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
+
+    asr_result = provider.transcribe(audio_file_path, config, cloud_progress_callback)
+
+    # Convert ASRResult to the dict format the rest of the pipeline expects
+    raw_segments = _convert_asr_result_to_segments(asr_result, ctx.file_id)
+
+    return {
+        "segments": raw_segments,
+        "language": asr_result.language,
+        "asr_provider": asr_result.provider_name,
+        "asr_model": asr_result.model_name,
+    }
+
+
 def _process_file_in_temp_dir(
     ctx: TranscriptionContext,
     temp_dir: str,
@@ -504,7 +650,49 @@ def _process_file_in_temp_dir(
         progress_callback=audio_extraction_progress_callback,
     )
 
-    # Run WhisperX pipeline
+    # Check whether the user has a cloud ASR provider configured.
+    # If so, route to the cloud pipeline; otherwise fall through to the local WhisperX pipeline.
+    # The provider instance is passed directly into _run_cloud_asr_pipeline to avoid a
+    # redundant DB round-trip (factory.create_for_user hits the DB every call).
+    #
+    # Only fall back to local for factory/config-loading errors (e.g. DB connectivity or
+    # missing env vars at startup).  Errors from the provider's transcribe() call itself
+    # (network failures, quota exceeded, bad API key) are re-raised so the outer handler
+    # marks the file as FAILED with a clear error message rather than silently re-running
+    # on local GPU (which can be very confusing in production).
+    try:
+        from app.services.asr.factory import ASRProviderFactory
+
+        with session_scope() as db:
+            provider = ASRProviderFactory.create_for_user(ctx.user_id, db)
+    except Exception as factory_exc:
+        logger.warning(
+            "Failed to instantiate ASR provider for file %d (user %d), "
+            "falling back to local pipeline: %s",
+            ctx.file_id,
+            ctx.user_id,
+            factory_exc,
+        )
+        provider = None  # type: ignore[assignment]
+
+    if provider is not None and provider.provider_name != "local":
+        # Cloud pipeline — errors propagate so the task is marked FAILED, not silently
+        # re-attempted on local GPU.
+        result = _run_cloud_asr_pipeline(
+            ctx,
+            audio_file_path,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            provider=provider,
+        )
+        # Validate transcription result
+        validation_error = _validate_transcription_result(result, ctx, ctx.task_id)
+        if validation_error:
+            return validation_error
+        return _process_transcription_result(ctx, result, audio_file_path)
+
+    # Local WhisperX pipeline (unchanged)
     result = _run_whisperx_pipeline(ctx, audio_file_path, min_speakers, max_speakers, num_speakers)
 
     # Validate transcription result
