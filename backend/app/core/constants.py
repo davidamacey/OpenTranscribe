@@ -465,5 +465,17 @@ DEFAULT_AUDIO_QUALITY = "best"
 VALID_VIDEO_QUALITIES = list(VIDEO_QUALITY_OPTIONS.keys())
 VALID_AUDIO_QUALITIES = list(AUDIO_QUALITY_OPTIONS.keys())
 
-# Note: LANGUAGES_WITH_ALIGNMENT is defined at the top of this file
-# via dynamic import from whisperx.alignment module
+# =============================================================================
+# Auto-Label Settings
+# =============================================================================
+
+DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD = 0.75
+FUZZY_MATCH_THRESHOLD = 0.85
+
+# Tag/collection source identifiers
+TAG_SOURCE_MANUAL = "manual"
+TAG_SOURCE_AUTO_AI = "auto_ai"
+TAG_SOURCE_BULK_GROUP = "bulk_group"
+
+# WebSocket notification types for auto-labeling
+NOTIFICATION_TYPE_AUTO_LABEL_STATUS = "auto_label_status"

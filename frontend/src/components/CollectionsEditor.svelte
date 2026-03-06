@@ -9,7 +9,7 @@
 
   /** @type {string} */
   export let fileId = "";
-  /** @type {Array<{uuid: string, name: string, description?: string}>} */
+  /** @type {Array<{uuid: string, name: string, description?: string, source?: string}>} */
   export let collections = [];
   /** @type {Array<{name: string, confidence: number, rationale?: string, description?: string}>} */
   export let aiSuggestions = [];
@@ -19,6 +19,10 @@
     !collections.some(col => col.name.toLowerCase() === suggestion.name.toLowerCase())
   );
 
+  $: autoAppliedCollectionNames = collections
+    .filter(c => c.source === 'auto_ai' || c.source === 'bulk_group')
+    .map(c => c.name);
+
   // Ensure collections are always in the correct format
   $: {
     if (Array.isArray(collections)) {
@@ -27,7 +31,8 @@
           return {
             uuid: collection.uuid || `temp-${collection.name}`,
             name: collection.name || '',
-            description: collection.description || ''
+            description: collection.description || '',
+            source: collection.source || undefined
           };
         }
         return collection;
@@ -301,7 +306,12 @@
       <span class="no-collections">{$t('collections.noCollectionsYet')}</span>
     {/if}
     {#each collections.filter(c => c && c.uuid !== undefined) as collection (collection.uuid)}
-      <span class="collection">
+      <span class="collection" class:ai-collection={collection.source === 'auto_ai' || collection.source === 'bulk_group'}>
+        {#if collection.source === 'auto_ai' || collection.source === 'bulk_group'}
+          <span class="ai-icon" title={collection.source === 'bulk_group' ? $t('autoLabel.bulkGrouped') : $t('autoLabel.autoAppliedCollection')}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </span>
+        {/if}
         {collection.name}
         <button class="collection-remove" on:click={() => removeFromCollection(collection.uuid)} title={$t('collections.removeFromCollection')}>×</button>
       </span>
@@ -335,6 +345,7 @@
     suggestions={filteredAISuggestions}
     type="collection"
     {loading}
+    autoAppliedCollections={autoAppliedCollectionNames}
     on:accept={handleAcceptAISuggestion}
   />
 
@@ -488,12 +499,12 @@
   }
 
   /* Dark mode support */
-  :global(.dark) .collection {
+  :global([data-theme='dark']) .collection {
     background: rgba(59, 130, 246, 0.2);
-    color: #93bbfc;
+    color: var(--primary-color);
   }
 
-  :global(.dark) .suggested-collection:hover {
+  :global([data-theme='dark']) .suggested-collection:hover {
     background-color: rgba(59, 130, 246, 0.1);
   }
 
@@ -506,5 +517,21 @@
   .dropdown-label {
     color: var(--text-light);
     font-size: 0.8rem;
+  }
+
+  .ai-collection {
+    background-color: rgba(168, 85, 247, 0.1);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .ai-icon {
+    color: var(--ai-accent-color, #a855f7);
+    display: flex;
+    align-items: center;
+  }
+
+  :global([data-theme='dark']) .ai-collection {
+    background-color: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.4);
   }
 </style>

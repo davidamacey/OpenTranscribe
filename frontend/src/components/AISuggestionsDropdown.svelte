@@ -6,6 +6,8 @@
   export let suggestions: Array<{name: string, confidence: number, rationale?: string}> = [];
   export let type: 'tag' | 'collection' = 'tag';
   export let loading = false;
+  export let autoAppliedTags: string[] = [];
+  export let autoAppliedCollections: string[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -131,7 +133,7 @@
                   background: {getConfidenceBackground(suggestion.confidence)};
                   border-color: {getConfidenceColor(suggestion.confidence)};
                 "
-                title={suggestion.rationale || `Confidence: ${Math.round(suggestion.confidence * 100)}%`}
+                title={suggestion.rationale || `${Math.round(suggestion.confidence * 100)}%`}
               >
                 <button
                   class="chip-add"
@@ -160,6 +162,22 @@
             {/each}
           </div>
         {/if}
+
+        <!-- Auto-applied info banner -->
+        {#if (type === 'tag' && autoAppliedTags.length > 0) || (type === 'collection' && autoAppliedCollections.length > 0)}
+          <div class="auto-applied-banner">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" class="sparkle-icon">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+            <span>
+              {#if type === 'tag'}
+                {$t('autoLabel.autoAppliedCount', { count: autoAppliedTags.length, type: $t('ai.tags').toLowerCase() })}
+              {:else}
+                {$t('autoLabel.autoAppliedCount', { count: autoAppliedCollections.length, type: $t('ai.collections').toLowerCase() })}
+              {/if}
+            </span>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -170,7 +188,7 @@
     margin-top: 8px;
     border-radius: 6px;
     border: 1px solid var(--border-color);
-    background: var(--surface-secondary);
+    background: var(--surface-color);
     overflow: hidden;
   }
 
@@ -187,7 +205,7 @@
   }
 
   .ai-suggestions-header:hover:not(:disabled) {
-    background: var(--surface-hover);
+    background: var(--hover-color);
   }
 
   .ai-suggestions-header:disabled {
@@ -285,13 +303,13 @@
   }
 
   .btn-save {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-save:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-hover);
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
@@ -306,15 +324,15 @@
   }
 
   .btn-cancel {
-    background: #6b7280;
+    background: var(--text-secondary);
     color: white;
-    border: 1px solid #6b7280;
+    border: 1px solid var(--text-secondary);
     box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
   }
 
   .btn-cancel:hover {
-    background: #4b5563;
-    border: 1px solid #4b5563;
+    background: var(--text-color);
+    border: 1px solid var(--text-color);
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
   }
@@ -388,8 +406,24 @@
   }
 
   /* Dark mode adjustments */
-  :global(.dark) .chip-add:hover:not(:disabled),
-  :global(.dark) .chip-edit:hover:not(:disabled) {
+  :global([data-theme='dark']) .chip-add:hover:not(:disabled),
+  :global([data-theme='dark']) .chip-edit:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.1);
+  }
+
+  .auto-applied-banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: #a855f7;
+    background: rgba(168, 85, 247, 0.12);
+    border-top: 1px solid var(--border-color);
+  }
+
+  .sparkle-icon {
+    color: #a855f7;
+    flex-shrink: 0;
   }
 </style>

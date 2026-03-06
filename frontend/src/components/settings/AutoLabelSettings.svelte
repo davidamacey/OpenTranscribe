@@ -1,0 +1,480 @@
+<script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+  import axiosInstance from '$lib/axios';
+  import { toastStore } from '$stores/toast';
+  import { settingsModalStore } from '$stores/settingsModalStore';
+  import { t } from '$stores/locale';
+
+  let enabled = true;
+  let confidenceThreshold = 0.75;
+  let tagsEnabled = true;
+  let collectionsEnabled = true;
+  let bulkGroupingEnabled = true;
+
+  let loading = false;
+  let saving = false;
+  let retroactiveRunning = false;
+  let retroactiveProgress = '';
+  let hasChanges = false;
+
+  // Original values for change tracking
+  let originalEnabled = true;
+  let originalThreshold = 0.75;
+  let originalTagsEnabled = true;
+  let originalCollectionsEnabled = true;
+  let originalBulkGroupingEnabled = true;
+
+  $: hasChanges = enabled !== originalEnabled ||
+    confidenceThreshold !== originalThreshold ||
+    tagsEnabled !== originalTagsEnabled ||
+    collectionsEnabled !== originalCollectionsEnabled ||
+    bulkGroupingEnabled !== originalBulkGroupingEnabled;
+
+  // Integrate with settingsModalStore dirty state
+  $: settingsModalStore.setDirty('auto-labeling', hasChanges);
+
+  async function loadSettings() {
+    loading = true;
+    try {
+      const response = await axiosInstance.get('/user-settings/auto-label');
+      const data = response.data;
+      enabled = data.enabled ?? true;
+      confidenceThreshold = data.confidence_threshold ?? 0.75;
+      tagsEnabled = data.tags_enabled ?? true;
+      collectionsEnabled = data.collections_enabled ?? true;
+      bulkGroupingEnabled = data.bulk_grouping_enabled ?? true;
+
+      originalEnabled = enabled;
+      originalThreshold = confidenceThreshold;
+      originalTagsEnabled = tagsEnabled;
+      originalCollectionsEnabled = collectionsEnabled;
+      originalBulkGroupingEnabled = bulkGroupingEnabled;
+    } catch (err) {
+      console.error('[AutoLabelSettings] Error loading settings:', err);
+      toastStore.error($t('autoLabel.loadFailed'));
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function saveSettings() {
+    saving = true;
+    try {
+      const response = await axiosInstance.put('/user-settings/auto-label', {
+        enabled,
+        confidence_threshold: confidenceThreshold,
+        tags_enabled: tagsEnabled,
+        collections_enabled: collectionsEnabled,
+        bulk_grouping_enabled: bulkGroupingEnabled,
+      });
+
+      const data = response.data;
+      originalEnabled = data.enabled;
+      originalThreshold = data.confidence_threshold;
+      originalTagsEnabled = data.tags_enabled;
+      originalCollectionsEnabled = data.collections_enabled;
+      originalBulkGroupingEnabled = data.bulk_grouping_enabled;
+
+      toastStore.success($t('autoLabel.settingsSaved'));
+    } catch (err) {
+      console.error('[AutoLabelSettings] Error saving settings:', err);
+      toastStore.error($t('autoLabel.settingsSaveFailed'));
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function triggerRetroactiveApply() {
+    retroactiveRunning = true;
+    retroactiveProgress = $t('autoLabel.retroactiveStarting');
+    try {
+      await axiosInstance.post('/files/retroactive-auto-label', {});
+      toastStore.success($t('autoLabel.retroactiveStarted'));
+      retroactiveProgress = $t('autoLabel.retroactiveProcessing');
+      // UI state will be updated by WebSocket auto-label-status events
+    } catch (err) {
+      console.error('[AutoLabelSettings] Error triggering retroactive apply:', err);
+      toastStore.error($t('autoLabel.retroactiveFailed'));
+      retroactiveRunning = false;
+      retroactiveProgress = '';
+    }
+  }
+
+  // WebSocket event handler for auto-label status updates
+  function handleAutoLabelStatus(event: CustomEvent) {
+    const detail = event.detail;
+    if (!detail) return;
+
+    const status = detail.status;
+    const message = detail.message || '';
+
+    if (status === 'processing') {
+      retroactiveRunning = true;
+      retroactiveProgress = message;
+    } else if (status === 'completed') {
+      retroactiveRunning = false;
+      retroactiveProgress = '';
+      toastStore.success(message);
+    } else if (status === 'failed') {
+      retroactiveRunning = false;
+      retroactiveProgress = '';
+      toastStore.error(message);
+    }
+  }
+
+  onMount(() => {
+    loadSettings();
+    window.addEventListener('auto-label-status', handleAutoLabelStatus as EventListener);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('auto-label-status', handleAutoLabelStatus as EventListener);
+  });
+</script>
+
+<div class="auto-label-settings">
+  {#if loading}
+    <div class="loading-state">
+      <span class="spinner"></span>
+      <span>{$t('autoLabel.loading')}</span>
+    </div>
+  {:else}
+    <div class="settings-group">
+      <!-- Master Toggle -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label for="auto-label-enabled" class="setting-label">{$t('autoLabel.enableLabel')}</label>
+          <span class="setting-help">{$t('autoLabel.enableHelp')}</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="auto-label-enabled" bind:checked={enabled} />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      {#if enabled}
+        <!-- Confidence Threshold -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label for="confidence-threshold" class="setting-label">{$t('autoLabel.thresholdLabel')}</label>
+            <span class="setting-help">{$t('autoLabel.thresholdHelp')}</span>
+          </div>
+          <div class="slider-container">
+            <input
+              type="range"
+              id="confidence-threshold"
+              min="0.5"
+              max="1.0"
+              step="0.05"
+              bind:value={confidenceThreshold}
+              class="threshold-slider"
+            />
+            <span class="threshold-value">{Math.round(confidenceThreshold * 100)}%</span>
+          </div>
+        </div>
+
+        <!-- Tags Toggle -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label for="auto-label-tags" class="setting-label">{$t('autoLabel.tagsLabel')}</label>
+            <span class="setting-help">{$t('autoLabel.tagsHelp')}</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="auto-label-tags" bind:checked={tagsEnabled} />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Collections Toggle -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label for="auto-label-collections" class="setting-label">{$t('autoLabel.collectionsLabel')}</label>
+            <span class="setting-help">{$t('autoLabel.collectionsHelp')}</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="auto-label-collections" bind:checked={collectionsEnabled} />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Bulk Grouping Toggle -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <label for="auto-label-bulk" class="setting-label">{$t('autoLabel.bulkGroupingLabel')}</label>
+            <span class="setting-help">{$t('autoLabel.bulkGroupingHelp')}</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="auto-label-bulk" bind:checked={bulkGroupingEnabled} />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Save Button -->
+    {#if hasChanges}
+      <div class="save-section">
+        <button
+          class="btn-save"
+          on:click={saveSettings}
+          disabled={saving}
+        >
+          {saving ? $t('autoLabel.saving') : $t('autoLabel.saveSettings')}
+        </button>
+      </div>
+    {/if}
+
+    <!-- Retroactive Apply Section -->
+    <div class="retroactive-section">
+      <div class="setting-info">
+        <span class="setting-label">{$t('autoLabel.retroactiveLabel')}</span>
+        <span class="setting-help">{$t('autoLabel.retroactiveHelp')}</span>
+      </div>
+      <button
+        class="btn-retroactive"
+        on:click={triggerRetroactiveApply}
+        disabled={retroactiveRunning || !enabled}
+      >
+        {#if retroactiveRunning}
+          <span class="spinner small"></span>
+          {retroactiveProgress}
+        {:else}
+          {$t('autoLabel.retroactiveButton')}
+        {/if}
+      </button>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .auto-label-settings {
+    padding: 1rem 0;
+  }
+
+  .settings-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+  }
+
+  .setting-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .setting-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .setting-help {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.3;
+  }
+
+  /* Toggle Switch */
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+    margin-left: 1rem;
+  }
+
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border-color);
+    transition: 0.3s;
+    border-radius: 24px;
+  }
+
+  .toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--toggle-button, white);
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+
+  .toggle-switch input:focus-visible + .toggle-slider {
+    outline: 2px solid var(--primary-color, #3b82f6);
+    outline-offset: 2px;
+  }
+
+  .toggle-switch input:checked + .toggle-slider {
+    background-color: var(--primary-color);
+  }
+
+  .toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+  }
+
+  /* Slider */
+  .slider-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+    margin-left: 1rem;
+  }
+
+  .threshold-slider {
+    width: 120px;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 2px;
+    background: var(--border-color);
+    outline: none;
+  }
+
+  .threshold-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+  }
+
+  .threshold-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+    border: none;
+  }
+
+  .threshold-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    min-width: 40px;
+    text-align: right;
+  }
+
+  /* Save Section */
+  .save-section {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .btn-save {
+    padding: 0.5rem 1.5rem;
+    border-radius: 8px;
+    border: none;
+    background: var(--primary-color);
+    color: white;
+    font-weight: 500;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-save:hover:not(:disabled) {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .btn-save:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Retroactive Section */
+  .retroactive-section {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    border-radius: 8px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+  }
+
+  .btn-retroactive {
+    margin-top: 0.75rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--primary-color);
+    background: transparent;
+    color: var(--primary-color);
+    font-weight: 500;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-retroactive:hover:not(:disabled) {
+    background: var(--primary-color);
+    color: white;
+  }
+
+  .btn-retroactive:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Loading State */
+  .loading-state {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    color: var(--text-secondary);
+  }
+
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .spinner.small {
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>

@@ -21,7 +21,9 @@ from app.utils.task_lock import with_task_lock
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="system.startup_recovery", bind=True, acks_late=True, reject_on_worker_lost=True)
+@celery_app.task(
+    name="system.startup_recovery", bind=True, acks_late=True, reject_on_worker_lost=True
+)
 def startup_recovery_task(self):
     """
     Recovery task to run on system startup to handle files/tasks interrupted by
@@ -99,7 +101,9 @@ def startup_recovery_task(self):
     return summary
 
 
-@celery_app.task(name="system.recover_user_files", bind=True, acks_late=True, reject_on_worker_lost=True)
+@celery_app.task(
+    name="system.recover_user_files", bind=True, acks_late=True, reject_on_worker_lost=True
+)
 def recover_user_files_task(self, user_id: int | None = None):
     """
     Task to recover files for a specific user or all users.

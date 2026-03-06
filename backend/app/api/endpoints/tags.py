@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.core.constants import TAG_SOURCE_MANUAL
 from app.db.base import get_db
 from app.models.media import FileTag
 from app.models.media import MediaFile
@@ -24,7 +25,7 @@ from app.schemas.media import TagWithCount
 logger = logging.getLogger(__name__)
 
 
-def _get_or_create_tag(db: Session, name: str) -> Tag:
+def _get_or_create_tag(db: Session, name: str, source: str = TAG_SOURCE_MANUAL) -> Tag:
     """Atomically get or create a tag, handling concurrent race conditions.
 
     Uses try-insert-then-select to avoid TOCTOU race on the unique name constraint.
@@ -34,7 +35,10 @@ def _get_or_create_tag(db: Session, name: str) -> Tag:
         return tag  # type: ignore[no-any-return]
 
     try:
-        tag = Tag(name=name)
+        import re
+
+        normalized = re.sub(r"\s+", " ", re.sub(r"[-_]+", " ", name.lower().strip()))
+        tag = Tag(name=name, source=source, normalized_name=normalized)
         db.add(tag)
         db.flush()  # Flush to trigger unique constraint check within the transaction
         return tag  # type: ignore[no-any-return]
@@ -84,7 +88,9 @@ def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_cu
         # Convert to TagWithCount objects
         tags_with_counts = []
         for tag, count in tag_counts:
-            tags_with_counts.append(TagWithCount(uuid=tag.uuid, name=tag.name, usage_count=count))
+            tags_with_counts.append(
+                TagWithCount(uuid=tag.uuid, name=tag.name, source=tag.source, usage_count=count)
+            )
 
         return tags_with_counts
     except Exception as e:
@@ -198,7 +204,7 @@ async def add_tag_to_file(
 
     if not existing_tag:
         # Add tag to file
-        file_tag = FileTag(media_file_id=file_id, tag_id=tag.id)
+        file_tag = FileTag(media_file_id=file_id, tag_id=tag.id, source=TAG_SOURCE_MANUAL)
         db.add(file_tag)
         db.commit()
 

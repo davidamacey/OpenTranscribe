@@ -61,6 +61,7 @@ celery_app = Celery(
         "app.tasks.cleanup",
         "app.tasks.rediarize_task",
         "app.tasks.speaker_clustering",
+        "app.tasks.auto_labeling",
     ],
 )
 
@@ -111,6 +112,8 @@ celery_app.conf.update(
         "app.tasks.topic_extraction.*": {"queue": "nlp"},
         "ai.extract_topics": {"queue": "nlp"},
         "ai.extract_topics_batch": {"queue": "nlp"},
+        "ai.group_batch_files": {"queue": "nlp"},
+        "ai.retroactive_auto_label": {"queue": "nlp"},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         # Dedicated worker keeps the embedding model loaded and processes one at a time.
         # Same pattern as GPU queue: sequential execution, model stays warm in memory.

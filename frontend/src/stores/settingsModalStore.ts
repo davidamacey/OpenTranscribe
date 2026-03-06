@@ -13,6 +13,7 @@ export type SettingsSection =
   | 'download'
   | 'ai-prompts'
   | 'llm-provider'
+  | 'auto-labeling'
   | 'search-indexing'
   | 'groups'
   // System sections (visible to all users)
@@ -49,6 +50,7 @@ const initialState: SettingsModalState = {
     download: false,
     'ai-prompts': false,
     'llm-provider': false,
+    'auto-labeling': false,
     'search-indexing': false,
     groups: false,
     'system-statistics': false,

@@ -8,6 +8,7 @@ export type NotificationType =
   | 'transcription_status'
   | 'summarization_status'
   | 'topic_extraction_status'
+  | 'auto_label_status'
   | 'youtube_processing_status'
   | 'playlist_processing_status'
   | 'analytics_status'
@@ -354,11 +355,20 @@ function createWebSocketStore() {
               // Fall through to create a visible notification
             }
 
+            // Dispatch auto-label status events for AutoLabelSettings component
+            if (data.type === 'auto_label_status') {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('auto-label-status', { detail: data.data }));
+              }
+              // Fall through to progressive notification handler
+            }
+
             // Handle progressive notifications
             const isProgressiveType =
               data.type === 'transcription_status' ||
               data.type === 'summarization_status' ||
               data.type === 'topic_extraction_status' ||
+              data.type === 'auto_label_status' ||
               data.type === 'youtube_processing_status' ||
               data.type === 'playlist_processing_status';
 
@@ -615,6 +625,8 @@ function createWebSocketStore() {
         return translate('notifications.summarizationUpdate');
       case 'topic_extraction_status':
         return translate('notifications.topicExtraction');
+      case 'auto_label_status':
+        return translate('notifications.autoLabeling');
       case 'youtube_processing_status':
         return translate('notifications.youtubeProcessing');
       case 'playlist_processing_status':

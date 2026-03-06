@@ -21,6 +21,7 @@
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
+  import AutoLabelSettings from '$components/settings/AutoLabelSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
@@ -168,7 +169,8 @@
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
         { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' }
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
+        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' }
       ]
     },
     {
@@ -1107,6 +1109,15 @@
               <h3 class="section-title">{$t('settings.llmProvider.title')}</h3>
               <p class="section-description">{$t('settings.llmProvider.description')}</p>
               <LLMSettings onSettingsChange={onAISettingsChange} />
+            </div>
+          {/if}
+
+          <!-- Auto-Labeling Section -->
+          {#if activeSection === 'auto-labeling'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('autoLabel.title')}</h3>
+              <p class="section-description">{$t('autoLabel.description')}</p>
+              <AutoLabelSettings />
             </div>
           {/if}
 

@@ -15,6 +15,7 @@ from typing import Literal
 from typing import cast
 
 from fastapi import APIRouter
+from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
@@ -65,6 +66,7 @@ from app.schemas.organization_context import OrganizationContextUpdate
 from app.schemas.speaker_attribute_settings import SpeakerAttributeSettings
 from app.schemas.speaker_attribute_settings import SpeakerAttributeSettingsUpdate
 from app.schemas.speaker_attribute_settings import SpeakerAttributeSystemDefaults
+from app.schemas.topic import AutoLabelSettingsSchema
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
@@ -1262,3 +1264,29 @@ def get_download_system_defaults() -> DownloadSystemDefaults:
         available_video_qualities=VIDEO_QUALITY_OPTIONS,
         available_audio_qualities=AUDIO_QUALITY_OPTIONS,
     )
+
+
+@router.get("/auto-label")
+async def get_auto_label_settings(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> dict:
+    """Get user's auto-label settings."""
+    from app.services.auto_label_service import AutoLabelService
+
+    service = AutoLabelService(db)
+    return service.get_user_auto_label_settings(int(current_user.id))
+
+
+@router.put("/auto-label")
+async def update_auto_label_settings(
+    settings_data: AutoLabelSettingsSchema = Body(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> dict:
+    """Update user's auto-label settings."""
+    from app.services.auto_label_service import AutoLabelService
+
+    service = AutoLabelService(db)
+    service.save_user_auto_label_settings(int(current_user.id), settings_data.model_dump())
+    return service.get_user_auto_label_settings(int(current_user.id))

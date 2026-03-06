@@ -52,12 +52,17 @@ class TopicSuggestion(Base):
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # AI-generated suggestions (JSONB arrays)
-    suggested_tags = Column(JSONB, nullable=True, default=[])
-    suggested_collections = Column(JSONB, nullable=True, default=[])
+    suggested_tags = Column(JSONB, nullable=True, default=list)
+    suggested_collections = Column(JSONB, nullable=True, default=list)
 
     # User interaction tracking
     status = Column(String(50), nullable=False, default="pending", index=True)
     user_decisions = Column(JSONB, nullable=True)  # {accepted_collections: [], accepted_tags: []}
+
+    # Auto-apply tracking
+    auto_applied_tags = Column(JSONB, nullable=True, default=list)
+    auto_applied_collections = Column(JSONB, nullable=True, default=list)
+    auto_apply_completed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
