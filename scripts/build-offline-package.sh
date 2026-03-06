@@ -21,12 +21,14 @@ if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
 fi
 
 # Parse command line arguments
+# shellcheck disable=SC2034 # used by sourced offline-common.sh
 USE_LOCAL_IMAGES=false
 VERSION=""
 
 for arg in "$@"; do
     case $arg in
         --local)
+            # shellcheck disable=SC2034
             USE_LOCAL_IMAGES=true
             shift
             ;;
@@ -247,7 +249,6 @@ download_models() {
         -v "${temp_model_cache}/sentence-transformers:/home/appuser/.cache/sentence-transformers" \
         -v "${temp_model_cache}/opensearch-ml:/home/appuser/.cache/opensearch-ml" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
-        -v "$(pwd)/test_videos:/app/test_videos:ro" \
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py
 

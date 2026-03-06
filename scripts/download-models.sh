@@ -181,14 +181,17 @@ download_models_docker() {
     print_info "Starting model download using Docker..."
     echo ""
 
-    # Get Whisper model from .env or use default
-    local whisper_model="large-v3-turbo"
-    if [ -f "$REPO_ROOT/.env" ]; then
+    # Get Whisper model: caller's env var > .env file > default
+    local whisper_model="${WHISPER_MODEL:-}"
+    if [ -z "$whisper_model" ] && [ -f "$REPO_ROOT/.env" ]; then
         local env_model
         env_model=$(grep "^WHISPER_MODEL=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
         if [ -n "$env_model" ]; then
             whisper_model="$env_model"
         fi
+    fi
+    if [ -z "$whisper_model" ]; then
+        whisper_model="large-v3-turbo"
     fi
 
     # Determine if GPU is available
@@ -214,12 +217,11 @@ download_models_docker() {
 
     # Run the download with real-time output
     # IMPORTANT: Backend runs as 'appuser' (UID 1000), so mount to /home/appuser/.cache
-    # Note: When using --gpus device=X, Docker remaps that GPU to index 0 inside container
-    # So we always use CUDA_VISIBLE_DEVICES=0 inside the container, regardless of host GPU index
+    # When using --gpus device=X, Docker isolates that GPU and it appears as device 0 in the container
+    # Do NOT set CUDA_VISIBLE_DEVICES - PyTorch will automatically use the only available GPU
     # shellcheck disable=SC2086
     docker run --rm \
         $gpu_args \
-        -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${whisper_model}" \
         -e USE_GPU="${use_gpu}" \

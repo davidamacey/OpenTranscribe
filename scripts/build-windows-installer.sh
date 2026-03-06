@@ -23,12 +23,14 @@ if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
 fi
 
 # Parse command line arguments
+# shellcheck disable=SC2034 # used by sourced offline-common.sh
 USE_LOCAL_IMAGES=false
 VERSION=""
 
 for arg in "$@"; do
     case $arg in
         --local)
+            # shellcheck disable=SC2034
             USE_LOCAL_IMAGES=true
             shift
             ;;
@@ -240,10 +242,11 @@ download_models() {
     fi
 
     # Run as appuser (non-root) matching container security configuration
+    # IMPORTANT: When using --gpus device=X, Docker isolates that GPU and it appears as device 0 in the container
+    # Do NOT set CUDA_VISIBLE_DEVICES - PyTorch will automatically use the only available GPU
     # shellcheck disable=SC2086
     docker run --rm \
         $gpu_args \
-        -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${WHISPER_MODEL:-large-v3-turbo}" \
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
@@ -257,7 +260,6 @@ download_models() {
         -v "${temp_model_cache}/sentence-transformers:/home/appuser/.cache/sentence-transformers" \
         -v "${temp_model_cache}/opensearch-ml:/home/appuser/.cache/opensearch-ml" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
-        -v "$(pwd)/test_videos:/app/test_videos:ro" \
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py
 
