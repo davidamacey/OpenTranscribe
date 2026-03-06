@@ -57,6 +57,10 @@ def print_error(text):
     """Print error message"""
     print(f"❌ {text}")
 
+def print_warning(text):
+    """Print warning message"""
+    print(f"⚠️  {text}")
+
 def download_whisperx_models():
     """Download WhisperX models"""
     print_header("Downloading WhisperX Models")
@@ -64,7 +68,7 @@ def download_whisperx_models():
     try:
         import whisperx
 
-        model_name = os.environ.get("WHISPER_MODEL", "large-v2")
+        model_name = os.environ.get("WHISPER_MODEL", "large-v3-turbo")
         device = "cuda" if os.environ.get("USE_GPU", "true").lower() == "true" else "cpu"
         compute_type = os.environ.get("COMPUTE_TYPE", "float16")
 
@@ -809,7 +813,7 @@ def create_manifest(download_results):
         "models": download_results,
         "cache": get_cache_info(),
         "environment": {
-            "whisper_model": os.environ.get("WHISPER_MODEL", "large-v2"),
+            "whisper_model": os.environ.get("WHISPER_MODEL", "large-v3-turbo"),
             "diarization_model": os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1"),
             "use_gpu": os.environ.get("USE_GPU", "true"),
             "compute_type": os.environ.get("COMPUTE_TYPE", "float16")

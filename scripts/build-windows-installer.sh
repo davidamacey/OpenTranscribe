@@ -11,13 +11,10 @@ set -e
 #
 # This script runs on Linux and prepares all files needed for Inno Setup on Windows
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+# Source shared functions (colors, print helpers, model selection, GPU selection)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/offline-common.sh
+source "${SCRIPT_DIR}/offline-common.sh"
 
 # Load .env file if it exists and HUGGINGFACE_TOKEN is not already set
 if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
@@ -50,53 +47,6 @@ PACKAGE_NAME="opentranscribe-windows-v${VERSION}"
 BUILD_DIR="./offline-package-build/windows"
 PACKAGE_DIR="${BUILD_DIR}/${PACKAGE_NAME}"
 
-#######################
-# HELPER FUNCTIONS
-#######################
-
-print_header() {
-    echo -e "\n${CYAN}================================================================${NC}"
-    echo -e "${CYAN}  $1${NC}"
-    echo -e "${CYAN}================================================================${NC}\n"
-}
-
-print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-# Check if command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-# Calculate directory size
-get_dir_size() {
-    du -sh "$1" 2>/dev/null | cut -f1 || echo "0"
-}
-
-# Create checksums
-create_checksums() {
-    local dir=$1
-    print_info "Creating checksums for verification..."
-
-    cd "$dir"
-    find . -type f ! -name "checksums.sha256" -exec sha256sum {} \; > checksums.sha256
-    cd - > /dev/null
-
-    print_success "Checksums created"
-}
 
 #######################
 # PRE-FLIGHT CHECKS
@@ -242,6 +192,7 @@ setup_directories() {
     mkdir -p "${PACKAGE_DIR}/models/torch"
     mkdir -p "${PACKAGE_DIR}/models/nltk_data"
     mkdir -p "${PACKAGE_DIR}/models/sentence-transformers"
+    mkdir -p "${PACKAGE_DIR}/models/opensearch-ml"
     mkdir -p "${PACKAGE_DIR}/config"
     mkdir -p "${PACKAGE_DIR}/database"
     mkdir -p "${PACKAGE_DIR}/scripts"
@@ -249,251 +200,10 @@ setup_directories() {
     print_success "Directory structure created"
 }
 
-#######################
-# DOCKER IMAGES
-#######################
+# pull_and_save_images() is provided by offline-common.sh
 
-pull_and_save_images() {
-    print_header "Pulling and Saving Docker Images"
-
-    local total_images=${#IMAGES[@]}
-    local current=0
-
-    for image in "${IMAGES[@]}"; do
-        current=$((current + 1))
-        local image_file
-        image_file=$(echo "$image" | tr '/:' '__')
-        local output_path="${PACKAGE_DIR}/docker-images/${image_file}.tar"
-
-        print_info "[$current/$total_images] Processing: $image"
-
-        # Pull image from Docker Hub (unless --local flag is set)
-        if [ "$USE_LOCAL_IMAGES" = true ]; then
-            print_info "  Using local image (skipping pull)..."
-            if ! docker image inspect "$image" &>/dev/null; then
-                print_error "  Local image not found: $image"
-                print_info "  Please build the image first with: docker compose build"
-                exit 1
-            fi
-        else
-            print_info "  Pulling image from Docker Hub..."
-            if ! docker pull "$image"; then
-                print_error "  Failed to pull $image"
-                exit 1
-            fi
-        fi
-
-        # Save image
-        print_info "  Saving image to tar..."
-        if ! docker save "$image" -o "$output_path"; then
-            print_error "  Failed to save $image"
-            exit 1
-        fi
-
-        local size
-        size=$(get_dir_size "$output_path")
-        print_success "  Saved ($size)"
-    done
-
-    # Create image metadata
-    print_info "Creating image metadata..."
-    cat > "${PACKAGE_DIR}/docker-images/metadata.json" <<EOF
-{
-  "created_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "version": "${VERSION}",
-  "images": [
-$(for img in "${IMAGES[@]}"; do
-    echo "    \"$img\","
-done | sed '$ s/,$//')
-  ]
-}
-EOF
-
-    print_success "All Docker images saved"
-}
-
-#######################
-# AI MODELS
-#######################
-
-select_whisper_model_for_offline() {
-    print_header "Whisper Model Selection"
-
-    # Detect GPU if available for recommendation
-    local RECOMMENDED_MODEL="large-v2"
-    local RECOMMENDATION_REASON="Best accuracy - recommended for offline deployments"
-    local GPU_MEMORY=""
-
-    if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
-        GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}" 2>/dev/null)
-        if [ -n "$GPU_MEMORY" ]; then
-            if [[ $GPU_MEMORY -gt 16000 ]]; then
-                RECOMMENDED_MODEL="large-v2"
-                RECOMMENDATION_REASON="High-end GPU detected (${GPU_MEMORY}MB VRAM) - best accuracy"
-            elif [[ $GPU_MEMORY -gt 8000 ]]; then
-                RECOMMENDED_MODEL="large-v2"
-                RECOMMENDATION_REASON="Mid-range GPU detected (${GPU_MEMORY}MB VRAM) - best accuracy"
-            elif [[ $GPU_MEMORY -gt 4000 ]]; then
-                RECOMMENDED_MODEL="medium"
-                RECOMMENDATION_REASON="Entry-level GPU detected (${GPU_MEMORY}MB VRAM)"
-            else
-                RECOMMENDED_MODEL="small"
-                RECOMMENDATION_REASON="Low-memory GPU detected (${GPU_MEMORY}MB VRAM)"
-            fi
-        fi
-    fi
-
-    echo -e "${BLUE}Available Whisper Models:${NC}"
-    echo ""
-    echo "  Model       Size    Memory   Speed       Accuracy    Download"
-    echo "  ────────────────────────────────────────────────────────────────"
-    echo "  tiny        39MB    ~1GB     Fastest     Lowest      ~39MB"
-    echo "  base        74MB    ~1GB     Very Fast   Low         ~74MB"
-    echo "  small       244MB   ~2GB     Fast        Good        ~244MB"
-    echo "  medium      769MB   ~5GB     Moderate    Better      ~769MB"
-    echo "  large-v2    1.5GB   ~10GB    Slow        Best        ~1.5GB"
-    echo ""
-    echo -e "${GREEN}Recommendation: ${RECOMMENDED_MODEL}${NC}"
-    echo "  Reason: ${RECOMMENDATION_REASON}"
-    echo ""
-    echo -e "${YELLOW}IMPORTANT for Offline Deployments:${NC}"
-    echo "  • Choose based on the GPU that will be used on the Windows target system"
-    echo "  • The selected model will be included in the Windows installer"
-    echo "  • You cannot download a different model after deployment without internet"
-    echo "  • Consider the target system's GPU memory, not your current build system"
-    echo ""
-
-    # Check if WHISPER_MODEL is already set in environment
-    if [ -n "$WHISPER_MODEL" ]; then
-        print_info "WHISPER_MODEL already set to: $WHISPER_MODEL"
-        read -p "Use this model or select a different one? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            print_success "Using model: $WHISPER_MODEL"
-            return 0
-        fi
-    fi
-
-    # Prompt user for model selection
-    while true; do
-        read -r -p "Select model for Windows installer (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model
-
-        # Use recommended if user just presses Enter
-        if [ -z "$user_model" ]; then
-            WHISPER_MODEL="$RECOMMENDED_MODEL"
-            break
-        fi
-
-        # Validate input
-        case "$user_model" in
-            tiny|base|small|medium|large-v2|large-v1)
-                WHISPER_MODEL="$user_model"
-                break
-                ;;
-            *)
-                print_error "Invalid model. Please choose: tiny, base, small, medium, or large-v2"
-                ;;
-        esac
-    done
-
-    echo ""
-    print_success "Selected model for Windows installer: ${WHISPER_MODEL}"
-    if [ "$WHISPER_MODEL" != "$RECOMMENDED_MODEL" ]; then
-        print_warning "Note: You selected a different model than recommended"
-    fi
-
-    # Export for use in download_models
-    export WHISPER_MODEL
-    echo ""
-}
-
-select_gpu_device_for_build() {
-    print_header "GPU Selection for Model Downloads"
-
-    # Check if nvidia-smi is available
-    if ! command_exists nvidia-smi; then
-        print_warning "nvidia-smi not found - GPU not available"
-        print_info "Model downloads will use CPU mode (slower)"
-        export GPU_DEVICE_ID=""
-        return 0
-    fi
-
-    # Check if any GPUs are detected
-    local gpu_count
-    gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits 2>/dev/null | wc -l)
-
-    if [ "$gpu_count" -eq 0 ]; then
-        print_warning "No NVIDIA GPUs detected"
-        print_info "Model downloads will use CPU mode (slower)"
-        export GPU_DEVICE_ID=""
-        return 0
-    fi
-
-    # Single GPU - use it automatically
-    if [ "$gpu_count" -eq 1 ]; then
-        export GPU_DEVICE_ID="0"
-        local gpu_name
-        local gpu_memory
-        gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i 0 2>/dev/null)
-        gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i 0 2>/dev/null)
-        print_success "Using GPU 0: ${gpu_name} (${gpu_memory}MB)"
-        return 0
-    fi
-
-    # Multiple GPUs - prompt user to select
-    echo
-    print_info "Multiple GPUs Detected: $gpu_count GPUs available"
-    echo
-    print_info "Available GPUs:"
-    nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader | while IFS=, read -r idx name mem_total mem_free; do
-        echo "  [${idx}] ${name} (${mem_total} total, ${mem_free} free)"
-    done
-
-    echo
-    print_info "Select which GPU to use for model downloads"
-    print_warning "Choose a GPU that is not heavily used by other tasks"
-    echo
-
-    local selected_gpu="0"
-
-    # Prompt user for GPU selection
-    while true; do
-        read -r -p "Enter GPU index to use [0-$((gpu_count-1))] (default: 0): " user_input
-
-        # Use default if empty
-        if [ -z "$user_input" ]; then
-            selected_gpu="0"
-            break
-        fi
-
-        # Validate input is a number
-        if ! [[ "$user_input" =~ ^[0-9]+$ ]]; then
-            print_error "Invalid input. Please enter a number."
-            continue
-        fi
-
-        # Validate GPU index is within range
-        if [ "$user_input" -ge 0 ] && [ "$user_input" -lt "$gpu_count" ]; then
-            selected_gpu="$user_input"
-            break
-        else
-            print_error "Invalid GPU index. Please enter a number between 0 and $((gpu_count-1))."
-        fi
-    done
-
-    # Export GPU_DEVICE_ID for use in download_models
-    export GPU_DEVICE_ID="$selected_gpu"
-
-    # Get selected GPU details
-    local gpu_name
-    local gpu_memory
-    gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "$GPU_DEVICE_ID" 2>/dev/null)
-    gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "$GPU_DEVICE_ID" 2>/dev/null)
-
-    echo
-    print_success "Selected GPU ${GPU_DEVICE_ID}: ${gpu_name} (${gpu_memory}MB)"
-    echo
-}
+# select_whisper_model_for_offline(), select_opensearch_models_for_offline(),
+# select_gpu_device_for_build(), pull_and_save_images() are provided by offline-common.sh
 
 download_models() {
     print_header "Downloading AI Models"
@@ -517,6 +227,7 @@ download_models() {
     mkdir -p "${temp_model_cache}/torch"
     mkdir -p "${temp_model_cache}/nltk_data"
     mkdir -p "${temp_model_cache}/sentence-transformers"
+    mkdir -p "${temp_model_cache}/opensearch-ml"
 
     # Run backend container with model download script
     print_info "Running model download in Docker container..."
@@ -534,14 +245,17 @@ download_models() {
         $gpu_args \
         -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
-        -e WHISPER_MODEL="${WHISPER_MODEL:-large-v2}" \
+        -e WHISPER_MODEL="${WHISPER_MODEL:-large-v3-turbo}" \
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
         -e USE_GPU="${USE_GPU:-true}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
+        -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \
+        -e DOWNLOAD_ALL_OPENSEARCH_MODELS="${DOWNLOAD_ALL_OPENSEARCH_MODELS:-false}" \
         -v "${temp_model_cache}/huggingface:/home/appuser/.cache/huggingface" \
         -v "${temp_model_cache}/torch:/home/appuser/.cache/torch" \
         -v "${temp_model_cache}/nltk_data:/home/appuser/.cache/nltk_data" \
         -v "${temp_model_cache}/sentence-transformers:/home/appuser/.cache/sentence-transformers" \
+        -v "${temp_model_cache}/opensearch-ml:/home/appuser/.cache/opensearch-ml" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
         -v "$(pwd)/test_videos:/app/test_videos:ro" \
         davidamacey/opentranscribe-backend:latest \
@@ -575,6 +289,13 @@ download_models() {
         print_info "  Copied sentence-transformers models"
     else
         print_warning "No sentence-transformers models found to copy"
+    fi
+
+    if [ -d "${temp_model_cache}/opensearch-ml" ] && [ "$(ls -A ${temp_model_cache}/opensearch-ml 2>/dev/null)" ]; then
+        cp -r "${temp_model_cache}/opensearch-ml"/* "${PACKAGE_DIR}/models/opensearch-ml/"
+        print_info "  Copied OpenSearch neural models"
+    else
+        print_warning "No OpenSearch neural models found to copy"
     fi
 
     # Check if model manifest was created
@@ -773,6 +494,7 @@ main() {
     extract_docker_images
     setup_directories
     select_whisper_model_for_offline
+    select_opensearch_models_for_offline
     select_gpu_device_for_build
     pull_and_save_images
     download_models

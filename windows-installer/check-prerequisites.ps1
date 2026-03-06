@@ -150,7 +150,8 @@ function Test-SystemResources {
         Add-Warning "Performance may be limited with fewer than 4 CPU cores"
     }
 
-    # Check disk space on C: drive
+    # Check disk space on C: drive (100GB for installed system + runtime)
+    # Note: Linux build-offline-package.sh requires 80GB for the build process only (temp files cleaned after)
     $disk = Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DeviceID -eq "C:"}
     $freeSpaceGB = [math]::Round($disk.FreeSpace / 1GB, 2)
     $totalSpaceGB = [math]::Round($disk.Size / 1GB, 2)
