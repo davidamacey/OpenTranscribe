@@ -85,7 +85,7 @@ class UploadSession(Base):
     # Final MinIO object path (e.g. user_1/file_42/video.mp4)
     storage_path = Column(String(1024), nullable=False)
     # Bytes successfully received and pushed to MinIO
-    offset = Column(BigInteger, default=0, nullable=False)
+    offset = Column("offset", BigInteger, default=0, nullable=False)
     # Total file size from Upload-Length header
     total_size = Column(BigInteger, nullable=False)
     content_type = Column(String(256), default="application/octet-stream", nullable=False)

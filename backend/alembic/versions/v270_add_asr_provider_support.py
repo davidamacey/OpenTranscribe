@@ -79,9 +79,9 @@ def upgrade():
             category    VARCHAR(100),
             is_active   BOOLEAN NOT NULL DEFAULT TRUE,
             created_at  TIMESTAMPTZ DEFAULT NOW(),
-            updated_at  TIMESTAMPTZ DEFAULT NOW(),
-            CONSTRAINT _custom_vocab_unique UNIQUE (COALESCE(user_id, 0), term, domain)
+            updated_at  TIMESTAMPTZ DEFAULT NOW()
         );
+        CREATE UNIQUE INDEX IF NOT EXISTS _custom_vocab_unique ON custom_vocabulary (COALESCE(user_id, 0), term, domain);
         CREATE INDEX IF NOT EXISTS ix_custom_vocabulary_user_id       ON custom_vocabulary(user_id);
         CREATE INDEX IF NOT EXISTS ix_custom_vocabulary_domain        ON custom_vocabulary(domain);
         CREATE INDEX IF NOT EXISTS ix_custom_vocabulary_user_active   ON custom_vocabulary(user_id, is_active);

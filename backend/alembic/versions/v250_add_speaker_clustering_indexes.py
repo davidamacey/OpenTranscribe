@@ -1,7 +1,7 @@
 """Add missing indexes on FK columns for speaker clustering performance.
 
 Revision ID: v250_add_speaker_clustering_indexes
-Revises: v220_add_speaker_clusters
+Revises: v230_add_auto_labeling
 Create Date: 2026-03-05
 
 The v220 migration created speaker_cluster_member with a UNIQUE constraint
@@ -15,7 +15,7 @@ in v220 without an index.
 from alembic import op
 
 revision = "v250_add_speaker_clustering_indexes"
-down_revision = "v220_add_speaker_clusters"
+down_revision = "v230_add_auto_labeling"
 branch_labels = None
 depends_on = None
 

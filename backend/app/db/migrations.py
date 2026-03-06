@@ -257,6 +257,177 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     return "v010_baseline"
 
 
+def _repair_skipped_v230(config) -> None:
+    """Apply v230 schema changes if they were skipped due to branch merge.
+
+    The v230_add_auto_labeling migration may have been skipped on databases
+    that were upgraded through the v250→v260→v270 branch before the migration
+    chain was linearised. All SQL is idempotent (IF NOT EXISTS).
+    """
+
+    engine = create_engine(settings.DATABASE_URL)
+    try:
+        with engine.connect() as conn:
+            missing = not _check_column_exists(conn, "media_file", "upload_batch_id")
+        if not missing:
+            return
+
+        logger.info("Detected missing v230 schema changes — applying repair...")
+        with engine.connect() as conn:
+            # Import and run the v230 upgrade function directly
+            # Run inside an alembic operation context
+            from alembic.operations import Operations
+            from alembic.runtime.migration import MigrationContext
+
+            from alembic.versions.v230_add_auto_labeling import upgrade as v230_upgrade
+
+            mc = MigrationContext.configure(conn)
+            ops = Operations(mc)  # noqa: F841
+            v230_upgrade()
+            conn.commit()
+        logger.info("v230 repair complete")
+    except Exception:
+        # Fall back to raw SQL for the critical missing column
+        logger.warning("v230 module import failed, applying critical columns directly")
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS upload_batch (
+                    id SERIAL PRIMARY KEY,
+                    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+                    user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+                    source VARCHAR(50) NOT NULL,
+                    file_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    grouping_status VARCHAR(50) DEFAULT 'pending'
+                )
+            """)
+            )
+            conn.execute(
+                text("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'media_file' AND column_name = 'upload_batch_id'
+                    ) THEN
+                        ALTER TABLE media_file
+                        ADD COLUMN upload_batch_id INTEGER
+                        REFERENCES upload_batch(id) ON DELETE SET NULL;
+                    END IF;
+                END $$
+            """)
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_media_file_upload_batch_id "
+                    "ON media_file(upload_batch_id)"
+                )
+            )
+            # tag columns
+            conn.execute(
+                text("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'tag' AND column_name = 'source')
+                    THEN ALTER TABLE tag ADD COLUMN source VARCHAR(50);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'tag' AND column_name = 'normalized_name')
+                    THEN ALTER TABLE tag ADD COLUMN normalized_name VARCHAR;
+                    END IF;
+                END $$
+            """)
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_tag_normalized_name ON tag(normalized_name)")
+            )
+            # file_tag columns
+            conn.execute(
+                text("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'file_tag' AND column_name = 'source')
+                    THEN ALTER TABLE file_tag ADD COLUMN source VARCHAR(50);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'file_tag' AND column_name = 'ai_confidence')
+                    THEN ALTER TABLE file_tag ADD COLUMN ai_confidence FLOAT;
+                    END IF;
+                END $$
+            """)
+            )
+            # collection columns
+            conn.execute(
+                text("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'collection' AND column_name = 'source')
+                    THEN ALTER TABLE collection ADD COLUMN source VARCHAR(50);
+                    END IF;
+                END $$
+            """)
+            )
+            # collection_member columns
+            conn.execute(
+                text("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'collection_member' AND column_name = 'source')
+                    THEN ALTER TABLE collection_member ADD COLUMN source VARCHAR(50);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'collection_member' AND column_name = 'ai_confidence')
+                    THEN ALTER TABLE collection_member ADD COLUMN ai_confidence FLOAT;
+                    END IF;
+                END $$
+            """)
+            )
+            # topic_suggestion columns
+            conn.execute(
+                text("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'topic_suggestion' AND column_name = 'auto_applied_tags')
+                    THEN ALTER TABLE topic_suggestion ADD COLUMN auto_applied_tags JSONB DEFAULT '[]'::jsonb;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'topic_suggestion' AND column_name = 'auto_applied_collections')
+                    THEN ALTER TABLE topic_suggestion ADD COLUMN auto_applied_collections JSONB DEFAULT '[]'::jsonb;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'topic_suggestion' AND column_name = 'auto_apply_completed_at')
+                    THEN ALTER TABLE topic_suggestion ADD COLUMN auto_apply_completed_at TIMESTAMPTZ;
+                    END IF;
+                END $$
+            """)
+            )
+            # Backfill normalized_name
+            conn.execute(
+                text("""
+                UPDATE tag
+                SET normalized_name = LOWER(TRIM(REGEXP_REPLACE(
+                    REGEXP_REPLACE(name, '[-_]+', ' ', 'g'), '\\s+', ' ', 'g')))
+                WHERE normalized_name IS NULL
+            """)
+            )
+            conn.commit()
+        logger.info("v230 repair (direct SQL) complete")
+    finally:
+        engine.dispose()
+
+
+def _check_column_exists(conn, table: str, column: str) -> bool:
+    """Check if a column exists in a table."""
+    result = conn.execute(
+        text(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = :table AND column_name = :column)"
+        ),
+        {"table": table, "column": column},
+    )
+    return bool(result.scalar())
+
+
 def run_migrations() -> None:
     """Run database migrations on startup.
 
@@ -324,6 +495,10 @@ def run_migrations() -> None:
         else:
             logger.info("Empty database detected, running full migration...")
             command.upgrade(config, "head")
+
+        # Post-migration repair: apply any idempotent schema changes from v230
+        # that may have been skipped due to a branch merge ordering issue.
+        _repair_skipped_v230(config)
 
         logger.info("Database migrations complete")
     finally:

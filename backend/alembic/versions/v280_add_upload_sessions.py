@@ -1,7 +1,7 @@
 """v0.28.0 - Add upload_session table for TUS resumable uploads
 
 Revision ID: v280_add_upload_sessions
-Revises: v220_add_speaker_clusters
+Revises: v270_add_asr_provider_support
 Create Date: 2026-03-05
 
 Adds the upload_session table to track TUS 1.0.0 protocol resumable upload state.
@@ -13,7 +13,7 @@ GitHub issue: #10
 from alembic import op
 
 revision = "v280_add_upload_sessions"
-down_revision = "v220_add_speaker_clusters"
+down_revision = "v270_add_asr_provider_support"
 branch_labels = None
 depends_on = None
 
@@ -36,7 +36,7 @@ def upgrade():
                     user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
                     minio_upload_id VARCHAR(1024),
                     storage_path VARCHAR(1024) NOT NULL,
-                    offset BIGINT NOT NULL DEFAULT 0,
+                    "offset" BIGINT NOT NULL DEFAULT 0,
                     total_size BIGINT NOT NULL,
                     content_type VARCHAR(256) NOT NULL DEFAULT 'application/octet-stream',
                     filename VARCHAR(512) NOT NULL,
