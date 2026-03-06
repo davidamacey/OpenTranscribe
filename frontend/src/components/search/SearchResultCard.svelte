@@ -29,6 +29,22 @@
     }
   }
 
+  function formatDuration(seconds: number): string {
+    if (!seconds || seconds <= 0) return '';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (!bytes || bytes <= 0) return '';
+    if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+    if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+
   function handlePreviewClick(occurrence: SearchOccurrenceType) {
     const isActive = activePreview
       && activePreview.fileUuid === hit.file_uuid
@@ -108,6 +124,24 @@
       {#if hit.upload_time}
         <span class="meta-item date">
           {formatDate(hit.upload_time)}
+        </span>
+      {/if}
+      {#if hit.duration > 0}
+        <span class="meta-item meta-chip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          {formatDuration(hit.duration)}
+        </span>
+      {/if}
+      {#if hit.file_size > 0}
+        <span class="meta-item meta-chip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+            <polyline points="13 2 13 9 20 9"></polyline>
+          </svg>
+          {formatFileSize(hit.file_size)}
         </span>
       {/if}
       {#if hit.tags?.length > 0}
@@ -506,5 +540,22 @@
 
   :global(.dark) .view-transcript-btn:hover {
     background: rgba(129, 140, 248, 0.12);
+  }
+
+  .meta-chip {
+    background: var(--hover-color, #f1f5f9);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary, #6b7280);
+    gap: 0.25rem;
+  }
+
+  :global(.dark) .meta-chip {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #9ca3af;
   }
 </style>

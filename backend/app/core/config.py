@@ -295,14 +295,14 @@ class Settings(BaseSettings):
     SEARCH_BULK_BATCH_SIZE: int = max(_int_env("SEARCH_BULK_BATCH_SIZE", 100), 1)
     SEARCH_NEURAL_BATCH_SIZE: int = _int_env("SEARCH_NEURAL_BATCH_SIZE", 5)
     SEARCH_REINDEX_REFRESH_INTERVAL: int = _int_env("SEARCH_REINDEX_REFRESH_INTERVAL", 100)
-    SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.01"))
+    SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.005"))
     SEARCH_SEMANTIC_HIGH_CONFIDENCE: float = float(
-        os.getenv("SEARCH_SEMANTIC_HIGH_CONFIDENCE", "0.015")
+        os.getenv("SEARCH_SEMANTIC_HIGH_CONFIDENCE", "0.010")
     )
     # Intra-semantic suppression: filter semantic-only results whose score falls
     # below this fraction of the semantic score range. 0.5 = keep top half.
     SEARCH_SEMANTIC_SUPPRESS_RATIO: float = float(
-        os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.35")
+        os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.20")
     )
 
     # Max concurrent group searches for collapse inner_hits (OpenSearch default: 0 = sequential)
