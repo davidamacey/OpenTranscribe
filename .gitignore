@@ -16,6 +16,10 @@ benchmarks/
 .env.test
 .env.*.local
 
+# Docker bind-mount stubs (created by OCI runtime when host path doesn't exist)
+# Occurs because ./backend:/app and ./VERSION:/app/VERSION:ro overlap in dev compose
+backend/VERSION
+
 # Runtime data and logs
 *.log
 logs/

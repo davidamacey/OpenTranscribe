@@ -135,7 +135,6 @@ services:
     # Backend handles API requests only - except the search embedding model
     # which is loaded for query-time vector search. AI processing in celery-worker.
     volumes:
-      - ./VERSION:/app/VERSION:ro
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     ports:
       - "${BACKEND_PORT:-5174}:8080"
@@ -153,6 +152,8 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+      # Version passed as env var (avoids file bind-mount conflicts in dev mode)
+      - APP_VERSION
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s

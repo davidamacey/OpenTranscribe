@@ -16,6 +16,11 @@ if [ -f ".env" ]; then
   set +a
 fi
 
+# Export APP_VERSION so docker compose can pass it through to containers
+# (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)
+export APP_VERSION
+APP_VERSION=$(cat VERSION 2>/dev/null || echo "unknown")
+
 #######################
 # HELPER FUNCTIONS
 #######################
