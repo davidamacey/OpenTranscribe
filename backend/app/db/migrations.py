@@ -149,8 +149,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
         "WHERE table_name = 'speaker_cluster')"
     )
+    has_upload_session = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'upload_session')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v280: upload_session table for TUS resumable uploads
+    if has_upload_session:
+        return "v280_add_upload_sessions"
     # v220: speaker clustering tables
     if has_speaker_cluster:
         return "v220_add_speaker_clusters"

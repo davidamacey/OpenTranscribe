@@ -139,6 +139,22 @@ function createUploadStore() {
       }));
     },
 
+    pause(uploadId: string) {
+      uploadService.pauseUpload(uploadId);
+      update((state) => ({
+        ...state,
+        uploads: uploadService.getAllUploads(),
+      }));
+    },
+
+    resumeTus(uploadId: string) {
+      uploadService.resumeTusUpload(uploadId);
+      update((state) => ({
+        ...state,
+        uploads: uploadService.getAllUploads(),
+      }));
+    },
+
     remove(uploadId: string) {
       uploadService.removeUpload(uploadId);
       update((state) => ({
@@ -190,6 +206,10 @@ export const failedUploads = derived(uploadsStore, ($store) =>
   $store.uploads.filter((upload) => upload.status === 'failed')
 );
 
+export const pausedUploads = derived(uploadsStore, ($store) =>
+  $store.uploads.filter((upload) => upload.status === 'paused')
+);
+
 export const uploadCount = derived(uploadsStore, ($store) => $store.uploads.length);
 
 export const activeUploadCount = derived(activeUploads, ($uploads) => $uploads.length);
@@ -218,6 +238,7 @@ export const uploadStats = derived(uploadsStore, ($store) => {
     completed: uploads.filter((u) => u.status === 'completed').length,
     failed: uploads.filter((u) => u.status === 'failed').length,
     cancelled: uploads.filter((u) => u.status === 'cancelled').length,
+    paused: uploads.filter((u) => u.status === 'paused').length,
   };
 });
 

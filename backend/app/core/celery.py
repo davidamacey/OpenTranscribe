@@ -61,6 +61,7 @@ celery_app = Celery(
         "app.tasks.cleanup",
         "app.tasks.rediarize_task",
         "app.tasks.speaker_clustering",
+        "app.tasks.upload_cleanup",
     ],
 )
 
@@ -140,6 +141,8 @@ celery_app.conf.update(
         "migration.finalize_v4": {"queue": "utility"},
         "quality.export_baseline": {"queue": "utility"},
         "quality.compare_baseline": {"queue": "utility"},
+        # TUS upload cleanup
+        "system.cleanup_incomplete_tus_uploads": {"queue": "utility"},
         # Speaker clustering tasks (CPU-bound similarity comparisons)
         "app.tasks.speaker_clustering.*": {"queue": "cpu"},
         "app.tasks.speaker_clustering.cluster_speakers_for_file": {"queue": "cpu"},
@@ -166,6 +169,11 @@ celery_app.conf.update(
         "cleanup-expired-files": {
             "task": "system.cleanup_expired_files",
             "schedule": crontab(minute=0),  # Every hour on the hour
+            "options": {"queue": "utility"},
+        },
+        "cleanup-incomplete-tus-uploads": {
+            "task": "system.cleanup_incomplete_tus_uploads",
+            "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
             "options": {"queue": "utility"},
         },
     },
