@@ -2,6 +2,7 @@
 Celery tasks for auto-labeling: batch grouping and retroactive apply.
 """
 
+import contextlib
 import json
 import logging
 
@@ -136,13 +137,33 @@ def retroactive_auto_label_task(
             file_id="retroactive_apply",
         )
 
+        # Progress tracker (total updated on first callback when count is known)
+        from app.services.progress_tracker import ProgressTracker
+
+        tracker = ProgressTracker(task_type="auto_label", user_id=user_id, total=0)
+        tracker.start(message="Starting auto-labeling...")
+
         def progress_callback(processed, total, filename):
-            if processed == 1 or processed % 5 == 0 or processed == total:
+            # Update tracker total on first call (dynamic total)
+            if tracker.total != total:
+                tracker.total = total
+            state = tracker.update(
+                processed,
+                message=f"Processing {processed}/{total}: {filename}",
+            )
+            eta_seconds = state.eta_seconds if state else None
+            progress_pct = int((processed / total) * 100) if total > 0 else 0
+            if processed == 1 or processed % 5 == 0 or processed == total or state:
                 send_auto_label_notification(
                     user_id=user_id,
                     status="processing",
                     message=f"Processing {processed}/{total}: {filename}",
-                    data={"processed": processed, "total": total},
+                    data={
+                        "processed": processed,
+                        "total": total,
+                        "progress": progress_pct,
+                        "eta_seconds": eta_seconds,
+                    },
                     file_id="retroactive_apply",
                 )
 
@@ -152,6 +173,8 @@ def retroactive_auto_label_task(
             file_ids=file_ids,
             progress_callback=progress_callback,
         )
+
+        tracker.complete(message="Auto-labeling complete")
 
         send_auto_label_notification(
             user_id=user_id,
@@ -168,6 +191,8 @@ def retroactive_auto_label_task(
 
     except Exception as e:
         logger.error(f"Error in retroactive auto-label task: {e}", exc_info=True)
+        with contextlib.suppress(Exception):
+            tracker.fail(message="Auto-labeling failed")
         send_auto_label_notification(
             user_id=user_id,
             status="failed",

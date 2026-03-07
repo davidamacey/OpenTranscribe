@@ -31,6 +31,7 @@
     progress: number;
     indexed_files: number;
     total_files: number;
+    eta_seconds?: number | null;
   }
 
   interface IndexHealthEntry {
@@ -52,6 +53,16 @@
 
   // Live reindex progress
   let reindexProgress: ReindexProgress | null = null;
+
+  function formatEta(seconds: number | null | undefined): string {
+    if (seconds == null || seconds <= 0) return '';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  }
 
   // Event handlers for WebSocket events
   function handleReindexProgress(event: CustomEvent<ReindexProgress>) {
@@ -293,7 +304,12 @@
           <div class="progress-bar reindexing">
             <div class="progress-fill" style="width: {Math.round(reindexProgress.progress * 100)}%"></div>
           </div>
-          <span class="progress-text">{Math.round(reindexProgress.progress * 100)}%</span>
+          <span class="progress-text">
+            {Math.round(reindexProgress.progress * 100)}%
+            {#if formatEta(reindexProgress.eta_seconds)}
+              ({formatEta(reindexProgress.eta_seconds)} remaining)
+            {/if}
+          </span>
         </div>
       {:else}
         <div class="progress-container">

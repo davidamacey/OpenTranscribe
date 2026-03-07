@@ -1,5 +1,6 @@
 """Celery task for re-indexing transcripts with chunk-level embeddings."""
 
+import contextlib
 import functools
 import logging
 from typing import Any
@@ -462,6 +463,13 @@ def reindex_transcripts_task(
 
         logger.info(f"Re-indexing {total_files} files for user {user_id}")
 
+        # Initialize progress tracker for ETA calculation
+        from app.services.progress_tracker import ProgressTracker
+        from app.services.progress_tracker import emit_progress_notification
+
+        tracker = ProgressTracker(task_type="reindex", user_id=user_id, total=total_files)
+        tracker.start(message="Starting re-index...")
+
         # Safety: restore normal refresh_interval in case a previous reindex was killed
         _restore_normal_mode()
 
@@ -502,6 +510,7 @@ def reindex_transcripts_task(
                                 f"{stats['indexed_files']}/{total_files} files"
                             )
                             stats["cancelled"] = True
+                            tracker.complete(message="Re-indexing stopped by user")
                             _send_reindex_stopped(user_id, stats)
                             _clear_cancellation_flag(user_id)
                             return stats
@@ -533,10 +542,17 @@ def reindex_transcripts_task(
                             stats["total_chunks"] += chunk_count
                             files_since_refresh += 1
 
-                            # Send progress notification
-                            progress = global_index / total_files
-                            _send_reindex_progress(
-                                user_id, progress, stats["indexed_files"], total_files
+                            # Send progress notification with ETA
+                            emit_progress_notification(
+                                tracker=tracker,
+                                processed=global_index,
+                                user_id=user_id,
+                                notification_type=NOTIFICATION_TYPE_REINDEX_PROGRESS,
+                                extra_data={
+                                    "indexed_files": stats["indexed_files"],
+                                    "total_files": total_files,
+                                },
+                                message=f"Indexed {stats['indexed_files']} of {total_files} files",
                             )
 
                             logger.debug(
@@ -556,6 +572,9 @@ def reindex_transcripts_task(
         _refresh_index_and_clear_cache()
         _force_merge_after_reindex()
 
+        # Mark progress as completed
+        tracker.complete(message="Re-indexing complete")
+
         # Send completion notification
         _send_reindex_complete(user_id, stats)
 
@@ -570,6 +589,8 @@ def reindex_transcripts_task(
     except Exception as e:
         logger.error(f"Re-index task {task_id} failed: {e}")
         stats["error"] = str(e)
+        with contextlib.suppress(Exception):
+            tracker.fail(message=f"Re-index failed: {e}")
         return stats
 
 

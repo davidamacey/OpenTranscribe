@@ -101,6 +101,16 @@
         return 'music';
       case 'analytics_status':
         return 'bar-chart';
+      case 'reindex_progress':
+      case 'reindex_complete':
+      case 'reindex_stopped':
+        return 'search';
+      case 'migration_progress':
+      case 'migration_complete':
+        return 'database';
+      case 'clustering_progress':
+      case 'clustering_complete':
+        return 'users';
       default:
         return 'bell';
     }
@@ -305,6 +315,24 @@
                     <line x1="12" y1="20" x2="12" y2="4"></line>
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                   </svg>
+                {:else if getNotificationIcon(notification.type) === 'search'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                {:else if getNotificationIcon(notification.type) === 'database'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                  </svg>
+                {:else if getNotificationIcon(notification.type) === 'users'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
                 {:else}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -325,7 +353,12 @@
                       <div class="progress-bar-bg">
                         <div class="progress-bar-fill" style="width: {notification.progress.percentage}%"></div>
                       </div>
-                      <span class="progress-text">{notification.progress.percentage}%</span>
+                      <span class="progress-text">
+                        {notification.progress.percentage}%
+                        {#if notification.progress.etaDisplay}
+                          ({notification.progress.etaDisplay} remaining)
+                        {/if}
+                      </span>
                     </div>
                   {/if}
 

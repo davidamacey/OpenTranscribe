@@ -298,6 +298,16 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
         # Start progress tracking
         migration_progress.start_migration(total_files=total_files, task_id=task_id)
 
+        # Initialize unified progress tracker for ETA
+        from app.services.progress_tracker import ProgressTracker
+
+        tracker = ProgressTracker(
+            task_type="migration",
+            user_id=user_id or 1,
+            total=total_files,
+        )
+        tracker.start(message="Starting embedding migration...")
+
         _send_migration_notification(
             NOTIFICATION_TYPE_MIGRATION_PROGRESS,
             {
@@ -844,7 +854,7 @@ def extract_v4_embeddings_batch_task(
         batch_migrated += m
         batch_failed += f
 
-    # Send progress notification after batch
+    # Send progress notification after batch (with ETA from unified tracker)
     status = migration_progress.get_status()
     processed = status.get("processed_files", 0)
     total = status.get("total_files", 0) or total_files
@@ -852,6 +862,20 @@ def extract_v4_embeddings_batch_task(
 
     progress_pct = processed / total if total > 0 else 0
     is_complete = processed >= total and total > 0
+
+    # Update unified progress tracker for ETA calculation
+    from app.services.progress_tracker import ProgressTracker
+
+    tracker = ProgressTracker(
+        task_type="migration",
+        user_id=user_id or 1,
+        total=total,
+    )
+    tracker_state = tracker.update(
+        processed,
+        message=f"Processed {processed} of {total} files",
+    )
+    eta_seconds = tracker_state.eta_seconds if tracker_state else None
 
     _send_migration_notification(
         NOTIFICATION_TYPE_MIGRATION_PROGRESS,
@@ -861,6 +885,8 @@ def extract_v4_embeddings_batch_task(
             "failed_files": failed_files,
             "progress": progress_pct,
             "running": not is_complete,
+            "message": f"Processed {processed} of {total} files",
+            "eta_seconds": eta_seconds,
         },
         user_id,
     )
@@ -868,6 +894,7 @@ def extract_v4_embeddings_batch_task(
     if is_complete:
         logger.info(f"All {total} migration files processed")
         migration_progress.complete_migration(success=True)
+        tracker.complete(message="Migration complete")
         _send_migration_notification(
             NOTIFICATION_TYPE_MIGRATION_COMPLETE,
             {

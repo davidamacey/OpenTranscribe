@@ -15,6 +15,9 @@
   let saving = false;
   let retroactiveRunning = false;
   let retroactiveProgress = '';
+  let retroactiveProcessed = 0;
+  let retroactiveTotal = 0;
+  let retroactiveEtaSeconds: number | null = null;
   let hasChanges = false;
 
   // Original values for change tracking
@@ -100,6 +103,16 @@
     }
   }
 
+  function formatEta(seconds: number | null | undefined): string {
+    if (seconds == null || seconds <= 0) return '';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  }
+
   // WebSocket event handler for auto-label status updates
   function handleAutoLabelStatus(event: CustomEvent) {
     const detail = event.detail;
@@ -111,13 +124,22 @@
     if (status === 'processing') {
       retroactiveRunning = true;
       retroactiveProgress = message;
+      retroactiveProcessed = detail.processed ?? retroactiveProcessed;
+      retroactiveTotal = detail.total ?? retroactiveTotal;
+      retroactiveEtaSeconds = detail.eta_seconds ?? null;
     } else if (status === 'completed') {
       retroactiveRunning = false;
       retroactiveProgress = '';
+      retroactiveProcessed = 0;
+      retroactiveTotal = 0;
+      retroactiveEtaSeconds = null;
       toastStore.success(message);
     } else if (status === 'failed') {
       retroactiveRunning = false;
       retroactiveProgress = '';
+      retroactiveProcessed = 0;
+      retroactiveTotal = 0;
+      retroactiveEtaSeconds = null;
       toastStore.error(message);
     }
   }
@@ -242,6 +264,22 @@
           {$t('autoLabel.retroactiveButton')}
         {/if}
       </button>
+      {#if retroactiveRunning && retroactiveTotal > 0}
+        <div class="retroactive-progress">
+          <div class="progress-bar-container">
+            <div
+              class="progress-bar-fill"
+              style="width: {(retroactiveProcessed / retroactiveTotal) * 100}%"
+            ></div>
+          </div>
+          <span class="progress-text">
+            {Math.round((retroactiveProcessed / retroactiveTotal) * 100)}%
+            {#if formatEta(retroactiveEtaSeconds)}
+              ({formatEta(retroactiveEtaSeconds)} remaining)
+            {/if}
+          </span>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -448,6 +486,34 @@
   .btn-retroactive:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .retroactive-progress {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .retroactive-progress .progress-bar-container {
+    flex: 1;
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .retroactive-progress .progress-bar-fill {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+
+  .retroactive-progress .progress-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
   }
 
   /* Loading State */

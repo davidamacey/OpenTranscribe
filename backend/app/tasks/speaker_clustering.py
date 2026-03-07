@@ -1,5 +1,6 @@
 """Celery tasks for speaker clustering and audio clip extraction."""
 
+import contextlib
 import json
 import logging
 
@@ -39,23 +40,27 @@ def _send_clustering_progress(
     message: str,
     progress: float,
     running: bool = True,
+    eta_seconds: float | None = None,
 ):
     """Send clustering progress via WebSocket notification."""
     try:
         r = _get_redis()
+        data: dict = {
+            "step": step,
+            "total_steps": total_steps,
+            "message": message,
+            "progress": progress,
+            "running": running,
+        }
+        if eta_seconds is not None:
+            data["eta_seconds"] = eta_seconds
         r.publish(
             "websocket_notifications",
             json.dumps(
                 {
                     "user_id": user_id,
                     "type": NOTIFICATION_TYPE_CLUSTERING_PROGRESS,
-                    "data": {
-                        "step": step,
-                        "total_steps": total_steps,
-                        "message": message,
-                        "progress": progress,
-                        "running": running,
-                    },
+                    "data": data,
                 }
             ),
         )
@@ -210,14 +215,29 @@ def recluster_all_speakers(self, user_id: int, threshold: float | None = None):
 
             service = SpeakerClusteringService(db)
 
+            # Initialize progress tracker for ETA
+            from app.services.progress_tracker import ProgressTracker
+
+            clustering_tracker = ProgressTracker(task_type="clustering", user_id=user_id, total=1)
+            clustering_tracker.start(message="Starting speaker clustering...")
+
             def progress_cb(step: int, total: int, message: str, progress: float):
-                _send_clustering_progress(user_id, step, total, message, progress)
+                # Update tracker total on first call (maps step/total_steps)
+                if clustering_tracker.total != total:
+                    clustering_tracker.total = total
+                state = clustering_tracker.update(step, message=message)
+                eta_seconds = state.eta_seconds if state else None
+                _send_clustering_progress(
+                    user_id, step, total, message, progress, eta_seconds=eta_seconds
+                )
 
             kwargs: dict = {"progress_callback": progress_cb}
             if threshold is not None:
                 kwargs["threshold"] = threshold
 
             result = service.batch_recluster(user_id, **kwargs)
+
+            clustering_tracker.complete(message="Clustering complete")
 
             logger.info(
                 "Re-clustering complete for user %d: status=%s, "
@@ -235,6 +255,8 @@ def recluster_all_speakers(self, user_id: int, threshold: float | None = None):
 
         except Exception as e:
             logger.error(f"Error re-clustering speakers for user {user_id}: {e}")
+            with contextlib.suppress(Exception):
+                clustering_tracker.fail(message=f"Clustering failed: {e}")
             db.rollback()
             if self.request.retries >= self.max_retries:
                 _send_clustering_error(user_id, str(e))

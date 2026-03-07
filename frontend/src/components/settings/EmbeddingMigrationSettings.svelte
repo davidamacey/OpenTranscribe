@@ -17,6 +17,7 @@
   let processedFiles = 0;
   let failedFiles: string[] = [];
   let stoppingMigration = false;
+  let etaSeconds: number | null = null;
 
   let transcriptionPaused = false;
   let estimatedMinutes = 0;
@@ -31,6 +32,7 @@
     failed_files: string[];
     progress: number;
     running: boolean;
+    eta_seconds?: number | null;
   }
 
   interface MigrationComplete {
@@ -46,7 +48,17 @@
     totalFiles = data.total_files;
     failedFiles = data.failed_files || [];
     migrationInProgress = data.running;
+    etaSeconds = data.eta_seconds ?? null;
+  }
 
+  function formatEta(seconds: number | null | undefined): string {
+    if (seconds == null || seconds <= 0) return '';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
   }
 
   function handleMigrationComplete(event: CustomEvent<MigrationComplete>) {
@@ -348,6 +360,9 @@
               </span>
               <span class="progress-percent">
                 {Math.round((processedFiles / totalFiles) * 100)}%
+                {#if formatEta(etaSeconds)}
+                  ({formatEta(etaSeconds)} remaining)
+                {/if}
               </span>
             </div>
             <div class="progress-bar-container">

@@ -129,6 +129,25 @@ def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> di
 
 
 # =============================================================================
+# PROGRESS RECOVERY - For frontend to recover in-flight task progress
+# =============================================================================
+
+
+@router.get("/progress/active", response_model=list[dict[str, Any]])
+def get_active_progress(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get all active (running) task progress for the current user.
+
+    Returns ProgressState dicts from Redis so the frontend can recover
+    progress bars after page refresh or modal close/reopen.
+    """
+    from app.services.progress_tracker import ProgressTracker
+
+    return ProgressTracker.get_active_tasks(int(current_user.id))
+
+
+# =============================================================================
 # STATIC AND NESTED ROUTES - Must come before single-param routes
 # =============================================================================
 

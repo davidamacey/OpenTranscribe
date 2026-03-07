@@ -54,6 +54,8 @@ export interface Notification {
     current: number;
     total: number;
     percentage: number;
+    etaSeconds?: number | null;
+    etaDisplay?: string;
   };
   status?: 'processing' | 'completed' | 'error';
   dismissible?: boolean; // false while processing
@@ -71,6 +73,37 @@ interface WebSocketState {
   reconnectAttempts: number;
   error: string | null;
 }
+
+// Format ETA seconds into human-readable string
+function formatEtaSeconds(seconds: number | null | undefined): string | undefined {
+  if (seconds == null || seconds <= 0) return undefined;
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  if (minutes < 60) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+// Admin task type to progressId mapping
+const ADMIN_TASK_PROGRESS_IDS: Record<string, string> = {
+  reindex_progress: 'admin_reindex',
+  reindex_complete: 'admin_reindex',
+  reindex_stopped: 'admin_reindex',
+  migration_progress: 'admin_migration',
+  migration_complete: 'admin_migration',
+  clustering_progress: 'admin_clustering',
+  clustering_complete: 'admin_clustering',
+};
+
+// Admin task completion types
+const ADMIN_COMPLETION_TYPES = new Set([
+  'reindex_complete',
+  'reindex_stopped',
+  'migration_complete',
+  'clustering_complete',
+]);
 
 // Load notifications from localStorage if available
 const loadNotificationsFromStorage = (): Notification[] => {
@@ -178,6 +211,9 @@ function createWebSocketStore() {
             s.reconnectAttempts = 0;
             return s;
           });
+
+          // Recover active task progress from backend (survives page refresh/modal close)
+          recoverActiveProgress();
         };
 
         socket.onclose = (event) => {
@@ -233,31 +269,31 @@ function createWebSocketStore() {
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('reindex-progress', { detail: data.data }));
               }
-              return;
+              // Fall through to progressive notification handler
             } else if (data.type === 'reindex_complete') {
               // Reindex complete — dispatch event for SearchSettings
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('reindex-complete', { detail: data.data }));
               }
-              return;
+              // Fall through to progressive notification handler
             } else if (data.type === 'reindex_stopped') {
               // Reindex stopped by user — dispatch event for SearchSettings
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('reindex-stopped', { detail: data.data }));
               }
-              return;
+              // Fall through to progressive notification handler
             } else if (data.type === 'migration_progress') {
               // Embedding migration progress — dispatch event for EmbeddingMigrationSettings
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('migration-progress', { detail: data.data }));
               }
-              return;
+              // Fall through to progressive notification handler
             } else if (data.type === 'migration_complete') {
               // Embedding migration complete — dispatch event for EmbeddingMigrationSettings
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('migration-complete', { detail: data.data }));
               }
-              return;
+              // Fall through to progressive notification handler
             } else if (data.type === 'cache_invalidate') {
               // Push-based cache invalidation from backend
               // Invalidate the in-memory apiCache and notify listening components
@@ -292,13 +328,13 @@ function createWebSocketStore() {
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('clustering-progress', { detail: data.data }));
               }
-              return;
+              // Fall through to progressive notification handler
             } else if (data.type === 'clustering_complete') {
               // Speaker clustering complete — dispatch event for SpeakersPage
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('clustering-complete', { detail: data.data }));
               }
-              return;
+              // Fall through to progressive notification handler
             } else if (data.type === 'clustering_file_complete') {
               // Per-file clustering complete — dispatch event for SpeakersPage
               if (typeof window !== 'undefined') {
@@ -397,24 +433,79 @@ function createWebSocketStore() {
               data.type === 'youtube_processing_status' ||
               data.type === 'playlist_processing_status';
 
+            // Admin task types that should also appear in NotificationsPanel
+            const isAdminProgressType = data.type in ADMIN_TASK_PROGRESS_IDS;
+
             // Handle silent notifications (gallery-only updates)
             const isSilentType = data.type === 'file_created' || data.type === 'file_updated';
 
             if (
-              isProgressiveType &&
-              (data.data.file_id || data.type === 'playlist_processing_status')
+              (isProgressiveType &&
+                (data.data.file_id || data.type === 'playlist_processing_status')) ||
+              isAdminProgressType
             ) {
-              // For playlists, use a special progress ID since there's no single file_id
-              const progressId =
-                data.type === 'playlist_processing_status'
-                  ? `playlist_processing_${data.data.playlist_id || 'unknown'}`
-                  : `${data.type}_${data.data.file_id}`;
-              const currentStep = data.data.message || 'Processing...';
-              const status = data.data.status || 'processing';
+              // Determine progressId
+              let progressId: string;
+              if (isAdminProgressType) {
+                progressId = ADMIN_TASK_PROGRESS_IDS[data.type];
+              } else if (data.type === 'playlist_processing_status') {
+                progressId = `playlist_processing_${data.data.playlist_id || 'unknown'}`;
+              } else {
+                progressId = `${data.type}_${data.data.file_id}`;
+              }
+
+              // Determine status — admin completion types map to 'completed'
+              let status: string;
+              if (ADMIN_COMPLETION_TYPES.has(data.type)) {
+                status = 'completed';
+              } else if (isAdminProgressType) {
+                status = 'processing';
+              } else {
+                status = data.data.status || 'processing';
+              }
+
+              // Synthesize message for admin tasks that don't have one
+              let currentStep = data.data.message || '';
+              if (!currentStep && isAdminProgressType) {
+                if (data.type.startsWith('reindex')) {
+                  const idx = data.data.indexed_files ?? data.data.stats?.indexed_files ?? 0;
+                  const tot = data.data.total_files ?? data.data.stats?.total_files ?? 0;
+                  currentStep =
+                    status === 'completed'
+                      ? `Indexed ${idx} files`
+                      : `Indexed ${idx} of ${tot} files`;
+                } else if (data.type.startsWith('migration')) {
+                  const proc = data.data.processed_files ?? 0;
+                  const tot = data.data.total_files ?? 0;
+                  currentStep =
+                    status === 'completed'
+                      ? `Processed ${proc} files`
+                      : `Processed ${proc} of ${tot} files`;
+                } else if (data.type.startsWith('clustering')) {
+                  const step = data.data.step ?? 0;
+                  const tot = data.data.total_steps ?? 0;
+                  currentStep =
+                    status === 'completed' ? 'Clustering complete' : `Step ${step} of ${tot}`;
+                }
+              }
+              if (!currentStep) currentStep = 'Processing...';
+
+              // Normalize progress: admin tasks send 0.0-1.0, others send 0-100
+              let rawProgress = data.data.progress || 0;
+              if (isAdminProgressType && rawProgress <= 1 && rawProgress > 0) {
+                rawProgress = rawProgress * 100;
+              }
+
+              // Read ETA from data
+              const etaRaw = data.data.eta_seconds ?? null;
+              const etaDisplay = formatEtaSeconds(etaRaw);
+
               const progress = {
-                current: Math.floor(data.data.progress || 0),
+                current: Math.floor(rawProgress),
                 total: 100,
-                percentage: data.data.progress || 0,
+                percentage: Math.round(rawProgress),
+                etaSeconds: etaRaw,
+                etaDisplay,
               };
 
               update((s: WebSocketState) => {
@@ -680,6 +771,16 @@ function createWebSocketStore() {
         return translate('notifications.groupMemberAdded');
       case 'group_member_removed':
         return translate('notifications.groupMemberRemoved');
+      case 'reindex_progress':
+      case 'reindex_complete':
+      case 'reindex_stopped':
+        return translate('notifications.searchReindexing');
+      case 'migration_progress':
+      case 'migration_complete':
+        return translate('notifications.embeddingMigration');
+      case 'clustering_progress':
+      case 'clustering_complete':
+        return translate('notifications.speakerClustering');
       default:
         return translate('notifications.notification');
     }
@@ -770,6 +871,115 @@ function createWebSocketStore() {
       saveNotificationsToStorage(state.notifications);
       return state;
     });
+  };
+
+  // Recover active task progress from backend on connect/reconnect
+  const recoverActiveProgress = async () => {
+    try {
+      const response = await fetch('/api/tasks/progress/active', { credentials: 'include' });
+      if (!response.ok) return;
+      const activeTasks: Array<{
+        task_type: string;
+        user_id: number;
+        total: number;
+        processed: number;
+        status: string;
+        message: string;
+        eta_seconds: number | null;
+      }> = await response.json();
+
+      if (!activeTasks || activeTasks.length === 0) return;
+
+      // Task type to notification type mapping
+      const typeMap: Record<string, string> = {
+        reindex: 'reindex_progress',
+        migration: 'migration_progress',
+        clustering: 'clustering_progress',
+        auto_label: 'auto_label_status',
+      };
+
+      for (const task of activeTasks) {
+        const notificationType = typeMap[task.task_type];
+        if (!notificationType) continue;
+
+        const progressId =
+          ADMIN_TASK_PROGRESS_IDS[notificationType] || `${notificationType}_retroactive_apply`;
+
+        const percentage = task.total > 0 ? Math.round((task.processed / task.total) * 100) : 0;
+        const etaDisplay = formatEtaSeconds(task.eta_seconds);
+
+        // Dispatch CustomEvent for settings components
+        if (typeof window !== 'undefined') {
+          const eventMap: Record<string, string> = {
+            reindex: 'reindex-progress',
+            migration: 'migration-progress',
+            clustering: 'clustering-progress',
+            auto_label: 'auto-label-status',
+          };
+          const eventName = eventMap[task.task_type];
+          if (eventName) {
+            window.dispatchEvent(
+              new CustomEvent(eventName, {
+                detail: {
+                  progress: task.total > 0 ? task.processed / task.total : 0,
+                  processed: task.processed,
+                  total: task.total,
+                  processed_files: task.processed,
+                  total_files: task.total,
+                  indexed_files: task.processed,
+                  message: task.message,
+                  eta_seconds: task.eta_seconds,
+                  running: true,
+                  status: 'processing',
+                },
+              })
+            );
+          }
+        }
+
+        // Create/update progressive notification
+        update((s: WebSocketState) => {
+          const existingIndex = s.notifications.findIndex((n) => n.progressId === progressId);
+
+          const notificationData: Notification = {
+            id: existingIndex !== -1 ? s.notifications[existingIndex].id : generateId(),
+            progressId,
+            type: notificationType as NotificationType,
+            title: getNotificationTitle(notificationType),
+            message: task.message,
+            timestamp: new Date(),
+            read: false,
+            data: {
+              progress: percentage,
+              processed: task.processed,
+              total: task.total,
+              eta_seconds: task.eta_seconds,
+            },
+            currentStep: task.message,
+            progress: {
+              current: percentage,
+              total: 100,
+              percentage,
+              etaSeconds: task.eta_seconds,
+              etaDisplay,
+            },
+            status: 'processing',
+            dismissible: false,
+          };
+
+          if (existingIndex !== -1) {
+            s.notifications[existingIndex] = notificationData;
+          } else {
+            s.notifications = [notificationData, ...s.notifications.slice(0, 99)];
+          }
+
+          saveNotificationsToStorage(s.notifications);
+          return s;
+        });
+      }
+    } catch {
+      // Recovery is best-effort; don't break WebSocket on failure
+    }
   };
 
   return {
