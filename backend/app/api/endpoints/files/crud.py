@@ -245,6 +245,31 @@ def _get_transcript_segments(
     return segment_query.all(), total_segments
 
 
+def _count_speaker_segments(db: Session, file_id: int) -> int:
+    """
+    Count the number of speaker segments (adjacent same-speaker segments merged).
+
+    This uses a SQL window function to detect speaker changes, counting
+    the number of groups where consecutive segments share the same speaker.
+    """
+    from sqlalchemy import text
+
+    result = db.execute(
+        text("""
+            SELECT COUNT(*) FROM (
+                SELECT speaker_id,
+                       LAG(speaker_id) OVER (ORDER BY start_time) AS prev_speaker_id
+                FROM transcript_segment
+                WHERE media_file_id = :file_id
+            ) sub
+            WHERE speaker_id IS DISTINCT FROM prev_speaker_id
+               OR prev_speaker_id IS NULL
+        """),
+        {"file_id": file_id},
+    ).scalar()
+    return result or 0
+
+
 def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -> None:
     """
     Add error categorization information to response for failed files.
@@ -296,6 +321,7 @@ def _build_media_file_response(
     analytics: Analytics | None,
     transcript_segments: list[TranscriptSegment],
     total_segments: int,
+    total_speaker_segments: int,
     segment_limit: int | None,
     segment_offset: int,
 ) -> MediaFileDetail:
@@ -354,6 +380,7 @@ def _build_media_file_response(
 
     # Add pagination metadata
     response.total_segments = total_segments
+    response.total_speaker_segments = total_speaker_segments
     response.segment_limit = segment_limit
     response.segment_offset = segment_offset
 
@@ -403,6 +430,9 @@ def get_media_file_detail(
             db, file_id, segment_limit, segment_offset
         )
 
+        # Count merged speaker segments (adjacent same-speaker groups)
+        total_speaker_segments = _count_speaker_segments(db, file_id)
+
         # Add computed status to speakers in segments
         for segment in transcript_segments:
             if segment.speaker:
@@ -420,6 +450,7 @@ def get_media_file_detail(
             analytics=analytics,
             transcript_segments=transcript_segments,
             total_segments=total_segments,
+            total_speaker_segments=total_speaker_segments,
             segment_limit=segment_limit,
             segment_offset=segment_offset,
         )

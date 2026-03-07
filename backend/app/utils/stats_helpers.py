@@ -438,9 +438,14 @@ def get_models_info() -> dict[str, dict[str, str]]:
         },
     }
 
-    # Search/embedding model
+    # Search/embedding model (read from DB for current selection, not stale env var)
     if getattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False):
-        neural_model = getattr(settings, "OPENSEARCH_NEURAL_MODEL", "")
+        try:
+            from app.services.search.settings_service import get_search_embedding_model
+
+            neural_model = get_search_embedding_model()
+        except Exception:
+            neural_model = getattr(settings, "OPENSEARCH_NEURAL_MODEL", "")
         if neural_model:
             short_name = neural_model.rsplit("/", 1)[-1] if "/" in neural_model else neural_model
             models["search_embedding"] = {

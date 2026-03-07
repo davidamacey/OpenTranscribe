@@ -401,6 +401,9 @@ class MediaFileDetail(MediaFile):
 
     # Transcript pagination metadata
     total_segments: Optional[int] = None  # Total number of transcript segments
+    total_speaker_segments: Optional[int] = (
+        None  # Total after merging adjacent same-speaker segments
+    )
     segment_limit: Optional[int] = None  # Max segments returned (None = all)
     segment_offset: Optional[int] = None  # Offset for pagination
 

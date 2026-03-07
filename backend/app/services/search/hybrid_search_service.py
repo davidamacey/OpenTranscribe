@@ -1379,8 +1379,6 @@ class HybridSearchService:
                 for qw in query_words:
                     if qw in content_lower or qw in title_lower or qw in speaker_lower:
                         has_keyword_match = True
-                        # Use outer score as fallback since inner score is lost
-                        inner_score = outer_score
                         if qw in content_lower and "content" not in match_sources:
                             match_sources.append("content")
                         if qw in title_lower and "title" not in match_sources:
@@ -1388,6 +1386,10 @@ class HybridSearchService:
                         if qw in speaker_lower and "speaker" not in match_sources:
                             match_sources.append("speaker")
                         break
+                # Use outer score as fallback since inner scores are lost
+                # to the RRF collapse bug — applies to both keyword and
+                # semantic-only hits so semantic results aren't dropped.
+                inner_score = outer_score
 
             snippet, match_type = _extract_snippet_and_match_type(inner_source, highlight)
             speaker_highlighted = _extract_highlighted_field(highlight, "speaker")

@@ -148,6 +148,8 @@ export interface ProcessedSegment {
   text: string;
   startTime: number;
   endTime: number;
+  rawStartIndex: number; // Index of the first raw segment in this processed block
+  rawSegmentCount: number; // Number of raw segments merged into this block
   isOverlapGroup?: boolean;
   overlapGroupId?: string;
   overlapSegments?: ProcessedSegment[];
@@ -168,6 +170,7 @@ export const processedTranscriptSegments = derived(transcriptStore, ($transcript
 
   // Group consecutive segments from the same speaker for display
   // IMPORTANT: Do not merge segments with different overlap_group_id
+  // Track raw segment indices so progress bar maps to total transcript length
   const groupedSegments: ProcessedSegment[] = [];
   let currentSpeaker: string | null = null;
   let currentSpeakerLabel: string | null = null;
@@ -175,8 +178,10 @@ export const processedTranscriptSegments = derived(transcriptStore, ($transcript
   let currentStartTime: number | null = null;
   let currentEndTime: number | null = null;
   let currentOverlapGroupId: string | null | undefined = null;
+  let currentRawStartIndex = 0;
+  let currentRawCount = 0;
 
-  sortedSegments.forEach((segment) => {
+  sortedSegments.forEach((segment, rawIndex) => {
     // Use the latest speaker display name from the store
     const speakerName =
       segment.resolved_speaker_name ||
@@ -202,6 +207,8 @@ export const processedTranscriptSegments = derived(transcriptStore, ($transcript
           text: currentText.join(' '),
           startTime: currentStartTime!,
           endTime: currentEndTime!,
+          rawStartIndex: currentRawStartIndex,
+          rawSegmentCount: currentRawCount,
           overlapGroupId: currentOverlapGroupId || undefined,
         });
       }
@@ -211,9 +218,12 @@ export const processedTranscriptSegments = derived(transcriptStore, ($transcript
       currentStartTime = startTime;
       currentEndTime = endTime;
       currentOverlapGroupId = overlapGroupId;
+      currentRawStartIndex = rawIndex;
+      currentRawCount = 1;
     } else {
       currentText.push(segment.text);
       currentEndTime = endTime; // Update end time to last segment
+      currentRawCount++;
     }
   });
 
@@ -225,6 +235,8 @@ export const processedTranscriptSegments = derived(transcriptStore, ($transcript
       text: currentText.join(' '),
       startTime: currentStartTime!,
       endTime: currentEndTime!,
+      rawStartIndex: currentRawStartIndex,
+      rawSegmentCount: currentRawCount,
       overlapGroupId: currentOverlapGroupId || undefined,
     });
   }
@@ -253,6 +265,7 @@ export const processedTranscriptSegments = derived(transcriptStore, ($transcript
         // Create an overlap group container
         const groupStartTime = Math.min(...overlapGroup.map((s) => s.startTime));
         const groupEndTime = Math.max(...overlapGroup.map((s) => s.endTime));
+        const totalRawCount = overlapGroup.reduce((sum, s) => sum + s.rawSegmentCount, 0);
 
         finalSegments.push({
           speakerName: `${overlapGroup.length} speakers overlapping`,
@@ -260,6 +273,8 @@ export const processedTranscriptSegments = derived(transcriptStore, ($transcript
           text: '', // Container doesn't have its own text
           startTime: groupStartTime,
           endTime: groupEndTime,
+          rawStartIndex: overlapGroup[0].rawStartIndex,
+          rawSegmentCount: totalRawCount,
           isOverlapGroup: true,
           overlapGroupId: segment.overlapGroupId,
           overlapSegments: overlapGroup,

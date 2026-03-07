@@ -115,6 +115,10 @@
   $: activeGpu = stats.system?.gpus?.[currentGpuIndex] ?? stats.system?.gpus?.[0];
   $: gpuCount = stats.system?.gpus?.length ?? 1;
 
+  // Search index status (for system stats card)
+  let searchIndexStatus: { indexed_files: number; total_files: number; pending_files: number; in_progress: boolean; current_model: string } | null = null;
+  let searchHealthStatus: Record<string, { status: string; doc_count: number }> | null = null;
+
   // Admin Task Health section
   let taskHealthData: any = null;
   let taskHealthLoading = false;
@@ -167,7 +171,6 @@
       title: $t('settings.sections.transcriptionAi'),
       items: [
         { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
-        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
         { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
@@ -180,6 +183,7 @@
     {
       title: $t('settings.sections.mediaOutput'),
       items: [
+        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
         { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' }
       ]
@@ -249,11 +253,13 @@
     // Add escape key listener
     document.addEventListener('keydown', handleKeyDown);
     window.addEventListener('gpu-stats-updated', handleGpuStatsEvent);
+    window.addEventListener('reindex-complete', handleReindexCompleteStats);
   });
 
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
+    window.removeEventListener('reindex-complete', handleReindexCompleteStats);
     // Re-enable scroll when component is destroyed
     document.body.style.overflow = '';
   });
@@ -553,12 +559,20 @@
     }
 
     try {
-      const response = await axiosInstance.get('/system/stats');
-      stats = response.data;
+      const [statsRes, indexRes, healthRes] = await Promise.all([
+        axiosInstance.get('/system/stats'),
+        axiosInstance.get('/search/reindex/status').catch(() => null),
+        axiosInstance.get('/search/index-health').catch(() => null),
+      ]);
+
+      stats = statsRes.data;
       statsInitialLoaded = true;
 
+      if (indexRes?.data) searchIndexStatus = indexRes.data;
+      if (healthRes?.data) searchHealthStatus = healthRes.data;
+
       // Auto-retry once if GPU stats are loading
-      if (response.data?.system?.gpus?.[0]?.loading && !gpuRetryScheduled) {
+      if (statsRes.data?.system?.gpus?.[0]?.loading && !gpuRetryScheduled) {
         gpuRetryScheduled = true;
         setTimeout(() => {
           gpuRetryScheduled = false;
@@ -577,6 +591,13 @@
 
   async function refreshStats() {
     await loadStats();
+  }
+
+  function handleReindexCompleteStats() {
+    // Refresh system stats after reindex completes (e.g., new embedding model)
+    if (statsInitialLoaded) {
+      loadStats();
+    }
   }
 
   function openProcessingDetails(section: string) {
@@ -1313,6 +1334,38 @@
                     {/if}
                     <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
                   </div>
+
+                  <!-- Search Index Status -->
+                  {#if searchIndexStatus}
+                    <div class="stat-card">
+                      <h4>{$t('settings.statistics.searchIndex')}</h4>
+                      <div class="stat-value">
+                        {searchIndexStatus.indexed_files}/{searchIndexStatus.total_files}
+                        <span class="stat-unit">{$t('settings.statistics.indexed')}</span>
+                      </div>
+                      <div class="stat-detail">{$t('settings.statistics.model')}: {searchIndexStatus.current_model}</div>
+                      {#if searchIndexStatus.pending_files > 0}
+                        <div class="stat-detail stat-detail-warning">{searchIndexStatus.pending_files} {$t('settings.statistics.pendingReindex')}</div>
+                      {/if}
+                      {#if searchIndexStatus.in_progress}
+                        <div class="stat-detail stat-detail-active">{$t('settings.statistics.reindexingActive')}</div>
+                      {/if}
+                      {#if searchHealthStatus}
+                        <div class="search-health-row">
+                          {#each Object.entries(searchHealthStatus) as [name, info]}
+                            <span class="search-health-dot" class:healthy={info.status === 'green'} class:error={info.status === 'red'} title="{name}: {info.status === 'green' ? $t('settings.search.indexGreen') : $t('settings.search.indexRed')}"></span>
+                          {/each}
+                          <span class="search-health-label">
+                            {#if Object.values(searchHealthStatus).every(i => i.status === 'green')}
+                              {$t('settings.statistics.allHealthy')}
+                            {:else}
+                              {$t('settings.statistics.needsRepair')}
+                            {/if}
+                          </span>
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
 
                   <!-- System Resources: CPU & Memory -->
                   <div class="stat-card stat-card-stacked">
@@ -2203,6 +2256,46 @@
   .stat-unit {
     font-size: 0.75rem;
     font-weight: 400;
+    color: var(--text-secondary);
+  }
+
+  .stat-detail-warning {
+    color: var(--warning-text, #92400e);
+  }
+
+  :global([data-theme='dark']) .stat-detail-warning {
+    color: #fbbf24;
+  }
+
+  .stat-detail-active {
+    color: var(--primary-color);
+    font-weight: 500;
+  }
+
+  .search-health-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 0.375rem;
+  }
+
+  .search-health-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+  }
+
+  .search-health-dot.healthy {
+    background: #22c55e;
+  }
+
+  .search-health-dot.error {
+    background: #ef4444;
+  }
+
+  .search-health-label {
+    font-size: 0.6875rem;
     color: var(--text-secondary);
   }
 

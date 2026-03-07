@@ -11,7 +11,7 @@
   export let isOpen: boolean = false;
 
   // Pagination props
-  export let totalSegments: number = 0;
+  export let totalSpeakerSegments: number = 0;
   export let hasMoreSegments: boolean = false;
   export let loadingMoreSegments: boolean = false;
 
@@ -35,8 +35,8 @@
   let scrollProgress: number = 0;
   let transcriptContentElement: HTMLElement | null = null;
 
-  // Calculate loaded segments info from the store
-  $: loadedSegments = $processedTranscriptSegments?.length || 0;
+  // Calculate loaded segments info from raw (unmerged) segment count
+  // loadedSegments not needed — footer uses displaySegments.length and totalSpeakerSegments
 
   // Search functionality
   let searchQuery = '';
@@ -205,34 +205,34 @@
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 
-  // Handle scroll to update progress bar based on segment index (not scroll position)
-  // This ensures progress is relative to total transcript size, not just loaded segments
+  // Handle scroll to update reading progress.
+  // Uses the first visible block index against the backend-precomputed total so
+  // progress stays stable as more segments load via infinite scroll.
   function handleTranscriptScroll(event: Event) {
     const target = event.target as HTMLElement;
-    if (!target || totalSegments === 0) return;
+    if (!target) return;
 
-    // Find all segment elements with data-seg-index attribute
-    const segmentElements = target.querySelectorAll('[data-seg-index]');
-    if (segmentElements.length === 0) {
-      scrollProgress = 0;
-      return;
-    }
+    const total = totalSpeakerSegments || displaySegments.length;
+    if (total === 0) return;
 
-    // Find the first visible segment (at top of viewport)
+    const blockElements = target.querySelectorAll('[data-seg-index]');
+    if (blockElements.length === 0) { scrollProgress = 0; return; }
+
+    // Only snap to 100% when truly at the end (no more segments to load)
+    const atBottom = Math.abs(target.scrollHeight - target.clientHeight - target.scrollTop) < 2;
+    if (atBottom && !hasMoreSegments) { scrollProgress = 100; return; }
+
     const viewportTop = target.scrollTop;
-    let firstVisibleSegmentIndex = 0;
-
-    for (const el of Array.from(segmentElements)) {
-      const segmentTop = (el as HTMLElement).offsetTop - target.offsetTop;
-      if (segmentTop >= viewportTop) {
-        const dataIndex = el.getAttribute('data-seg-index');
-        firstVisibleSegmentIndex = dataIndex ? parseInt(dataIndex, 10) : 0;
-        break;
-      }
+    let firstVisibleIdx = 0;
+    for (let i = 0; i < blockElements.length; i++) {
+      const el = blockElements[i] as HTMLElement;
+      if (el.offsetTop - target.offsetTop >= viewportTop) { firstVisibleIdx = i; break; }
     }
 
-    // Calculate progress as percentage of total segments
-    scrollProgress = Math.round((firstVisibleSegmentIndex / totalSegments) * 100);
+    const newProgress = Math.min(99, Math.round((firstVisibleIdx / total) * 100));
+    // Never decrease progress while loading more segments (prevents glitch on infinite scroll)
+    if (loadingMoreSegments && newProgress < scrollProgress) return;
+    scrollProgress = newProgress;
   }
 
   // Set up infinite scroll observer
@@ -439,7 +439,7 @@
               {#each displaySegments as segment, index}
                 {#if segment.isOverlapGroup && segment.overlapSegments}
                   <!-- Overlap Group -->
-                  <div class="overlap-group" data-seg-index={index}>
+                  <div class="overlap-group" data-seg-index={segment.rawStartIndex}>
                     <div class="overlap-indicator">
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -466,7 +466,7 @@
                   </div>
                 {:else}
                   <!-- Regular Segment -->
-                  <div class="transcript-segment" data-seg-index={index}>
+                  <div class="transcript-segment" data-seg-index={segment.rawStartIndex}>
                     <div class="segment-header">
                       <div
                         class="segment-speaker"
@@ -512,16 +512,13 @@
         </div>
 
         <!-- Segments loaded info -->
-        {#if totalSegments > 0 && hasMoreSegments}
+        {#if displaySegments.length > 0}
           <div class="segments-loaded-info">
-            <span class="segments-count">{$t('transcriptModal.segmentsLoaded', { count: loadedSegments })}</span>
+            <span class="segments-count">{$t('transcript.speakerSegmentsOfTotal', { loaded: displaySegments.length, total: totalSpeakerSegments || displaySegments.length })}</span>
             {#if loadingMoreSegments}
-              <span class="loading-indicator">
+              <span class="segments-detail">
                 <span class="loading-spinner-small"></span>
-                {$t('transcriptModal.loadingIndicator')}
               </span>
-            {:else}
-              <span class="more-available">{$t('transcriptModal.moreAvailable')}</span>
             {/if}
           </div>
         {/if}
@@ -628,15 +625,11 @@
     font-weight: 500;
   }
 
-  .more-available {
-    color: var(--text-secondary);
-    font-style: italic;
-  }
-
-  .loading-indicator {
+  .segments-detail {
     display: flex;
     align-items: center;
     gap: 6px;
+    color: var(--text-muted);
   }
 
   .loading-spinner-small {

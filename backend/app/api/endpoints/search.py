@@ -252,18 +252,26 @@ def trigger_reindex(
     """
     if pending_only and file_uuids is None:
         # Find file UUIDs that are NOT yet indexed in OpenSearch
+        from sqlalchemy import exists
+        from sqlalchemy import select
+
         from app.db.session_utils import session_scope
         from app.models.media import FileStatus
         from app.models.media import MediaFile
+        from app.models.media import TranscriptSegment
         from app.services.opensearch_service import opensearch_client
 
-        # Get all completed file UUIDs from PostgreSQL
+        # Get completed file UUIDs that have transcript segments (indexable)
         with session_scope() as db:
+            has_segments = exists(
+                select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
+            )
             completed_files = (
                 db.query(MediaFile.uuid)
                 .filter(
                     MediaFile.user_id == int(current_user.id),
                     MediaFile.status == FileStatus.COMPLETED,
+                    has_segments,
                 )
                 .all()
             )
@@ -455,19 +463,28 @@ def reindex_status(
     Returns:
         Dict with total_files, indexed_files, pending info, current model.
     """
+    from sqlalchemy import exists
+    from sqlalchemy import select
+
     from app.db.session_utils import session_scope
     from app.models.media import FileStatus
     from app.models.media import MediaFile
+    from app.models.media import TranscriptSegment
     from app.services.opensearch_service import opensearch_client
     from app.services.search.settings_service import get_search_embedding_dimension
     from app.services.search.settings_service import get_search_embedding_model
 
     with session_scope() as db:
+        # Only count completed files that have transcript segments (indexable)
+        has_segments = exists(
+            select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
+        )
         total_files = (
             db.query(MediaFile)
             .filter(
                 MediaFile.user_id == int(current_user.id),
                 MediaFile.status == FileStatus.COMPLETED,
+                has_segments,
             )
             .count()
         )

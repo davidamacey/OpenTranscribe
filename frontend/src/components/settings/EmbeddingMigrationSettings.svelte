@@ -3,6 +3,7 @@
   import { getCsrfToken } from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import StatusChip from './StatusChip.svelte';
 
   // Migration status state
   let currentMode = 'v3';
@@ -247,33 +248,30 @@
         {$t('settings.embeddingMigration.description')}
       </p>
 
-      <!-- Current Status -->
-      <div class="status-card" class:v3={currentMode === 'v3'} class:v4={currentMode === 'v4'}>
-        <div class="status-label">{$t('settings.embeddingMigration.currentMode')}</div>
-        <div class="status-value">
-          <span class="mode-badge" class:v3={currentMode === 'v3'} class:v4={currentMode === 'v4'}>
-            {currentMode.toUpperCase()}
-          </span>
-          <span class="mode-desc">
-            {#if currentMode === 'v3'}
-              {$t('settings.embeddingMigration.v3Description')}
-            {:else}
-              {$t('settings.embeddingMigration.v4Description')}
-            {/if}
-          </span>
-        </div>
-      </div>
-
-      <!-- Document Counts -->
-      <div class="stats-row">
-        <div class="stat-item">
-          <span class="stat-label">{$t('settings.embeddingMigration.v3Documents')}</span>
-          <span class="stat-value">{v3DocumentCount}</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-label">{$t('settings.embeddingMigration.v4Documents')}</span>
-          <span class="stat-value">{v4DocumentCount}</span>
-        </div>
+      <!-- Status Chips -->
+      <div class="status-chips-row">
+        <StatusChip
+          label={$t('settings.embeddingMigration.chipMode')}
+          value={currentMode.toUpperCase()}
+          status={currentMode === 'v4' ? 'green' : 'yellow'}
+        />
+        <StatusChip
+          label={$t('settings.embeddingMigration.chipV3Docs')}
+          value={String(v3DocumentCount)}
+          status={v3DocumentCount > 0 && currentMode === 'v4' ? 'yellow' : 'neutral'}
+        />
+        <StatusChip
+          label={$t('settings.embeddingMigration.chipV4Docs')}
+          value={String(v4DocumentCount)}
+          status={v4DocumentCount > 0 ? 'green' : 'neutral'}
+        />
+        {#if migrationInProgress}
+          <StatusChip
+            label={$t('settings.embeddingMigration.chipStatus')}
+            value={$t('settings.embeddingMigration.chipMigrating')}
+            status="blue"
+          />
+        {/if}
       </div>
 
       <!-- Migration Status -->
@@ -444,6 +442,13 @@
     to { transform: rotate(360deg); }
   }
 
+  .status-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -470,83 +475,7 @@
     margin: 0.25rem 0 1rem 0;
   }
 
-  .status-card {
-    padding: 1rem;
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
-    margin-bottom: 1rem;
-  }
 
-  .status-card.v3 {
-    background: rgba(251, 191, 36, 0.1);
-    border-color: rgba(251, 191, 36, 0.3);
-  }
-
-  .status-card.v4 {
-    background: rgba(34, 197, 94, 0.1);
-    border-color: rgba(34, 197, 94, 0.3);
-  }
-
-  .status-label {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin-bottom: 0.25rem;
-  }
-
-  .status-value {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .mode-badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .mode-badge.v3 {
-    background: #fbbf24;
-    color: #78350f;
-  }
-
-  .mode-badge.v4 {
-    background: #22c55e;
-    color: #14532d;
-  }
-
-  .mode-desc {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
-
-  .stats-row {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-
-  .stat-item {
-    flex: 1;
-    padding: 0.75rem;
-    background: var(--background-color);
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
-  }
-
-  .stat-label {
-    display: block;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin-bottom: 0.25rem;
-  }
-
-  .stat-value {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-color);
-  }
 
   .migration-box {
     display: flex;

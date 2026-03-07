@@ -87,6 +87,31 @@
     if (lower === 'failure') return 'failure';
     return 'partial';
   }
+
+  let detailsModalOpen = false;
+  let detailsJson = '';
+
+  function showDetails(details: any) {
+    detailsJson = JSON.stringify(details, null, 2);
+    detailsModalOpen = true;
+  }
+
+  function closeDetails() {
+    detailsModalOpen = false;
+    detailsJson = '';
+  }
+
+  function handleDetailsKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      closeDetails();
+    }
+  }
+
+  function handleDetailsBackdrop(event: MouseEvent) {
+    if (event.target === event.currentTarget) {
+      closeDetails();
+    }
+  }
 </script>
 
 <div class="audit-log-viewer">
@@ -164,7 +189,7 @@
                 </td>
                 <td>{event.source_ip}</td>
                 <td>
-                  <button class="details-btn" on:click={() => alert(JSON.stringify(event.details, null, 2))}>
+                  <button class="details-btn" on:click={() => showDetails(event.details)}>
                     ...
                   </button>
                 </td>
@@ -179,6 +204,33 @@
     {/if}
   {/if}
 </div>
+
+{#if detailsModalOpen}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div
+    class="details-modal-backdrop"
+    on:click={handleDetailsBackdrop}
+    on:keydown={handleDetailsKeydown}
+    tabindex="-1"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Event Details"
+  >
+    <div class="details-modal">
+      <div class="details-modal-header">
+        <h3>Event Details</h3>
+        <button class="details-modal-close" on:click={closeDetails} aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <pre class="details-modal-body">{detailsJson}</pre>
+    </div>
+  </div>
+{/if}
 
 <style>
   .audit-log-viewer {
@@ -439,5 +491,81 @@
     overflow-y: auto;
     border: 1px solid var(--color-border);
     border-radius: 4px;
+  }
+
+  /* Details Modal */
+  .details-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1200;
+    padding: 1rem;
+  }
+
+  :global([data-theme='dark']) .details-modal-backdrop {
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  .details-modal {
+    background: var(--color-bg, #fff);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+
+  .details-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .details-modal-header h3 {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .details-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    color: var(--color-text-secondary);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+  }
+
+  .details-modal-close:hover {
+    color: var(--color-text);
+    background: var(--color-bg-secondary);
+  }
+
+  .details-modal-body {
+    padding: 1rem;
+    margin: 0;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--color-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--color-bg-secondary, #f9fafb);
+    border-radius: 0 0 8px 8px;
   }
 </style>

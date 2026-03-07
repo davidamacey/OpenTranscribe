@@ -24,6 +24,7 @@
     isSemantic: boolean;
     highlightedText: string;
     segmentIndex: number;
+    rawStartIndex: number; // Index of the first raw segment in this group
   }
 
   interface MatchPosition {
@@ -51,6 +52,7 @@
   // Progressive loading state
   const SEGMENTS_PER_PAGE = 200;
   let totalSegmentCount = 0;
+  let totalSpeakerSegmentCount = 0;
   let loadedSegmentOffset = 0;
   let hasMoreSegments = false;
   let loadingMoreSegments = false;
@@ -203,7 +205,8 @@
     keywordRanges: { start: number; end: number }[],
     semanticRanges: { start: number; end: number }[],
     startSegIdx: number,
-    existingLastGroup: GroupedSegment | null
+    existingLastGroup: GroupedSegment | null,
+    rawStartOffset: number = 0
   ): { grouped: GroupedSegment[]; nextSegIdx: number } {
     const sorted = [...segments].sort((a: any, b: any) => {
       return parseFloat(String(a.start_time || 0)) - parseFloat(String(b.start_time || 0));
@@ -216,6 +219,7 @@
     let currentStart = existingLastGroup ? existingLastGroup.startTime : 0;
     let currentEnd = existingLastGroup ? existingLastGroup.endTime : 0;
     let segIdx = startSegIdx;
+    let currentRawStartIndex = existingLastGroup ? existingLastGroup.rawStartIndex : rawStartOffset;
 
     function buildHighlightedText(entries: TextEntry[]): string {
       return entries.map(entry => {
@@ -247,12 +251,13 @@
           isSemantic: hasSemantic && !hasKeyword,
           highlightedText: buildHighlightedText(currentEntries),
           segmentIndex: segIdx,
+          rawStartIndex: currentRawStartIndex,
         });
         segIdx++;
       }
     }
 
-    sorted.forEach((segment: any) => {
+    sorted.forEach((segment: any, rawIdx: number) => {
       const speakerName =
         segment.resolved_speaker_name ||
         segment.speaker?.display_name ||
@@ -281,6 +286,7 @@
         currentEntries = [entry];
         currentStart = startTime;
         currentEnd = endTime;
+        currentRawStartIndex = rawStartOffset + rawIdx;
       } else {
         currentEntries.push(entry);
         currentEnd = endTime;
@@ -391,6 +397,7 @@
     allMatchPositions = buildAllMatchPositionsFromOccurrences(); // Pre-build from ALL occurrences
     currentMatchIdx = 0;
     totalSegmentCount = 0;
+    totalSpeakerSegmentCount = 0;
     loadedSegmentOffset = 0;
     hasMoreSegments = false;
     loadingMoreSegments = false;
@@ -412,12 +419,13 @@
 
       // Track total and loaded counts
       totalSegmentCount = res.data.total_segments || segments.length;
+      totalSpeakerSegmentCount = res.data.total_speaker_segments || 0;
       loadedSegmentOffset = segments.length;
       hasMoreSegments = loadedSegmentOffset < totalSegmentCount;
 
       // Group consecutive same-speaker segments
       const { keywordRanges, semanticRanges } = buildTimeRanges();
-      const result = processSegments(segments, keywordRanges, semanticRanges, 0, null);
+      const result = processSegments(segments, keywordRanges, semanticRanges, 0, null, 0);
       nextSegIdx = result.nextSegIdx;
 
       groupedSegments = result.grouped;
@@ -473,7 +481,7 @@
 
       // Check if we should try to continue the last group from previous batch
       const lastExisting = groupedSegments.length > 0 ? groupedSegments[groupedSegments.length - 1] : null;
-      const result = processSegments(newSegments, keywordRanges, semanticRanges, nextSegIdx, null);
+      const result = processSegments(newSegments, keywordRanges, semanticRanges, nextSegIdx, null, loadedSegmentOffset);
       nextSegIdx = result.nextSegIdx;
 
       // If the first new group has the same speaker as the last existing group,
@@ -538,32 +546,34 @@
     }
   }
 
+  // Handle scroll to update reading progress.
+  // Uses the first visible block index against the backend-precomputed total so
+  // progress stays stable as more segments load via infinite scroll.
   function handleContentScroll(event: Event) {
     const target = event.target as HTMLElement;
-    if (!target || totalSegmentCount === 0) return;
+    if (!target) return;
 
-    // Calculate progress based on visible segment index vs total segments
-    const segmentElements = target.querySelectorAll('[data-seg-index]');
-    if (segmentElements.length === 0) {
-      scrollProgress = 0;
-      return;
-    }
+    const total = totalSpeakerSegmentCount || groupedSegments.length;
+    if (total === 0) return;
 
-    // Find the first visible segment (top of viewport)
+    const blockElements = target.querySelectorAll('[data-seg-index]');
+    if (blockElements.length === 0) { scrollProgress = 0; return; }
+
+    // Only snap to 100% when truly at the end (no more segments to load)
+    const atBottom = Math.abs(target.scrollHeight - target.clientHeight - target.scrollTop) < 2;
+    if (atBottom && !hasMoreSegments) { scrollProgress = 100; return; }
+
     const viewportTop = target.scrollTop;
-    let firstVisibleSegmentIndex = 0;
-
-    for (const el of Array.from(segmentElements)) {
-      const segmentTop = (el as HTMLElement).offsetTop - target.offsetTop;
-      if (segmentTop >= viewportTop) {
-        const dataIndex = el.getAttribute('data-seg-index');
-        firstVisibleSegmentIndex = dataIndex ? parseInt(dataIndex, 10) : 0;
-        break;
-      }
+    let firstVisibleIdx = 0;
+    for (let i = 0; i < blockElements.length; i++) {
+      const el = blockElements[i] as HTMLElement;
+      if (el.offsetTop - target.offsetTop >= viewportTop) { firstVisibleIdx = i; break; }
     }
 
-    // Calculate progress as percentage of total segments
-    scrollProgress = Math.round((firstVisibleSegmentIndex / totalSegmentCount) * 100);
+    const newProgress = Math.min(99, Math.round((firstVisibleIdx / total) * 100));
+    // Never decrease progress while loading more segments (prevents glitch on infinite scroll)
+    if (loadingMoreSegments && newProgress < scrollProgress) return;
+    scrollProgress = newProgress;
   }
 
   // Observe the sentinel element when it's available
@@ -586,6 +596,7 @@
     loadingMoreSegments = false;
     loadedSegmentOffset = 0;
     totalSegmentCount = 0;
+    totalSpeakerSegmentCount = 0;
     scrollProgress = 0;
     nextSegIdx = 0;
     if (infiniteScrollObserver) {
@@ -858,7 +869,7 @@
                   class="transcript-segment"
                   class:keyword-segment={segment.isKeyword}
                   class:semantic-segment={segment.isSemantic}
-                  data-seg-index={segment.segmentIndex}
+                  data-seg-index={segment.rawStartIndex}
                 >
                   <div class="segment-header">
                     <div
@@ -889,9 +900,14 @@
         </div>
 
         <!-- Segments loaded info -->
-        {#if totalSegmentCount > 0 && hasMoreSegments}
+        {#if groupedSegments.length > 0}
           <div class="segments-loaded-info">
-            <span>{loadedSegmentOffset} of {totalSegmentCount} segments loaded</span>
+            <span class="segments-count">{$t('transcript.speakerSegmentsOfTotal', { loaded: groupedSegments.length, total: totalSpeakerSegmentCount || groupedSegments.length })}</span>
+            {#if loadingMoreSegments}
+              <span class="segments-detail">
+                <span class="loading-spinner-small"></span>
+              </span>
+            {/if}
           </div>
         {/if}
       </div>
@@ -1340,13 +1356,27 @@
   }
 
   .segments-loaded-info {
-    text-align: center;
-    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 16px;
     font-size: 0.75rem;
     color: var(--text-secondary, #9ca3af);
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
+  }
+
+  .segments-count {
+    font-weight: 500;
+  }
+
+  .segments-detail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
   }
 
   @media (max-width: 768px) {

@@ -3,6 +3,11 @@
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
+  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import StatusChip from './StatusChip.svelte';
+
+  let showModelChangeModal = false;
+  let showRepairModal = false;
 
   interface EmbeddingModel {
     model_id: string;
@@ -110,14 +115,13 @@
     }
   }
 
-  async function handleModelChange() {
+  function handleModelChange() {
     if (selectedModelId === currentModelId) return;
+    showModelChangeModal = true;
+  }
 
-    if (!confirm($t('search.modelChangeWarning') || 'Changing the embedding model will re-index all transcripts. Search will use keyword-only mode during re-indexing. Continue?')) {
-      selectedModelId = currentModelId;
-      return;
-    }
-
+  async function confirmModelChange() {
+    showModelChangeModal = false;
     isSwitchingModel = true;
     try {
       const res = await axiosInstance.post('/search/models', {
@@ -133,6 +137,11 @@
     } finally {
       isSwitchingModel = false;
     }
+  }
+
+  function cancelModelChange() {
+    showModelChangeModal = false;
+    selectedModelId = currentModelId;
   }
 
   async function handleReindexAll() {
@@ -188,17 +197,19 @@
     }
   }
 
-  async function handleRepairIndices() {
-    if (!confirm($t('settings.search.repairConfirm') || 'This will rebuild corrupted OpenSearch indices from the database. Continue?')) {
-      return;
-    }
+  function handleRepairIndices() {
+    showRepairModal = true;
+  }
+
+  async function confirmRepairIndices() {
+    showRepairModal = false;
     isRepairing = true;
     try {
       const res = await axiosInstance.post('/search/repair-indices');
-      toastStore.success($t('settings.search.repairSuccess') || res.data.message || 'Indices repaired successfully');
+      toastStore.success($t('settings.search.repairSuccess'));
       await loadIndexHealth();
     } catch (e: any) {
-      toastStore.error($t('settings.search.repairError') || e?.response?.data?.detail || 'Failed to repair indices');
+      toastStore.error(e?.response?.data?.detail || $t('settings.search.repairError'));
     } finally {
       isRepairing = false;
     }
@@ -220,98 +231,107 @@
   $: modelChanged = selectedModelId !== currentModelId;
 
   $: selectedModel = models.find(m => m.model_id === selectedModelId);
+
+  // Derive overall health status for the chip
+  $: healthAllGreen = indexHealth
+    ? Object.values(indexHealth).every(i => i.status === 'green')
+    : true;
+  $: hasRedIndices = indexHealth
+    ? Object.values(indexHealth).some(i => i.status === 'red')
+    : false;
 </script>
 
 {#if isLoading}
   <div class="loading-state">{$t('search.settingsTitle') || 'Loading search settings...'}</div>
 {:else}
-  <!-- Index Status (top) -->
+  <!-- Status Chips Row -->
   {#if indexStatus}
-    <h4 class="subsection-title">{$t('search.indexStatus') || 'Search Index Status'}</h4>
+    <div class="status-chips-row">
+      <StatusChip
+        label={$t('settings.search.chipIndexed')}
+        value="{indexStatus.indexed_files}/{indexStatus.total_files}"
+        status={progressPercent === 100 ? 'green' : progressPercent > 0 ? 'yellow' : 'neutral'}
+      />
+      <StatusChip
+        label={$t('settings.search.chipModel')}
+        value={indexStatus.current_model}
+        status="blue"
+      />
+      <StatusChip
+        label={$t('settings.search.chipHealth')}
+        value={hasRedIndices ? $t('settings.search.chipHealthNeedsRepair') : $t('settings.search.chipHealthOk')}
+        status={hasRedIndices ? 'red' : 'green'}
+      />
+      {#if indexStatus.pending_files > 0}
+        <StatusChip
+          label={$t('settings.search.chipPending')}
+          value={indexStatus.pending_files !== 1 ? $t('settings.search.chipFileCountPlural', { count: indexStatus.pending_files }) : $t('settings.search.chipFileCount', { count: indexStatus.pending_files })}
+          status="yellow"
+        />
+      {/if}
+    </div>
+  {/if}
 
-    <div class="status-grid">
-      <div class="status-item">
-        <span class="status-label">Files indexed</span>
-        <span class="status-value">{indexStatus.indexed_files} / {indexStatus.total_files}</span>
+  <!-- Live reindex progress -->
+  {#if isReindexing}
+    <div class="reindex-live-progress">
+      <div class="reindex-header">
+        <span class="reindex-label">
+          <span class="spinner"></span>
+          {isStopping
+            ? ($t('search.stoppingReindex') || 'Stopping...')
+            : ($t('search.reindexingInProgress') || 'Re-indexing in progress...')}
+        </span>
+        {#if reindexProgress}
+          <span class="reindex-count">
+            {reindexProgress.indexed_files} / {reindexProgress.total_files} files
+          </span>
+        {/if}
       </div>
-      <div class="status-item">
-        <span class="status-label">Current model</span>
-        <span class="status-value">{indexStatus.current_model}</span>
-      </div>
-      <div class="status-item">
-        <span class="status-label">Dimensions</span>
-        <span class="status-value">{indexStatus.current_dimension}</span>
-      </div>
-      <div class="status-item">
-        <span class="status-label">Last indexed</span>
-        <span class="status-value">{formatDate(indexStatus.last_indexed_at)}</span>
+      {#if reindexProgress}
+        <div class="progress-container">
+          <div class="progress-bar reindexing">
+            <div class="progress-fill" style="width: {Math.round(reindexProgress.progress * 100)}%"></div>
+          </div>
+          <span class="progress-text">{Math.round(reindexProgress.progress * 100)}%</span>
+        </div>
+      {:else}
+        <div class="progress-container">
+          <div class="progress-bar reindexing">
+            <div class="progress-fill indeterminate"></div>
+          </div>
+          <span class="progress-text">{$t('search.reindexStarting') || 'Starting...'}</span>
+        </div>
+      {/if}
+      <div class="reindex-actions">
+        <button
+          class="btn btn-danger-outline btn-sm"
+          on:click={handleStopReindex}
+          disabled={isStopping}
+        >
+          {isStopping ? ($t('search.stoppingReindex') || 'Stopping...') : ($t('search.stopReindex') || 'Stop')}
+        </button>
       </div>
     </div>
-
-    {#if isReindexing}
-      <!-- Live reindex progress -->
-      <div class="reindex-live-progress">
-        <div class="reindex-header">
-          <span class="reindex-label">
-            <span class="spinner"></span>
-            {isStopping
-              ? ($t('search.stoppingReindex') || 'Stopping...')
-              : ($t('search.reindexingInProgress') || 'Re-indexing in progress...')}
-          </span>
-          {#if reindexProgress}
-            <span class="reindex-count">
-              {reindexProgress.indexed_files} / {reindexProgress.total_files} files
-            </span>
-          {/if}
-        </div>
-        {#if reindexProgress}
-          <div class="progress-container">
-            <div class="progress-bar reindexing">
-              <div class="progress-fill" style="width: {Math.round(reindexProgress.progress * 100)}%"></div>
-            </div>
-            <span class="progress-text">{Math.round(reindexProgress.progress * 100)}%</span>
-          </div>
-        {:else}
-          <div class="progress-container">
-            <div class="progress-bar reindexing">
-              <div class="progress-fill indeterminate"></div>
-            </div>
-            <span class="progress-text">{$t('search.reindexStarting') || 'Starting...'}</span>
-          </div>
-        {/if}
-        <div class="reindex-actions">
-          <button
-            class="btn btn-danger-outline btn-sm"
-            on:click={handleStopReindex}
-            disabled={isStopping}
-          >
-            {isStopping ? ($t('search.stoppingReindex') || 'Stopping...') : ($t('search.stopReindex') || 'Stop')}
-          </button>
-        </div>
+  {:else if indexStatus && indexStatus.total_files > 0 && progressPercent < 100}
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {progressPercent}%"></div>
       </div>
-    {:else if indexStatus.total_files > 0}
-      <div class="progress-container">
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {progressPercent}%"></div>
-        </div>
-        <span class="progress-text">{progressPercent}% indexed</span>
-      </div>
-    {/if}
+      <span class="progress-text">{progressPercent}% indexed</span>
+    </div>
+  {/if}
 
-    {#if indexStatus.pending_files > 0 && !isReindexing}
-      <p class="pending-notice">
-        {indexStatus.pending_files} file{indexStatus.pending_files !== 1 ? 's' : ''} pending re-indexing.
-      </p>
-    {/if}
-
+  <!-- Re-index Actions -->
+  {#if indexStatus}
     <div class="form-actions">
-      {#if indexStatus.pending_files > 0}
+      {#if indexStatus.pending_files > 0 && !isReindexing}
         <button
           class="btn btn-secondary"
           on:click={handleReindexPending}
           disabled={isReindexing}
         >
-          Re-index Pending
+          {$t('settings.search.reindexPending')}
         </button>
       {/if}
       <button
@@ -322,58 +342,14 @@
         {isReindexing ? ($t('search.reindexing') || 'Re-indexing...') : ($t('search.reindexAll') || 'Re-index All')}
       </button>
     </div>
-
-    <div class="section-divider"></div>
   {/if}
 
-  <!-- Index Health -->
-  <h4 class="subsection-title">{$t('settings.search.indexHealth') || 'Index Health'}</h4>
-  <p class="health-desc">{$t('settings.search.indexHealthDesc') || 'Status of OpenSearch indices. Red indices may need repair.'}</p>
-
-  {#if indexHealth}
-    <div class="health-grid">
-      {#each Object.entries(indexHealth) as [indexName, info]}
-        <div class="health-item">
-          <span class="health-dot" class:green={info.status === 'green'} class:red={info.status === 'red'}></span>
-          <span class="health-name">{indexName}</span>
-          <span class="health-detail">
-            {#if info.status === 'green'}
-              {$t('settings.search.indexGreen') || 'Healthy'} ({info.doc_count} docs)
-            {:else}
-              {$t('settings.search.indexRed') || 'Error'}
-            {/if}
-          </span>
-        </div>
-      {/each}
-    </div>
-
-    {#if Object.values(indexHealth).some(i => i.status === 'red')}
-      <div class="form-actions">
-        <button
-          class="btn btn-primary"
-          on:click={handleRepairIndices}
-          disabled={isRepairing}
-        >
-          {#if isRepairing}
-            <span class="spinner"></span>
-            {$t('settings.search.repairing') || 'Repairing...'}
-          {:else}
-            {$t('settings.search.repairIndices') || 'Repair Indices'}
-          {/if}
-        </button>
-      </div>
-    {/if}
-  {:else}
-    <p class="health-desc">Loading health status...</p>
-  {/if}
-
+  <!-- Embedding Model Selection (directly below actions) -->
   <div class="section-divider"></div>
-
-  <!-- Embedding Model Selection -->
   <h4 class="subsection-title">{$t('search.embeddingModel') || 'Embedding Model'}</h4>
 
   <div class="form-group">
-    <label for="embedding-model-select">Model</label>
+    <label for="embedding-model-select">{$t('settings.search.modelLabel')}</label>
     <select
       id="embedding-model-select"
       class="form-control"
@@ -401,18 +377,79 @@
         class="btn btn-secondary"
         on:click={() => (selectedModelId = currentModelId)}
       >
-        Cancel
+        {$t('settings.search.cancel')}
       </button>
       <button
         class="btn btn-primary"
         on:click={handleModelChange}
         disabled={isSwitchingModel}
       >
-        {isSwitchingModel ? 'Applying...' : 'Apply & Re-index'}
+        {isSwitchingModel ? $t('settings.search.applying') : $t('settings.search.applyAndReindex')}
       </button>
     </div>
   {/if}
+
+  <!-- Index Health -->
+  <div class="section-divider"></div>
+  <h4 class="subsection-title">{$t('settings.search.indexHealth') || 'Index Health'}</h4>
+
+  {#if indexHealth}
+    <div class="health-cards">
+      {#each Object.entries(indexHealth) as [indexName, info]}
+        <div class="health-card" class:healthy={info.status === 'green'} class:error={info.status === 'red'}>
+          <span class="health-card-dot"></span>
+          <span class="health-card-name">{indexName}</span>
+          <span class="health-card-detail">
+            {#if info.status === 'green'}
+              {info.doc_count} {$t('settings.search.docs')}
+            {:else}
+              {$t('settings.search.indexRed') || 'Error'}
+            {/if}
+          </span>
+        </div>
+      {/each}
+    </div>
+
+    {#if hasRedIndices}
+      <div class="form-actions">
+        <button
+          class="btn btn-primary"
+          on:click={handleRepairIndices}
+          disabled={isRepairing}
+        >
+          {#if isRepairing}
+            <span class="spinner"></span>
+            {$t('settings.search.repairing') || 'Repairing...'}
+          {:else}
+            {$t('settings.search.repairIndices') || 'Repair Indices'}
+          {/if}
+        </button>
+      </div>
+    {/if}
+  {:else}
+    <p class="health-desc">{$t('settings.search.loadingHealth')}</p>
+  {/if}
 {/if}
+
+<ConfirmationModal
+  isOpen={showModelChangeModal}
+  title={$t('settings.search.modelChangeTitle')}
+  message={$t('search.modelChangeWarning')}
+  confirmText={$t('settings.search.applyAndReindex')}
+  on:confirm={confirmModelChange}
+  on:cancel={cancelModelChange}
+  on:close={cancelModelChange}
+/>
+
+<ConfirmationModal
+  isOpen={showRepairModal}
+  title={$t('settings.search.repairTitle')}
+  message={$t('settings.search.repairConfirm')}
+  confirmText={$t('settings.search.repairIndices')}
+  on:confirm={confirmRepairIndices}
+  on:cancel={() => showRepairModal = false}
+  on:close={() => showRepairModal = false}
+/>
 
 <style>
   .loading-state {
@@ -429,31 +466,11 @@
     color: var(--text-color);
   }
 
-  .status-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem 1.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .status-item {
+  .status-chips-row {
     display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .status-label {
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-secondary);
-    font-weight: 500;
-  }
-
-  .status-value {
-    font-size: 0.8125rem;
-    color: var(--text-color);
-    font-weight: 500;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
   }
 
   .progress-container {
@@ -482,16 +499,6 @@
     font-size: 0.75rem;
     color: var(--text-secondary);
     white-space: nowrap;
-  }
-
-  .pending-notice {
-    margin: 0 0 0.5rem;
-    padding: 0.375rem 0.625rem;
-    font-size: 0.8125rem;
-    color: var(--warning-text, #92400e);
-    background: var(--warning-bg, rgba(217, 119, 6, 0.08));
-    border-radius: 6px;
-    border: 1px solid var(--warning-border, rgba(217, 119, 6, 0.2));
   }
 
   .form-group {
@@ -709,43 +716,56 @@
     margin: 0 0 0.75rem;
   }
 
-  .health-grid {
+  .health-cards {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 0.75rem;
   }
 
-  .health-item {
-    display: flex;
+  .health-card {
+    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    background: var(--surface-color);
   }
 
-  .health-dot {
-    width: 8px;
-    height: 8px;
+  .health-card.healthy {
+    border-color: rgba(34, 197, 94, 0.25);
+    background: rgba(34, 197, 94, 0.06);
+  }
+
+  .health-card.error {
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.08);
+  }
+
+  .health-card-dot {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     flex-shrink: 0;
+    background: var(--text-secondary);
   }
 
-  .health-dot.green {
-    background-color: #22c55e;
+  .health-card.healthy .health-card-dot {
+    background: #22c55e;
   }
 
-  .health-dot.red {
-    background-color: #ef4444;
+  .health-card.error .health-card-dot {
+    background: #ef4444;
   }
 
-  .health-name {
+  .health-card-name {
     font-weight: 500;
     color: var(--text-color);
-    min-width: 140px;
   }
 
-  .health-detail {
+  .health-card-detail {
     color: var(--text-secondary);
-    font-size: 0.75rem;
   }
 </style>

@@ -78,6 +78,7 @@
 
   // Transcript pagination state
   let totalSegments = 0;
+  let totalSpeakerSegments = 0;
   let segmentLimit = 500;
   let segmentOffset = 0;
   let loadingMoreSegments = false;
@@ -227,6 +228,7 @@
 
         // Track pagination metadata
         totalSegments = response.data.total_segments || 0;
+        totalSpeakerSegments = response.data.total_speaker_segments || 0;
         segmentLimit = response.data.segment_limit || 500;
         segmentOffset = response.data.segment_offset || 0;
 
@@ -2731,7 +2733,7 @@
     bind:isOpen={showTranscriptModal}
     fileId={file.uuid}
     fileName={file?.filename || 'Unknown File'}
-    {totalSegments}
+    {totalSpeakerSegments}
     {hasMoreSegments}
     {loadingMoreSegments}
     on:close={() => showTranscriptModal = false}

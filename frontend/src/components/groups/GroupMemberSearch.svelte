@@ -109,6 +109,10 @@
     </select>
   </div>
 
+  {#if searchQuery.trim().length > 0 && searchQuery.trim().length < 2}
+    <div class="search-hint">{$t('groups.searchMinChars')}</div>
+  {/if}
+
   {#if filteredResults.length > 0}
     <ul class="search-results">
       {#each filteredResults as user (user.uuid)}
@@ -321,6 +325,13 @@
   .no-results {
     padding: 0.5rem;
     font-size: 0.8125rem;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .search-hint {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     text-align: center;
   }

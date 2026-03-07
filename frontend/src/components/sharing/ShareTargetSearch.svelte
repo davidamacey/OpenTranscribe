@@ -104,7 +104,9 @@
     />
   </div>
 
-  {#if loading}
+  {#if searchQuery.trim().length > 0 && searchQuery.trim().length < 2}
+    <div class="search-hint">{$t('sharing.searchMinChars')}</div>
+  {:else if loading}
     <div class="search-loading">
       <div class="spinner-mini"></div>
       {$t('sharing.searching')}
@@ -280,5 +282,12 @@
 
   :global([data-theme='dark']) .search-results {
     background: var(--surface-color);
+  }
+
+  .search-hint {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: center;
   }
 </style>

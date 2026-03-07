@@ -102,9 +102,13 @@ def search_index_maintenance_task() -> dict[str, Any]:
     Returns:
         Dict with maintenance stats.
     """
+    from sqlalchemy import exists
+    from sqlalchemy import select
+
     from app.db.session_utils import session_scope
     from app.models.media import FileStatus
     from app.models.media import MediaFile
+    from app.models.media import TranscriptSegment
 
     stats: dict[str, int | bool | str] = {
         "total_completed_files": 0,
@@ -115,8 +119,14 @@ def search_index_maintenance_task() -> dict[str, Any]:
 
     try:
         with session_scope() as db:
+            # Only consider completed files that have transcript segments
+            has_segments = exists(
+                select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
+            )
             completed_files = (
-                db.query(MediaFile).filter(MediaFile.status == FileStatus.COMPLETED).all()
+                db.query(MediaFile)
+                .filter(MediaFile.status == FileStatus.COMPLETED, has_segments)
+                .all()
             )
 
             if not completed_files:
