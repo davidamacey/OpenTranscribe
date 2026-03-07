@@ -231,6 +231,15 @@ class Settings(BaseSettings):
         "CONCURRENT_SESSION_POLICY", "terminate_oldest"
     )  # or "reject"
 
+    # ===== SMTP Settings (for password reset emails) =====
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = _int_env("SMTP_PORT", 587)
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM: str = os.getenv("SMTP_FROM", "noreply@example.com")
+    SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
     # Encryption settings for sensitive data (API keys, etc.)
     ENCRYPTION_KEY: str = os.getenv(
         "ENCRYPTION_KEY", "this_should_be_changed_in_production_for_api_key_encryption"
@@ -242,6 +251,7 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "transcribe_app")
+    POSTGRES_SSLMODE: str = os.getenv("POSTGRES_SSLMODE", "prefer")
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
@@ -252,7 +262,7 @@ class Settings(BaseSettings):
     MINIO_ROOT_PASSWORD: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
     MINIO_HOST: str = os.getenv("MINIO_HOST", "localhost")
     MINIO_PORT: str = os.getenv("MINIO_PORT", "9000")
-    MINIO_SECURE: bool = False  # Use HTTPS for MinIO
+    MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
 
     # Presigned URL expiration settings (AWS/GCS best practices: shortest practical time)
@@ -268,9 +278,13 @@ class Settings(BaseSettings):
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_USE_TLS: bool = os.getenv("REDIS_USE_TLS", "false").lower() == "true"
+    _REDIS_SCHEME: str = (
+        "rediss" if os.getenv("REDIS_USE_TLS", "false").lower() == "true" else "redis"
+    )
     REDIS_URL: str = os.getenv(
         "REDIS_URL",
-        f"redis://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}/0",
+        f"{_REDIS_SCHEME}://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}/0",
     )
 
     # OpenSearch settings
@@ -278,7 +292,8 @@ class Settings(BaseSettings):
     OPENSEARCH_PORT: str = os.getenv("OPENSEARCH_PORT", "9200")
     OPENSEARCH_USER: str = os.getenv("OPENSEARCH_USER", "admin")
     OPENSEARCH_PASSWORD: str = os.getenv("OPENSEARCH_PASSWORD", "admin")
-    OPENSEARCH_VERIFY_CERTS: bool = False
+    OPENSEARCH_USE_TLS: bool = os.getenv("OPENSEARCH_USE_TLS", "false").lower() == "true"
+    OPENSEARCH_VERIFY_CERTS: bool = os.getenv("OPENSEARCH_VERIFY_CERTS", "false").lower() == "true"
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
     OPENSEARCH_SPEAKER_INDEX: str = "speakers"
     OPENSEARCH_SUMMARY_INDEX: str = "transcript_summaries"

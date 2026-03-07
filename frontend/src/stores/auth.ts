@@ -1,5 +1,4 @@
 import { writable, derived, get } from 'svelte/store';
-import axios from 'axios';
 import axiosInstance from '../lib/axios';
 
 // Certificate information for PKI authentication
@@ -78,10 +77,6 @@ const createAuthStore = (): AuthStore => {
     // Helper methods to update specific parts of the state
     setUser: (userData: User | null) => {
       store.update((state) => ({ ...state, user: userData }));
-      // Always update localStorage when user data changes
-      if (userData) {
-        localStorage.setItem('user', JSON.stringify(userData));
-      }
     },
     setToken: (tokenValue: string | null) => {
       store.update((state) => ({
@@ -113,71 +108,27 @@ export const isAuthenticated = derived(authStore, ($store) => $store.isAuthentic
 export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
 
-// Initialize auth state from localStorage
+// Initialize auth state by verifying the cookie session with the backend
 export async function initAuth() {
   authStore.setReady(false);
 
-  const resetAndFinalize = (reason: string) => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    authStore.reset();
-  };
+  // Clear any legacy localStorage tokens (migration from pre-cookie auth)
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
 
   try {
-    const storedToken = localStorage.getItem('token');
-
-    if (!storedToken) {
-      resetAndFinalize('No token found');
+    // Verify session by calling /auth/me — cookies are sent automatically
+    const userData = await fetchUserInfo();
+    if (!userData) {
+      authStore.reset();
       return;
     }
 
-    try {
-      const tokenParts = storedToken.split('.');
-      if (tokenParts.length !== 3) throw new Error('Invalid token format');
-      const tokenPayload = JSON.parse(atob(tokenParts[1]));
-      if (tokenPayload.exp && tokenPayload.exp < Date.now() / 1000) {
-        resetAndFinalize('Token expired');
-        return;
-      }
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      resetAndFinalize(`Token validation error: ${errorMessage}`);
-      return;
-    }
-
-    authStore.setToken(storedToken);
-
-    const storedUser = localStorage.getItem('user');
-    let userDataSet = false;
-    if (storedUser) {
-      try {
-        const userData: User = JSON.parse(storedUser);
-        authStore.setUser(userData);
-        userDataSet = true;
-      } catch (error) {
-        console.warn(
-          'auth.ts: initAuth - Failed to parse stored user. Will attempt to fetch from API.',
-          error
-        );
-      }
-    }
-
-    if (!userDataSet) {
-      const fetchedUser = await fetchUserInfo();
-      if (!fetchedUser) {
-        if (!get(authStore).ready) {
-          resetAndFinalize('fetchUserInfo failed and ready state was not set by reset');
-        }
-        return;
-      }
-    }
-
-    if (!get(authStore).ready) {
-      authStore.setReady(true);
-    }
+    // Mark as authenticated (token is in httpOnly cookie, not accessible to JS)
+    authStore.setToken('cookie');
+    authStore.setReady(true);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    resetAndFinalize(`Unexpected error in initAuth: ${errorMessage}`);
+    authStore.reset();
   }
 }
 
@@ -188,9 +139,6 @@ export async function fetchUserInfo() {
     const userData = response.data;
 
     authStore.setUser(userData);
-
-    localStorage.setItem('user', JSON.stringify(userData));
-
     return userData;
   } catch (error: any) {
     console.error('auth.ts: Failed to fetch user info:', error);
@@ -236,11 +184,8 @@ export async function login(
       return { success: false, message: 'Invalid login response from server' };
     }
 
-    const tokenValue = response.data.access_token;
-
-    localStorage.setItem('token', tokenValue);
-
-    authStore.setToken(tokenValue);
+    // Token is now in httpOnly cookie — mark as authenticated in memory
+    authStore.setToken('cookie');
 
     await fetchUserInfo();
 
@@ -250,8 +195,6 @@ export async function login(
   } catch (err: any) {
     console.error('auth.ts: Login error:', err);
 
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
     authStore.reset();
 
     // Extract meaningful error message from backend response
@@ -332,9 +275,13 @@ export async function register(email: string, fullName: string, password: string
 }
 
 // Logout function
-export function logout() {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+export async function logout() {
+  // Notify backend to revoke tokens and clear cookies
+  try {
+    await axiosInstance.post('/auth/logout');
+  } catch {
+    // Ignore errors — we're logging out anyway
+  }
 
   // Clear presigned URL cache on logout (security: prevents cached URLs from being used after logout)
   // We import this lazily to avoid circular dependencies
@@ -406,9 +353,8 @@ export async function handleKeycloakCallback(
     });
 
     if (response.status === 200 && response.data.access_token) {
-      const tokenValue = response.data.access_token;
-      localStorage.setItem('token', tokenValue);
-      authStore.setToken(tokenValue);
+      // Token is now in httpOnly cookie
+      authStore.setToken('cookie');
 
       await fetchUserInfo();
       authStore.setReady(true);
@@ -438,9 +384,8 @@ export async function loginWithPKI(): Promise<{
     const response = await axiosInstance.post('/auth/pki/authenticate');
 
     if (response.status === 200 && response.data.access_token) {
-      const tokenValue = response.data.access_token;
-      localStorage.setItem('token', tokenValue);
-      authStore.setToken(tokenValue);
+      // Token is now in httpOnly cookie
+      authStore.setToken('cookie');
 
       await fetchUserInfo();
       authStore.setReady(true);
@@ -480,9 +425,8 @@ export async function verifyMFA(
     });
 
     if (response.status === 200 && response.data.access_token) {
-      const tokenValue = response.data.access_token;
-      localStorage.setItem('token', tokenValue);
-      authStore.setToken(tokenValue);
+      // Token is now in httpOnly cookie
+      authStore.setToken('cookie');
 
       await fetchUserInfo();
       authStore.setReady(true);

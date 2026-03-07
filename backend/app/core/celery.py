@@ -54,13 +54,13 @@ celery_app = Celery(
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
         "app.tasks.search_indexing_task",
+        "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
         "app.tasks.speaker_embedding_migration",
         "app.tasks.baseline_export",
         "app.tasks.rediarize_task",
         "app.tasks.speaker_clustering",
-        "app.tasks.upload_cleanup",
         "app.tasks.auto_labeling",
     ],
 )
@@ -110,6 +110,7 @@ celery_app.conf.update(
         "system.update_gpu_stats": {"queue": "cpu"},
         "migrate_speaker_embeddings_to_v4": {"queue": "cpu"},
         "migration.normalize_embeddings": {"queue": "cpu"},
+        "generate_thumbnail": {"queue": "cpu"},
         "migrate_thumbnails_to_webp": {"queue": "cpu"},
         "reindex_transcripts": {"queue": "cpu"},
         "search_index_maintenance": {"queue": "cpu"},
@@ -139,8 +140,6 @@ celery_app.conf.update(
         "finalize_v4_migration": {"queue": "utility"},
         "export_transcript_baseline": {"queue": "utility"},
         "compare_transcript_baseline": {"queue": "utility"},
-        # TUS upload cleanup
-        "system.cleanup_incomplete_tus_uploads": {"queue": "utility"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -162,11 +161,6 @@ celery_app.conf.update(
         "cleanup-expired-files": {
             "task": "cleanup_expired_files",
             "schedule": crontab(minute=0),  # Every hour on the hour
-            "options": {"queue": "utility"},
-        },
-        "cleanup-incomplete-tus-uploads": {
-            "task": "system.cleanup_incomplete_tus_uploads",
-            "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
             "options": {"queue": "utility"},
         },
     },

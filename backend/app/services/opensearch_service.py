@@ -46,8 +46,9 @@ else:
         opensearch_client = OpenSearch(
             hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
             http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-            use_ssl=False,
+            use_ssl=settings.OPENSEARCH_USE_TLS,
             verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+            ssl_show_warn=False,
             connection_class=RequestsHttpConnection,
         )
         logger.info("OpenSearch client initialized successfully")
@@ -76,8 +77,9 @@ def get_opensearch_client() -> "OpenSearch | None":
         opensearch_client = OpenSearch(
             hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
             http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-            use_ssl=False,
+            use_ssl=settings.OPENSEARCH_USE_TLS,
             verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+            ssl_show_warn=False,
             connection_class=RequestsHttpConnection,
         )
         logger.info("OpenSearch client lazily initialized successfully")

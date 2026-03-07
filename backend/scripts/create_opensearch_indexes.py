@@ -15,6 +15,8 @@ OPENSEARCH_HOST = os.getenv("OPENSEARCH_HOST", "localhost")
 OPENSEARCH_PORT = int(os.getenv("OPENSEARCH_PORT", "9200"))
 OPENSEARCH_USER = os.getenv("OPENSEARCH_USER", "admin")
 OPENSEARCH_PASSWORD = os.getenv("OPENSEARCH_PASSWORD", "admin")
+OPENSEARCH_USE_TLS = os.getenv("OPENSEARCH_USE_TLS", "false").lower() == "true"
+OPENSEARCH_VERIFY_CERTS = os.getenv("OPENSEARCH_VERIFY_CERTS", "false").lower() == "true"
 
 # OpenSearch indexes
 TRANSCRIPT_INDEX = "transcripts"
@@ -28,8 +30,9 @@ def create_client():
         http_auth=(OPENSEARCH_USER, OPENSEARCH_PASSWORD)
         if OPENSEARCH_USER and OPENSEARCH_PASSWORD
         else None,
-        use_ssl=False,
-        verify_certs=False,
+        use_ssl=OPENSEARCH_USE_TLS,
+        verify_certs=OPENSEARCH_VERIFY_CERTS,
+        ssl_show_warn=False,
         connection_class=RequestsHttpConnection,
     )
     return client

@@ -67,9 +67,6 @@
   async function fetchComments() {
     loading = true;
     try {
-      // Get auth token from localStorage
-      const token = localStorage.getItem('token');
-
       // Validate fileId
       if (!fileId) {
         console.error('Invalid file ID:', fileId);
@@ -78,23 +75,10 @@
         return;
       }
 
-      if (!token) {
-        console.error('No auth token found in localStorage');
-        toastStore.error($t('comments.loginRequired'));
-        loading = false;
-        return;
-      }
-
-      // Create custom headers with authentication token
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
-
       let response;
       try {
         const endpoint = `/comments/files/${fileId}/comments`;
-        response = await axiosInstance.get(endpoint, { headers });
+        response = await axiosInstance.get(endpoint);
       } catch (/** @type {any} */ error) {
         console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
 
@@ -109,13 +93,12 @@
         if (error.response?.status === 404) {
           try {
             // Try the legacy endpoint as fallback
-            response = await axiosInstance.get(`/files/${fileId}/comments`, { headers });
+            response = await axiosInstance.get(`/files/${fileId}/comments`);
           } catch (/** @type {any} */ legacyError) {
             try {
               // If that fails, try the query parameter approach as last resort
               response = await axiosInstance.get('/comments', {
-                params: { media_file_id: fileId },
-                headers
+                params: { media_file_id: fileId }
               });
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
@@ -134,15 +117,15 @@
       // Process comments to ensure they have user information
       // Processing comments
       comments = response.data.map(/** @param {any} comment */ (comment) => {
-        // If comment has no user info, add it from the stored user data
+        // If comment has no user info, add it from the auth store
         if (!comment.user) {
-          const userData = JSON.parse(localStorage.getItem('user') || '{}');
+          const currentUser = $authStore.user;
           return {
             ...comment,
             user: {
               uuid: comment.user_id,
-              email: userData.email,
-              full_name: userData.full_name || userData.email || 'User ' + comment.user_id
+              email: currentUser?.email,
+              full_name: currentUser?.full_name || currentUser?.email || 'User ' + comment.user_id
             }
           };
         }
@@ -195,23 +178,8 @@
 
     // Store locally for optimistic UI updates
     try {
-      // Get user data from localStorage
-      const userData = JSON.parse(localStorage.getItem('user') || '{}');
-
-      // Get auth token from localStorage
-      const token = localStorage.getItem('token');
-
-      if (!token) {
-        console.error('No auth token found in localStorage');
-        toastStore.error($t('comments.loginRequiredToAdd'));
-        return;
-      }
-
-      // Create custom headers with authentication token
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
+      // Get user data from auth store
+      const currentUser = $authStore.user;
 
       // Use the endpoint confirmed to be working in the API debugger
       let response;
@@ -227,8 +195,8 @@
           media_file_id: fileId // Required by the CommentCreate schema
         };
 
-        // Ensure token is included in the headers
-        response = await axiosInstance.post(endpoint, commentPayload, { headers });
+        // Cookies handle authentication automatically
+        response = await axiosInstance.post(endpoint, commentPayload);
 
         // Successfully added comment
       } catch (/** @type {any} */ error) {
@@ -255,7 +223,7 @@
               timestamp: timestamp,
               media_file_id: fileId // Required by the CommentCreate schema
             };
-            response = await axiosInstance.post(`/files/${fileId}/comments`, legacyPayload, { headers });
+            response = await axiosInstance.post(`/files/${fileId}/comments`, legacyPayload);
             // Successfully added comment using main endpoint
           } catch (/** @type {any} */ legacyError) {
             try {
@@ -265,7 +233,7 @@
                 text: newComment,
                 timestamp,
                 media_file_id: fileId // Required by the CommentCreate schema
-              }, { headers });
+              });
               // Successfully added comment using root endpoint
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed for adding comment');
@@ -284,11 +252,11 @@
       // Ensure the comment has a user object with username
       const commentWithUser = {
         ...response.data,
-        // Add user info from localStorage if not present in the response
+        // Add user info from auth store if not present in the response
         user: response.data.user || {
-          uuid: response.data.user_id || userData.uuid || '',
-          email: userData.email,
-          full_name: userData.full_name || userData.email || 'User ' + response.data.user_id
+          uuid: response.data.user_id || currentUser?.uuid || '',
+          email: currentUser?.email,
+          full_name: currentUser?.full_name || currentUser?.email || 'User ' + response.data.user_id
         }
       };
 
@@ -332,34 +300,10 @@
     try {
       // Editing comment
 
-      // Get auth token from localStorage
-      const token = localStorage.getItem('token');
-
-      if (!token) {
-        toastStore.error($t('comments.loginRequiredToEdit'));
-        return;
-      }
-
-      // Create custom headers with authentication token
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
-
       // Use PUT as the backend expects PUT for updates
-      // The backend route is /comments/{comment_id} - need to include the full path
-      // Adding detailed debug logging to track the request
-      // Editing comment with new text
-
-      // Log detailed request info
-      const isDevMode = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-      if (isDevMode) {
-        // Request details for editing comment
-      }
-
       await axiosInstance.put(`/comments/${commentId}`, {
         text: newText
-      }, { headers });
+      });
 
       // Comment edited successfully
 
@@ -440,31 +384,8 @@
    */
   async function executeDeleteComment(commentId) {
     try {
-      // Get auth token from localStorage
-      const token = localStorage.getItem('token');
-      // Deleting comment
-
-      if (!token) {
-        toastStore.error($t('comments.loginRequiredToDelete'));
-        return;
-      }
-
-      // Create custom headers with authentication token
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
-
-      // The correct endpoint is under the comments router without leading slash
-      // Deleting comment with ID
-
-      // Log detailed request info
-      const isDevMode = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-      if (isDevMode) {
-        // Delete request details
-      }
-
-      await axiosInstance.delete(`/comments/${commentId}`, { headers });
+      // Delete the comment (cookies handle authentication)
+      await axiosInstance.delete(`/comments/${commentId}`);
       // Comment deleted successfully
 
       comments = comments.filter(c => c.uuid !== commentId);

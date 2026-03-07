@@ -14,6 +14,7 @@ from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
+from app.middleware.csrf import CSRFMiddleware
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -117,7 +118,7 @@ async def _setup_minio():
             f"{minio_host}:{minio_port}",
             access_key=minio_user,
             secret_key=minio_password,
-            secure=False,
+            secure=settings.MINIO_SECURE,
         )
 
         if not client.bucket_exists(bucket_name):
@@ -471,6 +472,9 @@ app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # type: ignore[att
 
 # Add Audit Middleware for request ID tracking (FedRAMP AU-2/AU-3)
 app.add_middleware(AuditMiddleware)
+
+# CSRF protection for cookie-based authentication (C2 security hardening)
+app.add_middleware(CSRFMiddleware)
 
 # Include the API router
 app.include_router(api_router, prefix=settings.API_PREFIX)

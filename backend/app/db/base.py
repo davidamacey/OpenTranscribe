@@ -4,12 +4,18 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
+# Build connect_args with PostgreSQL SSL mode when configured
+connect_args: dict = {}
+if settings.POSTGRES_SSLMODE and settings.POSTGRES_SSLMODE != "disable":
+    connect_args["sslmode"] = settings.POSTGRES_SSLMODE
+
 # Create SQLAlchemy engine with connection pool settings
 # Backend (FastAPI) handles concurrent API requests — needs larger pool.
 # Celery workers each fork their own process with a separate engine, so
 # pool_size here mainly affects the backend web server.
 engine = create_engine(
     settings.DATABASE_URL,
+    connect_args=connect_args,
     pool_pre_ping=True,  # Verify connections before using them
     pool_recycle=3600,  # Recycle connections after 1 hour
     pool_size=10,  # Connections to maintain (handles concurrent API requests)

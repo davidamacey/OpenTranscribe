@@ -6,6 +6,7 @@ OT_TEST/
 opentranscribe/
 reference_repos/
 benchmarks/
+PLANS/
 
 # Environment variables
 .env

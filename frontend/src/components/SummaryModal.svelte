@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { SummaryData, SummaryResponse } from '$lib/types/summary';
-  import axiosInstance from '$lib/axios';
+  import axiosInstance, { getCsrfToken } from '$lib/axios';
   import { isLLMAvailable } from '../stores/llmStatus';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { t } from '$stores/locale';
@@ -110,7 +110,8 @@
     try {
       const response = await fetch(`/api/files/${fileId}/summarize`, {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': getCsrfToken() || '' }
       });
 
       if (response.ok) {
@@ -140,7 +141,8 @@
     try {
       const response = await fetch(`/api/files/${fileId}/retry-summary`, {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': getCsrfToken() || '' }
       });
 
       if (response.ok) {

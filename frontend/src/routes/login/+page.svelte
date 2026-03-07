@@ -101,8 +101,7 @@
             toastStore.error(result.message || $t('auth.loginFailed'));
           } else {
             // State error but user might already be logged in, check and redirect
-            const token = localStorage.getItem('token');
-            if (token) {
+            if ($isAuthenticated) {
               window.location.href = "/";
               return;
             }
@@ -555,6 +554,12 @@
         {/if}
       </div>
 
+      <div class="forgot-password-row">
+        <a href="/forgot-password" class="forgot-password-link">
+          {$t('auth.forgotPassword') || 'Forgot password?'}
+        </a>
+      </div>
+
       <button
         type="submit"
         class="auth-button"
@@ -728,6 +733,21 @@
     color: var(--text-light);
   }
 
+  .forgot-password-row {
+    text-align: right;
+    margin-top: -0.5rem;
+  }
+
+  .forgot-password-link {
+    color: var(--text-light);
+    font-size: 0.85rem;
+    text-decoration: none;
+  }
+
+  .forgot-password-link:hover {
+    color: var(--primary-color, #3b82f6);
+    text-decoration: underline;
+  }
 
   .password-header {
     display: flex;

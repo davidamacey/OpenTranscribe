@@ -55,7 +55,7 @@
       await initAuth();
 
       const isAuth = get(isAuthenticated);
-      const publicPaths = ["/login", "/register"];
+      const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
       const currentPath = $page.url.pathname;
       const isPublicPath = publicPaths.includes(currentPath);
 

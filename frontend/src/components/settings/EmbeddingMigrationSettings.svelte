@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { getCsrfToken } from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
 
@@ -74,9 +75,7 @@
 
     try {
       const response = await fetch('/api/embeddings/migration/status', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -112,9 +111,7 @@
   async function loadMigrationProgress() {
     try {
       const response = await fetch('/api/embeddings/migration/progress', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -140,10 +137,8 @@
     try {
       const response = await fetch('/api/embeddings/migration/start', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
       });
 
       if (!response.ok) {
@@ -175,9 +170,8 @@
     try {
       const response = await fetch('/api/embeddings/migration/stop', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
       });
 
       if (!response.ok) {
@@ -201,9 +195,8 @@
     try {
       const response = await fetch('/api/embeddings/migration/finalize', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
       });
 
       if (!response.ok) {

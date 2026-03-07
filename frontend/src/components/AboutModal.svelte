@@ -2,7 +2,7 @@
   import { fade, scale } from 'svelte/transition';
   import { onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
-  import axios from 'axios';
+  import axiosInstance from '$lib/axios';
 
   export let showModal = false;
   let appVersion = '';
@@ -25,7 +25,7 @@
 
   async function fetchVersion() {
     try {
-      const res = await axios.get('/health');
+      const res = await axiosInstance.get('/health');
       appVersion = res.data?.version || '';
     } catch {
       appVersion = '';

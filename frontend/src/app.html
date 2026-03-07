@@ -83,19 +83,7 @@
         src: url('/fonts/Poppins-Bold.woff2') format('woff2');
       }
     </style>
-    <!-- Initial auth check script -->
-    <script>
-      // Simple script to ensure login redirection on page load
-      (function () {
-        const token = localStorage.getItem('token');
-        const path = window.location.pathname;
-
-        // If no token and not already on login/register page, redirect to login
-        if (!token && path !== '/login' && path !== '/register') {
-          window.location.href = '/login';
-        }
-      })();
-    </script>
+    <!-- Auth redirection is handled by SvelteKit layout (cookie-based auth) -->
     <!-- Base styles with theme-aware colors to prevent flash -->
     <style>
       :root {

@@ -58,8 +58,6 @@
   // Fetch all available tags
   async function fetchAllTags() {
     try {
-      const token = localStorage.getItem('token');
-
       // Use consistent URL format
       const response = await axiosInstance.get('/tags');
 
@@ -94,7 +92,6 @@
   async function addTag(tagId) {
     loading = true;
     try {
-      const token = localStorage.getItem('token');
       // Adding tag to file
 
       // Get the tag name by ID and send tag_data with name field as required by backend
@@ -146,7 +143,6 @@
     if (!newTagInput.trim()) return;
     loading = true;
     try {
-      const token = localStorage.getItem('token');
       // Creating tag and adding to file
 
       // Step 1: Create the tag with proper payload format
@@ -219,7 +215,6 @@
   async function removeTag(tagId) {
     loading = true;
     try {
-      const token = localStorage.getItem('token');
       // Removing tag from file
 
       // Find the tag by ID to get its name - the backend needs tag name, not ID

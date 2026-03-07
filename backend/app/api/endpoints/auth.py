@@ -16,6 +16,7 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
 from jose import jwt
+from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -70,7 +71,17 @@ from app.schemas.user import UserCreate
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token", auto_error=False)
+
+
+# Pydantic request bodies for password reset endpoints
+class PasswordResetRequestBody(PydanticBaseModel):
+    email: str = ""
+
+
+class PasswordResetConfirmBody(PydanticBaseModel):
+    token: str = ""
+    new_password: str = ""
 
 
 def _get_client_info(request: Request) -> tuple[str, str]:
@@ -87,16 +98,31 @@ def _get_client_info(request: Request) -> tuple[str, str]:
     return client_ip, user_agent
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    """
-    Get the current user from the JWT token.
+def get_current_user(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """Get the current user from JWT token (Bearer header or httpOnly cookie).
 
-    Token payload uses UUID (sub field contains user UUID string).
-    Internal database queries use integer ID for performance.
+    Checks Bearer header first (for API clients, Swagger UI), then falls
+    back to the httpOnly access_token cookie (browser frontend).
 
     When TOKEN_REVOCATION_ENABLED is true, also checks if the token's JTI
     is on the revocation blacklist (FedRAMP AC-12 compliance).
     """
+    from app.auth.cookies import get_access_token_from_cookie
+
+    # Try Bearer header first, then fall back to httpOnly cookie
+    if not token:
+        token = get_access_token_from_cookie(request)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -182,21 +208,27 @@ def get_optional_current_user(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Optional[User]:
-    """
-    Get the current user if a valid token is provided, otherwise return None.
+    """Get the current user if a valid token is provided, otherwise return None.
 
-    This is used for endpoints that support both authenticated and unauthenticated
+    Checks Bearer header first, then falls back to httpOnly cookie.
+    Used for endpoints that support both authenticated and unauthenticated
     access (e.g., public files can be accessed without auth, private files require auth).
 
     Returns:
         User object if valid token provided, None otherwise
     """
-    # Check for Authorization header
-    authorization = request.headers.get("Authorization")
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
+    from app.auth.cookies import get_access_token_from_cookie
 
-    token = authorization.replace("Bearer ", "")
+    # Check for Authorization header first
+    authorization = request.headers.get("Authorization")
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+    else:
+        # Fall back to httpOnly cookie
+        token = get_access_token_from_cookie(request)
+
+    if not token:
+        return None
 
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
@@ -744,7 +776,7 @@ def _generate_login_tokens(
     )
 
     logger.info(f"Login successful for user: {str(user.email)}")
-    return JSONResponse(
+    response = JSONResponse(
         content={
             "access_token": access_token,
             "token_type": "bearer",
@@ -752,6 +784,12 @@ def _generate_login_tokens(
             "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }
     )
+
+    # Set httpOnly cookies for browser-based authentication (C2 security hardening)
+    from app.auth.cookies import set_auth_cookies
+
+    set_auth_cookies(response, access_token, refresh_token)
+    return response
 
 
 @router.post("/token", response_model=Token)
@@ -1001,6 +1039,51 @@ def get_password_policy():
     from app.auth.password_policy import get_policy_requirements
 
     return get_policy_requirements()
+
+
+# ============== Password Reset (Self-Service Recovery) ==============
+
+
+@router.post("/password-reset/request")
+@limiter.limit(get_auth_rate_limit())
+def request_password_reset_endpoint(
+    request: Request,
+    body: "PasswordResetRequestBody",
+    db: Session = Depends(get_db),
+):
+    """Request a password reset link.
+
+    Always returns 200 regardless of whether the email exists to prevent
+    email enumeration attacks. Rate limited per IP.
+    """
+    from app.auth.password_reset import request_password_reset
+
+    client_ip = request.client.host if request.client else "unknown"
+    request_password_reset(db, body.email, client_ip)
+
+    return {"message": "If that email address is registered, you will receive a reset link."}
+
+
+@router.post("/password-reset/confirm")
+@limiter.limit(get_auth_rate_limit())
+def confirm_password_reset_endpoint(
+    request: Request,
+    body: "PasswordResetConfirmBody",
+    db: Session = Depends(get_db),
+):
+    """Confirm a password reset with token and new password.
+
+    Validates the token and sets the new password. Returns 400 if the
+    token is invalid or expired. Rate limited per IP.
+    """
+    from app.auth.password_reset import confirm_password_reset
+
+    ok, errors = confirm_password_reset(db, body.token, body.new_password)
+    if not ok:
+        detail = errors[0] if errors else "Invalid or expired reset token"
+        raise HTTPException(status_code=400, detail=detail)
+
+    return {"message": "Password has been reset successfully."}
 
 
 @router.get("/me", response_model=UserSchema, summary="Get current user")
@@ -1253,7 +1336,30 @@ async def keycloak_callback(
 
     logger.info(f"Keycloak authentication successful for user: {user.email}")
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    # Generate refresh token for Keycloak users too
+    refresh_token, _ = token_service.create_refresh_token(
+        db=db,
+        user_id=int(user.id),
+        user_uuid=str(user.uuid),
+        role=str(user.role),
+        user_agent=user_agent,
+        ip_address=client_ip,
+    )
+
+    response = JSONResponse(
+        content={
+            "access_token": access_token,
+            "token_type": "bearer",
+            "refresh_token": refresh_token,
+            "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        }
+    )
+
+    # Set httpOnly cookies for browser-based authentication (C2 security hardening)
+    from app.auth.cookies import set_auth_cookies
+
+    set_auth_cookies(response, access_token, refresh_token)
+    return response
 
 
 # ============== PKI/X.509 Certificate Authentication ==============
@@ -1330,7 +1436,30 @@ async def pki_login(request: Request, db: Session = Depends(get_db)):
 
     logger.info(f"PKI authentication successful for user: {pki_data['subject_dn']}")
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    # Generate refresh token for PKI users too
+    refresh_token, _ = token_service.create_refresh_token(
+        db=db,
+        user_id=int(user.id),
+        user_uuid=str(user.uuid),
+        role=str(user.role),
+        user_agent=user_agent,
+        ip_address=client_ip,
+    )
+
+    response = JSONResponse(
+        content={
+            "access_token": access_token,
+            "token_type": "bearer",
+            "refresh_token": refresh_token,
+            "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        }
+    )
+
+    # Set httpOnly cookies for browser-based authentication (C2 security hardening)
+    from app.auth.cookies import set_auth_cookies
+
+    set_auth_cookies(response, access_token, refresh_token)
+    return response
 
 
 # ============== Authentication Methods Discovery ==============
@@ -1803,7 +1932,7 @@ def _complete_mfa_verification(
 
     logger.info(f"MFA verification successful for user: {str(user.email)}")
 
-    return JSONResponse(
+    response = JSONResponse(
         content={
             "access_token": access_token,
             "token_type": "bearer",
@@ -1811,6 +1940,12 @@ def _complete_mfa_verification(
             "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }
     )
+
+    # Set httpOnly cookies for browser-based authentication (C2 security hardening)
+    from app.auth.cookies import set_auth_cookies
+
+    set_auth_cookies(response, access_token, refresh_token)
+    return response
 
 
 @router.get("/mfa/status", response_model=MFAStatusResponse)
@@ -2217,8 +2352,15 @@ def refresh_access_token(
     Raises:
         HTTPException: If refresh token is invalid, expired, or revoked
     """
+    # Try body first, then fall back to httpOnly cookie for refresh token
+    from app.auth.cookies import get_refresh_token_from_cookie
+
+    refresh_token_value = body.refresh_token
+    if not refresh_token_value:
+        refresh_token_value = get_refresh_token_from_cookie(request) or ""
+
     # Verify refresh token
-    payload, refresh_token_record = token_service.verify_refresh_token(db, body.refresh_token)
+    payload, refresh_token_record = token_service.verify_refresh_token(db, refresh_token_value)
 
     if not payload or not refresh_token_record:
         logger.warning("Token refresh failed: invalid or revoked refresh token")
@@ -2266,7 +2408,7 @@ def refresh_access_token(
     client_ip, user_agent = _get_client_info(request)
     new_refresh_token, _ = token_service.rotate_refresh_token(
         db=db,
-        old_token=body.refresh_token,
+        old_token=refresh_token_value,
         old_token_record=refresh_token_record,
         user_id=int(user.id),
         user_uuid=user_uuid_str,
@@ -2285,20 +2427,26 @@ def refresh_access_token(
 
     logger.info(f"Token refresh with rotation successful for user {int(user.id)}")
 
-    return JSONResponse(
+    response = JSONResponse(
         content={
             "access_token": access_token,
             "token_type": "bearer",
-            "refresh_token": new_refresh_token,  # Return new rotated refresh token
+            "refresh_token": new_refresh_token,
             "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }
     )
+
+    # Set new httpOnly cookies with rotated tokens (C2 security hardening)
+    from app.auth.cookies import set_auth_cookies
+
+    set_auth_cookies(response, access_token, new_refresh_token)
+    return response
 
 
 @router.post("/logout")
 async def logout(
     request: Request,
-    token: str = Depends(oauth2_scheme),
+    token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
     """
@@ -2322,60 +2470,78 @@ async def logout(
     Returns:
         Success message
     """
+    from app.auth.cookies import clear_auth_cookies
+    from app.auth.cookies import get_access_token_from_cookie
+
+    # Fall back to cookie if no Bearer token
+    if not token:
+        token = get_access_token_from_cookie(request)
+
     client_ip, user_agent = _get_client_info(request)
 
     try:
-        # Decode token to get JTI and user info
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        jti = payload.get("jti")
-        exp_timestamp = payload.get("exp")
-        user_uuid_str = payload.get("sub")
-
-        if jti:
-            # Calculate expiration datetime from timestamp
-            from datetime import datetime
-            from datetime import timezone
-
-            expires_at = (
-                datetime.fromtimestamp(exp_timestamp, tz=timezone.utc) if exp_timestamp else None
+        if token:
+            # Decode token to get JTI and user info
+            payload = jwt.decode(
+                token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
             )
+            jti = payload.get("jti")
+            exp_timestamp = payload.get("exp")
+            user_uuid_str = payload.get("sub")
 
-            # Revoke access token
-            token_service.revoke_token(db, jti, expires_at)
-            logger.info(f"Logout: revoked access token (jti={jti[:8]}...)")
+            if jti:
+                # Calculate expiration datetime from timestamp
+                from datetime import datetime
+                from datetime import timezone
 
-        # Log logout event and handle Keycloak federated logout
-        if user_uuid_str:
-            user_uuid = UUID(user_uuid_str)
-            user = db.query(User).filter(User.uuid == user_uuid).first()
-            if user:
-                # Keycloak federated logout (issue #125)
-                if user.auth_type == AUTH_TYPE_KEYCLOAK and user.keycloak_refresh_token:
-                    try:
-                        kc_cfg = KeycloakConfig.from_db(db)
-                        decrypted_rt = MFAService.decrypt_totp_secret(user.keycloak_refresh_token)
-                        await call_keycloak_logout(decrypted_rt, cfg=kc_cfg)
-                    except Exception as e:
-                        logger.warning(f"Keycloak federated logout failed: {e}")
-                    finally:
-                        # Always clear stored token regardless of outcome
-                        user.keycloak_refresh_token = None
-                        db.commit()
-
-                audit_logger.log_logout(
-                    user_id=int(user.id),
-                    username=str(user.email),
-                    source_ip=client_ip,
-                    user_agent=user_agent,
-                    all_sessions=False,
+                expires_at = (
+                    datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
+                    if exp_timestamp
+                    else None
                 )
 
-        return {"message": "Successfully logged out"}
+                # Revoke access token
+                token_service.revoke_token(db, jti, expires_at)
+                logger.info(f"Logout: revoked access token (jti={jti[:8]}...)")
+
+            # Log logout event and handle Keycloak federated logout
+            if user_uuid_str:
+                user_uuid = UUID(user_uuid_str)
+                user = db.query(User).filter(User.uuid == user_uuid).first()
+                if user:
+                    # Keycloak federated logout (issue #125)
+                    if user.auth_type == AUTH_TYPE_KEYCLOAK and user.keycloak_refresh_token:
+                        try:
+                            kc_cfg = KeycloakConfig.from_db(db)
+                            decrypted_rt = MFAService.decrypt_totp_secret(
+                                user.keycloak_refresh_token
+                            )
+                            await call_keycloak_logout(decrypted_rt, cfg=kc_cfg)
+                        except Exception as e:
+                            logger.warning(f"Keycloak federated logout failed: {e}")
+                        finally:
+                            # Always clear stored token regardless of outcome
+                            user.keycloak_refresh_token = None
+                            db.commit()
+
+                    audit_logger.log_logout(
+                        user_id=int(user.id),
+                        username=str(user.email),
+                        source_ip=client_ip,
+                        user_agent=user_agent,
+                        all_sessions=False,
+                    )
+
+        response = JSONResponse(content={"message": "Successfully logged out"})
+        clear_auth_cookies(response)
+        return response
 
     except JWTError as e:
         logger.warning(f"Logout with invalid token: {e}")
         # Still return success - user wanted to logout anyway
-        return {"message": "Successfully logged out"}
+        response = JSONResponse(content={"message": "Successfully logged out"})
+        clear_auth_cookies(response)
+        return response
 
 
 @router.post("/logout/all")
@@ -2434,10 +2600,16 @@ async def logout_all_sessions(
         f"User {int(current_user.id)} logged out from all sessions ({count} tokens revoked)"
     )
 
-    return {
-        "message": "Successfully logged out from all sessions",
-        "sessions_revoked": count,
-    }
+    from app.auth.cookies import clear_auth_cookies
+
+    response = JSONResponse(
+        content={
+            "message": "Successfully logged out from all sessions",
+            "sessions_revoked": count,
+        }
+    )
+    clear_auth_cookies(response)
+    return response
 
 
 @router.get("/sessions")

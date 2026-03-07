@@ -136,8 +136,8 @@ function createWebSocketStore() {
     return currentState;
   };
 
-  // Connect to WebSocket server
-  const connect = (token: string) => {
+  // Connect to WebSocket server (cookies are sent automatically)
+  const connect = (_token?: string) => {
     update((state: WebSocketState) => {
       // Clean up previous connection if exists
       if (state.socket) {
@@ -161,7 +161,7 @@ function createWebSocketStore() {
         const host = window.location.host;
         const wsUrl = `${protocol}//${host}/api/ws`;
 
-        // Create new WebSocket
+        // Create new WebSocket — httpOnly cookies are sent automatically by the browser
         const socket = new WebSocket(wsUrl);
 
         // Set connecting status
@@ -171,9 +171,8 @@ function createWebSocketStore() {
 
         // WebSocket event handlers
         socket.onopen = () => {
-          // Authenticate via first message instead of URL query parameter
-          // (security: prevents token exposure in server logs, browser history)
-          socket.send(JSON.stringify({ type: 'authenticate', token: token }));
+          // Authentication is handled via httpOnly cookies sent during the WebSocket handshake.
+          // The backend WS handler reads the access_token cookie automatically.
           update((s: WebSocketState) => {
             s.status = 'connected';
             s.reconnectAttempts = 0;
@@ -193,7 +192,7 @@ function createWebSocketStore() {
               (typeof document === 'undefined' || !document.hidden);
 
             if (shouldReconnect) {
-              tryReconnect(token);
+              tryReconnect();
             }
 
             return s;
@@ -529,7 +528,7 @@ function createWebSocketStore() {
   };
 
   // Try to reconnect with exponential backoff
-  const tryReconnect = (token: string) => {
+  const tryReconnect = () => {
     update((state: WebSocketState) => {
       state.reconnectAttempts += 1;
       return state;
@@ -542,7 +541,7 @@ function createWebSocketStore() {
     );
 
     reconnectTimeout = setTimeout(() => {
-      connect(token);
+      connect();
     }, backoffTime);
   };
 
@@ -797,10 +796,10 @@ export const unreadCount = derived(
     $websocketStore.notifications.filter((n: Notification) => !n.read && !n.silent).length
 );
 
-// Initialize WebSocket when auth changes
+// Initialize WebSocket when auth changes (cookies sent automatically)
 authStore.token.subscribe((token: string | null) => {
   if (token) {
-    websocketStore.connect(token);
+    websocketStore.connect();
   } else {
     websocketStore.disconnect();
   }
@@ -812,20 +811,19 @@ if (typeof document !== 'undefined') {
     if (!document.hidden) {
       // Page became visible, check if we need to reconnect
       let shouldReconnect = false;
-      let token: string | null = null;
 
       const unsubscribe = websocketStore.subscribe((state: WebSocketState) => {
         if (state.status === 'disconnected' || state.status === 'error') {
-          token = localStorage.getItem('token');
-          if (token) {
+          // Check if we're still authenticated (token is in httpOnly cookie)
+          if (get(authStore.isAuthenticated)) {
             shouldReconnect = true;
           }
         }
       });
       unsubscribe();
 
-      if (shouldReconnect && token) {
-        websocketStore.connect(token);
+      if (shouldReconnect) {
+        websocketStore.connect();
       }
     }
   });

@@ -372,7 +372,6 @@
       });
 
       authStore.setUser(response.data);
-      localStorage.setItem('user', JSON.stringify(response.data));
 
       toastStore.success($t('settings.toast.profileUpdated'));
       profileChanged = false;

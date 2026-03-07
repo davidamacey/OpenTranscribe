@@ -116,8 +116,9 @@ class AuditLogger:
                         }
                     ],
                     http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-                    use_ssl=False,
+                    use_ssl=settings.OPENSEARCH_USE_TLS,
                     verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+                    ssl_show_warn=False,
                 )
             except Exception as e:
                 self._logger.warning(f"Failed to initialize OpenSearch client: {e}")

@@ -132,6 +132,7 @@ def generate_thumbnail_from_url(
         Thumbnail as bytes, or None if generation failed
     """
     try:
+        logger.info("Generating thumbnail from URL with ffmpeg")
         # Use ffmpeg-python library to stream from URL
         # -ss before -i = input seeking (fast)
         # scale filter preserves aspect ratio, no upscaling
@@ -143,19 +144,34 @@ def generate_thumbnail_from_url(
         )
 
         if not out:
-            logger.error(f"FFmpeg produced no output for URL thumbnail: {err.decode()}")
+            logger.error(
+                f"FFmpeg produced no output. stderr: {err.decode() if err else 'no stderr'}"
+            )
             return None
 
+        logger.info(f"FFmpeg generated {len(out)} bytes")
         # out is bytes from ffmpeg stdout
         return bytes(out)
 
     except ffmpeg.Error as e:
-        logger.error(
-            f"FFmpeg error generating thumbnail from URL: {e.stderr.decode() if e.stderr else str(e)}"
-        )
+        # Extract actual error message from stderr
+        stderr_msg = ""
+        if e.stderr:
+            try:
+                stderr_msg = e.stderr.decode()
+                # Get just the error line, not the full ffmpeg version info
+                lines = stderr_msg.split("\n")
+                for line in lines:
+                    if "error" in line.lower() or "invalid" in line.lower():
+                        stderr_msg = line
+                        break
+            except Exception:
+                stderr_msg = str(e.stderr)
+
+        logger.error(f"FFmpeg error: {stderr_msg or str(e)}")
         return None
     except Exception as e:
-        logger.error(f"Error generating thumbnail from URL: {str(e)}")
+        logger.error(f"Error generating thumbnail from URL: {str(e)}", exc_info=True)
         return None
 
 

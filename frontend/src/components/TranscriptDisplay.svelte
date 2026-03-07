@@ -459,14 +459,6 @@
     if (!canStart) return;
 
     try {
-      // Get auth token from localStorage
-      const token = localStorage.getItem('token');
-
-      if (!token) {
-        downloadStore.updateStatus(fileId, 'error', undefined, 'No authentication token found. Please log in again.');
-        return;
-      }
-
       downloadStore.updateStatus(fileId, 'processing');
 
       // Determine if this is a video with subtitles for enhanced processing
@@ -479,13 +471,13 @@
         await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      // Build download URL
-      let downloadUrl = `/api/files/${fileId}/download-with-token?token=${encodeURIComponent(token)}`;
+      // Build download URL (cookies are sent automatically)
+      let downloadUrl = `/api/files/${fileId}/download`;
       let downloadFilename = filename;
 
       // For videos with subtitles, include subtitle embedding parameters
       if (isVideo && hasSubtitles) {
-        downloadUrl += '&include_speakers=true';
+        downloadUrl += '?include_speakers=true';
         // Generate filename with subtitles suffix
         const baseName = filename.includes('.') ? filename.substring(0, filename.lastIndexOf('.')) : filename;
         const extension = filename.includes('.') ? filename.substring(filename.lastIndexOf('.')) : '.mp4';

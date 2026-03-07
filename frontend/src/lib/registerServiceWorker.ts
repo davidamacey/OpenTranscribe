@@ -64,24 +64,9 @@ self.addEventListener('fetch', (event: Event) => {
     return;
   }
 
-  // Handle API requests
+  // API requests: always go to network, never cache (contains authenticated data)
   if (request.url.includes('/api/')) {
-    // For API requests, try network first, then fall back to cache if offline
-    fetchEvent.respondWith(
-      fetch(request)
-        .then((response) => {
-          // Clone the response to save it to cache
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseToCache);
-          });
-          return response;
-        })
-        .catch(() => {
-          // If network fails, try to get from cache
-          return caches.match(request) as Promise<Response>;
-        })
-    );
+    return;
   } else {
     // For static assets, try cache first, then network
     fetchEvent.respondWith(

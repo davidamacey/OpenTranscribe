@@ -124,7 +124,7 @@ class Token(BaseModel):
 class TokenRefreshRequest(BaseModel):
     """Request body for token refresh endpoint."""
 
-    refresh_token: str
+    refresh_token: Optional[str] = None
 
 
 class TokenPayload(BaseModel):

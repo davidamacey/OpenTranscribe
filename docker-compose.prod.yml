@@ -98,6 +98,24 @@ services:
       dockerfile: Dockerfile.prod  # Production build
     pull_policy: always
 
+  # OpenSearch production security (enable security plugin with TLS + auth)
+  # Requires OPENSEARCH_ADMIN_PASSWORD set in .env
+  # Requires TLS certificates in config/opensearch/certs/ (or use demo certs for testing)
+  opensearch:
+    environment:
+      # Invert OPENSEARCH_SECURITY_ENABLED → DISABLE_SECURITY_PLUGIN
+      # When security is enabled (true), the plugin should NOT be disabled (false)
+      DISABLE_SECURITY_PLUGIN: "${OPENSEARCH_DISABLE_SECURITY:-true}"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "${OPENSEARCH_ADMIN_PASSWORD:-}"
+      plugins.security.ssl.transport.pemcert_filepath: "certs/esnode.pem"
+      plugins.security.ssl.transport.pemkey_filepath: "certs/esnode-key.pem"
+      plugins.security.ssl.transport.pemtrustedcas_filepath: "certs/root-ca.pem"
+      plugins.security.ssl.http.enabled: "${OPENSEARCH_USE_TLS:-false}"
+      plugins.security.ssl.http.pemcert_filepath: "certs/esnode.pem"
+      plugins.security.ssl.http.pemkey_filepath: "certs/esnode-key.pem"
+      plugins.security.ssl.http.pemtrustedcas_filepath: "certs/root-ca.pem"
+      plugins.security.allow_default_init_securityindex: "true"
+
   # GPU Scaled Worker - Production overrides
   # NOTE: No 'scale' parameter here - base has scale: 0, gpu-scale.yml sets scale: 1
   # This overlay only provides production-specific settings (image, build, pull_policy)

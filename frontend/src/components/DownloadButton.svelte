@@ -27,18 +27,10 @@
     if (!canStart) return;
 
     try {
-      // Get JWT token from localStorage
-      const token = localStorage.getItem('token');
-
-      if (!token) {
-        downloadStore.updateStatus(fileId, 'error', undefined, $t('download.noAuthToken'));
-        return;
-      }
-
       downloadStore.updateStatus(fileId, 'processing');
 
-      // Build download URL with token
-      const downloadWithTokenUrl = `/api/files/${fileId}/download-with-token?token=${encodeURIComponent(token)}&include_speakers=true`;
+      // Build download URL (cookies are sent automatically)
+      const downloadWithTokenUrl = `/api/files/${fileId}/download?include_speakers=true`;
 
       // Start the download
       const link = document.createElement('a');

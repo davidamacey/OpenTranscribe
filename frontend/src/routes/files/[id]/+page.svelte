@@ -22,6 +22,7 @@
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
+  import { authStore } from '$stores/auth';
   import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
@@ -1084,17 +1085,10 @@
     // Check if there are any comments for this file
     let hasComments = false;
     try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        const headers = {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        };
-        const endpoint = `/comments/files/${file.uuid}/comments`;
-        const response = await axiosInstance.get(endpoint, { headers });
-        const fetchedComments = response.data || [];
-        hasComments = fetchedComments.length > 0;
-      }
+      const endpoint = `/comments/files/${file.uuid}/comments`;
+      const response = await axiosInstance.get(endpoint);
+      const fetchedComments = response.data || [];
+      hasComments = fetchedComments.length > 0;
     } catch (error) {
       console.error('Error checking for comments:', error);
       hasComments = false;
@@ -1128,43 +1122,36 @@
     let fileComments: any[] = [];
     if (includeComments) {
       try {
-        const token = localStorage.getItem('token');
-        if (token) {
-          const headers = {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          };
-          const endpoint = `/comments/files/${file.uuid}/comments`;
-          const response = await axiosInstance.get(endpoint, { headers });
-          fileComments = response.data || [];
+        const endpoint = `/comments/files/${file.uuid}/comments`;
+        const response = await axiosInstance.get(endpoint);
+        fileComments = response.data || [];
 
-          // Get current user data from localStorage
-          const userData = JSON.parse(localStorage.getItem('user') || '{}');
+        // Get current user data from auth store
+        const userData = $authStore.user || {} as any;
 
-          // Add current user data to each comment
-          fileComments = fileComments.map((comment: any) => {
-            // If the comment is from the current user, add their details
-            if (!comment.user && comment.user_id === userData.uuid) {
-              comment.user = {
-                full_name: userData.full_name,
-                username: userData.username,
-                email: userData.email
-              };
-            } else if (!comment.user) {
-              // For other users' comments that have no user object,
-              // create a placeholder to avoid 'Anonymous'
-              comment.user = {
-                full_name: $t('fileDetail.adminUser'), // Default from browser info
-                username: 'admin',
-                email: 'admin@example.com'
-              };
-            }
-            return comment;
-          });
+        // Add current user data to each comment
+        fileComments = fileComments.map((comment: any) => {
+          // If the comment is from the current user, add their details
+          if (!comment.user && comment.user_id === userData.uuid) {
+            comment.user = {
+              full_name: userData.full_name,
+              username: userData.username,
+              email: userData.email
+            };
+          } else if (!comment.user) {
+            // For other users' comments that have no user object,
+            // create a placeholder to avoid 'Anonymous'
+            comment.user = {
+              full_name: $t('fileDetail.adminUser'), // Default from browser info
+              username: 'admin',
+              email: 'admin@example.com'
+            };
+          }
+          return comment;
+        });
 
-          // Sort comments by timestamp
-          fileComments.sort((a: any, b: any) => a.timestamp - b.timestamp);
-        }
+        // Sort comments by timestamp
+        fileComments.sort((a: any, b: any) => a.timestamp - b.timestamp);
       } catch (error) {
         console.error('Error fetching comments for export:', error);
         // Continue with export even if comments can't be fetched

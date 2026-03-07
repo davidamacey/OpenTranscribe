@@ -160,8 +160,9 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'speaker_profile' AND column_name = 'avatar_path')"
     )
-    has_upload_session = _check_exists(
-        "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'upload_session')"
+    has_password_reset_token = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'password_reset_token')"
     )
     has_auto_labeling = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
@@ -173,9 +174,9 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     )
 
     # Return the highest version stamp that matches (newest first)
-    # v280: upload_session table for TUS resumable uploads
-    if has_upload_session:
-        return "v280_add_upload_sessions"
+    # v290: password_reset_token table for self-service password recovery
+    if has_password_reset_token:
+        return "v290_add_password_reset_tokens"
     # v270: ASR provider support tables (user_asr_settings)
     if has_asr_settings:
         return "v270_add_asr_provider_support"

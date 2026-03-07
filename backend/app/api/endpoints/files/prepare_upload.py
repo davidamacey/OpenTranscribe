@@ -197,6 +197,16 @@ async def prepare_upload(
         # Create the database record
         db_file = create_media_file_record(db, file_metadata, current_user, request.file_size)  # type: ignore[arg-type]
 
+        # Generate and set storage_path immediately for duplicate detection
+        # This allows future uploads with the same file to recognize it as a duplicate
+        from app.utils.filename import get_safe_storage_filename
+
+        storage_path = get_safe_storage_filename(
+            request.filename, int(current_user.id), int(db_file.id)
+        )
+        db_file.storage_path = storage_path  # type: ignore[assignment]
+        db.flush()
+
         # If this is extracted audio, store the video metadata in metadata_important
         if request.extracted_from_video:
             db_file.metadata_important = request.extracted_from_video  # type: ignore[assignment]

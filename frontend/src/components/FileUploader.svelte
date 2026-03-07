@@ -76,7 +76,6 @@
   let cancelTokenSource: CancelTokenSource | null = null;
   let isCancelling = false;
   let currentFileId: string | null = null; // Track the current file UUID for cancellation
-  let token = ''; // Store the auth token
 
   // URL processing state (no inline messages - use toast notifications only)
   let mediaUrl = '';
@@ -170,9 +169,8 @@
   let handleSetTabEvent: ((event: Event) => void) | null = null;
   let handleDirectUpload: ((event: Event) => void) | null = null;
 
-  // Get token from localStorage on component mount
+  // Initialize component on mount
   onMount(() => {
-    token = localStorage.getItem('token') || '';
     dragDropCleanup = initDragAndDrop();
     // Fire-and-forget: load protected media auth config for URL uploads
     void loadProtectedMediaAuthConfig();
@@ -1167,10 +1165,6 @@
           file_size: file.size,
           content_type: file.type,
           file_hash: fileHash
-        }, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
         });
         // Store the file ID as soon as we get it
         currentFileId = prepareResponse.data.file_id;
@@ -1202,14 +1196,8 @@
       const formData = new FormData();
       formData.append('file', file);
 
-      // Get auth token from the component state
-      if (!token) {
-        throw new Error('Authentication required. Please log in again.');
-      }
-
-      // Include the file hash in the headers if available
+      // Include the file hash in the headers if available (cookies handle auth)
       const uploadHeaders: Record<string, string> = {
-        'Authorization': `Bearer ${token}`,
         'X-File-ID': currentFileId ? currentFileId.toString() : '',
         'X-File-Size': file.size.toString(),
         'X-File-Name': encodeURIComponent(file.name)
@@ -1361,11 +1349,7 @@
             // Log the attempt to help with debugging
             statusMessage = `Cleaning up file ID ${currentFileId}...`;
 
-            await axiosInstance.delete(`/files/${currentFileId}`, {
-              headers: {
-                'Authorization': `Bearer ${token}`
-              }
-            });
+            await axiosInstance.delete(`/files/${currentFileId}`);
             statusMessage = 'Upload cancelled successfully';
           } catch (err) {
             // Log error but don't show console.error in production

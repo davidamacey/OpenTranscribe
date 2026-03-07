@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import axios from 'axios';
+  import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
 
   export let fileId: number | null = null;
@@ -27,16 +27,7 @@
     response = null;
 
     try {
-      const token = localStorage.getItem('token');
-      const instance = axios.create({
-        baseURL: '/api',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
-      });
-
-      const result = await instance.get(requestUrl);
+      const result = await axiosInstance.get(requestUrl);
       response = {
         status: result.status,
         data: result.data,
