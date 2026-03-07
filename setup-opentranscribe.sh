@@ -702,10 +702,34 @@ download_model_downloader_scripts() {
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.py; then
             if [ -s scripts/download-models.py ] && grep -q "Download all required AI models" scripts/download-models.py; then
                 echo "✓ Downloaded and validated download-models.py"
-                return 0
+                break
             else
                 echo "⚠️  Downloaded download-models.py appears invalid, retrying..."
                 rm -f scripts/download-models.py
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+
+    # Download common.sh (utility functions used by opentr.sh)
+    retry_count=0
+    download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/common.sh"
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/common.sh; then
+            if [ -s scripts/common.sh ] && grep -q "check_docker" scripts/common.sh; then
+                echo "✓ Downloaded and validated common.sh"
+                return 0
+            else
+                echo "⚠️  Downloaded common.sh appears invalid, retrying..."
+                rm -f scripts/common.sh
             fi
         else
             echo "⚠️  Download attempt $((retry_count + 1)) failed"
@@ -920,11 +944,11 @@ select_whisper_model() {
             if command -v nvidia-smi &> /dev/null; then
                 GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}")
                 if [[ $GPU_MEMORY -gt 16000 ]]; then
-                    RECOMMENDED_MODEL="large-v2"
-                    RECOMMENDATION_REASON="High-end GPU detected (${GPU_MEMORY}MB VRAM)"
+                    RECOMMENDED_MODEL="large-v3-turbo"
+                    RECOMMENDATION_REASON="High-end GPU detected (${GPU_MEMORY}MB VRAM) - 6x faster than large-v3, excellent accuracy"
                 elif [[ $GPU_MEMORY -gt 8000 ]]; then
-                    RECOMMENDED_MODEL="large-v2"
-                    RECOMMENDATION_REASON="Mid-range GPU detected (${GPU_MEMORY}MB VRAM)"
+                    RECOMMENDED_MODEL="large-v3-turbo"
+                    RECOMMENDATION_REASON="Mid-range GPU detected (${GPU_MEMORY}MB VRAM) - 6x faster than large-v3, excellent accuracy"
                 elif [[ $GPU_MEMORY -gt 4000 ]]; then
                     RECOMMENDED_MODEL="medium"
                     RECOMMENDATION_REASON="Entry-level GPU detected (${GPU_MEMORY}MB VRAM)"
@@ -934,8 +958,8 @@ select_whisper_model() {
                 fi
             else
                 # Fallback if nvidia-smi fails
-                RECOMMENDED_MODEL="medium"
-                RECOMMENDATION_REASON="CUDA detected - safe default"
+                RECOMMENDED_MODEL="large-v3-turbo"
+                RECOMMENDATION_REASON="CUDA detected - fast default with excellent accuracy"
             fi
             ;;
         "mps")
@@ -951,13 +975,15 @@ select_whisper_model() {
     # Display recommendation
     echo -e "${BLUE}Available Whisper Models:${NC}"
     echo ""
-    echo "  Model       Size    Memory   Speed       Accuracy    Download"
-    echo "  ────────────────────────────────────────────────────────────────"
-    echo "  tiny        39MB    ~1GB     Fastest     Lowest      ~39MB"
-    echo "  base        74MB    ~1GB     Very Fast   Low         ~74MB"
-    echo "  small       244MB   ~2GB     Fast        Good        ~244MB"
-    echo "  medium      769MB   ~5GB     Moderate    Better      ~769MB"
-    echo "  large-v2    1.5GB   ~10GB    Slow        Best        ~1.5GB"
+    echo "  Model            VRAM     English    Multilingual  Translate  Notes"
+    echo "  ──────────────────────────────────────────────────────────────────────────────"
+    echo "  tiny              ~1GB     Low        Low           Yes        Fastest, lowest accuracy"
+    echo "  base              ~1GB     Fair       Fair          Yes        Very fast"
+    echo "  small             ~2GB     Good       Good          Yes        Good balance for CPU"
+    echo "  medium            ~5GB     Better     Better        Yes        Good balance for GPU"
+    echo "  large-v2          ~10GB    Excellent  Good          Yes        Legacy, supports translation"
+    echo "  large-v3          ~10GB    Excellent  Best          Yes        Best for non-English & translation"
+    echo "  large-v3-turbo    ~6GB     Excellent  Good*         No         6x faster (recommended)"
     echo ""
     echo -e "${GREEN}Recommendation: ${RECOMMENDED_MODEL}${NC}"
     echo "  Reason: ${RECOMMENDATION_REASON}"
@@ -968,7 +994,7 @@ select_whisper_model() {
 
     # Prompt user for model selection
     while true; do
-        read -p "Select model (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model </dev/tty
+        read -p "Select model (tiny/base/small/medium/large-v2/large-v3/large-v3-turbo) [${RECOMMENDED_MODEL}]: " user_model </dev/tty
 
         # Use recommended if user just presses Enter
         if [ -z "$user_model" ]; then
@@ -978,12 +1004,12 @@ select_whisper_model() {
 
         # Validate input
         case "$user_model" in
-            tiny|base|small|medium|large-v2|large-v1)
+            tiny|base|small|medium|large-v1|large-v2|large-v3|large-v3-turbo)
                 WHISPER_MODEL="$user_model"
                 break
                 ;;
             *)
-                echo -e "${RED}Invalid model. Please choose: tiny, base, small, medium, or large-v2${NC}"
+                echo -e "${RED}Invalid model. Please choose: tiny, base, small, medium, large-v2, large-v3, or large-v3-turbo${NC}"
                 ;;
         esac
     done

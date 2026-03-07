@@ -8,7 +8,7 @@
 # Usage: ./scripts/download-models.sh [model_cache_dir]
 #
 # Environment Variables:
-#   WHISPER_MODEL              - Whisper model to download (default: large-v2)
+#   WHISPER_MODEL              - Whisper model to download (default: large-v3-turbo)
 #   OPENSEARCH_MODELS          - Comma-separated list of OpenSearch neural models
 #                                Example: "all-MiniLM-L6-v2,all-mpnet-base-v2"
 #   DOWNLOAD_ALL_OPENSEARCH_MODELS - Set to "true" to download all 6 neural models
@@ -160,10 +160,13 @@ check_huggingface_token() {
 download_models_docker() {
     print_header "Downloading AI Models"
 
-    print_info "This will download approximately 2.4GB of AI models:"
+    print_info "This will download approximately 2.9GB of AI models:"
     print_info "  • WhisperX transcription models (~1.5GB)"
     print_info "  • PyAnnote speaker diarization models (~500MB)"
     print_info "  • wav2vec2 gender classifier (~380MB)"
+    print_info "  • NLTK tokenizers (~13MB)"
+    print_info "  • Sentence-transformers embeddings (~80MB)"
+    print_info "  • OpenSearch neural search models (~80MB+)"
     echo ""
     print_warning "This may take 10-30 minutes depending on your internet speed..."
     echo ""
@@ -171,19 +174,24 @@ download_models_docker() {
     # Create model cache directories
     mkdir -p "$MODEL_CACHE_DIR/huggingface"
     mkdir -p "$MODEL_CACHE_DIR/torch"
+    mkdir -p "$MODEL_CACHE_DIR/nltk_data"
+    mkdir -p "$MODEL_CACHE_DIR/sentence-transformers"
     mkdir -p "$MODEL_CACHE_DIR/opensearch-ml"
 
     print_info "Starting model download using Docker..."
     echo ""
 
-    # Get Whisper model from .env or use default
-    local whisper_model="large-v2"
-    if [ -f "$REPO_ROOT/.env" ]; then
+    # Get Whisper model: caller's env var > .env file > default
+    local whisper_model="${WHISPER_MODEL:-}"
+    if [ -z "$whisper_model" ] && [ -f "$REPO_ROOT/.env" ]; then
         local env_model
         env_model=$(grep "^WHISPER_MODEL=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
         if [ -n "$env_model" ]; then
             whisper_model="$env_model"
         fi
+    fi
+    if [ -z "$whisper_model" ]; then
+        whisper_model="large-v3-turbo"
     fi
 
     # Determine if GPU is available
@@ -209,12 +217,11 @@ download_models_docker() {
 
     # Run the download with real-time output
     # IMPORTANT: Backend runs as 'appuser' (UID 1000), so mount to /home/appuser/.cache
-    # Note: When using --gpus device=X, Docker remaps that GPU to index 0 inside container
-    # So we always use CUDA_VISIBLE_DEVICES=0 inside the container, regardless of host GPU index
+    # When using --gpus device=X, Docker isolates that GPU and it appears as device 0 in the container
+    # Do NOT set CUDA_VISIBLE_DEVICES - PyTorch will automatically use the only available GPU
     # shellcheck disable=SC2086
     docker run --rm \
         $gpu_args \
-        -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${whisper_model}" \
         -e USE_GPU="${use_gpu}" \
@@ -224,6 +231,8 @@ download_models_docker() {
         -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \
         -v "$(realpath "$MODEL_CACHE_DIR/huggingface"):/home/appuser/.cache/huggingface" \
         -v "$(realpath "$MODEL_CACHE_DIR/torch"):/home/appuser/.cache/torch" \
+        -v "$(realpath "$MODEL_CACHE_DIR/nltk_data"):/home/appuser/.cache/nltk_data" \
+        -v "$(realpath "$MODEL_CACHE_DIR/sentence-transformers"):/home/appuser/.cache/sentence-transformers" \
         -v "$(realpath "$MODEL_CACHE_DIR/opensearch-ml"):/home/appuser/.cache/opensearch-ml" \
         -v "$SCRIPT_DIR/download-models.py:/app/download-models.py:ro" \
         davidamacey/opentranscribe-backend:latest \
@@ -335,10 +344,14 @@ show_summary() {
     local total_size
     local hf_size
     local torch_size
+    local nltk_size
+    local st_size
     local opensearch_size
     total_size=$(get_dir_size "$MODEL_CACHE_DIR")
     hf_size=$(get_dir_size "$MODEL_CACHE_DIR/huggingface")
     torch_size=$(get_dir_size "$MODEL_CACHE_DIR/torch")
+    nltk_size=$(get_dir_size "$MODEL_CACHE_DIR/nltk_data")
+    st_size=$(get_dir_size "$MODEL_CACHE_DIR/sentence-transformers")
     opensearch_size=$(get_dir_size "$MODEL_CACHE_DIR/opensearch-ml")
 
     echo -e "${GREEN}✅ Model cache ready!${NC}"
@@ -347,6 +360,8 @@ show_summary() {
     echo "Total size: $total_size"
     echo "  • HuggingFace models: $hf_size"
     echo "  • Torch models: $torch_size"
+    echo "  • NLTK data: $nltk_size"
+    echo "  • Sentence-transformers: $st_size"
     echo "  • OpenSearch neural models: $opensearch_size"
     echo ""
     print_info "Models are cached and will be available immediately when Docker starts"

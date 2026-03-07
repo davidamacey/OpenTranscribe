@@ -595,7 +595,7 @@ docker rmi davidamacey/opentranscribe-backend:latest
 docker rmi davidamacey/opentranscribe-frontend:latest
 docker rmi postgres:17.5-alpine redis:8.2.2-alpine3.22
 docker rmi minio/minio:RELEASE.2025-09-07T16-13-09Z
-docker rmi opensearchproject/opensearch:2.5.0
+docker rmi opensearchproject/opensearch:3.4.0
 ```
 
 **Clean Docker system:**

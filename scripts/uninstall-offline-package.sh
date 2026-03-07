@@ -239,7 +239,7 @@ remove_images() {
     echo "  - postgres:17.5-alpine"
     echo "  - redis:8.2.2-alpine3.22"
     echo "  - minio/minio:RELEASE.2025-09-07T16-13-09Z"
-    echo "  - opensearchproject/opensearch:2.5.0"
+    echo "  - opensearchproject/opensearch:3.4.0"
     echo ""
     echo "Note: Removing images will require re-loading them if you reinstall"
     echo ""
@@ -260,7 +260,7 @@ remove_images() {
         "postgres:17.5-alpine"
         "redis:8.2.2-alpine3.22"
         "minio/minio:RELEASE.2025-09-07T16-13-09Z"
-        "opensearchproject/opensearch:2.5.0"
+        "opensearchproject/opensearch:3.4.0"
     )
 
     for image in "${images[@]}"; do
