@@ -145,8 +145,7 @@ MINIO_ROOT_PASSWORD=strong-minio-password
 
 # GPU Settings (auto-detected by installer)
 USE_GPU=true                  # false for CPU-only
-CUDA_VISIBLE_DEVICES=0        # GPU device ID
-WHISPER_MODEL=large-v2        # large-v2, medium, base
+WHISPER_MODEL=large-v3-turbo  # large-v3-turbo, large-v3, medium, base
 COMPUTE_TYPE=float16          # float16 for GPU, int8 for CPU
 BATCH_SIZE=16                 # 16 for GPU, 1-4 for CPU
 

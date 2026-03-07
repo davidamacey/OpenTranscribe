@@ -33,7 +33,6 @@ docker run --rm \
     -v "${TEST_CACHE}/huggingface:/home/appuser/.cache/huggingface" \
     -v "${TEST_CACHE}/torch:/home/appuser/.cache/torch" \
     -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
-    -v "$(pwd)/test_videos:/app/test_videos:ro" \
     davidamacey/opentranscribe-backend:latest \
     python /app/download-models.py
 

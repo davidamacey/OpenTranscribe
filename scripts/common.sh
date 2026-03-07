@@ -191,10 +191,11 @@ ensure_opensearch_models() {
   mkdir -p "$opensearch_models_dir"
 
   # Download OpenSearch models using Docker (same approach as transcription models)
+  # When using --gpus device=X, Docker isolates that GPU as device 0 in the container
+  # Do NOT set CUDA_VISIBLE_DEVICES - PyTorch will automatically use the only available GPU
   # shellcheck disable=SC2086
   docker run --rm \
       $gpu_args \
-      -e CUDA_VISIBLE_DEVICES=0 \
       -e HUGGINGFACE_TOKEN="${HF_TOKEN}" \
       -e USE_GPU="${use_gpu}" \
       -e OPENSEARCH_MODELS="all-MiniLM-L6-v2" \

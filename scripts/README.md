@@ -166,7 +166,7 @@ export HUGGINGFACE_TOKEN=your_token_here
    - `postgres:14-alpine` (~220MB)
    - `redis:7-alpine` (~30MB)
    - `minio/minio:latest` (~175MB)
-   - `opensearchproject/opensearch:2.5.0` (~800MB)
+   - `opensearchproject/opensearch:3.4.0` (~800MB)
 3. **Downloads** AI models (~38GB):
    - WhisperX models (~1.5GB)
    - PyAnnote diarization models (~500MB)
@@ -368,7 +368,7 @@ Downloads all required AI models for offline packaging:
 ```bash
 # Set environment variables
 export HUGGINGFACE_TOKEN=your_token_here
-export WHISPER_MODEL=large-v2
+export WHISPER_MODEL=large-v3-turbo
 export DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
 
 # Run in Docker container (container runs as appuser, not root)
@@ -379,6 +379,9 @@ docker run --rm \
     -e DIARIZATION_MODEL \
     -v ./models/huggingface:/home/appuser/.cache/huggingface \
     -v ./models/torch:/home/appuser/.cache/torch \
+    -v ./models/nltk_data:/home/appuser/.cache/nltk_data \
+    -v ./models/sentence-transformers:/home/appuser/.cache/sentence-transformers \
+    -v ./models/opensearch-ml:/home/appuser/.cache/opensearch-ml \
     -v ./scripts/download-models.py:/app/download-models.py \
     davidamacey/opentranscribe-backend:latest \
     python /app/download-models.py
