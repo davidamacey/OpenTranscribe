@@ -179,3 +179,23 @@ export async function uploadProfileAvatar(
 export async function deleteProfileAvatar(profileUuid: string): Promise<void> {
   await axiosInstance.delete(`/speaker-profiles/profiles/${profileUuid}/avatar`);
 }
+
+export async function confirmSpeakerGender(
+  speakerUuid: string,
+  gender: string
+): Promise<{ speaker_uuid: string; predicted_gender: string; gender_confirmed_by_user: boolean }> {
+  const response = await axiosInstance.post(
+    `/speakers/${speakerUuid}/confirm-gender?gender=${encodeURIComponent(gender)}`
+  );
+  return response.data;
+}
+
+export async function confirmProfileGender(
+  profileUuid: string,
+  gender: string
+): Promise<{ profile_uuid: string; predicted_gender: string; updated_count: number }> {
+  const response = await axiosInstance.post(
+    `/speaker-profiles/profiles/${profileUuid}/confirm-gender?gender=${encodeURIComponent(gender)}`
+  );
+  return response.data;
+}

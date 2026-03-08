@@ -982,6 +982,35 @@ def verify_speaker_identification(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
+@router.post("/{speaker_uuid}/confirm-gender", response_model=dict[str, Any])
+def confirm_speaker_gender(
+    speaker_uuid: str,
+    gender: str = Query(..., description="Gender value: 'male' or 'female'"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """Confirm or set the predicted gender for a speaker."""
+    if gender not in ("male", "female"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Gender must be 'male' or 'female'",
+        )
+
+    speaker = get_speaker_by_uuid(db, speaker_uuid)
+    if speaker.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    speaker.predicted_gender = gender  # type: ignore[assignment]
+    speaker.gender_confirmed_by_user = True  # type: ignore[assignment]
+    db.commit()
+
+    return {
+        "speaker_uuid": str(speaker.uuid),
+        "predicted_gender": gender,
+        "gender_confirmed_by_user": True,
+    }
+
+
 @router.post("/{speaker_uuid}/merge/{target_speaker_uuid}", response_model=SpeakerSchema)
 def merge_speakers(
     speaker_uuid: str,

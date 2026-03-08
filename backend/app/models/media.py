@@ -276,6 +276,7 @@ class Speaker(Base):
     )  # "child", "teen", "young_adult", "adult", "senior"
     attribute_confidence = Column(JSONB, nullable=True)  # {"gender": 0.92, "age_range": 0.75}
     attributes_predicted_at = Column(DateTime(timezone=True), nullable=True)
+    gender_confirmed_by_user = Column(Boolean, default=False)
 
     # Cluster assignment
     cluster_id = Column(

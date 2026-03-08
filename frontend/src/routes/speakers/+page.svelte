@@ -29,7 +29,8 @@
     deleteProfile,
     listProfiles,
     uploadProfileAvatar,
-    deleteProfileAvatar
+    deleteProfileAvatar,
+    confirmProfileGender
   } from '$lib/api/speakerClusters';
   import type { SpeakerMediaPreviewData } from '$lib/api/speakerClusters';
   import type {
@@ -79,6 +80,7 @@
   // Profiles state
   let profiles: SpeakerProfile[] = [];
   let loadingProfiles = false;
+  let genderConfirmedProfiles: Set<string> = new Set();
 
   // Inbox state
   let inboxItems: InboxItem[] = [];
@@ -504,6 +506,27 @@
     deleteProfileUuid = '';
   }
 
+  async function handleConfirmProfileGender(profile: SpeakerProfile, gender: string) {
+    const oldGender = profile.predicted_gender;
+    // Optimistic update
+    profiles = profiles.map(p =>
+      p.uuid === profile.uuid ? { ...p, predicted_gender: gender } : p
+    );
+    genderConfirmedProfiles.add(profile.uuid);
+    genderConfirmedProfiles = genderConfirmedProfiles;
+    try {
+      await confirmProfileGender(profile.uuid, gender);
+    } catch {
+      // Revert on error
+      profiles = profiles.map(p =>
+        p.uuid === profile.uuid ? { ...p, predicted_gender: oldGender } : p
+      );
+      genderConfirmedProfiles.delete(profile.uuid);
+      genderConfirmedProfiles = genderConfirmedProfiles;
+      toastStore.error($t('speakers.error.confirmGender'));
+    }
+  }
+
   // --- Sticky floating player ---
 
   // Prefetch cache for speaker media previews (hover-triggered)
@@ -739,7 +762,7 @@
                           {/if}
                           <div class="member-list">
                             {#each clusterMembers[cluster.uuid] as member}
-                              <div class="member-row" class:split-selectable={splitMode && splitTargetUuid === cluster.uuid}>
+                              <div class="member-row" class:split-selectable={splitMode && splitTargetUuid === cluster.uuid} class:gender-outlier={member.predicted_gender != null && cluster.gender_composition?.dominant_gender != null && member.predicted_gender !== cluster.gender_composition.dominant_gender}>
                                 {#if splitMode && splitTargetUuid === cluster.uuid}
                                   <input type="checkbox" checked={splitSelectedMembers.has(member.speaker_uuid)} on:change={() => toggleSplitMember(member.speaker_uuid)} />
                                 {/if}
@@ -751,6 +774,9 @@
                                 <span class="member-name">{member.display_name || member.speaker_name}</span>
                                 <span class="member-file">{member.media_file_title || ''}</span>
                                 <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
+                                {#if member.predicted_gender}
+                                  <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">{member.predicted_gender === 'male' ? '\u2642' : '\u2640'}{#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>\u2713</span>{/if}</span>
+                                {/if}
                                 {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
                               </div>
                             {/each}
@@ -803,7 +829,7 @@
                           {/if}
                           <div class="member-list">
                             {#each clusterMembers[cluster.uuid] as member}
-                              <div class="member-row" class:split-selectable={splitMode && splitTargetUuid === cluster.uuid}>
+                              <div class="member-row" class:split-selectable={splitMode && splitTargetUuid === cluster.uuid} class:gender-outlier={member.predicted_gender != null && cluster.gender_composition?.dominant_gender != null && member.predicted_gender !== cluster.gender_composition.dominant_gender}>
                                 {#if splitMode && splitTargetUuid === cluster.uuid}
                                   <input type="checkbox" checked={splitSelectedMembers.has(member.speaker_uuid)} on:change={() => toggleSplitMember(member.speaker_uuid)} />
                                 {/if}
@@ -815,6 +841,9 @@
                                 <span class="member-name">{member.display_name || member.speaker_name}</span>
                                 <span class="member-file">{member.media_file_title || ''}</span>
                                 <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
+                                {#if member.predicted_gender}
+                                  <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">{member.predicted_gender === 'male' ? '\u2642' : '\u2640'}{#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>\u2713</span>{/if}</span>
+                                {/if}
                                 {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
                               </div>
                             {/each}
@@ -932,12 +961,24 @@
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   {profile.media_count || 0}
                 </span>
-                {#if profile.predicted_gender}
-                  <span class="meta-stat" title={$t('speakers.profiles.gender')}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
-                    {profile.predicted_gender.charAt(0).toUpperCase() + profile.predicted_gender.slice(1)}
-                  </span>
-                {/if}
+                <span class="gender-confirm-group">
+                  <button
+                    class="gender-toggle-btn"
+                    class:active={profile.predicted_gender === 'male'}
+                    on:click|stopPropagation={() => handleConfirmProfileGender(profile, 'male')}
+                    title={$t('speakers.profiles.confirmMale')}
+                  >
+                    &#9794;{#if profile.predicted_gender === 'male' && genderConfirmedProfiles.has(profile.uuid)}<span class="gender-confirmed-tick">{'\u2713'}</span>{/if}
+                  </button>
+                  <button
+                    class="gender-toggle-btn"
+                    class:active={profile.predicted_gender === 'female'}
+                    on:click|stopPropagation={() => handleConfirmProfileGender(profile, 'female')}
+                    title={$t('speakers.profiles.confirmFemale')}
+                  >
+                    &#9792;{#if profile.predicted_gender === 'female' && genderConfirmedProfiles.has(profile.uuid)}<span class="gender-confirmed-tick">{'\u2713'}</span>{/if}
+                  </button>
+                </span>
               </div>
             </div>
           {/each}
@@ -1385,6 +1426,50 @@
     border-radius: 8px;
     background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
     color: var(--success-color, #059669);
+  }
+
+  .gender-icon {
+    font-size: 12px;
+    color: var(--text-secondary, #6b7280);
+  }
+
+  .gender-confirmed-tick {
+    font-size: 10px;
+    color: var(--success-color, #10b981);
+    margin-left: 1px;
+  }
+
+  .gender-outlier {
+    background: color-mix(in srgb, var(--warning-color, #f59e0b) 8%, transparent);
+  }
+
+  .gender-confirm-group {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .gender-toggle-btn {
+    font-size: 14px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #d1d5db);
+    background: transparent;
+    color: var(--text-secondary, #9ca3af);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    line-height: 1;
+  }
+
+  .gender-toggle-btn:hover {
+    border-color: var(--primary-color, #3b82f6);
+    color: var(--primary-color, #3b82f6);
+  }
+
+  .gender-toggle-btn.active {
+    border-color: var(--primary-color, #3b82f6);
+    background: color-mix(in srgb, var(--primary-color, #3b82f6) 12%, transparent);
+    color: var(--primary-color, #3b82f6);
   }
 
   .loading-members {

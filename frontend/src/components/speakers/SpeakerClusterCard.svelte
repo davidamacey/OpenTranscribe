@@ -87,6 +87,17 @@
           {$t('speakers.cluster.matchPercent', { score: (cluster.quality_score * 100).toFixed(0) })}
         </span>
       {/if}
+      {#if cluster.gender_composition && cluster.gender_composition.total_with_gender > 0}
+        <span
+          class="gender-chip"
+          class:gender-coherent={!cluster.gender_composition.has_gender_conflict}
+          class:gender-conflict={cluster.gender_composition.has_gender_conflict}
+          title={cluster.gender_composition.has_gender_conflict ? $t('speakers.cluster.genderConflict') : $t('speakers.cluster.genderCoherent')}
+        >
+          {cluster.gender_composition.dominant_gender === 'male' ? '\u2642' : '\u2640'}
+          {cluster.gender_composition.gender_label}
+        </span>
+      {/if}
       <span class="member-count" title={$t('speakers.tooltip.memberCount')}>{$t('speakers.cluster.memberCount', { count: cluster.member_count })}</span>
       {#if cluster.promoted_to_profile_name}
         <span class="promoted-badge">{$t('speakers.cluster.profile', { name: cluster.promoted_to_profile_name })}</span>
@@ -207,6 +218,24 @@
     background: currentColor;
     background: color-mix(in srgb, currentColor 12%, transparent);
     white-space: nowrap;
+  }
+
+  .gender-chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+  }
+
+  .gender-coherent {
+    background: color-mix(in srgb, var(--success-color, #10b981) 12%, transparent);
+    color: var(--success-color, #10b981);
+  }
+
+  .gender-conflict {
+    background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent);
+    color: var(--warning-color, #f59e0b);
   }
 
   .member-count {

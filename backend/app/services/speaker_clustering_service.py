@@ -1322,6 +1322,27 @@ class SpeakerClusteringService:
         offset = (page - 1) * per_page
         clusters = query.offset(offset).limit(per_page).all()
 
+        # Batch-query gender composition for this page's clusters
+        cluster_ids = [int(c.id) for c in clusters]
+        gender_by_cluster: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        if cluster_ids:
+            from sqlalchemy import func as sa_func
+
+            gender_rows = (
+                self.db.query(
+                    SpeakerClusterMember.cluster_id,
+                    Speaker.predicted_gender,
+                    sa_func.count().label("cnt"),
+                )
+                .join(Speaker, SpeakerClusterMember.speaker_id == Speaker.id)
+                .filter(SpeakerClusterMember.cluster_id.in_(cluster_ids))
+                .group_by(SpeakerClusterMember.cluster_id, Speaker.predicted_gender)
+                .all()
+            )
+            for row in gender_rows:
+                gender_key = row[1] if row[1] else "__unknown__"
+                gender_by_cluster[int(row[0])][gender_key] = int(row[2])
+
         items = []
         for cluster in clusters:
             promoted_profile = cluster.promoted_to_profile
@@ -1335,6 +1356,15 @@ class SpeakerClusteringService:
                     promoted_avatar_url = get_file_url(promoted_profile.avatar_path, expires=3600)
                 except Exception as e:
                     logger.debug("Failed to get avatar URL for profile: %s", e)
+
+            # Build gender composition from batch query
+            cid = int(cluster.id)
+            gc = gender_by_cluster.get(cid, {})
+            gc_members = []
+            for g_key, cnt in gc.items():
+                gender_val = None if g_key == "__unknown__" else g_key
+                gc_members.extend([{"predicted_gender": gender_val}] * cnt)
+            gender_composition = self._compute_gender_composition(gc_members)
 
             items.append(
                 {
@@ -1358,6 +1388,7 @@ class SpeakerClusteringService:
                     "separation_score": float(cluster.separation_score)
                     if cluster.separation_score is not None
                     else None,
+                    "gender_composition": gender_composition,
                     "created_at": cluster.created_at,
                     "updated_at": cluster.updated_at,
                 }
@@ -1427,6 +1458,10 @@ class SpeakerClusteringService:
 
             media_file = speaker.media_file
 
+            gender_conf = (
+                speaker.attribute_confidence.get("gender") if speaker.attribute_confidence else None
+            )
+
             member_items.append(
                 {
                     "uuid": str(m.uuid),
@@ -1443,11 +1478,14 @@ class SpeakerClusteringService:
                     "verified": bool(speaker.verified),
                     "predicted_gender": speaker.predicted_gender,
                     "predicted_age_range": speaker.predicted_age_range,
+                    "gender_confidence": float(gender_conf) if gender_conf is not None else None,
+                    "gender_confirmed_by_user": bool(speaker.gender_confirmed_by_user),
                     "has_audio_clip": int(speaker.id) in members_with_segments,
                     "created_at": m.created_at,
                 }
             )
 
+        gender_composition = self._compute_gender_composition(member_items)
         promoted_profile = cluster.promoted_to_profile
 
         return {
@@ -1468,9 +1506,47 @@ class SpeakerClusteringService:
             "separation_score": float(cluster.separation_score)
             if cluster.separation_score is not None
             else None,
+            "gender_composition": gender_composition,
             "created_at": cluster.created_at,
             "updated_at": cluster.updated_at,
             "members": member_items,
+        }
+
+    @staticmethod
+    def _compute_gender_composition(member_items: list[dict]) -> dict:
+        """Compute gender composition summary for a list of cluster members."""
+        male = sum(1 for m in member_items if m.get("predicted_gender") == "male")
+        female = sum(1 for m in member_items if m.get("predicted_gender") == "female")
+        total_g = male + female
+        unknown = len(member_items) - total_g
+        if total_g == 0:
+            return {
+                "male_count": 0,
+                "female_count": 0,
+                "unknown_count": unknown,
+                "total_with_gender": 0,
+                "dominant_gender": None,
+                "gender_coherence": None,
+                "gender_label": None,
+                "has_gender_conflict": False,
+            }
+        dominant = "male" if male >= female else "female"
+        dominant_count = max(male, female)
+        coherence = dominant_count / total_g
+        conflict = min(male, female) > 0
+        if coherence == 1.0:
+            label = f"100% {dominant.title()}"
+        else:
+            label = f"{dominant_count}/{total_g} {dominant.title()}"
+        return {
+            "male_count": male,
+            "female_count": female,
+            "unknown_count": unknown,
+            "total_with_gender": total_g,
+            "dominant_gender": dominant,
+            "gender_coherence": round(coherence, 3),
+            "gender_label": label,
+            "has_gender_conflict": conflict,
         }
 
     # ------------------------------------------------------------------

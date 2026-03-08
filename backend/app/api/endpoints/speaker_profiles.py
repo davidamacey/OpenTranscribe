@@ -695,6 +695,46 @@ def delete_profile_avatar(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
+@router.post("/profiles/{profile_uuid}/confirm-gender", response_model=dict[str, Any])
+def confirm_profile_gender(
+    profile_uuid: str,
+    gender: str = Query(..., description="Gender value: 'male' or 'female'"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Confirm or set the predicted gender for a profile and all linked speakers."""
+    if gender not in ("male", "female"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Gender must be 'male' or 'female'",
+        )
+
+    profile = get_speaker_profile_by_uuid(db, profile_uuid)
+    if profile.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+
+    # Update profile DB column for consistency
+    profile.predicted_gender = gender  # type: ignore[assignment]
+
+    # Bulk-update all linked speakers
+    updated_count = (
+        db.query(Speaker)
+        .filter(Speaker.profile_id == profile.id)
+        .update(
+            {"predicted_gender": gender, "gender_confirmed_by_user": True},
+            synchronize_session="fetch",
+        )
+    )
+
+    db.commit()
+
+    return {
+        "profile_uuid": str(profile.uuid),
+        "predicted_gender": gender,
+        "updated_count": updated_count,
+    }
+
+
 @router.get("/collections", response_model=list[dict[str, Any]])
 def list_speaker_collections(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
