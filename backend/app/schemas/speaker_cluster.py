@@ -42,11 +42,26 @@ class SpeakerClusterMemberResponse(BaseModel):
     verified: bool = False
     predicted_gender: Optional[str] = None
     predicted_age_range: Optional[str] = None
+    gender_confidence: Optional[float] = None
+    gender_confirmed_by_user: bool = False
     has_audio_clip: bool = False
     created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class GenderComposition(BaseModel):
+    """Gender composition summary for a cluster."""
+
+    male_count: int = 0
+    female_count: int = 0
+    unknown_count: int = 0
+    total_with_gender: int = 0
+    dominant_gender: Optional[str] = None
+    gender_coherence: Optional[float] = None
+    gender_label: Optional[str] = None
+    has_gender_conflict: bool = False
 
 
 class SpeakerClusterResponse(SpeakerClusterBase):
@@ -59,6 +74,7 @@ class SpeakerClusterResponse(SpeakerClusterBase):
     promoted_to_profile_uuid: Optional[UUID] = None
     promoted_to_profile_name: Optional[str] = None
     quality_score: Optional[float] = None
+    gender_composition: Optional[GenderComposition] = None
     created_at: datetime
     updated_at: datetime
 

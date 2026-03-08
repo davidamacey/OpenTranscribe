@@ -172,8 +172,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
         "WHERE table_name = 'user_asr_settings')"
     )
+    has_gender_confirmed = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker' AND column_name = 'gender_confirmed_by_user')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v300: gender_confirmed_by_user column on speaker table
+    if has_gender_confirmed:
+        return "v300_add_gender_confirmed"
     # v290: password_reset_token table for self-service password recovery
     if has_password_reset_token:
         return "v290_add_password_reset_tokens"

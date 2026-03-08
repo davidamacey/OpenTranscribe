@@ -2,6 +2,17 @@
  * TypeScript types for speaker clustering and global speaker management.
  */
 
+export interface GenderComposition {
+  male_count: number;
+  female_count: number;
+  unknown_count: number;
+  total_with_gender: number;
+  dominant_gender: string | null;
+  gender_coherence: number | null;
+  gender_label: string | null;
+  has_gender_conflict: boolean;
+}
+
 export interface SpeakerCluster {
   uuid: string;
   label: string | null;
@@ -15,6 +26,7 @@ export interface SpeakerCluster {
   quality_score: number | null;
   min_similarity: number | null;
   separation_score: number | null;
+  gender_composition: GenderComposition | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +44,8 @@ export interface SpeakerClusterMember {
   verified: boolean;
   predicted_gender: string | null;
   predicted_age_range: string | null;
+  gender_confidence: number | null;
+  gender_confirmed_by_user: boolean;
   has_audio_clip: boolean;
   created_at: string | null;
 }
