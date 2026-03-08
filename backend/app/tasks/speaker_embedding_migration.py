@@ -221,6 +221,21 @@ def normalize_speaker_embeddings_task(self, batch_size: int = SCROLL_BATCH_SIZE)
 
     Runs automatically on startup via the FastAPI lifespan hook.
     """
+    from app.core.redis import get_redis
+
+    r = get_redis()
+    if not r.set("normalize_embeddings_lock", "1", nx=True, ex=600):
+        logger.info("Embedding normalization already running, skipping")
+        return {"status": "already_running"}
+
+    try:
+        return _run_normalize_embeddings(batch_size)
+    finally:
+        r.delete("normalize_embeddings_lock")
+
+
+def _run_normalize_embeddings(batch_size: int) -> dict[str, Any]:
+    """Inner implementation of embedding normalization."""
     summary: dict[str, Any] = {
         "total_found": 0,
         "already_normalized": 0,

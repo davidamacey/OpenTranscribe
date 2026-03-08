@@ -7,7 +7,6 @@
   import StatusChip from './StatusChip.svelte';
 
   let showModelChangeModal = false;
-  let showRepairModal = false;
 
   interface EmbeddingModel {
     model_id: string;
@@ -32,6 +31,7 @@
     indexed_files: number;
     total_files: number;
     eta_seconds?: number | null;
+    message?: string;
   }
 
   interface IndexHealthEntry {
@@ -48,7 +48,6 @@
   let isReindexing = false;
   let isSwitchingModel = false;
   let isStopping = false;
-  let isRepairing = false;
   let indexHealth: Record<string, IndexHealthEntry> | null = null;
 
   // Live reindex progress
@@ -70,9 +69,12 @@
     isReindexing = true;
   }
 
+  let lastReindexStats: any = null;
+
   function handleReindexComplete(event: CustomEvent<{ stats: any }>) {
     reindexProgress = null;
     isReindexing = false;
+    lastReindexStats = event.detail?.stats || null;
     // Reload status to get updated counts
     loadStatus();
     toastStore.success($t('search.reindexComplete') || 'Re-indexing complete!');
@@ -208,24 +210,6 @@
     }
   }
 
-  function handleRepairIndices() {
-    showRepairModal = true;
-  }
-
-  async function confirmRepairIndices() {
-    showRepairModal = false;
-    isRepairing = true;
-    try {
-      const res = await axiosInstance.post('/search/repair-indices');
-      toastStore.success($t('settings.search.repairSuccess'));
-      await loadIndexHealth();
-    } catch (e: any) {
-      toastStore.error(e?.response?.data?.detail || $t('settings.search.repairError'));
-    } finally {
-      isRepairing = false;
-    }
-  }
-
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return 'Never';
     try {
@@ -253,7 +237,16 @@
 </script>
 
 {#if isLoading}
-  <div class="loading-state">{$t('search.settingsTitle') || 'Loading search settings...'}</div>
+  <div class="status-chips-row">
+    <div class="skeleton-chip"></div>
+    <div class="skeleton-chip wide"></div>
+    <div class="skeleton-chip"></div>
+  </div>
+  <div class="skeleton-bar"></div>
+  <div class="skeleton-section">
+    <div class="skeleton-line title"></div>
+    <div class="skeleton-line full"></div>
+  </div>
 {:else}
   <!-- Status Chips Row -->
   {#if indexStatus}
@@ -265,7 +258,7 @@
       />
       <StatusChip
         label={$t('settings.search.chipModel')}
-        value={indexStatus.current_model}
+        value={indexStatus.current_model.split('/').pop() || indexStatus.current_model}
         status="blue"
       />
       <StatusChip
@@ -293,23 +286,28 @@
             ? ($t('search.stoppingReindex') || 'Stopping...')
             : ($t('search.reindexingInProgress') || 'Re-indexing in progress...')}
         </span>
-        {#if reindexProgress}
+        {#if reindexProgress && reindexProgress.total_files > 0}
           <span class="reindex-count">
-            {reindexProgress.indexed_files} / {reindexProgress.total_files} files
+            {reindexProgress.indexed_files} / {reindexProgress.total_files}
           </span>
         {/if}
       </div>
-      {#if reindexProgress}
+      {#if reindexProgress && reindexProgress.total_files > 0}
         <div class="progress-container">
           <div class="progress-bar reindexing">
-            <div class="progress-fill" style="width: {Math.round(reindexProgress.progress * 100)}%"></div>
+            <div class="progress-fill" style="width: {Math.min(Math.round(reindexProgress.progress * 100), 100)}%"></div>
           </div>
           <span class="progress-text">
-            {Math.round(reindexProgress.progress * 100)}%
-            {#if formatEta(reindexProgress.eta_seconds)}
-              ({formatEta(reindexProgress.eta_seconds)} {$t('upload.remaining')})
-            {/if}
+            {Math.min(Math.round(reindexProgress.progress * 100), 100)}%
           </span>
+        </div>
+        <div class="reindex-details">
+          {#if reindexProgress.message}
+            <span class="reindex-message">{reindexProgress.message}</span>
+          {/if}
+          {#if formatEta(reindexProgress.eta_seconds)}
+            <span class="reindex-eta">{formatEta(reindexProgress.eta_seconds)} {$t('upload.remaining')}</span>
+          {/if}
         </div>
       {:else}
         <div class="progress-container">
@@ -338,31 +336,53 @@
     </div>
   {/if}
 
-  <!-- Re-index Actions -->
-  {#if indexStatus}
-    <div class="form-actions">
-      {#if indexStatus.pending_files > 0 && !isReindexing}
+  <!-- Last reindex stats -->
+  {#if lastReindexStats && !isReindexing}
+    <div class="reindex-stats">
+      <div class="stats-header">
+        <span class="stats-label">{$t('settings.search.lastReindex') || 'Last Re-index'}</span>
+        <button class="btn-dismiss" on:click={() => lastReindexStats = null}>&times;</button>
+      </div>
+      <div class="stats-row">
+        <span>{lastReindexStats.indexed_files}/{lastReindexStats.total_files} files</span>
+        <span>{lastReindexStats.total_chunks} chunks</span>
+        <span class="stats-mode {lastReindexStats.mode || 'cpu'}">
+          {(lastReindexStats.mode || 'cpu').toUpperCase()}
+        </span>
+      </div>
+      {#if lastReindexStats.failed_files > 0}
+        <div class="stats-row error">
+          <span>{lastReindexStats.failed_files} failed</span>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Embedding Model Selection -->
+  <div class="section-divider"></div>
+  <div class="subsection-header">
+    <h4 class="subsection-title">{$t('search.embeddingModel') || 'Embedding Model'}</h4>
+    <div class="subsection-actions">
+      {#if indexStatus && indexStatus.pending_files > 0 && !isReindexing}
         <button
-          class="btn btn-secondary"
+          class="btn btn-secondary btn-sm"
           on:click={handleReindexPending}
           disabled={isReindexing}
         >
           {$t('settings.search.reindexPending')}
         </button>
       {/if}
-      <button
-        class="btn btn-primary"
-        on:click={handleReindexAll}
-        disabled={isReindexing}
-      >
-        {isReindexing ? ($t('search.reindexing') || 'Re-indexing...') : ($t('search.reindexAll') || 'Re-index All')}
-      </button>
+      {#if indexStatus}
+        <button
+          class="btn btn-primary btn-sm"
+          on:click={handleReindexAll}
+          disabled={isReindexing}
+        >
+          {isReindexing ? ($t('search.reindexing') || 'Re-indexing...') : ($t('search.reindexAll') || 'Re-index All')}
+        </button>
+      {/if}
     </div>
-  {/if}
-
-  <!-- Embedding Model Selection (directly below actions) -->
-  <div class="section-divider"></div>
-  <h4 class="subsection-title">{$t('search.embeddingModel') || 'Embedding Model'}</h4>
+  </div>
 
   <div class="form-group">
     <label for="embedding-model-select">{$t('settings.search.modelLabel')}</label>
@@ -405,46 +425,7 @@
     </div>
   {/if}
 
-  <!-- Index Health -->
-  <div class="section-divider"></div>
-  <h4 class="subsection-title">{$t('settings.search.indexHealth') || 'Index Health'}</h4>
-
-  {#if indexHealth}
-    <div class="health-cards">
-      {#each Object.entries(indexHealth) as [indexName, info]}
-        <div class="health-card" class:healthy={info.status === 'green'} class:error={info.status === 'red'}>
-          <span class="health-card-dot"></span>
-          <span class="health-card-name">{indexName}</span>
-          <span class="health-card-detail">
-            {#if info.status === 'green'}
-              {info.doc_count} {$t('settings.search.docs')}
-            {:else}
-              {$t('settings.search.indexRed') || 'Error'}
-            {/if}
-          </span>
-        </div>
-      {/each}
-    </div>
-
-    {#if hasRedIndices}
-      <div class="form-actions">
-        <button
-          class="btn btn-primary"
-          on:click={handleRepairIndices}
-          disabled={isRepairing}
-        >
-          {#if isRepairing}
-            <span class="spinner"></span>
-            {$t('settings.search.repairing') || 'Repairing...'}
-          {:else}
-            {$t('settings.search.repairIndices') || 'Repair Indices'}
-          {/if}
-        </button>
-      </div>
-    {/if}
-  {:else}
-    <p class="health-desc">{$t('settings.search.loadingHealth')}</p>
-  {/if}
+  <!-- Index health moved to Data Integrity section -->
 {/if}
 
 <ConfirmationModal
@@ -457,28 +438,76 @@
   on:close={cancelModelChange}
 />
 
-<ConfirmationModal
-  isOpen={showRepairModal}
-  title={$t('settings.search.repairTitle')}
-  message={$t('settings.search.repairConfirm')}
-  confirmText={$t('settings.search.repairIndices')}
-  on:confirm={confirmRepairIndices}
-  on:cancel={() => showRepairModal = false}
-  on:close={() => showRepairModal = false}
-/>
 
 <style>
-  .loading-state {
-    padding: 1.5rem 0;
-    text-align: center;
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
+  .skeleton-chip {
+    height: 28px;
+    width: 90px;
+    border-radius: 14px;
+    background: var(--border-color, #e5e7eb);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-chip.wide {
+    width: 130px;
+  }
+
+  .skeleton-bar {
+    height: 6px;
+    width: 100%;
+    border-radius: 3px;
+    background: var(--border-color, #e5e7eb);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+    margin-bottom: 1rem;
+  }
+
+  .skeleton-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .skeleton-line {
+    height: 14px;
+    border-radius: 4px;
+    background: var(--border-color, #e5e7eb);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-line.title {
+    width: 40%;
+    height: 18px;
+  }
+
+  .skeleton-line.full {
+    width: 100%;
+    height: 36px;
+    border-radius: 6px;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
+
+  .subsection-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .subsection-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
   }
 
   .subsection-title {
     font-size: 0.9375rem;
     font-weight: 600;
-    margin: 0 0 0.75rem 0;
+    margin: 0;
     color: var(--text-color);
   }
 
@@ -619,9 +648,9 @@
   .reindex-live-progress {
     margin-bottom: 0.75rem;
     padding: 0.75rem;
-    background: var(--primary-light, rgba(59, 130, 246, 0.08));
-    border-radius: 8px;
-    border: 1px solid var(--primary-border, rgba(59, 130, 246, 0.2));
+    background: var(--background-color);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
   }
 
   .reindex-header {
@@ -679,10 +708,92 @@
     }
   }
 
+  .reindex-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .reindex-message {
+    flex: 1;
+  }
+
+  .reindex-eta {
+    white-space: nowrap;
+    font-weight: 500;
+    color: var(--primary-color);
+  }
+
   .reindex-actions {
     display: flex;
     justify-content: flex-end;
     margin-top: 0.5rem;
+  }
+
+  /* Reindex completion stats */
+  .reindex-stats {
+    margin-bottom: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 0.75rem;
+  }
+
+  .stats-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.375rem;
+  }
+
+  .stats-label {
+    font-weight: 600;
+    font-size: 0.8125rem;
+    color: var(--text-color);
+  }
+
+  .btn-dismiss {
+    background: none;
+    border: none;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0 0.25rem;
+    line-height: 1;
+  }
+
+  .stats-row {
+    display: flex;
+    gap: 1rem;
+    color: var(--text-secondary);
+    align-items: center;
+  }
+
+  .stats-row.error {
+    margin-top: 0.25rem;
+    color: var(--danger-color, #dc2626);
+  }
+
+  .stats-mode {
+    padding: 0.125rem 0.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+  }
+
+  .stats-mode.gpu {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+  }
+
+  .stats-mode.cpu {
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
   }
 
   .btn-danger-outline {
@@ -725,63 +836,4 @@
     }
   }
 
-  /* Index Health styles */
-  .health-desc {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    margin: 0 0 0.75rem;
-  }
-
-  .health-cards {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .health-card {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    border: 1px solid var(--border-color);
-    background: var(--surface-color);
-  }
-
-  .health-card.healthy {
-    border-color: rgba(34, 197, 94, 0.25);
-    background: rgba(34, 197, 94, 0.06);
-  }
-
-  .health-card.error {
-    border-color: rgba(239, 68, 68, 0.3);
-    background: rgba(239, 68, 68, 0.08);
-  }
-
-  .health-card-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: var(--text-secondary);
-  }
-
-  .health-card.healthy .health-card-dot {
-    background: #22c55e;
-  }
-
-  .health-card.error .health-card-dot {
-    background: #ef4444;
-  }
-
-  .health-card-name {
-    font-weight: 500;
-    color: var(--text-color);
-  }
-
-  .health-card-detail {
-    color: var(--text-secondary);
-  }
 </style>

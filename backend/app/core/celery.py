@@ -64,6 +64,7 @@ celery_app = Celery(
         "app.tasks.auto_labeling",
         "app.tasks.speaker_attribute_migration_task",
         "app.tasks.combined_speaker_analysis_task",
+        "app.tasks.speaker_embedding_consistency",
     ],
 )
 
@@ -128,6 +129,8 @@ celery_app.conf.update(
         "reindex_batch": {"queue": "cpu"},
         "search_index_maintenance": {"queue": "cpu"},
         "opensearch_orphan_cleanup": {"queue": "cpu"},
+        "speaker_embedding_consistency_check": {"queue": "cpu"},
+        "speaker_embedding_consistency_repair_batch": {"queue": "gpu"},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         "ai.generate_summary": {"queue": "nlp"},
         "ai.identify_speakers": {"queue": "nlp"},
@@ -171,6 +174,11 @@ celery_app.conf.update(
         "opensearch-orphan-cleanup": {
             "task": "opensearch_orphan_cleanup",
             "schedule": crontab(minute=0, hour="3,9,15,21"),  # Every 6h, offset from maintenance
+            "options": {"queue": "cpu", "priority": 8},  # CPUPriority.MAINTENANCE
+        },
+        "embedding-consistency-check": {
+            "task": "speaker_embedding_consistency_check",
+            "schedule": crontab(minute="*/10"),  # Every 10 minutes
             "options": {"queue": "cpu", "priority": 8},  # CPUPriority.MAINTENANCE
         },
         "gpu-stats-update": {

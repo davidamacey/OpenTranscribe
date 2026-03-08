@@ -200,3 +200,8 @@ def recluster_all_speakers(self, user_id: int, threshold: float | None = None):
                     _send_clustering_error(user_id, str(e))
                     raise
                 raise self.retry(exc=e) from e
+            finally:
+                # Free intermediate CUDA tensors for follow-on tasks
+                from app.tasks.migration_pipeline import cleanup_gpu_memory
+
+                cleanup_gpu_memory()

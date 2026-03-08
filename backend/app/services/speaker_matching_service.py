@@ -389,12 +389,15 @@ class SpeakerMatchingService:
 
         # Add initial embedding to OpenSearch if provided
         if initial_embedding is not None:
-            add_speaker_embedding(
-                speaker_id=int(profile.id),
-                speaker_uuid=str(profile.uuid),
-                user_id=user_id,
-                name=name,
+            from app.services.opensearch_service import store_profile_embedding
+
+            store_profile_embedding(
+                profile_id=int(profile.id),
+                profile_uuid=str(profile.uuid),
+                profile_name=name,
                 embedding=initial_embedding.tolist(),
+                speaker_count=1,
+                user_id=user_id,
             )
 
         return profile
@@ -945,12 +948,15 @@ class SpeakerMatchingService:
                 return False
 
             # Update in OpenSearch
-            add_speaker_embedding(
-                speaker_id=profile_id,
-                speaker_uuid=str(profile.uuid),
-                user_id=int(profile.user_id),
-                name=str(profile.name),
+            from app.services.opensearch_service import store_profile_embedding
+
+            store_profile_embedding(
+                profile_id=profile_id,
+                profile_uuid=str(profile.uuid),
+                profile_name=str(profile.name),
                 embedding=embedding.tolist(),
+                speaker_count=1,
+                user_id=int(profile.user_id),
             )
 
             return True

@@ -4,6 +4,7 @@ Celery tasks for auto-labeling: batch grouping and retroactive apply.
 
 import contextlib
 import logging
+import time
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_AUTO_LABEL_STATUS
@@ -168,6 +169,13 @@ def retroactive_auto_label_task(
         total = len(suggestion_ids)
         if total == 0:
             redis.delete(lock_key)
+            send_auto_label_notification(
+                user_id=user_id,
+                status="completed",
+                message="No pending suggestions to apply",
+                data={"files_processed": 0, "tags_applied": 0, "collections_applied": 0},
+                file_id="retroactive_apply",
+            )
             return {"status": "completed", "total": 0}
 
         # Initialize Redis progress hash
@@ -181,6 +189,7 @@ def retroactive_auto_label_task(
                 "tags_applied": 0,
                 "collections_applied": 0,
                 "errors": 0,
+                "start_time": time.time(),
             },
         )
         redis.expire(progress_key, 7200)
@@ -295,13 +304,27 @@ def auto_label_batch_task(
     redis.hincrby(progress_key, "errors", batch_result["errors"])
     total = int(redis.hget(progress_key, "total") or 0)
 
+    # Compute ETA
+    eta_seconds = None
+    start_time_raw = redis.hget(progress_key, "start_time")
+    if start_time_raw and processed > 0 and total > 0:
+        elapsed = time.time() - float(start_time_raw)
+        remaining = total - processed
+        rate = processed / elapsed if elapsed > 0 else 0
+        eta_seconds = round(remaining / rate) if rate > 0 else None
+
     # Send progress notification
     progress_pct = int((processed / total) * 100) if total > 0 else 0
     send_auto_label_notification(
         user_id=user_id,
         status="processing",
         message=f"Processing {processed}/{total}",
-        data={"processed": processed, "total": total, "progress": progress_pct},
+        data={
+            "processed": processed,
+            "total": total,
+            "progress": progress_pct,
+            "eta_seconds": eta_seconds,
+        },
         file_id="retroactive_apply",
     )
 

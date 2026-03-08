@@ -61,13 +61,18 @@ def get_migration_status() -> dict:
     v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
     v4_exists = client.indices.exists(index=v4_index)
 
+    # Count only speaker documents (exclude profile_ and cluster_ documents
+    # which share the same index but have a document_type field)
+    speaker_only_query = {"query": {"bool": {"must_not": {"exists": {"field": "document_type"}}}}}
     try:
         v3_count = (
-            client.count(index=settings.OPENSEARCH_SPEAKER_INDEX)["count"]
+            client.count(index=settings.OPENSEARCH_SPEAKER_INDEX, body=speaker_only_query)["count"]
             if client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX)
             else 0
         )
-        v4_count = client.count(index=v4_index)["count"] if v4_exists else 0
+        v4_count = (
+            client.count(index=v4_index, body=speaker_only_query)["count"] if v4_exists else 0
+        )
     except Exception:
         v3_count = 0
         v4_count = 0
@@ -628,6 +633,11 @@ def extract_v4_embeddings_batch_task(
             },
         )
 
+    # Free intermediate CUDA tensors for follow-on tasks
+    from app.tasks.migration_pipeline import cleanup_gpu_memory
+
+    cleanup_gpu_memory()
+
     return {
         "status": "success",
         "batch_index": batch_index,
@@ -722,6 +732,11 @@ def extract_v4_embeddings_task(
     total = status.get("total_files", 0)
     if processed >= total and total > 0:
         migration_progress.complete_migration(success=True)
+
+    # Free intermediate CUDA tensors for follow-on tasks
+    from app.tasks.migration_pipeline import cleanup_gpu_memory
+
+    cleanup_gpu_memory()
 
     return {"status": "success", "file_uuid": file_uuid}
 

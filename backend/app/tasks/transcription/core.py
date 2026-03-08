@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import time
 from dataclasses import dataclass
 
 from app.core.celery import celery_app
@@ -776,6 +777,42 @@ def _run_transcription_pipeline(
     return raw_result
 
 
+def _run_speaker_embeddings_with_retry(
+    ctx: TranscriptionContext,
+    result: dict,
+    audio_file_path: str,
+    processed_segments: list,
+    speaker_mapping: dict,
+) -> None:
+    """Run speaker embedding processing with up to 2 retries on failure."""
+    use_native = _should_use_native_embeddings(result)
+    max_retries = 2
+    for attempt in range(max_retries + 1):
+        try:
+            if use_native:
+                logger.info(
+                    "Using native speaker embeddings (PyAnnote centroids, no separate model)"
+                )
+                _process_speaker_embeddings_native(
+                    ctx,
+                    result["native_speaker_embeddings"],
+                    processed_segments,
+                    speaker_mapping,
+                )
+            else:
+                logger.info("Using traditional SpeakerEmbeddingService for speaker embeddings")
+                _process_speaker_embeddings(
+                    ctx, audio_file_path, processed_segments, speaker_mapping
+                )
+            break  # Success
+        except Exception as e:
+            if attempt < max_retries:
+                logger.warning(f"Speaker embedding attempt {attempt + 1} failed: {e}, retrying...")
+                time.sleep(1)
+            else:
+                logger.error(f"Speaker embedding failed after {max_retries + 1} attempts: {e}")
+
+
 def _process_transcription_result(
     ctx: TranscriptionContext,
     result: dict,
@@ -873,30 +910,19 @@ def _process_transcription_result(
     # Note: save_transcript_segments has its own internal timing log
 
     # Speaker embeddings - choose native (PyAnnote centroids) or traditional path
+    # Retry up to 2 times with short backoff to handle transient OpenSearch failures
     send_progress_notification(ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification")
     step_start = time.perf_counter()
-    use_native = _should_use_native_embeddings(result)
-    try:
-        if use_native:
-            logger.info("Using native speaker embeddings (PyAnnote centroids, no separate model)")
-            _process_speaker_embeddings_native(
-                ctx,
-                result["native_speaker_embeddings"],
-                processed_segments,
-                speaker_mapping,
-            )
-        else:
-            logger.info("Using traditional SpeakerEmbeddingService for speaker embeddings")
-            _process_speaker_embeddings(ctx, audio_file_path, processed_segments, speaker_mapping)
-    except Exception as e:
-        logger.warning(f"Error in speaker identification: {e}")
+    _run_speaker_embeddings_with_retry(
+        ctx, result, audio_file_path, processed_segments, speaker_mapping
+    )
     # Note: embedding processing functions have their own internal timing logs
 
     # Store native centroids in v4 staging index (fire-and-forget).
     # Only when the traditional v3 path was used but native centroids exist —
     # this pre-populates the v4 index for future migration.
     native_embeddings_for_v4 = result.get("native_speaker_embeddings")
-    if native_embeddings_for_v4 and not use_native:
+    if native_embeddings_for_v4 and not _should_use_native_embeddings(result):
         try:
             _store_native_centroids_in_v4_staging(ctx, native_embeddings_for_v4, speaker_mapping)
         except Exception as e:

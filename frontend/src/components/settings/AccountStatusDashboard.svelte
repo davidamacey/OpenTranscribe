@@ -6,7 +6,6 @@
 
   let report: AccountStatusReport | null = null;
   let loading = false;
-  let backendNotReady = false; // Backend is fully implemented
 
   onMount(async () => {
     await loadReport();
@@ -26,249 +25,132 @@
 
   function getPercentage(value: number, total: number): string {
     if (total === 0) return '0';
-    return ((value / total) * 100).toFixed(1);
+    return ((value / total) * 100).toFixed(0);
   }
 </script>
 
-<div class="account-status-dashboard">
-  <h2>{$t('settings.accountStatus.overview')}</h2>
-
-  {#if backendNotReady}
-    <div class="coming-soon">
-      <div class="coming-soon-icon">📊</div>
-      <h3>{$t('settings.accountStatus.dashboard')}</h3>
-      <p>{$t('settings.accountStatus.comingSoonDesc')}</p>
-      <p class="note">
-        <strong>{$t('settings.accountStatus.noteLabel')}</strong> {$t('settings.accountStatus.comingSoonNote')}
-      </p>
+<div class="account-status-strip">
+  {#if loading}
+    <div class="skeleton-chips">
+      <div class="skeleton-chip"></div>
+      <div class="skeleton-chip"></div>
+      <div class="skeleton-chip"></div>
+      <div class="skeleton-chip wide"></div>
+      <div class="skeleton-chip"></div>
     </div>
-  {:else if loading}
-    <div class="loading">{$t('settings.accountStatus.loadingStatus')}</div>
   {:else if report}
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-value">{report.total_users}</div>
-        <div class="stat-label">{$t('settings.accountStatus.totalUsers')}</div>
-      </div>
-
-      <div class="stat-card success">
-        <div class="stat-value">{report.active_users}</div>
-        <div class="stat-label">{$t('settings.accountStatus.activeUsers')}</div>
-        <div class="stat-percentage">{getPercentage(report.active_users, report.total_users)}%</div>
-      </div>
-
-      <div class="stat-card warning">
-        <div class="stat-value">{report.inactive_users}</div>
-        <div class="stat-label">{$t('settings.accountStatus.inactiveUsers')}</div>
-        <div class="stat-percentage">{getPercentage(report.inactive_users, report.total_users)}%</div>
-      </div>
-
-      <div class="stat-card info">
-        <div class="stat-value">{report.mfa_enabled_users}</div>
-        <div class="stat-label">{$t('settings.accountStatus.mfaEnabled')}</div>
-        <div class="stat-percentage">{getPercentage(report.mfa_enabled_users, report.total_users)}%</div>
-      </div>
-
-      <div class="stat-card danger">
-        <div class="stat-value">{report.password_expired_users}</div>
-        <div class="stat-label">{$t('settings.accountStatus.passwordExpired')}</div>
-        <div class="stat-percentage">{getPercentage(report.password_expired_users, report.total_users)}%</div>
-      </div>
+    <div class="status-chips">
+      <span class="chip">
+        <span class="chip-value">{report.total_users}</span>
+        <span class="chip-label">{$t('settings.accountStatus.totalUsers')}</span>
+      </span>
+      <span class="chip success">
+        <span class="chip-value">{report.active_users}</span>
+        <span class="chip-label">{$t('settings.accountStatus.activeUsers')}</span>
+      </span>
+      <span class="chip warning">
+        <span class="chip-value">{report.inactive_users}</span>
+        <span class="chip-label">{$t('settings.accountStatus.inactiveUsers')}</span>
+      </span>
+      <span class="chip info">
+        <span class="chip-value">{report.mfa_enabled_users}</span>
+        <span class="chip-label">{$t('settings.accountStatus.mfaEnabled')}</span>
+      </span>
+      {#if report.password_expired_users > 0}
+        <span class="chip danger">
+          <span class="chip-value">{report.password_expired_users}</span>
+          <span class="chip-label">{$t('settings.accountStatus.passwordExpired')}</span>
+        </span>
+      {/if}
     </div>
-
-    <div class="progress-section">
-      <h3>{$t('settings.accountStatus.mfaAdoption')}</h3>
-      <div class="progress-bar">
-        <div
-          class="progress-fill"
-          style="width: {getPercentage(report.mfa_enabled_users, report.total_users)}%"
-        ></div>
-      </div>
-      <p class="progress-text">
-        {$t('settings.accountStatus.mfaProgress', { enabled: report.mfa_enabled_users, total: report.total_users })}
-      </p>
-    </div>
-
-    <div class="actions">
-      <button class="btn-primary" on:click={loadReport}>
-        {$t('settings.accountStatus.refresh')}
-      </button>
-    </div>
-  {:else}
-    <div class="error">{$t('settings.accountStatus.loadError')}</div>
   {/if}
 </div>
 
 <style>
-  .account-status-dashboard {
-    padding: 1rem;
+  .account-status-strip {
+    margin-bottom: 1.25rem;
+    padding: 0.75rem 1rem;
+    background: var(--background-color, #2a2a2a);
+    border: 1px solid var(--border-color, #444);
+    border-radius: 10px;
   }
 
-  h2 {
-    margin: 0 0 1.5rem;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  h3 {
-    margin: 0 0 0.75rem;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  /* Coming Soon Section Styles */
-  .coming-soon {
-    text-align: center;
-    padding: 2rem;
-    background: var(--color-surface);
-    border-radius: 8px;
-    border: 1px solid var(--color-border);
-  }
-
-  .coming-soon-icon {
-    font-size: 3rem;
-    margin-bottom: 1rem;
-  }
-
-  .coming-soon h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.25rem;
-    color: var(--color-text);
-  }
-
-  .coming-soon p {
-    color: var(--color-text-secondary);
-    margin: 0.5rem 0;
-  }
-
-  .note {
-    background: var(--color-info-bg, rgba(59, 130, 246, 0.1));
-    border: 1px solid var(--color-info-border, rgba(59, 130, 246, 0.3));
-    border-radius: 6px;
-    padding: 1rem;
-    margin-top: 1rem;
-    text-align: left;
-    font-size: 0.875rem;
-  }
-
-  .note strong {
-    color: var(--color-info, #3b82f6);
-  }
-
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-  }
-
-  .stat-card {
-    background: var(--color-bg-secondary);
-    padding: 1.25rem;
-    border-radius: 8px;
-    text-align: center;
-    border: 1px solid var(--color-border);
-  }
-
-  .stat-card.success {
-    border-left: 4px solid rgb(34, 197, 94);
-  }
-
-  .stat-card.warning {
-    border-left: 4px solid rgb(234, 179, 8);
-  }
-
-  .stat-card.info {
-    border-left: 4px solid rgb(59, 130, 246);
-  }
-
-  .stat-card.danger {
-    border-left: 4px solid rgb(239, 68, 68);
-  }
-
-  .stat-value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--color-text);
-  }
-
-  .stat-label {
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-    margin-top: 0.25rem;
-  }
-
-  .stat-percentage {
-    font-size: 0.75rem;
-    color: var(--color-text-secondary);
-    margin-top: 0.25rem;
-  }
-
-  .progress-section {
-    background: var(--color-bg-secondary);
-    padding: 1.25rem;
-    border-radius: 8px;
-    margin-bottom: 1.5rem;
-  }
-
-  .progress-bar {
-    height: 12px;
-    background: var(--color-bg);
-    border-radius: 6px;
-    overflow: hidden;
-    border: 1px solid var(--color-border);
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, rgb(59, 130, 246), rgb(34, 197, 94));
-    border-radius: 6px;
-    transition: width 0.3s ease;
-  }
-
-  .progress-text {
-    margin: 0.75rem 0 0;
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-  }
-
-  .actions {
+  .status-chips {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
+    align-items: center;
+    justify-content: center;
   }
 
-  .btn-primary {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-    transition: all 0.2s ease;
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    background: var(--surface-color, #333);
+    border: 1px solid var(--border-color, #444);
+    color: var(--text-color, #e0e0e0);
   }
 
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  .chip-value {
+    font-weight: 700;
+    font-size: 0.85rem;
   }
 
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
+  .chip-label {
+    color: var(--text-secondary, #999);
+    font-size: 0.75rem;
   }
 
-  .loading,
-  .error {
-    text-align: center;
-    padding: 2rem;
-    color: var(--color-text-secondary);
+  .chip.success {
+    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.08);
+  }
+  .chip.success .chip-value { color: rgb(34, 197, 94); }
+
+  .chip.warning {
+    border-color: rgba(234, 179, 8, 0.3);
+    background: rgba(234, 179, 8, 0.08);
+  }
+  .chip.warning .chip-value { color: rgb(234, 179, 8); }
+
+  .chip.info {
+    border-color: rgba(59, 130, 246, 0.3);
+    background: rgba(59, 130, 246, 0.08);
+  }
+  .chip.info .chip-value { color: rgb(59, 130, 246); }
+
+  .chip.danger {
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.08);
+  }
+  .chip.danger .chip-value { color: rgb(239, 68, 68); }
+
+  /* Skeleton loading */
+  .skeleton-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
   }
 
-  .error {
-    color: rgb(239, 68, 68);
+  .skeleton-chip {
+    height: 30px;
+    width: 100px;
+    border-radius: 20px;
+    background: var(--border-color, #444);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-chip.wide {
+    width: 130px;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
   }
 </style>

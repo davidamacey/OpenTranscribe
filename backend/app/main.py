@@ -154,12 +154,20 @@ async def _setup_minio():
         logger.error(f"Error setting up MinIO bucket: {e}")
 
 
-def _clear_stale_migration_state():
-    """Clear ALL migration state from Redis on startup.
+def _clear_stale_task_state():
+    """Clear ALL stale task state from Redis on startup.
 
-    Any migration state from the previous process lifetime is stale — the
+    Any task state from the previous process lifetime is stale — the
     Celery workers that were processing it are gone. Clear everything so
-    the UI starts clean and migrations can be re-triggered.
+    the UI starts clean and tasks can be re-triggered.
+
+    This covers:
+    - Migration orchestrator state and locks
+    - Reindex coordination state and locks
+    - Auto-labeling locks
+    - Data integrity / embedding consistency locks
+    - Search maintenance locks
+    - All progress tracker keys (task_progress:*)
     """
     from app.core.redis import get_redis
 
@@ -174,9 +182,6 @@ def _clear_stale_migration_state():
 
     cleared = []
     for prefix in prefixes:
-        # Unconditionally clear ALL migration-related keys for each prefix.
-        # Whether the migration was running, completed, or in any other state,
-        # it's stale after a restart.
         suffixes = [
             ":status",
             ":batch_task_ids",
@@ -192,12 +197,42 @@ def _clear_stale_migration_state():
         if deleted_any:
             cleared.append(prefix)
 
-    # Clear stale progress tracker states
-    for key in r.scan_iter(match="task_progress:*migration*"):
+    # Clear ALL progress tracker keys — any running task is dead after restart
+    for key in r.scan_iter(match="task_progress:*"):
         r.delete(key)
+        cleared.append(str(key))
+
+    # Clear stale task locks and coordination state.
+    # Every Redis-based lock used by any task must be listed here
+    # so that a restart never gets blocked by an orphaned lock.
+    stale_patterns = [
+        # Reindex coordination
+        "reindex_lock:*",
+        "reindex_state:*",
+        "reindex_uuids:*",
+        "reindex_cancel:*",
+        # Auto-labeling
+        "auto_label_lock:*",
+        "auto_label_progress:*",
+        # Search and data integrity
+        "search_maintenance_lock",
+        "data_integrity_running",
+        # Embedding tasks
+        "normalize_embeddings_lock",
+        "embedding_consistency_running",
+        "embedding_consistency_progress:*",
+        # Speaker clustering (TaskLockManager-based)
+        "recluster_speakers_user_*",
+        # Health check (TaskLockManager-based)
+        "system.health_check",
+    ]
+    for pattern in stale_patterns:
+        for key in r.scan_iter(match=pattern):
+            r.delete(key)
+            cleared.append(str(key))
 
     if cleared:
-        logger.info("Cleared stale migration state on startup: %s", cleared)
+        logger.info("Cleared %d stale task keys on startup", len(cleared))
 
 
 async def _run_startup_recovery():
@@ -458,7 +493,7 @@ async def lifespan(app: FastAPI):
 
     # Clear stale migration state from Redis (orphaned by unclean shutdown)
     try:
-        _clear_stale_migration_state()
+        _clear_stale_task_state()
     except Exception as e:
         logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
 

@@ -349,15 +349,57 @@ _REINDEX_STATE_KEY = "reindex_state:{user_id}"
 _REINDEX_UUIDS_KEY = "reindex_uuids:{user_id}"
 
 
-def _send_reindex_progress(redis_client: Any, user_id: int) -> None:
-    """Read global progress from Redis and send a WebSocket notification."""
+def _clear_stale_progress(user_id: int) -> None:
+    """Clear stale reindex progress and coordination state from Redis.
+
+    Called at the start of a new reindex to ensure no leftover state from
+    a previous run (whether it completed, failed, or was interrupted)
+    contaminates the new run's progress tracking.
+    """
+    try:
+        redis = get_redis()
+        state_key = _REINDEX_STATE_KEY.format(user_id=user_id)
+        uuids_key = _REINDEX_UUIDS_KEY.format(user_id=user_id)
+        progress_key = f"task_progress:reindex:{user_id}"
+        redis.delete(state_key, uuids_key, progress_key)
+    except Exception as e:
+        logger.warning(f"Could not clear stale reindex state: {e}")
+
+
+def _send_reindex_progress(redis_client: Any, user_id: int, tracker: Any | None = None) -> None:
+    """Read global progress from Redis and send a WebSocket notification.
+
+    Uses ProgressTracker for EWMA-smoothed ETA when available.
+    """
     state = redis_client.hgetall(_REINDEX_STATE_KEY.format(user_id=user_id))
     if not state:
         return
     indexed = int(state.get(b"indexed", state.get("indexed", 0)))
     total = int(state.get(b"total", state.get("total", 0)))
     failed = int(state.get(b"failed", state.get("failed", 0)))
-    progress_pct = int((indexed / total) * 100) if total > 0 else 0
+
+    # Use ProgressTracker for EWMA ETA if available
+    eta_seconds = None
+    message = f"Indexed {indexed} of {total} files"
+    if tracker is not None:
+        from app.services.progress_tracker import emit_progress_notification
+
+        emit_progress_notification(
+            tracker,
+            processed=indexed,
+            user_id=user_id,
+            notification_type=NOTIFICATION_TYPE_REINDEX_PROGRESS,
+            message=message,
+            extra_data={
+                "indexed_files": indexed,
+                "total_files": total,
+                "failed_files": failed,
+            },
+        )
+        return
+
+    # Fallback: send without ETA
+    progress_frac = round(indexed / total, 4) if total > 0 else 0
     send_ws_event(
         user_id,
         NOTIFICATION_TYPE_REINDEX_PROGRESS,
@@ -365,8 +407,9 @@ def _send_reindex_progress(redis_client: Any, user_id: int) -> None:
             "indexed_files": indexed,
             "total_files": total,
             "failed_files": failed,
-            "progress": progress_pct,
-            "message": f"Indexed {indexed} of {total} files",
+            "progress": progress_frac,
+            "eta_seconds": eta_seconds,
+            "message": message,
         },
     )
 
@@ -401,22 +444,45 @@ def reindex_transcripts_task(
 
     task_id = self.request.id
     logger.info(f"Re-index coordinator {task_id} started for user {user_id}")
+
+    # Prevent concurrent reindex runs for the same user
+    redis_lock = get_redis()
+    lock_key = f"reindex_lock:{user_id}"
+    if not redis_lock.set(lock_key, task_id, nx=True, ex=3600):
+        logger.warning(f"Reindex already running for user {user_id}, skipping")
+        return {"status": "skipped", "message": "Reindex already in progress"}
+
     _clear_cancellation_flag(user_id)
+
+    # Clear stale progress state from any previous run (failed or completed)
+    _clear_stale_progress(user_id)
 
     if model_id:
         error = _handle_model_switch(model_id)
         if error:
             return error
 
-    # Ensure neural pipeline is ready if enabled
-    use_neural = _ensure_neural_pipeline_ready()
-    if use_neural:
-        logger.info("Reindex will use neural embedding mode")
-    else:
-        logger.warning("Neural embedding not available - reindex may not generate embeddings")
-
     # Recreate stale index if schema version has changed
     _check_and_recreate_stale_index()
+
+    # Reconcile index dimension with settings (handles model switch via API
+    # where model_id is not passed to this task but is already saved to DB)
+    try:
+        from app.services.search.indexing_service import recreate_index_for_dimension
+        from app.services.search.settings_service import get_search_embedding_dimension
+
+        target_dim = get_search_embedding_dimension()
+        recreate_index_for_dimension(target_dim)
+    except Exception as e:
+        logger.warning(f"Dimension reconciliation failed: {e}")
+
+    # Ensure neural pipeline is ready AFTER index/dimension are reconciled,
+    # so concurrent embedding queue tasks also use the correct model
+    use_neural = _ensure_neural_pipeline_ready()
+    if use_neural:
+        logger.info("Reindex will use OpenSearch neural embedding (CPU path)")
+    else:
+        logger.warning("No embedding available - reindex will be text-only (BM25)")
 
     try:
         # Snapshot file IDs
@@ -461,6 +527,8 @@ def reindex_transcripts_task(
                 "chunks": 0,
                 "workers_done": 0,
                 "worker_count": worker_count,
+                "mode": "cpu",
+                "partial": "1" if file_uuids else "0",
             },
         )
         redis.expire(state_key, 86400)  # 24h TTL
@@ -470,7 +538,6 @@ def reindex_transcripts_task(
         for i, file_id in enumerate(all_file_ids):
             partitions[i % worker_count].append(file_id)
 
-        # Dispatch batch workers (skip empty partitions)
         dispatched = 0
         for partition in partitions:
             if partition:
@@ -485,15 +552,24 @@ def reindex_transcripts_task(
             redis.hset(state_key, "worker_count", dispatched)
 
         logger.info(
-            f"Re-index coordinator dispatched {dispatched} workers "
+            f"Re-index coordinator dispatched {dispatched} cpu workers "
             f"for {total_files} files (user {user_id})"
         )
-        return {"status": "dispatched", "total_files": total_files, "workers": dispatched}
+        return {
+            "status": "dispatched",
+            "total_files": total_files,
+            "workers": dispatched,
+            "mode": "cpu",
+        }
 
     except Exception as e:
         logger.error(f"Re-index coordinator failed: {e}")
         with contextlib.suppress(Exception):
             _restore_normal_mode()
+        with contextlib.suppress(Exception):
+            _clear_stale_progress(user_id)
+        with contextlib.suppress(Exception):
+            get_redis().delete(f"reindex_lock:{user_id}")
         return {"error": str(e)}
 
 
@@ -509,12 +585,22 @@ def reindex_batch_task(
     """
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
+    from app.services.progress_tracker import ProgressTracker
     from app.services.search.indexing_service import TranscriptIndexingService
 
     indexing_service = TranscriptIndexingService()
     redis = get_redis()
     state_key = _REINDEX_STATE_KEY.format(user_id=user_id)
     uuids_key = _REINDEX_UUIDS_KEY.format(user_id=user_id)
+
+    # Resume ProgressTracker from coordinator state for EWMA ETA
+    total = int(redis.hget(state_key, "total") or len(file_ids))
+    tracker = ProgressTracker(task_type="reindex", user_id=user_id, total=total)
+    existing_state = ProgressTracker.get_state("reindex", user_id)
+    if existing_state:
+        tracker.resume_from_state(existing_state)
+    else:
+        tracker.start(message="Re-indexing...")
 
     local_stats = {"indexed": 0, "failed": 0, "skipped": 0, "chunks": 0}
     cancelled = False
@@ -542,6 +628,9 @@ def reindex_batch_task(
                     metadata = _extract_file_metadata(db, media_file)
                     if metadata is None:
                         local_stats["skipped"] += 1
+                        redis.hincrby(state_key, "indexed", 1)
+                        redis.hincrby(state_key, "skipped", 1)
+                        _send_reindex_progress(redis, user_id, tracker)
                         continue
 
                     chunk_count = indexing_service.reindex_transcript(
@@ -571,17 +660,13 @@ def reindex_batch_task(
                     redis.hincrby(state_key, "indexed", 1)
                     redis.hincrby(state_key, "chunks", chunk_count)
 
-                    # Send progress notification
-                    _send_reindex_progress(redis, user_id)
+                    # Send progress notification with EWMA ETA
+                    _send_reindex_progress(redis, user_id, tracker)
 
                 except Exception as e:
                     logger.error(f"Error re-indexing file {file_uuid}: {e}")
                     local_stats["failed"] += 1
                     redis.hincrby(state_key, "failed", 1)
-
-    # Update skipped count
-    if local_stats["skipped"]:
-        redis.hincrby(state_key, "skipped", local_stats["skipped"])
 
     # Mark this worker as done
     workers_done = redis.hincrby(state_key, "workers_done", 1)
@@ -602,44 +687,74 @@ def _handle_reindex_completion(
     _refresh_index_and_clear_cache()
     _force_merge_after_reindex()
 
-    # Orphan cleanup
-    indexed_uuids = redis_client.smembers(uuids_key)
-    if indexed_uuids:
-        # Redis returns bytes or strings depending on decode_responses
-        uuid_set = {u.decode() if isinstance(u, bytes) else u for u in indexed_uuids}
-        orphan_cleaned = _cleanup_orphaned_chunks(user_id, uuid_set)
-        if orphan_cleaned > 0:
-            logger.info(f"Cleaned {orphan_cleaned} orphaned chunks for user {user_id}")
+    # Orphan cleanup — only safe for FULL reindex (all files).
+    # For partial reindex (specific file_uuids), the indexed set is incomplete
+    # and orphan detection would incorrectly delete existing chunks.
+    state = redis_client.hgetall(state_key)
+    is_partial = state.get(b"partial", state.get("partial", b"0")) in (b"1", "1")
+
+    if not is_partial:
+        indexed_uuids = redis_client.smembers(uuids_key)
+        if indexed_uuids:
+            uuid_set = {u.decode() if isinstance(u, bytes) else u for u in indexed_uuids}
+            orphan_cleaned = _cleanup_orphaned_chunks(user_id, uuid_set)
+            if orphan_cleaned > 0:
+                logger.info(f"Cleaned {orphan_cleaned} orphaned chunks for user {user_id}")
+    else:
+        logger.info(f"Skipping orphan cleanup for partial reindex (user {user_id})")
 
     # Read final stats
     state = redis_client.hgetall(state_key)
-    indexed = int(state.get(b"indexed", state.get("indexed", 0)))
-    total = int(state.get(b"total", state.get("total", 0)))
-    failed = int(state.get(b"failed", state.get("failed", 0)))
-    chunks = int(state.get(b"chunks", state.get("chunks", 0)))
 
-    # Complete progress tracker
+    def _state_int(key: str) -> int:
+        return int(state.get(key.encode(), state.get(key, 0)))
+
+    indexed = _state_int("indexed")
+    total = _state_int("total")
+    failed = _state_int("failed")
+    chunks = _state_int("chunks")
+    mode = state.get(b"mode", state.get("mode", b"cpu"))
+    if isinstance(mode, bytes):
+        mode = mode.decode()
+
+    # Send a final 100% progress notification so the UI doesn't jump from e.g. 79% to complete
+    effective_total = max(total, indexed, 1)
+    send_ws_event(
+        user_id,
+        NOTIFICATION_TYPE_REINDEX_PROGRESS,
+        {
+            "indexed_files": effective_total,
+            "total_files": effective_total,
+            "failed_files": failed,
+            "progress": 1.0,
+            "eta_seconds": None,
+            "message": "Re-indexing complete",
+        },
+    )
+
+    # Complete progress tracker (use max to guard against stale/empty hash)
     with contextlib.suppress(Exception):
         from app.services.progress_tracker import ProgressTracker
 
-        tracker = ProgressTracker(task_type="reindex", user_id=user_id, total=total)
+        tracker = ProgressTracker(task_type="reindex", user_id=user_id, total=effective_total)
         tracker.complete(message="Re-indexing complete")
 
     # Send completion notification
-    stats = {
+    stats: dict[str, Any] = {
         "total_files": total,
         "indexed_files": indexed,
         "failed_files": failed,
         "total_chunks": chunks,
+        "mode": mode,
     }
     send_ws_event(user_id, NOTIFICATION_TYPE_REINDEX_COMPLETE, {"stats": stats})
 
-    # Cleanup Redis keys
-    redis_client.delete(state_key, uuids_key)
+    # Cleanup Redis keys (including reindex lock)
+    redis_client.delete(state_key, uuids_key, f"reindex_lock:{user_id}")
     _clear_cancellation_flag(user_id)
 
     logger.info(
-        f"Re-index complete for user {user_id}: "
+        f"Re-index complete for user {user_id} ({mode}): "
         f"{indexed}/{total} files, {chunks} chunks, {failed} failures"
     )
 

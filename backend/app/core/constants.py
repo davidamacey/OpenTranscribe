@@ -271,6 +271,10 @@ NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE = "combined_speaker_migration_comp
 NOTIFICATION_TYPE_DATA_INTEGRITY_PROGRESS = "data_integrity_progress"
 NOTIFICATION_TYPE_DATA_INTEGRITY_COMPLETE = "data_integrity_complete"
 
+# Embedding consistency / self-healing notification types
+NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_PROGRESS = "embedding_consistency_progress"
+NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_COMPLETE = "embedding_consistency_complete"
+
 # Progress tracking intervals
 PROGRESS_UPDATE_INTERVAL = 1000  # milliseconds
 DOWNLOAD_CHECK_INTERVAL = 1000  # milliseconds

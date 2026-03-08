@@ -149,6 +149,40 @@ async def batch_extract_topics(
     return result
 
 
+@router.get("/retroactive-auto-label/status")
+async def get_retroactive_auto_label_status(
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """Get the current auto-label retroactive apply progress."""
+    from app.core.redis import get_redis
+
+    redis = get_redis()
+    user_id = int(current_user.id)
+    lock_key = f"auto_label_lock:{user_id}"
+    progress_key = f"auto_label_progress:{user_id}"
+
+    running = redis.exists(lock_key)
+    if not running:
+        return {"running": False}
+
+    raw = redis.hgetall(progress_key)
+    if not raw:
+        return {"running": True, "total": 0, "processed": 0}
+
+    total = int(raw.get(b"total", raw.get("total", 0)))
+    processed = int(raw.get(b"processed", raw.get("processed", 0)))
+    return {
+        "running": True,
+        "total": total,
+        "processed": processed,
+        "tags_applied": int(raw.get(b"tags_applied", raw.get("tags_applied", 0))),
+        "collections_applied": int(
+            raw.get(b"collections_applied", raw.get("collections_applied", 0))
+        ),
+        "errors": int(raw.get(b"errors", raw.get("errors", 0))),
+    }
+
+
 @router.post("/retroactive-auto-label", status_code=status.HTTP_202_ACCEPTED)
 async def retroactive_auto_label(
     request_data: RetroactiveAutoLabelRequest = Body(default=RetroactiveAutoLabelRequest()),

@@ -19,6 +19,7 @@
   import SearchSettings from '$components/settings/SearchSettings.svelte';
   import GroupsSettings from '$components/settings/GroupsSettings.svelte';
   import DataIntegritySettings from '$components/settings/DataIntegritySettings.svelte';
+  import EmbeddingConsistencySettings from '$components/settings/EmbeddingConsistencySettings.svelte';
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
@@ -142,7 +143,6 @@
         items: [
           { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' },
           ...(isSuperAdmin ? [
-            { id: 'account-status' as SettingsSection, label: $t('settings.accountStatus.navLabel'), icon: 'users' },
             { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' },
             { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list' }
           ] : [])
@@ -151,7 +151,6 @@
       {
         title: $t('settings.sections.systemManagement'),
         items: [
-          { id: 'admin-settings' as SettingsSection, label: $t('settings.systemSettings.title'), icon: 'settings' },
           { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
           { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
           { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
@@ -164,8 +163,6 @@
       title: $t('settings.sections.account'),
       items: [
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
-        { id: 'security' as SettingsSection, label: $t('settings.security.title'), icon: 'shield' },
-        { id: 'language' as SettingsSection, label: $t('settings.language.title'), icon: 'globe' },
         { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group' }
       ]
     },
@@ -826,183 +823,178 @@
               <h3 class="section-title">{$t('settings.profile.title')}</h3>
               <p class="section-description">{$t('settings.profile.description')}</p>
 
-              <form on:submit|preventDefault={updateProfile} class="settings-form">
-                <div class="form-group">
-                  <label for="email">{$t('auth.email')}</label>
-                  <input
-                    type="email"
-                    id="email"
-                    class="form-control"
-                    value={email}
-                    disabled
-                  />
-                  <small class="form-text">{$t('settings.profile.emailCannotChange')}</small>
+              <div class="profile-grid">
+                <!-- Left Column: Profile Info + Language -->
+                <div class="profile-card">
+                  <h4 class="card-title">{$t('settings.profile.accountInfo')}</h4>
+                  <form on:submit|preventDefault={updateProfile} class="settings-form">
+                    <div class="form-group">
+                      <label for="email">{$t('auth.email')}</label>
+                      <input
+                        type="email"
+                        id="email"
+                        class="form-control"
+                        value={email}
+                        disabled
+                      />
+                      <small class="form-text">{$t('settings.profile.emailCannotChange')}</small>
+                    </div>
+
+                    <div class="form-group">
+                      <label for="fullName">{$t('settings.profile.fullName')}</label>
+                      <input
+                        type="text"
+                        id="fullName"
+                        class="form-control"
+                        bind:value={fullName}
+                        required
+                      />
+                    </div>
+
+                    <div class="form-actions">
+                      <button
+                        type="submit"
+                        class="btn btn-primary"
+                        disabled={!profileChanged || profileLoading}
+                      >
+                        {profileLoading ? $t('common.saving') : $t('common.saveChanges')}
+                      </button>
+                    </div>
+                  </form>
+
+                  <div class="card-divider"></div>
+                  <LanguageSettings />
                 </div>
 
-                <div class="form-group">
-                  <label for="fullName">{$t('settings.profile.fullName')}</label>
-                  <input
-                    type="text"
-                    id="fullName"
-                    class="form-control"
-                    bind:value={fullName}
-                    required
-                  />
-                </div>
+                <!-- Right Column: Password Change -->
+                {#if isLocalUser}
+                <div class="profile-card">
+                  <h4 class="card-title">{$t('settings.profile.changePassword')}</h4>
+                  <form on:submit|preventDefault={updatePassword} class="settings-form">
+                    <div class="form-group">
+                      <div class="password-header">
+                        <label for="currentPassword">{$t('settings.profile.currentPassword')}</label>
+                        <button
+                          type="button"
+                          class="toggle-password"
+                          on:click={() => showCurrentPassword = !showCurrentPassword}
+                          tabindex="-1"
+                          aria-label={showCurrentPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+                        >
+                          {#if showCurrentPassword}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                              <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          {:else}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="m15 18-.722-3.25"/>
+                              <path d="m2 2 20 20"/>
+                              <path d="m9 9-.637 3.181"/>
+                              <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                              <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                              <path d="m18.147 8.476.853 3.524"/>
+                            </svg>
+                          {/if}
+                        </button>
+                      </div>
+                      <input
+                        type={showCurrentPassword ? 'text' : 'password'}
+                        id="currentPassword"
+                        class="form-control"
+                        bind:value={currentPassword}
+                      />
+                    </div>
 
-                <div class="form-actions">
-                  <button
-                    type="submit"
-                    class="btn btn-primary"
-                    disabled={!profileChanged || profileLoading}
-                  >
-                    {profileLoading ? $t('common.saving') : $t('common.saveChanges')}
-                  </button>
-                </div>
-              </form>
+                    <div class="form-group">
+                      <div class="password-header">
+                        <label for="newPassword">{$t('settings.profile.newPassword')}</label>
+                        <button
+                          type="button"
+                          class="toggle-password"
+                          on:click={() => showNewPassword = !showNewPassword}
+                          tabindex="-1"
+                          aria-label={showNewPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+                        >
+                          {#if showNewPassword}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                              <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          {:else}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="m15 18-.722-3.25"/>
+                              <path d="m2 2 20 20"/>
+                              <path d="m9 9-.637 3.181"/>
+                              <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                              <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                              <path d="m18.147 8.476.853 3.524"/>
+                            </svg>
+                          {/if}
+                        </button>
+                      </div>
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        id="newPassword"
+                        class="form-control"
+                        bind:value={newPassword}
+                      />
+                      <small class="form-text">{$t('auth.passwordMinLength')}</small>
+                    </div>
 
-              <!-- Password Change Section -->
-              {#if isLocalUser}
-              <div class="password-section-divider">
-                <h4 class="subsection-title">{$t('settings.profile.changePassword')}</h4>
+                    <div class="form-group">
+                      <div class="password-header">
+                        <label for="confirmPassword">{$t('settings.profile.confirmNewPassword')}</label>
+                        <button
+                          type="button"
+                          class="toggle-password"
+                          on:click={() => showConfirmPassword = !showConfirmPassword}
+                          tabindex="-1"
+                          aria-label={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+                        >
+                          {#if showConfirmPassword}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                              <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          {:else}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="m15 18-.722-3.25"/>
+                              <path d="m2 2 20 20"/>
+                              <path d="m9 9-.637 3.181"/>
+                              <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                              <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                              <path d="m18.147 8.476.853 3.524"/>
+                            </svg>
+                          {/if}
+                        </button>
+                      </div>
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        id="confirmPassword"
+                        class="form-control"
+                        bind:value={confirmPassword}
+                      />
+                    </div>
+
+                    <div class="form-actions">
+                      <button
+                        type="submit"
+                        class="btn btn-primary"
+                        disabled={!passwordChanged || passwordLoading}
+                      >
+                        {passwordLoading ? $t('common.updating') : $t('settings.profile.updatePassword')}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+                {/if}
               </div>
 
-              <form on:submit|preventDefault={updatePassword} class="settings-form">
-                <div class="form-group">
-                  <div class="password-header">
-                    <label for="currentPassword">{$t('settings.profile.currentPassword')}</label>
-                    <button
-                      type="button"
-                      class="toggle-password"
-                      on:click={() => showCurrentPassword = !showCurrentPassword}
-                      tabindex="-1"
-                      aria-label={showCurrentPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-                    >
-                      {#if showCurrentPassword}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                          <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                      {:else}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="m15 18-.722-3.25"/>
-                          <path d="m2 2 20 20"/>
-                          <path d="m9 9-.637 3.181"/>
-                          <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
-                          <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
-                          <path d="m18.147 8.476.853 3.524"/>
-                        </svg>
-                      {/if}
-                    </button>
-                  </div>
-                  <input
-                    type={showCurrentPassword ? 'text' : 'password'}
-                    id="currentPassword"
-                    class="form-control"
-                    bind:value={currentPassword}
-                  />
-                </div>
-
-                <div class="form-group">
-                  <div class="password-header">
-                    <label for="newPassword">{$t('settings.profile.newPassword')}</label>
-                    <button
-                      type="button"
-                      class="toggle-password"
-                      on:click={() => showNewPassword = !showNewPassword}
-                      tabindex="-1"
-                      aria-label={showNewPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-                    >
-                      {#if showNewPassword}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                          <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                      {:else}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="m15 18-.722-3.25"/>
-                          <path d="m2 2 20 20"/>
-                          <path d="m9 9-.637 3.181"/>
-                          <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
-                          <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
-                          <path d="m18.147 8.476.853 3.524"/>
-                        </svg>
-                      {/if}
-                    </button>
-                  </div>
-                  <input
-                    type={showNewPassword ? 'text' : 'password'}
-                    id="newPassword"
-                    class="form-control"
-                    bind:value={newPassword}
-                  />
-                  <small class="form-text">{$t('auth.passwordMinLength')}</small>
-                </div>
-
-                <div class="form-group">
-                  <div class="password-header">
-                    <label for="confirmPassword">{$t('settings.profile.confirmNewPassword')}</label>
-                    <button
-                      type="button"
-                      class="toggle-password"
-                      on:click={() => showConfirmPassword = !showConfirmPassword}
-                      tabindex="-1"
-                      aria-label={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-                    >
-                      {#if showConfirmPassword}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                          <circle cx="12" cy="12" r="3"/>
-                        </svg>
-                      {:else}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="m15 18-.722-3.25"/>
-                          <path d="m2 2 20 20"/>
-                          <path d="m9 9-.637 3.181"/>
-                          <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
-                          <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
-                          <path d="m18.147 8.476.853 3.524"/>
-                        </svg>
-                      {/if}
-                    </button>
-                  </div>
-                  <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    id="confirmPassword"
-                    class="form-control"
-                    bind:value={confirmPassword}
-                  />
-                </div>
-
-                <div class="form-actions">
-                  <button
-                    type="submit"
-                    class="btn btn-primary"
-                    disabled={!passwordChanged || passwordLoading}
-                  >
-                    {passwordLoading ? $t('common.updating') : $t('settings.profile.updatePassword')}
-                  </button>
-                </div>
-              </form>
-              {/if}
-            </div>
-          {/if}
-
-          <!-- Security Settings Section -->
-          {#if activeSection === 'security'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.security.title')}</h3>
-              <p class="section-description">{$t('settings.security.description')}</p>
-              <SecuritySettings />
-            </div>
-          {/if}
-
-          <!-- Language Settings Section -->
-          {#if activeSection === 'language'}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.language.title')}</h3>
-              <p class="section-description">{$t('settings.language.description')}</p>
-              <LanguageSettings />
+              <!-- Security / MFA Section — full width below -->
+              <div class="mfa-card">
+                <SecuritySettings />
+              </div>
             </div>
           {/if}
 
@@ -1150,7 +1142,7 @@
           <!-- ASR Provider Section -->
           {#if activeSection === 'asr-provider'}
             <div class="content-section">
-              <h3 class="section-title">{$t('settings.asrProvider.title')}</h3>
+              <h3 class="section-title">{$t('settings.asrProvider.sectionTitle')}</h3>
               <p class="section-description">{$t('settings.asrProvider.description')}</p>
               <ASRSettings />
             </div>
@@ -1186,6 +1178,9 @@
             <div class="content-section">
               <h3 class="section-title">{$t('settings.users.title')}</h3>
               <p class="section-description">{$t('settings.users.description')}</p>
+              {#if isSuperAdmin}
+                <AccountStatusDashboard />
+              {/if}
               <UserManagementTable
                 {users}
                 loading={usersLoading}
@@ -1512,6 +1507,11 @@
                 </button>
               </div>
 
+              <!-- Retry Settings (task retry configuration) -->
+              <div class="settings-subsection">
+                <RetrySettings />
+              </div>
+
               {#if taskHealthLoading}
                 <div class="loading-state">
                   <div class="spinner"></div>
@@ -1614,23 +1614,13 @@
             </div>
           {/if}
 
-          <!-- Admin System Settings Section -->
-          {#if activeSection === 'admin-settings' && isAdmin}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.systemSettings.title')}</h3>
-              <p class="section-description">{$t('settings.systemSettings.description')}</p>
-
-              <!-- Retry Settings -->
-              <div class="settings-subsection">
-                <RetrySettings />
-              </div>
-            </div>
-          {/if}
+          <!-- Admin System Settings: removed (retry config moved to task health) -->
 
           <!-- Embedding Migration Section -->
           {#if activeSection === 'embedding-migration' && isAdmin}
             <div class="content-section">
               <EmbeddingMigrationSettings />
+              <EmbeddingConsistencySettings />
             </div>
           {/if}
 
@@ -1657,14 +1647,6 @@
             </div>
           {/if}
 
-          <!-- Account Status Dashboard (Super Admin only) -->
-          {#if activeSection === 'account-status' && isSuperAdmin}
-            <div class="content-section">
-              <h3 class="section-title">{$t('settings.accountStatus.sectionTitle')}</h3>
-              <p class="section-description">{$t('settings.accountStatus.sectionDescription')}</p>
-              <AccountStatusDashboard />
-            </div>
-          {/if}
 
           <!-- Audit Log Viewer (Super Admin only) -->
           {#if activeSection === 'audit-logs' && isSuperAdmin}
@@ -1907,6 +1889,45 @@
     font-weight: 600;
     margin: 0 0 1rem 0;
     color: var(--text-color);
+  }
+
+  .profile-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  @media (max-width: 700px) {
+    .profile-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .profile-card {
+    padding: 1rem;
+    border-radius: 10px;
+    background: var(--surface-color, #333);
+    border: 1px solid var(--border-color, #444);
+  }
+
+  .card-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem 0;
+    color: var(--text-color);
+  }
+
+  .card-divider {
+    border-top: 1px solid var(--border-color, #444);
+    margin: 1rem 0;
+  }
+
+  .mfa-card {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 10px;
+    background: var(--surface-color, #333);
+    border: 1px solid var(--border-color, #444);
   }
 
   .settings-form {

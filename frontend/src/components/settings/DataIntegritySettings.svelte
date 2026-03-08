@@ -11,6 +11,29 @@
   let error = '';
   let lastRun: { timestamp: number; results: any; duration_seconds: number } | null = null;
 
+  // Index overview
+  interface IndexEntry {
+    name: string;
+    label: string;
+    exists: boolean;
+    total?: number;
+    breakdown?: Record<string, number>;
+  }
+  interface IndexOverview {
+    indices: IndexEntry[];
+    pg_stats?: { active_files: number; completed_files: number; speakers: number };
+  }
+  let indexOverview: IndexOverview | null = null;
+
+  // Map breakdown keys to i18n keys
+  const breakdownLabels: Record<string, string> = {
+    speakers: 'settings.dataIntegrity.docSpeakers',
+    profiles: 'settings.dataIntegrity.docProfiles',
+    clusters: 'settings.dataIntegrity.docClusters',
+    metadata: 'settings.dataIntegrity.docMetadata',
+    chunks: 'settings.dataIntegrity.docChunks',
+  };
+
   // Progress tracking
   let currentIndex = '';
   let processedIndices = 0;
@@ -74,6 +97,7 @@
       const data = await response.json();
       running = data.running || false;
       lastRun = data.last_run || null;
+      indexOverview = data.index_overview || null;
     } catch (err) {
       console.error('Failed to load data integrity status:', err);
       error = $t('settings.dataIntegrity.loadFailed');
@@ -192,6 +216,55 @@
           />
         {/if}
       </div>
+
+      <!-- Index Overview -->
+      {#if indexOverview && !loading}
+        <div class="overview-section">
+          <h4 class="overview-title">{$t('settings.dataIntegrity.indexOverview')}</h4>
+          {#if indexOverview.pg_stats}
+            <div class="pg-stats">
+              <span>{$t('settings.dataIntegrity.pgFiles', { active: indexOverview.pg_stats.active_files, completed: indexOverview.pg_stats.completed_files })}</span>
+              <span class="sep">&bull;</span>
+              <span>{$t('settings.dataIntegrity.pgSpeakers', { count: indexOverview.pg_stats.speakers })}</span>
+            </div>
+          {/if}
+          <div class="overview-grid">
+            {#each indexOverview.indices as idx}
+              <div class="index-card" class:missing={!idx.exists}>
+                <div class="index-header">
+                  <span class="index-label">{idx.label}</span>
+                  <span class="index-name">{idx.name}</span>
+                </div>
+                {#if !idx.exists}
+                  <div class="index-body empty">
+                    {$t('settings.dataIntegrity.indexNotCreated')}
+                  </div>
+                {:else if idx.breakdown && Object.keys(idx.breakdown).length > 0}
+                  <div class="index-body">
+                    {#each Object.entries(idx.breakdown) as [key, count], i}
+                      <div class="breakdown-row" class:muted={i > 0}>
+                        <span>{$t(breakdownLabels[key] || key)}</span>
+                        <span class="breakdown-val">{count}</span>
+                      </div>
+                    {/each}
+                    <div class="breakdown-total">
+                      <span>{$t('settings.dataIntegrity.docTotal')}</span>
+                      <span class="breakdown-val">{idx.total}</span>
+                    </div>
+                  </div>
+                {:else}
+                  <div class="index-body">
+                    <div class="breakdown-total solo">
+                      <span>{$t('settings.dataIntegrity.docTotal')}</span>
+                      <span class="breakdown-val">{idx.total ?? 0}</span>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <!-- Action Box -->
       <div class="action-box" class:running>
@@ -350,6 +423,111 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 1rem;
+  }
+
+  .overview-section {
+    margin-bottom: 1rem;
+  }
+
+  .overview-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: var(--text-color);
+  }
+
+  .pg-stats {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .pg-stats .sep {
+    opacity: 0.4;
+  }
+
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.5rem;
+  }
+
+  .index-card {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .index-card.missing {
+    opacity: 0.5;
+  }
+
+  .index-header {
+    padding: 0.5rem 0.625rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .index-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .index-name {
+    font-size: 0.65rem;
+    font-family: monospace;
+    color: var(--text-muted);
+  }
+
+  .index-body {
+    padding: 0.375rem 0.625rem;
+    font-size: 0.75rem;
+  }
+
+  .index-body.empty {
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 0.5rem 0.625rem;
+  }
+
+  .breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.125rem 0;
+    color: var(--text-secondary);
+  }
+
+  .breakdown-row.muted {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+  }
+
+  .breakdown-val {
+    font-weight: 600;
+    font-family: monospace;
+  }
+
+  .breakdown-total {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0 0.125rem;
+    margin-top: 0.125rem;
+    border-top: 1px solid var(--border-color);
+    font-weight: 600;
+    color: var(--text-color);
+    font-size: 0.75rem;
+  }
+
+  .breakdown-total.solo {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
   }
 
   .action-box {

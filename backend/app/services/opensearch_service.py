@@ -1054,6 +1054,27 @@ def add_speaker_embedding(
         return response
 
     except Exception as e:
+        # Retry once for transient connection errors before falling through
+        # to the index corruption check below
+        if isinstance(e, (ConnectionError, OSError)):
+            logger.warning(f"Transient error indexing speaker {speaker_uuid}, retrying once: {e}")
+            import time as _time
+
+            _time.sleep(0.5)
+            try:
+                response = opensearch_client.index(
+                    index=settings.OPENSEARCH_SPEAKER_INDEX,
+                    body=doc,
+                    id=str(speaker_uuid),
+                )
+                logger.info(
+                    f"Retry succeeded: indexed speaker {speaker_uuid} after transient error"
+                )
+                return response
+            except Exception as retry_err:
+                logger.error(f"Retry failed for speaker {speaker_uuid}: {retry_err}")
+                # Fall through to index corruption check with the retry error
+                e = retry_err
         if _is_index_corruption_error(e):
             logger.warning(
                 f"Index corruption detected indexing speaker {speaker_uuid}, attempting repair..."

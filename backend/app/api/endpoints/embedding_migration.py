@@ -111,6 +111,14 @@ async def get_migration_status(
                 status["stalled"] = True
                 status["stalled_info"] = ground_truth
 
+        # Include consistency status (Redis reads only — near zero cost)
+        try:
+            from app.tasks.speaker_embedding_consistency import get_embedding_consistency_status
+
+            status["consistency_status"] = get_embedding_consistency_status()
+        except Exception:
+            status["consistency_status"] = None
+
         return status
 
     except Exception as e:
@@ -255,6 +263,32 @@ async def stop_migration(
                 logger.info("Revoked %d embedding migration batch tasks", len(batch_ids))
         except Exception as e:
             logger.warning("Failed to revoke batch tasks: %s", e)
+
+        # Clear ProgressTracker so queue status clears immediately
+        try:
+            from app.services.progress_tracker import ProgressTracker
+
+            tracker = ProgressTracker(
+                task_type="migration",
+                user_id=current_user.id,
+                total=0,
+            )
+            tracker.complete(message="Stopped by user")
+        except Exception as e:
+            logger.warning("Failed to clear progress tracker: %s", e)
+
+        # Notify frontend via WebSocket
+        try:
+            from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
+            from app.utils.websocket_notify import send_ws_event
+
+            send_ws_event(
+                current_user.id,
+                NOTIFICATION_TYPE_MIGRATION_COMPLETE,
+                {"status": "stopped", "message": "Migration stopped by user"},
+            )
+        except Exception as e:
+            logger.warning("Failed to send stop WS event: %s", e)
 
         if success:
             logger.warning("Migration force stopped by user")

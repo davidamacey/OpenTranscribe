@@ -377,3 +377,22 @@ def process_batch_pipelined(
                 on_file_failure(fuuid, e)
 
     return success, failed
+
+
+def cleanup_gpu_memory() -> None:
+    """Release cached CUDA/MPS memory so follow-on tasks don't OOM.
+
+    Call this at the end of GPU batch tasks to free intermediate tensors.
+    Does NOT unload warm-cached models — only frees PyTorch allocator caches.
+    """
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+    except Exception as e:
+        logger.debug("CUDA cleanup skipped: %s", e)

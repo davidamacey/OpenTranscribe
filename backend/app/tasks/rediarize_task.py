@@ -405,3 +405,8 @@ def rediarize_task(  # noqa: C901
                 shutil.rmtree(temp_dir)
             except Exception as cleanup_err:
                 logger.warning(f"Failed to clean up temp dir {temp_dir}: {cleanup_err}")
+
+        # Free intermediate CUDA tensors for follow-on tasks
+        from app.tasks.migration_pipeline import cleanup_gpu_memory
+
+        cleanup_gpu_memory()

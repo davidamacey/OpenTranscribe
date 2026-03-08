@@ -544,11 +544,11 @@ class TranscriptIndexingService:
         collection_ids: list[int] | None = None,
         accessible_user_ids: list[int] | None = None,
     ) -> dict[str, Any] | int:
-        """Chunk and index a transcript using OpenSearch neural search.
+        """Chunk and index a transcript.
 
-        Embeddings are generated server-side by OpenSearch via the neural
-        ingest pipeline. If neural search is not available, documents are
-        indexed without embeddings (BM25 keyword search only).
+        Embedding modes (in priority order):
+        1. Neural pipeline available — OpenSearch generates embeddings server-side
+        2. No embedding — BM25 keyword search only
 
         Args:
             file_id: Media file integer ID.
@@ -609,41 +609,33 @@ class TranscriptIndexingService:
             logger.warning(f"No chunks generated for file {file_uuid}")
             return 0
 
-        # 2. Check if neural pipeline is available for embedding generation
-        use_neural = is_neural_pipeline_available()
-
-        if use_neural:
-            # Neural mode: OpenSearch generates embeddings via ingest pipeline
-            for chunk in chunks:
-                chunk["embedding_model"] = "neural"
-            logger.debug(f"Using neural ingest pipeline for file {file_uuid}")
-        else:
-            # No neural pipeline - index without embeddings (BM25 only)
-            for chunk in chunks:
-                chunk["embedding_model"] = None
-            logger.warning(
-                f"Neural pipeline not available for file {file_uuid}, indexing text-only"
-            )
-
-        # 3. Add indexed_at timestamp and accessible_user_ids
+        # 2. Add indexed_at timestamp and accessible_user_ids
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        # Use provided access list or fall back to owner-only
         effective_user_ids = accessible_user_ids if accessible_user_ids else [user_id]
         for chunk in chunks:
             chunk["indexed_at"] = now
             chunk["accessible_user_ids"] = effective_user_ids
 
-        # 4. Bulk index to OpenSearch
+        # 3. Choose embedding mode and index
         t_index_start = time.time()
         try:
+            use_neural = is_neural_pipeline_available()
+            if use_neural:
+                for chunk in chunks:
+                    chunk["embedding_model"] = "neural"
+                logger.debug(f"Using neural ingest pipeline for file {file_uuid}")
+            else:
+                for chunk in chunks:
+                    chunk["embedding_model"] = None
+                logger.warning(f"Neural pipeline not available for {file_uuid}, text-only")
+
             indexed = self._bulk_index_chunks(chunks, use_neural_pipeline=use_neural)
             index_ms = round((time.time() - t_index_start) * 1000)
             total_ms = chunk_ms + index_ms
-
             mode_str = "neural" if use_neural else "text-only"
             logger.info(
                 f"Indexed {indexed} chunks for file {file_uuid} "
-                f"(mode: {mode_str}, chunk={chunk_ms}ms, index={index_ms}ms, total={total_ms}ms)"
+                f"(mode: {mode_str}, chunk={chunk_ms}ms, index={index_ms}ms)"
             )
             return {
                 "chunk_count": indexed,

@@ -167,10 +167,12 @@
     display: flex;
     gap: 0.5rem;
     align-items: center;
+    flex-wrap: wrap;
   }
 
   .search-input-wrapper {
     flex: 1;
+    min-width: 0;
     position: relative;
     display: flex;
     align-items: center;
@@ -185,6 +187,7 @@
 
   .search-input {
     width: 100%;
+    min-width: 120px;
     padding: 0.5rem 0.625rem 0.5rem 2rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -229,6 +232,7 @@
     font-size: 0.8125rem;
     cursor: pointer;
     flex-shrink: 0;
+    max-width: 120px;
   }
 
   .role-picker:focus {

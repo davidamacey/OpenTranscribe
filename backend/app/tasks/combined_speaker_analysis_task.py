@@ -203,6 +203,11 @@ def analyze_speakers_combined_batch_task(
             },
         )
 
+    # Free intermediate CUDA tensors for follow-on tasks
+    from app.tasks.migration_pipeline import cleanup_gpu_memory
+
+    cleanup_gpu_memory()
+
     return {"status": "success", "batch_index": batch_index}
 
 

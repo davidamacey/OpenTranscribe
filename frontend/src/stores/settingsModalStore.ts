@@ -3,8 +3,6 @@ import { writable } from 'svelte/store';
 export type SettingsSection =
   // User sections
   | 'profile'
-  | 'security'
-  | 'language'
   | 'recording'
   | 'audio-extraction'
   | 'transcription'
@@ -29,7 +27,6 @@ export type SettingsSection =
   | 'retention'
   // Super Admin sections
   | 'authentication'
-  | 'account-status'
   | 'audit-logs';
 
 interface SettingsModalState {
@@ -43,8 +40,6 @@ const initialState: SettingsModalState = {
   activeSection: 'system-statistics',
   dirtyState: {
     profile: false,
-    security: false,
-    language: false,
     recording: false,
     'audio-extraction': false,
     transcription: false,
@@ -66,7 +61,6 @@ const initialState: SettingsModalState = {
     'data-integrity': false,
     retention: false,
     authentication: false,
-    'account-status': false,
     'audit-logs': false,
   },
 };

@@ -75,22 +75,21 @@
   function handleMigrationComplete(event: CustomEvent<MigrationComplete>) {
     const data = event.detail;
     migrationInProgress = false;
-    processedFiles = data.total_files;
-    totalFiles = data.total_files;
+    processedFiles = data.total_files || 0;
+    totalFiles = data.total_files || 0;
     const completedFailedFiles = data.failed_files || [];
     failedFiles = completedFailedFiles;
 
-    // Reload full status to get updated mode, but preserve failedFiles from
-    // the WS event since Redis migration keys are cleared by this point.
+    // Reload full status to get updated mode
     loadMigrationStatus().then(() => {
-      // Restore failed files from the completion event (loadMigrationStatus
-      // overwrites with [] because Redis is already cleared at this point)
       if (completedFailedFiles.length > 0) {
         failedFiles = completedFailedFiles;
       }
     });
 
-    if (completedFailedFiles.length === 0) {
+    if (data.status === 'stopped') {
+      toastStore.info($t('settings.embeddingMigration.migrationStopped') || 'Migration stopped.');
+    } else if (completedFailedFiles.length === 0) {
       toastStore.success($t('settings.embeddingMigration.migrationComplete'));
     } else {
       toastStore.warning(
@@ -132,6 +131,11 @@
       // Estimate migration time: ~0.6s/file with pipelined multi-model extraction
       const fileCount = v3DocumentCount || 0;
       estimatedMinutes = Math.max(1, Math.ceil((fileCount * 0.6 + 60) / 60));
+
+      // Share bundled consistency status with sibling component (avoids extra API call)
+      if (data.consistency_status) {
+        window.dispatchEvent(new CustomEvent('consistency-status-loaded', { detail: data.consistency_status }));
+      }
 
       // Also fetch progress if migration might be running
       await loadMigrationProgress();
@@ -345,47 +349,48 @@
 </script>
 
 <div class="migration-settings">
-  {#if loading}
-    <div class="loading-state">
-      <div class="spinner"></div>
-      <p>{$t('settings.embeddingMigration.loading')}</p>
+  <div class="settings-section">
+    <div class="title-row">
+      <h3 class="section-title">{$t('settings.embeddingMigration.title')}</h3>
     </div>
-  {:else if error}
-    <div class="error-state">
-      <p>{error}</p>
-    </div>
-  {:else}
-    <div class="settings-section">
-      <div class="title-row">
-        <h3 class="section-title">{$t('settings.embeddingMigration.title')}</h3>
-      </div>
-      <p class="section-desc">
-        {$t('settings.embeddingMigration.description')}
-      </p>
+    <p class="section-desc">
+      {$t('settings.embeddingMigration.description')}
+    </p>
 
+    {#if error}
+      <div class="error-state">
+        <p>{error}</p>
+      </div>
+    {:else}
       <!-- Status Chips -->
       <div class="status-chips-row">
-        <StatusChip
-          label={$t('settings.embeddingMigration.chipMode')}
-          value={currentMode.toUpperCase()}
-          status={currentMode === 'v4' ? 'green' : 'yellow'}
-        />
-        <StatusChip
-          label={$t('settings.embeddingMigration.chipV3Docs')}
-          value={String(v3DocumentCount)}
-          status={v3DocumentCount > 0 && currentMode === 'v4' ? 'yellow' : 'neutral'}
-        />
-        <StatusChip
-          label={$t('settings.embeddingMigration.chipV4Docs')}
-          value={String(v4DocumentCount)}
-          status={v4DocumentCount > 0 ? 'green' : 'neutral'}
-        />
-        {#if migrationInProgress}
+        {#if loading}
+          <div class="skeleton-chip"></div>
+          <div class="skeleton-chip wide"></div>
+          <div class="skeleton-chip wide"></div>
+        {:else}
           <StatusChip
-            label={$t('settings.embeddingMigration.chipStatus')}
-            value={$t('settings.embeddingMigration.chipMigrating')}
-            status="blue"
+            label={$t('settings.embeddingMigration.chipMode')}
+            value={currentMode.toUpperCase()}
+            status={currentMode === 'v4' ? 'green' : 'yellow'}
           />
+          <StatusChip
+            label={$t('settings.embeddingMigration.chipV3Docs')}
+            value={String(v3DocumentCount)}
+            status={v3DocumentCount > 0 && currentMode === 'v4' ? 'yellow' : 'neutral'}
+          />
+          <StatusChip
+            label={$t('settings.embeddingMigration.chipV4Docs')}
+            value={String(v4DocumentCount)}
+            status={v4DocumentCount > 0 ? 'green' : 'neutral'}
+          />
+          {#if migrationInProgress}
+            <StatusChip
+              label={$t('settings.embeddingMigration.chipStatus')}
+              value={$t('settings.embeddingMigration.chipMigrating')}
+              status="blue"
+            />
+          {/if}
         {/if}
       </div>
 
@@ -579,8 +584,8 @@
           {/if}
         </div>
       {/if}
-    </div>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -588,28 +593,31 @@
     padding: 0.5rem 0;
   }
 
-  .loading-state,
   .error-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 3rem;
-    gap: 1rem;
-    color: var(--text-secondary);
-  }
-
-  .error-state {
+    padding: 1.5rem;
+    gap: 0.5rem;
     color: var(--error-color);
   }
 
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+  .skeleton-chip {
+    height: 28px;
+    width: 90px;
+    border-radius: 14px;
+    background: var(--border-color, #e5e7eb);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-chip.wide {
+    width: 110px;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
   }
 
   .spinner-small {
@@ -620,7 +628,7 @@
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     display: inline-block;
-    margin-right: 0.5rem;
+    flex-shrink: 0;
   }
 
   @keyframes spin {

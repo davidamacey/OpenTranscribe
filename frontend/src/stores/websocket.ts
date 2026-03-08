@@ -35,6 +35,8 @@ export type NotificationType =
   | 'attribute_migration_complete'
   | 'data_integrity_progress'
   | 'data_integrity_complete'
+  | 'embedding_consistency_progress'
+  | 'embedding_consistency_complete'
   | 'cache_invalidate'
   | 'collection_shared'
   | 'collection_share_revoked'
@@ -103,6 +105,8 @@ const ADMIN_TASK_PROGRESS_IDS: Record<string, string> = {
   attribute_migration_complete: 'admin_attribute_migration',
   data_integrity_progress: 'admin_data_integrity',
   data_integrity_complete: 'admin_data_integrity',
+  embedding_consistency_progress: 'admin_embedding_consistency',
+  embedding_consistency_complete: 'admin_embedding_consistency',
 };
 
 // Admin task completion types
@@ -113,6 +117,7 @@ const ADMIN_COMPLETION_TYPES = new Set([
   'clustering_complete',
   'attribute_migration_complete',
   'data_integrity_complete',
+  'embedding_consistency_complete',
 ]);
 
 // Load notifications from localStorage if available
@@ -336,6 +341,22 @@ function createWebSocketStore() {
                 );
               }
               // Fall through to progressive notification handler
+            } else if (data.type === 'embedding_consistency_progress') {
+              // Embedding consistency progress — dispatch event for EmbeddingConsistencySettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('embedding-consistency-progress', { detail: data.data })
+                );
+              }
+              // Fall through to progressive notification handler
+            } else if (data.type === 'embedding_consistency_complete') {
+              // Embedding consistency complete — dispatch event for EmbeddingConsistencySettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('embedding-consistency-complete', { detail: data.data })
+                );
+              }
+              // Fall through to progressive notification handler
             } else if (data.type === 'cache_invalidate') {
               // Push-based cache invalidation from backend
               // Invalidate the in-memory apiCache and notify listening components
@@ -542,6 +563,13 @@ function createWebSocketStore() {
                     status === 'completed'
                       ? `Checked ${proc} files`
                       : `Checked ${proc} of ${tot} files`;
+                } else if (data.type.startsWith('embedding_consistency')) {
+                  const proc = data.data.processed_files ?? 0;
+                  const tot = data.data.total_files ?? 0;
+                  currentStep =
+                    status === 'completed'
+                      ? `Repaired ${data.data.repaired ?? 0} speakers`
+                      : `Repairing ${proc} of ${tot} files`;
                 }
               }
               if (!currentStep) currentStep = 'Processing...';
@@ -843,6 +871,9 @@ function createWebSocketStore() {
       case 'data_integrity_progress':
       case 'data_integrity_complete':
         return translate('notifications.dataIntegrity');
+      case 'embedding_consistency_progress':
+      case 'embedding_consistency_complete':
+        return translate('notifications.embeddingConsistency');
       default:
         return translate('notifications.notification');
     }
@@ -960,6 +991,7 @@ function createWebSocketStore() {
         clustering: 'clustering_progress',
         auto_label: 'auto_label_status',
         data_integrity: 'data_integrity_progress',
+        embedding_consistency: 'embedding_consistency_progress',
       };
 
       for (const task of activeTasks) {
@@ -981,6 +1013,7 @@ function createWebSocketStore() {
             clustering: 'clustering-progress',
             auto_label: 'auto-label-status',
             data_integrity: 'data-integrity-progress',
+            embedding_consistency: 'embedding-consistency-progress',
           };
           const eventName = eventMap[task.task_type];
           if (eventName) {

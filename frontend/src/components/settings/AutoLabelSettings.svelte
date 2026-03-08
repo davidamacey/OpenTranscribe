@@ -14,10 +14,10 @@
   let loading = false;
   let saving = false;
   let retroactiveRunning = false;
-  let retroactiveProgress = '';
   let retroactiveProcessed = 0;
   let retroactiveTotal = 0;
   let retroactiveEtaSeconds: number | null = null;
+  let retroactiveMessage = '';
   let hasChanges = false;
 
   // Original values for change tracking
@@ -39,8 +39,12 @@
   async function loadSettings() {
     loading = true;
     try {
-      const response = await axiosInstance.get('/user-settings/auto-label');
-      const data = response.data;
+      const [settingsRes, progressRes] = await Promise.all([
+        axiosInstance.get('/user-settings/auto-label'),
+        axiosInstance.get('/files/retroactive-auto-label/status'),
+      ]);
+
+      const data = settingsRes.data;
       enabled = data.enabled ?? true;
       confidenceThreshold = data.confidence_threshold ?? 0.75;
       tagsEnabled = data.tags_enabled ?? true;
@@ -52,6 +56,14 @@
       originalTagsEnabled = tagsEnabled;
       originalCollectionsEnabled = collectionsEnabled;
       originalBulkGroupingEnabled = bulkGroupingEnabled;
+
+      // Restore progress state if a retroactive run is active
+      const progress = progressRes.data;
+      if (progress.running) {
+        retroactiveRunning = true;
+        retroactiveTotal = progress.total || 0;
+        retroactiveProcessed = progress.processed || 0;
+      }
     } catch (err) {
       console.error('[AutoLabelSettings] Error loading settings:', err);
       toastStore.error($t('autoLabel.loadFailed'));
@@ -89,17 +101,18 @@
 
   async function triggerRetroactiveApply() {
     retroactiveRunning = true;
-    retroactiveProgress = $t('autoLabel.retroactiveStarting');
+    retroactiveProcessed = 0;
+    retroactiveTotal = 0;
+    retroactiveEtaSeconds = null;
+    retroactiveMessage = '';
     try {
       await axiosInstance.post('/files/retroactive-auto-label', {});
       toastStore.success($t('autoLabel.retroactiveStarted'));
-      retroactiveProgress = $t('autoLabel.retroactiveProcessing');
       // UI state will be updated by WebSocket auto-label-status events
     } catch (err) {
       console.error('[AutoLabelSettings] Error triggering retroactive apply:', err);
       toastStore.error($t('autoLabel.retroactiveFailed'));
       retroactiveRunning = false;
-      retroactiveProgress = '';
     }
   }
 
@@ -123,23 +136,27 @@
 
     if (status === 'processing') {
       retroactiveRunning = true;
-      retroactiveProgress = message;
+      retroactiveMessage = message;
       retroactiveProcessed = detail.processed ?? retroactiveProcessed;
       retroactiveTotal = detail.total ?? retroactiveTotal;
       retroactiveEtaSeconds = detail.eta_seconds ?? null;
-    } else if (status === 'completed') {
+    } else if (status === 'completed' || status === 'stopped') {
       retroactiveRunning = false;
-      retroactiveProgress = '';
       retroactiveProcessed = 0;
       retroactiveTotal = 0;
       retroactiveEtaSeconds = null;
-      toastStore.success(message);
+      retroactiveMessage = '';
+      if (status === 'completed') {
+        toastStore.success(message);
+      } else {
+        toastStore.info(message || 'Auto-labeling stopped');
+      }
     } else if (status === 'failed') {
       retroactiveRunning = false;
-      retroactiveProgress = '';
       retroactiveProcessed = 0;
       retroactiveTotal = 0;
       retroactiveEtaSeconds = null;
+      retroactiveMessage = '';
       toastStore.error(message);
     }
   }
@@ -156,9 +173,19 @@
 
 <div class="auto-label-settings">
   {#if loading}
-    <div class="loading-state">
-      <span class="spinner"></span>
-      <span>{$t('autoLabel.loading')}</span>
+    <div class="skeleton-rows">
+      <div class="skeleton-row">
+        <div class="skeleton-text"></div>
+        <div class="skeleton-toggle"></div>
+      </div>
+      <div class="skeleton-row">
+        <div class="skeleton-text wide"></div>
+        <div class="skeleton-toggle"></div>
+      </div>
+      <div class="skeleton-row">
+        <div class="skeleton-text"></div>
+        <div class="skeleton-toggle"></div>
+      </div>
     </div>
   {:else}
     <div class="settings-group">
@@ -257,27 +284,37 @@
         on:click={triggerRetroactiveApply}
         disabled={retroactiveRunning || !enabled}
       >
-        {#if retroactiveRunning}
-          <span class="spinner small"></span>
-          {retroactiveProgress}
-        {:else}
-          {$t('autoLabel.retroactiveButton')}
-        {/if}
+        {$t('autoLabel.retroactiveButton')}
       </button>
-      {#if retroactiveRunning && retroactiveTotal > 0}
-        <div class="retroactive-progress">
-          <div class="progress-bar-container">
-            <div
-              class="progress-bar-fill"
-              style="width: {(retroactiveProcessed / retroactiveTotal) * 100}%"
-            ></div>
-          </div>
-          <span class="progress-text">
-            {Math.round((retroactiveProcessed / retroactiveTotal) * 100)}%
-            {#if formatEta(retroactiveEtaSeconds)}
-              ({formatEta(retroactiveEtaSeconds)} {$t('upload.remaining')})
-            {/if}
-          </span>
+
+      {#if retroactiveRunning}
+        <div class="progress-section">
+          {#if retroactiveTotal === 0}
+            <div class="queued-message">
+              {retroactiveMessage || $t('autoLabel.retroactiveQueued')}
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill indeterminate"></div>
+            </div>
+          {:else}
+            <div class="progress-info">
+              <span class="progress-label">
+                {retroactiveProcessed} / {retroactiveTotal}
+              </span>
+              <span class="progress-percent">
+                {Math.round((retroactiveProcessed / Math.max(retroactiveTotal, 1)) * 100)}%
+                {#if formatEta(retroactiveEtaSeconds)}
+                  ({formatEta(retroactiveEtaSeconds)} {$t('common.remaining')})
+                {/if}
+              </span>
+            </div>
+            <div class="progress-bar-container">
+              <div
+                class="progress-bar-fill"
+                style="width: {(retroactiveProcessed / Math.max(retroactiveTotal, 1)) * 100}%"
+              ></div>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -488,59 +525,100 @@
     cursor: not-allowed;
   }
 
-  .retroactive-progress {
-    margin-top: 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  /* Progress Section */
+  .progress-section {
+    margin-top: 0.75rem;
   }
 
-  .retroactive-progress .progress-bar-container {
-    flex: 1;
-    height: 6px;
-    background: var(--border-color);
-    border-radius: 3px;
+  .queued-message {
+    font-size: 0.8rem;
+    color: var(--text-secondary, #999);
+    margin-bottom: 0.5rem;
+  }
+
+  .progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .progress-label {
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .progress-percent {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .progress-bar-container {
+    height: 8px;
+    background: var(--border-color, #444);
+    border-radius: 4px;
     overflow: hidden;
   }
 
-  .retroactive-progress .progress-bar-fill {
+  .progress-bar-fill {
     height: 100%;
-    background: var(--primary-color);
-    border-radius: 3px;
+    background: var(--primary-color, #4a9eff);
+    border-radius: 4px;
     transition: width 0.3s ease;
   }
 
-  .retroactive-progress .progress-text {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
+  .progress-bar-fill.indeterminate {
+    width: 30% !important;
+    animation: indeterminate-slide 1.6s ease-in-out infinite;
   }
 
-  /* Loading State */
-  .loading-state {
+  @keyframes indeterminate-slide {
+    0% { margin-left: 0; }
+    50% { margin-left: 70%; }
+    100% { margin-left: 0; }
+  }
+
+  /* Skeleton Loading */
+  .skeleton-rows {
     display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 0.5rem 0;
+  }
+
+  .skeleton-row {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 0.5rem;
-    padding: 1rem;
-    color: var(--text-secondary);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
   }
 
-  .spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .spinner.small {
-    width: 14px;
+  .skeleton-text {
     height: 14px;
-    border-width: 2px;
+    width: 140px;
+    border-radius: 4px;
+    background: var(--border-color, #e5e7eb);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
+  .skeleton-text.wide {
+    width: 200px;
+  }
+
+  .skeleton-toggle {
+    height: 24px;
+    width: 44px;
+    border-radius: 12px;
+    background: var(--border-color, #e5e7eb);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
   }
 </style>

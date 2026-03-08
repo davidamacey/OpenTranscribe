@@ -101,11 +101,37 @@ async def stop_combined_migration(
                 from app.core.celery import celery_app
 
                 for tid in batch_ids:
-                    celery_app.control.revoke(tid, terminate=False)
+                    celery_app.control.revoke(tid, terminate=True)
                     revoked_count += 1
                 r.delete("combined_speaker_migration:batch_task_ids")
         except Exception as e:
             logger.warning("Failed to revoke batch tasks: %s", e)
+
+        # Clear ProgressTracker so queue status clears immediately
+        try:
+            from app.services.progress_tracker import ProgressTracker
+
+            tracker = ProgressTracker(
+                task_type="combined_speaker_migration",
+                user_id=current_user.id,
+                total=0,
+            )
+            tracker.complete(message="Stopped by user")
+        except Exception as e:
+            logger.warning("Failed to clear progress tracker: %s", e)
+
+        # Notify frontend via WebSocket
+        try:
+            from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE
+            from app.utils.websocket_notify import send_ws_event
+
+            send_ws_event(
+                current_user.id,
+                NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE,
+                {"status": "stopped", "message": "Migration stopped by user"},
+            )
+        except Exception as e:
+            logger.warning("Failed to send stop WS event: %s", e)
 
         if success:
             logger.warning(

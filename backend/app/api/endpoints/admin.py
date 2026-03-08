@@ -1515,10 +1515,13 @@ async def start_data_integrity_check(
 async def get_data_integrity_status(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
-    """Get data integrity check status and last run results."""
+    """Get data integrity check status, last run results, and index overview."""
+    from app.tasks.search_maintenance_task import get_index_overview
     from app.tasks.search_maintenance_task import get_integrity_status
 
-    return get_integrity_status()
+    status = get_integrity_status()
+    status["index_overview"] = get_index_overview()
+    return status
 
 
 @router.get("/data-integrity/counts")
@@ -1529,3 +1532,56 @@ async def get_data_integrity_counts(
     from app.tasks.search_maintenance_task import get_integrity_counts
 
     return get_integrity_counts()
+
+
+# ---------------------------------------------------------------------------
+# Embedding Consistency (Self-Healing) Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/embedding-consistency/status")
+async def get_embedding_consistency_status(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Get embedding consistency check status and last run results."""
+    from app.tasks.speaker_embedding_consistency import get_embedding_consistency_status
+
+    return get_embedding_consistency_status()
+
+
+@router.get("/embedding-consistency/counts")
+async def get_embedding_consistency_counts(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Quick dry-run count of speakers missing from OpenSearch indices."""
+    from app.tasks.speaker_embedding_consistency import get_embedding_consistency_counts
+
+    return get_embedding_consistency_counts()
+
+
+@router.post("/embedding-consistency/repair")
+async def start_embedding_consistency_repair(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Start an embedding consistency repair task."""
+    from app.tasks.speaker_embedding_consistency import get_embedding_consistency_status
+    from app.tasks.speaker_embedding_consistency import speaker_embedding_consistency_check_task
+
+    status_info = get_embedding_consistency_status()
+    if status_info.get("running"):
+        return {"status": "already_running"}
+
+    result = speaker_embedding_consistency_check_task.apply_async(
+        kwargs={"manual": True, "user_id": current_user.id},
+    )
+    return {"status": "started", "task_id": str(result.id)}
+
+
+@router.post("/embedding-consistency/stop")
+async def stop_embedding_consistency_repair(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Cancel a running embedding consistency repair."""
+    from app.tasks.speaker_embedding_consistency import stop_consistency_repair
+
+    return stop_consistency_repair()

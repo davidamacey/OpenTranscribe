@@ -86,18 +86,20 @@
     const data = event.detail;
     migrationInProgress = false;
     etaSeconds = null;
-    migrationProcessedFiles = data.total_files;
-    migrationTotalFiles = data.total_files;
+    migrationProcessedFiles = data.total_files || 0;
+    migrationTotalFiles = data.total_files || 0;
     migrationFailedFiles = data.failed_files || [];
 
     loadMigrationStatus(true);
 
-    if (data.failed_files.length === 0) {
+    if (data.status === 'stopped') {
+      toastStore.info($t('settings.speakerAttributes.migrationStopped') || 'Migration stopped.');
+    } else if ((data.failed_files || []).length === 0) {
       toastStore.success($t('settings.speakerAttributes.migrationComplete'));
     } else {
       toastStore.warning(
         $t('settings.speakerAttributes.migrationCompleteWithErrors', {
-          failed: data.failed_files.length
+          failed: (data.failed_files || []).length
         })
       );
     }
@@ -265,7 +267,20 @@
   <p class="section-description">{$t('settings.speakerAttributes.description')}</p>
 
   {#if loading}
-    <div class="loading-spinner">{$t('common.loading')}</div>
+    <div class="skeleton-rows">
+      <div class="skeleton-row">
+        <div class="skeleton-text wide"></div>
+        <div class="skeleton-toggle"></div>
+      </div>
+      <div class="skeleton-row sub">
+        <div class="skeleton-text"></div>
+        <div class="skeleton-toggle"></div>
+      </div>
+      <div class="skeleton-row sub">
+        <div class="skeleton-text wide"></div>
+        <div class="skeleton-toggle"></div>
+      </div>
+    </div>
   {:else}
     <div class="settings-group">
       <div class="setting-row">
@@ -356,7 +371,10 @@
       <p class="bulk-description">{$t('settings.speakerAttributes.bulkDescription')}</p>
 
       {#if loadingMigrationStatus}
-        <div class="bulk-loading">{$t('common.loading')}</div>
+        <div class="skeleton-bulk">
+          <div class="skeleton-bar"></div>
+          <div class="skeleton-btn"></div>
+        </div>
       {:else if migrationInProgress}
         <div class="progress-section">
           {#if migrationProcessedFiles === 0}
@@ -411,33 +429,30 @@
         <button class="btn btn-primary" on:click={startMigration}>
           {$t('settings.speakerAttributes.runDetection')}
         </button>
-      {:else}
+      {:else if totalFiles > 0}
         <div class="all-processed">
           {$t('settings.speakerAttributes.noFilesToProcess')}
         </div>
-      {/if}
-
-      <!-- Force Reprocess (available when not migrating) -->
-      {#if totalFiles > 0 && !migrationInProgress}
-        <div class="reextract-section">
-          {#if showForceReprocessConfirm}
-            <div class="reextract-confirm">
-              <p>{$t('settings.speakerAttributes.forceReprocessConfirm', { count: totalFiles })}</p>
-              <div class="confirm-buttons">
-                <button class="btn btn-danger" on:click={startForceMigration}>
-                  {$t('settings.speakerAttributes.forceReprocessConfirmBtn')}
-                </button>
-                <button class="btn btn-secondary" on:click={() => showForceReprocessConfirm = false}>
-                  {$t('common.cancel')}
-                </button>
-              </div>
+        {#if showForceReprocessConfirm}
+          <div class="reextract-confirm" style="margin-top: 0.75rem;">
+            <p>{$t('settings.speakerAttributes.forceReprocessConfirm', { count: totalFiles })}</p>
+            <div class="confirm-buttons">
+              <button class="btn btn-danger" on:click={startForceMigration}>
+                {$t('settings.speakerAttributes.forceReprocessConfirmBtn')}
+              </button>
+              <button class="btn btn-secondary" on:click={() => showForceReprocessConfirm = false}>
+                {$t('common.cancel')}
+              </button>
             </div>
-          {:else}
-            <button class="btn btn-secondary" on:click={() => showForceReprocessConfirm = true}>
-              {$t('settings.speakerAttributes.forceReprocess')}
-            </button>
-            <span class="reextract-hint">{$t('settings.speakerAttributes.forceReprocessHint')}</span>
-          {/if}
+          </div>
+        {:else}
+          <button class="btn btn-secondary" style="margin-top: 0.75rem;" on:click={() => showForceReprocessConfirm = true}>
+            {$t('settings.speakerAttributes.forceReprocess')}
+          </button>
+        {/if}
+      {:else}
+        <div class="all-processed">
+          {$t('settings.speakerAttributes.noFilesToProcess')}
         </div>
       {/if}
     </div>
@@ -619,10 +634,74 @@
     border-radius: 6px;
   }
 
-  .loading-spinner {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-secondary, #999);
+  .skeleton-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .skeleton-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: var(--background-color, #2a2a2a);
+    border: 1px solid var(--border-color);
+  }
+
+  .skeleton-row.sub {
+    margin-left: 1.5rem;
+    background: var(--surface-color, #333);
+  }
+
+  .skeleton-text {
+    height: 14px;
+    width: 140px;
+    border-radius: 4px;
+    background: var(--border-color, #444);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-text.wide {
+    width: 200px;
+  }
+
+  .skeleton-toggle {
+    height: 24px;
+    width: 44px;
+    border-radius: 12px;
+    background: var(--border-color, #444);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-bulk {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+  }
+
+  .skeleton-bar {
+    height: 32px;
+    width: 100%;
+    border-radius: 6px;
+    background: var(--border-color, #444);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-btn {
+    height: 36px;
+    width: 140px;
+    border-radius: 6px;
+    background: var(--border-color, #444);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
   }
 
   .bulk-section {
@@ -646,12 +725,6 @@
     color: var(--text-secondary, #999);
     margin: 0 0 1rem 0;
     line-height: 1.4;
-  }
-
-  .bulk-loading {
-    font-size: 0.8rem;
-    color: var(--text-secondary, #999);
-    padding: 0.5rem 0;
   }
 
   .pending-info {
