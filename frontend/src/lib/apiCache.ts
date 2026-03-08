@@ -122,6 +122,7 @@ class ApiCache {
       case 'files':
         this.invalidate('files:');
         this.invalidate('status:');
+        this.invalidate('prefetch:file:');
         break;
       case 'tags':
         this.invalidate('tags:');
@@ -188,6 +189,7 @@ export const cacheKey = {
   groupDetail: (uuid: string) => `groups:detail:${uuid}`,
   shares: (collectionUuid: string) => `shares:collection:${collectionUuid}`,
   sharedCollections: () => 'shared-collections:all',
+  fileDetail: (uuid: string) => `prefetch:file:${uuid}`,
 };
 
 // Expose stats to dev console

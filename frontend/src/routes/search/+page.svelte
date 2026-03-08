@@ -13,6 +13,7 @@
   import SearchSortDropdown from '$components/search/SearchSortDropdown.svelte';
   import PlyrMiniPlayer from '$components/PlyrMiniPlayer.svelte';
   import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
+  import { prefetchNextSearchPage } from '$lib/prefetch';
 
   let searchInput = '';
   let previewMediaUrl = '';
@@ -247,9 +248,16 @@
         },
       });
 
-      searchStore.setResults(res.data as SearchResponse);
+      const searchData = res.data as SearchResponse;
+      searchStore.setResults(searchData);
       // D3: Store params that produced these results
       searchStore.setLastSearchParams(buildSearchParamsString(query, pageNum));
+
+      // Prefetch next page of results
+      const totalPages = Math.ceil((searchData.total_results || 0) / $searchStore.pageSize);
+      if (totalPages > pageNum) {
+        prefetchNextSearchPage(query, pageNum, totalPages, apiParams);
+      }
     } catch (e: any) {
       console.error('Search failed:', e);
       searchStore.setError(e?.response?.data?.detail || 'Search failed');

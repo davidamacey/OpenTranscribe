@@ -125,6 +125,7 @@ celery_app.conf.update(
         "generate_thumbnail": {"queue": "cpu"},
         "migrate_thumbnails_to_webp": {"queue": "cpu"},
         "reindex_transcripts": {"queue": "cpu"},
+        "reindex_batch": {"queue": "cpu"},
         "search_index_maintenance": {"queue": "cpu"},
         "opensearch_orphan_cleanup": {"queue": "cpu"},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
@@ -136,6 +137,7 @@ celery_app.conf.update(
         "ai.extract_topics_batch": {"queue": "nlp"},
         "ai.group_batch_files": {"queue": "nlp"},
         "ai.retroactive_auto_label": {"queue": "nlp"},
+        "ai.auto_label_batch": {"queue": "nlp"},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         "index_transcript_search": {"queue": "embedding"},
         # Access index updates are lightweight OpenSearch writes (no GPU/embedding needed)

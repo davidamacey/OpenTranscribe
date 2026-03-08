@@ -474,7 +474,12 @@ class AutoLabelService:
                 result["collections_applied"] += len(apply_result["auto_applied_collections"])
 
                 if progress_callback:
-                    progress_callback(i + 1, total, media_file.filename)
+                    progress_callback(
+                        i + 1,
+                        total,
+                        media_file.filename,
+                        file_uuid=str(media_file.uuid),
+                    )
 
             except Exception as e:
                 logger.error(f"Error processing suggestion {suggestion_id}: {e}")

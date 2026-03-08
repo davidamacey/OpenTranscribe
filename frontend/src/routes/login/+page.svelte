@@ -237,10 +237,13 @@
         successMessage = $t('auth.loginSuccess');
         toastStore.success($t('auth.loginSuccess'));
 
-        // Add a small delay before redirecting for better UX
+        // Start prefetching dashboard data immediately (auth cookie already set)
+        const { prefetchDashboardData } = await import('$lib/prefetch');
+        prefetchDashboardData();
+
+        // Navigate via SvelteKit to preserve in-memory cache (prefetched data)
         setTimeout(() => {
-          // Use window.location for a full page refresh to ensure auth state is properly loaded
-          window.location.href = "/";
+          goto('/');
         }, 1000);
       } else {
         console.error('Login.svelte: Login failed:', result.message);
