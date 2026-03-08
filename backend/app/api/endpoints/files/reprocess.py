@@ -45,6 +45,7 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
 
         # Clear any existing speaker data
         existing_speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
+        speaker_uuids_to_clean = [str(s.uuid) for s in existing_speakers]
         for speaker in existing_speakers:
             db.delete(speaker)
 
@@ -57,6 +58,20 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
 
         db.commit()
         logger.info(f"Cleared existing transcription data for file {media_file.id}")
+
+        # Remove deleted speakers from all OpenSearch speaker indices (non-fatal)
+        if speaker_uuids_to_clean:
+            try:
+                from app.services.opensearch_service import remove_speaker_embedding
+
+                for uuid in speaker_uuids_to_clean:
+                    remove_speaker_embedding(uuid)
+                logger.info(
+                    f"Removed {len(speaker_uuids_to_clean)} speaker embeddings "
+                    f"from OpenSearch for reprocessed file {media_file.id}"
+                )
+            except Exception as os_err:
+                logger.warning(f"OpenSearch speaker cleanup failed (non-fatal): {os_err}")
 
     except Exception as e:
         logger.error(f"Error clearing transcription data for file {media_file.id}: {e}")
@@ -148,8 +163,18 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
             existing_speakers = (
                 db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
             )
+            speaker_uuids_to_clean = [str(s.uuid) for s in existing_speakers]
             for speaker in existing_speakers:
                 db.delete(speaker)
+            # Remove deleted speakers from OpenSearch (non-fatal)
+            if speaker_uuids_to_clean:
+                try:
+                    from app.services.opensearch_service import remove_speaker_embedding
+
+                    for uuid in speaker_uuids_to_clean:
+                        remove_speaker_embedding(uuid)
+                except Exception as os_err:
+                    logger.warning(f"OpenSearch speaker cleanup failed (non-fatal): {os_err}")
             # Also clear analytics since speaker stats change
             existing_analytics = (
                 db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()

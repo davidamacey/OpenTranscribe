@@ -6,15 +6,13 @@ transcripts after transcription completes. Only runs if LLM provider
 is configured for the user.
 """
 
-import json
 import logging
 
-import redis
-
 from app.core.celery import celery_app
-from app.core.config import settings
-from app.db.base import SessionLocal
+from app.core.constants import NLPPriority
+from app.db.session_utils import session_scope
 from app.services.topic_extraction_service import TopicExtractionService
+from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +38,6 @@ def send_topic_extraction_notification(
         True if notification was sent successfully
     """
     try:
-        # Create Redis client
-        redis_client = redis.from_url(settings.REDIS_URL)
-
         # Get file metadata
         from app.tasks.transcription.notifications import get_file_metadata
 
@@ -59,25 +54,14 @@ def send_topic_extraction_notification(
         if status == "completed" and suggestion_id:
             notification_data["suggestion_id"] = suggestion_id
 
-        notification = {
-            "user_id": user_id,
-            "type": "topic_extraction_status",
-            "data": notification_data,
-        }
-
-        # Publish to Redis
-        redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(
-            f"Published topic extraction notification for user {user_id}, file {file_id}: {status}"
-        )
-        return True
+        return send_ws_event(user_id, "topic_extraction_status", notification_data)
 
     except Exception as e:
         logger.error(f"Failed to send topic extraction notification for file {file_id}: {e}")
         return False
 
 
-@celery_app.task(bind=True, name="ai.extract_topics")
+@celery_app.task(bind=True, name="ai.extract_topics", priority=NLPPriority.AUTO_PIPELINE)
 def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
     """
     Extract AI tag and collection suggestions from a completed transcript.
@@ -95,188 +79,184 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
     """
     from app.utils.uuid_helpers import get_file_by_uuid
 
-    db = SessionLocal()
+    with session_scope() as db:
+        try:
+            # Get media file from database
+            media_file = get_file_by_uuid(db, file_uuid)
+            if not media_file:
+                raise ValueError(f"Media file with UUID {file_uuid} not found")
 
-    try:
-        # Get media file from database
-        media_file = get_file_by_uuid(db, file_uuid)
-        if not media_file:
-            raise ValueError(f"Media file with UUID {file_uuid} not found")
+            file_id = int(media_file.id)
+            user_id = int(media_file.user_id)
 
-        file_id = int(media_file.id)
-        user_id = int(media_file.user_id)
+            logger.info(f"Starting topic extraction for file {file_id} (user {user_id})")
 
-        logger.info(f"Starting topic extraction for file {file_id} (user {user_id})")
-
-        # Send initial processing notification
-        send_topic_extraction_notification(
-            user_id=user_id,
-            file_id=file_id,
-            status="processing",
-            message="Preparing AI analysis...",
-        )
-
-        # Create topic extraction service
-        extraction_service = TopicExtractionService.create_from_settings(user_id=user_id, db=db)
-
-        if not extraction_service:
-            logger.info(f"LLM not configured for user {user_id}, skipping topic extraction")
-            # Send notification that LLM is not configured
-            send_topic_extraction_notification(
-                user_id=user_id,
-                file_id=file_id,
-                status="not_configured",
-                message="Topic extraction not available - no LLM provider configured in settings",
-            )
-            return {
-                "status": "skipped",
-                "reason": "LLM not configured",
-            }
-
-        # Send notification before LLM processing
-        send_topic_extraction_notification(
-            user_id=user_id,
-            file_id=file_id,
-            status="processing",
-            message="Analyzing transcript with AI...",
-        )
-
-        # Create a notification callback for the service to use
-        def notify_progress(message: str):
+            # Send initial processing notification
             send_topic_extraction_notification(
                 user_id=user_id,
                 file_id=file_id,
                 status="processing",
-                message=message,
+                message="Preparing AI analysis...",
             )
 
-        # Extract topics with progress callback
-        suggestion = extraction_service.extract_topics(
-            media_file_id=file_id,
-            force_regenerate=force_regenerate,
-            progress_callback=notify_progress,
-        )
+            # Create topic extraction service
+            extraction_service = TopicExtractionService.create_from_settings(user_id=user_id, db=db)
 
-        if not suggestion:
-            error_msg = "Failed to extract topics from transcript"
-            logger.error(f"{error_msg} for file {file_id}")
+            if not extraction_service:
+                logger.info(f"LLM not configured for user {user_id}, skipping topic extraction")
+                # Send notification that LLM is not configured
+                send_topic_extraction_notification(
+                    user_id=user_id,
+                    file_id=file_id,
+                    status="not_configured",
+                    message="Topic extraction not available - no LLM provider configured in settings",
+                )
+                return {
+                    "status": "skipped",
+                    "reason": "LLM not configured",
+                }
 
-            # Send failure notification
+            # Send notification before LLM processing
             send_topic_extraction_notification(
                 user_id=user_id,
                 file_id=file_id,
-                status="failed",
-                message=error_msg,
+                status="processing",
+                message="Analyzing transcript with AI...",
             )
+
+            # Create a notification callback for the service to use
+            def notify_progress(message: str):
+                send_topic_extraction_notification(
+                    user_id=user_id,
+                    file_id=file_id,
+                    status="processing",
+                    message=message,
+                )
+
+            # Extract topics with progress callback
+            suggestion = extraction_service.extract_topics(
+                media_file_id=file_id,
+                force_regenerate=force_regenerate,
+                progress_callback=notify_progress,
+            )
+
+            if not suggestion:
+                error_msg = "Failed to extract topics from transcript"
+                logger.error(f"{error_msg} for file {file_id}")
+
+                # Send failure notification
+                send_topic_extraction_notification(
+                    user_id=user_id,
+                    file_id=file_id,
+                    status="failed",
+                    message=error_msg,
+                )
+
+                return {
+                    "status": "failed",
+                    "error": error_msg,
+                }
+
+            # Send notification that AI processing is complete, now storing results
+            send_topic_extraction_notification(
+                user_id=user_id,
+                file_id=file_id,
+                status="processing",
+                message="Saving AI suggestions...",
+            )
+
+            # Count suggestions
+            tag_count = len(suggestion.suggested_tags or [])
+            collection_count = len(suggestion.suggested_collections or [])
+
+            # Send completion notification
+            send_topic_extraction_notification(
+                user_id=user_id,
+                file_id=file_id,
+                status="completed",
+                message=f"Found {tag_count} tags and {collection_count} collections",
+                suggestion_id=str(suggestion.uuid),
+            )
+
+            # Check if this file is part of a batch and trigger grouping
+            try:
+                if media_file.upload_batch_id:
+                    from app.models.upload_batch import UploadBatch
+
+                    batch = (
+                        db.query(UploadBatch)
+                        .filter(UploadBatch.id == media_file.upload_batch_id)
+                        .first()
+                    )
+                    if batch and batch.grouping_status == "pending":
+                        # Check if all batch files have completed topic extraction
+                        from app.models.media import MediaFile
+                        from app.models.topic import TopicSuggestion
+
+                        batch_files = (
+                            db.query(MediaFile).filter(MediaFile.upload_batch_id == batch.id).all()
+                        )
+                        batch_file_ids = [bf.id for bf in batch_files]
+                        completed_count = (
+                            db.query(TopicSuggestion)
+                            .filter(TopicSuggestion.media_file_id.in_(batch_file_ids))
+                            .count()
+                        )
+                        if completed_count >= len(batch_files) and len(batch_files) >= 2:
+                            # Atomic compare-and-swap to prevent duplicate dispatches
+                            rows_updated = (
+                                db.query(UploadBatch)
+                                .filter(
+                                    UploadBatch.id == batch.id,
+                                    UploadBatch.grouping_status == "pending",
+                                )
+                                .update({"grouping_status": "processing"})
+                            )
+                            db.commit()
+                            if rows_updated > 0:
+                                from app.tasks.auto_labeling import group_batch_files_task
+
+                                group_batch_files_task.delay(batch.id, user_id)
+                                logger.info(f"Triggered batch grouping for batch {batch.id}")
+            except Exception as e:
+                logger.warning(f"Batch grouping check failed: {e}")
+
+            logger.info(
+                f"Successfully extracted {tag_count} tags and {collection_count} collections for file {file_id}"
+            )
+
+            return {
+                "status": "completed",
+                "suggestion_id": str(suggestion.uuid),
+                "tag_count": tag_count,
+                "collection_count": collection_count,
+            }
+
+        except Exception as e:
+            error_msg = f"Error extracting topics: {str(e)}"
+            logger.error(f"{error_msg} for file {file_uuid}")
+
+            # Send failure notification
+            try:
+                media_file = get_file_by_uuid(db, file_uuid)
+                if media_file:
+                    send_topic_extraction_notification(
+                        user_id=int(media_file.user_id),
+                        file_id=int(media_file.id),
+                        status="failed",
+                        message=error_msg,
+                    )
+            except Exception as notify_err:
+                # Log but don't raise - notification failures shouldn't mask the original error
+                logger.debug(f"Failed to send topic extraction failure notification: {notify_err}")
 
             return {
                 "status": "failed",
                 "error": error_msg,
             }
 
-        # Send notification that AI processing is complete, now storing results
-        send_topic_extraction_notification(
-            user_id=user_id,
-            file_id=file_id,
-            status="processing",
-            message="Saving AI suggestions...",
-        )
 
-        # Count suggestions
-        tag_count = len(suggestion.suggested_tags or [])
-        collection_count = len(suggestion.suggested_collections or [])
-
-        # Send completion notification
-        send_topic_extraction_notification(
-            user_id=user_id,
-            file_id=file_id,
-            status="completed",
-            message=f"Found {tag_count} tags and {collection_count} collections",
-            suggestion_id=str(suggestion.uuid),
-        )
-
-        # Check if this file is part of a batch and trigger grouping
-        try:
-            if media_file.upload_batch_id:
-                from app.models.upload_batch import UploadBatch
-
-                batch = (
-                    db.query(UploadBatch)
-                    .filter(UploadBatch.id == media_file.upload_batch_id)
-                    .first()
-                )
-                if batch and batch.grouping_status == "pending":
-                    # Check if all batch files have completed topic extraction
-                    from app.models.media import MediaFile
-                    from app.models.topic import TopicSuggestion
-
-                    batch_files = (
-                        db.query(MediaFile).filter(MediaFile.upload_batch_id == batch.id).all()
-                    )
-                    batch_file_ids = [bf.id for bf in batch_files]
-                    completed_count = (
-                        db.query(TopicSuggestion)
-                        .filter(TopicSuggestion.media_file_id.in_(batch_file_ids))
-                        .count()
-                    )
-                    if completed_count >= len(batch_files) and len(batch_files) >= 2:
-                        # Atomic compare-and-swap to prevent duplicate dispatches
-                        rows_updated = (
-                            db.query(UploadBatch)
-                            .filter(
-                                UploadBatch.id == batch.id,
-                                UploadBatch.grouping_status == "pending",
-                            )
-                            .update({"grouping_status": "processing"})
-                        )
-                        db.commit()
-                        if rows_updated > 0:
-                            from app.tasks.auto_labeling import group_batch_files_task
-
-                            group_batch_files_task.delay(batch.id, user_id)
-                            logger.info(f"Triggered batch grouping for batch {batch.id}")
-        except Exception as e:
-            logger.warning(f"Batch grouping check failed: {e}")
-
-        logger.info(
-            f"Successfully extracted {tag_count} tags and {collection_count} collections for file {file_id}"
-        )
-
-        return {
-            "status": "completed",
-            "suggestion_id": str(suggestion.uuid),
-            "tag_count": tag_count,
-            "collection_count": collection_count,
-        }
-
-    except Exception as e:
-        error_msg = f"Error extracting topics: {str(e)}"
-        logger.error(f"{error_msg} for file {file_uuid}")
-
-        # Send failure notification
-        try:
-            media_file = get_file_by_uuid(db, file_uuid)
-            if media_file:
-                send_topic_extraction_notification(
-                    user_id=int(media_file.user_id),
-                    file_id=int(media_file.id),
-                    status="failed",
-                    message=error_msg,
-                )
-        except Exception as notify_err:
-            # Log but don't raise - notification failures shouldn't mask the original error
-            logger.debug(f"Failed to send topic extraction failure notification: {notify_err}")
-
-        return {
-            "status": "failed",
-            "error": error_msg,
-        }
-
-    finally:
-        db.close()
-
-
-@celery_app.task(bind=True, name="ai.extract_topics_batch")
+@celery_app.task(bind=True, name="ai.extract_topics_batch", priority=NLPPriority.ADMIN_BATCH)
 def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: bool = False):
     """
     Extract AI suggestions for multiple files in batch.

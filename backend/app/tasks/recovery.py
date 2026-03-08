@@ -10,6 +10,7 @@ from datetime import datetime
 from datetime import timezone
 
 from app.core.celery import celery_app
+from app.core.constants import UtilityPriority
 from app.core.task_config import task_recovery_config
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -22,7 +23,11 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(
-    name="system.startup_recovery", bind=True, acks_late=True, reject_on_worker_lost=True
+    name="system.startup_recovery",
+    bind=True,
+    priority=UtilityPriority.EMERGENCY,
+    acks_late=True,
+    reject_on_worker_lost=True,
 )
 def startup_recovery_task(self):
     """
@@ -102,7 +107,11 @@ def startup_recovery_task(self):
 
 
 @celery_app.task(
-    name="system.recover_user_files", bind=True, acks_late=True, reject_on_worker_lost=True
+    name="system.recover_user_files",
+    bind=True,
+    priority=UtilityPriority.OPERATIONAL,
+    acks_late=True,
+    reject_on_worker_lost=True,
 )
 def recover_user_files_task(self, user_id: int | None = None):
     """
@@ -177,6 +186,7 @@ def _check_opensearch_health(summary: dict) -> None:
 @celery_app.task(
     name="system.health_check",
     bind=True,
+    priority=UtilityPriority.OPERATIONAL,
     acks_late=True,
     reject_on_worker_lost=True,
     soft_time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME - 30,

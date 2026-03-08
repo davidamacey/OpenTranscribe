@@ -54,7 +54,7 @@
     const target = event.target;
 
     if (panel && button && target instanceof Node && !panel.contains(target) && !button.contains(target)) {
-      showPanel = false;
+      showNotificationsPanel.set(false);
     }
   }
 
@@ -110,6 +110,9 @@
         return 'database';
       case 'clustering_progress':
       case 'clustering_complete':
+        return 'users';
+      case 'attribute_migration_progress':
+      case 'attribute_migration_complete':
         return 'users';
       default:
         return 'bell';
@@ -356,7 +359,7 @@
                       <span class="progress-text">
                         {notification.progress.percentage}%
                         {#if notification.progress.etaDisplay}
-                          ({notification.progress.etaDisplay} remaining)
+                          ({notification.progress.etaDisplay} {$t('upload.remaining')})
                         {/if}
                       </span>
                     </div>

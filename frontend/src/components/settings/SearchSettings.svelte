@@ -307,7 +307,7 @@
           <span class="progress-text">
             {Math.round(reindexProgress.progress * 100)}%
             {#if formatEta(reindexProgress.eta_seconds)}
-              ({formatEta(reindexProgress.eta_seconds)} remaining)
+              ({formatEta(reindexProgress.eta_seconds)} {$t('upload.remaining')})
             {/if}
           </span>
         </div>

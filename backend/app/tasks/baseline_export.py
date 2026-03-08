@@ -3,6 +3,7 @@ import logging
 import os
 
 from app.core.celery import celery_app
+from app.core.constants import UtilityPriority
 from app.db.session_utils import session_scope
 from app.utils.transcript_comparison import compare_transcripts
 from app.utils.transcript_comparison import export_baseline
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 BENCHMARKS_DIR = os.environ.get("BENCHMARKS_DIR", "/tmp/benchmarks")  # noqa: S108  # nosec B108
 
 
-@celery_app.task(name="export_transcript_baseline")
+@celery_app.task(name="export_transcript_baseline", priority=UtilityPriority.DEV_TOOLS)
 def export_baseline_task(file_uuid: str, label: str = "baseline"):
     """Export current transcript data as a baseline snapshot."""
     os.makedirs(BENCHMARKS_DIR, exist_ok=True)
@@ -36,7 +37,7 @@ def export_baseline_task(file_uuid: str, label: str = "baseline"):
         return {"status": "success", "path": output_path, "segment_count": result["segment_count"]}
 
 
-@celery_app.task(name="compare_transcript_baseline")
+@celery_app.task(name="compare_transcript_baseline", priority=UtilityPriority.DEV_TOOLS)
 def compare_baseline_task(file_uuid: str, baseline_label: str, current_label: str):
     """Compare two transcript snapshots and log results."""
     short_uuid = file_uuid[:8]

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
   import type { LDAPConfig } from '$lib/api/authConfig';
 
   export let config: Partial<LDAPConfig> = {};
@@ -88,16 +89,16 @@
         bind:checked={formData.ldap_enabled}
         on:change={handleChange}
       />
-      <span class="toggle-text">Enable LDAP/Active Directory Authentication</span>
+      <span class="toggle-text">{$t('settings.ldap.enable')}</span>
     </label>
   </div>
 
   <div class="section" class:disabled={!formData.ldap_enabled}>
-    <h3>Server Connection</h3>
+    <h3>{$t('settings.ldap.serverConnection')}</h3>
 
     <div class="form-row">
       <div class="form-group">
-        <label for="ldap_server">LDAP Server</label>
+        <label for="ldap_server">{$t('settings.ldap.server')}</label>
         <input
           id="ldap_server"
           type="text"
@@ -106,11 +107,11 @@
           placeholder="ldap.example.com"
           disabled={!formData.ldap_enabled}
         />
-        <span class="help-text">Hostname or IP address of the LDAP server</span>
+        <span class="help-text">{$t('settings.ldap.serverHelp')}</span>
       </div>
 
       <div class="form-group small">
-        <label for="ldap_port">Port</label>
+        <label for="ldap_port">{$t('settings.ldap.port')}</label>
         <input
           id="ldap_port"
           type="number"
@@ -129,7 +130,7 @@
           on:change={handlePortChange}
           disabled={!formData.ldap_enabled}
         />
-        <span>Use SSL (LDAPS)</span>
+        <span>{$t('settings.ldap.useSsl')}</span>
       </label>
 
       <label class="checkbox-label">
@@ -139,12 +140,12 @@
           on:change={handleChange}
           disabled={!formData.ldap_enabled || formData.ldap_use_ssl}
         />
-        <span>Use StartTLS</span>
+        <span>{$t('settings.ldap.useStartTls')}</span>
       </label>
     </div>
 
     <div class="form-group">
-      <label for="ldap_timeout">Connection Timeout (seconds)</label>
+      <label for="ldap_timeout">{$t('settings.ldap.connectionTimeout')}</label>
       <input
         id="ldap_timeout"
         type="number"
@@ -158,10 +159,10 @@
   </div>
 
   <div class="section" class:disabled={!formData.ldap_enabled}>
-    <h3>Bind Credentials</h3>
+    <h3>{$t('settings.ldap.bindCredentials')}</h3>
 
     <div class="form-group">
-      <label for="ldap_bind_dn">Bind DN</label>
+      <label for="ldap_bind_dn">{$t('settings.ldap.bindDn')}</label>
       <input
         id="ldap_bind_dn"
         type="text"
@@ -170,24 +171,24 @@
         placeholder="cn=admin,dc=example,dc=com"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">Distinguished Name for LDAP bind operations</span>
+      <span class="help-text">{$t('settings.ldap.bindDnHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="ldap_bind_password">Bind Password</label>
+      <label for="ldap_bind_password">{$t('settings.ldap.bindPassword')}</label>
       <input
         id="ldap_bind_password"
         type="password"
         bind:value={formData.ldap_bind_password}
         on:input={handleChange}
-        placeholder="Enter password"
+        placeholder={$t('settings.ldap.enterPassword')}
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">Password for the bind DN (stored securely)</span>
+      <span class="help-text">{$t('settings.ldap.bindPasswordHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="ldap_search_base">Search Base</label>
+      <label for="ldap_search_base">{$t('settings.ldap.searchBase')}</label>
       <input
         id="ldap_search_base"
         type="text"
@@ -196,16 +197,16 @@
         placeholder="dc=example,dc=com"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">Base DN for user searches</span>
+      <span class="help-text">{$t('settings.ldap.searchBaseHelp')}</span>
     </div>
   </div>
 
   <div class="section" class:disabled={!formData.ldap_enabled}>
-    <h3>User Attributes</h3>
+    <h3>{$t('settings.ldap.userAttributes')}</h3>
 
     <div class="form-row thirds">
       <div class="form-group">
-        <label for="ldap_username_attr">Username Attribute</label>
+        <label for="ldap_username_attr">{$t('settings.ldap.usernameAttr')}</label>
         <input
           id="ldap_username_attr"
           type="text"
@@ -217,7 +218,7 @@
       </div>
 
       <div class="form-group">
-        <label for="ldap_email_attr">Email Attribute</label>
+        <label for="ldap_email_attr">{$t('settings.ldap.emailAttr')}</label>
         <input
           id="ldap_email_attr"
           type="text"
@@ -229,7 +230,7 @@
       </div>
 
       <div class="form-group">
-        <label for="ldap_name_attr">Display Name Attribute</label>
+        <label for="ldap_name_attr">{$t('settings.ldap.displayNameAttr')}</label>
         <input
           id="ldap_name_attr"
           type="text"
@@ -242,7 +243,7 @@
     </div>
 
     <div class="form-group">
-      <label for="ldap_user_search_filter">User Search Filter</label>
+      <label for="ldap_user_search_filter">{$t('settings.ldap.userSearchFilter')}</label>
       <input
         id="ldap_user_search_filter"
         type="text"
@@ -251,15 +252,15 @@
         placeholder="(uid={'{username}'})"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">LDAP filter to find users. Use {'{username}'} as placeholder. Examples: (uid={'{username}'}) for OpenLDAP/LLDAP, (sAMAccountName={'{username}'}) for Active Directory</span>
+      <span class="help-text">{$t('settings.ldap.userSearchFilterHelp')}</span>
     </div>
   </div>
 
   <div class="section" class:disabled={!formData.ldap_enabled}>
-    <h3>Group Settings</h3>
+    <h3>{$t('settings.ldap.groupSettings')}</h3>
 
     <div class="form-group">
-      <label for="ldap_group_attr">Group Membership Attribute</label>
+      <label for="ldap_group_attr">{$t('settings.ldap.groupMembershipAttr')}</label>
       <input
         id="ldap_group_attr"
         type="text"
@@ -277,11 +278,11 @@
         on:change={handleChange}
         disabled={!formData.ldap_enabled}
       />
-      <span>Resolve nested groups recursively</span>
+      <span>{$t('settings.ldap.recursiveGroups')}</span>
     </label>
 
     <div class="form-group">
-      <label for="ldap_admin_groups">Admin Groups</label>
+      <label for="ldap_admin_groups">{$t('settings.ldap.adminGroups')}</label>
       <input
         id="ldap_admin_groups"
         type="text"
@@ -290,11 +291,11 @@
         placeholder="CN=Admins,OU=Groups,DC=example,DC=com"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">Comma-separated list of group DNs that grant admin access</span>
+      <span class="help-text">{$t('settings.ldap.adminGroupsHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="ldap_admin_users">Admin Users</label>
+      <label for="ldap_admin_users">{$t('settings.ldap.adminUsers')}</label>
       <input
         id="ldap_admin_users"
         type="text"
@@ -303,11 +304,11 @@
         placeholder="admin,superuser"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">Comma-separated list of usernames that are always admins</span>
+      <span class="help-text">{$t('settings.ldap.adminUsersHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="ldap_user_groups">Allowed User Groups</label>
+      <label for="ldap_user_groups">{$t('settings.ldap.allowedUserGroups')}</label>
       <input
         id="ldap_user_groups"
         type="text"
@@ -316,7 +317,7 @@
         placeholder="CN=Users,OU=Groups,DC=example,DC=com"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">Leave empty to allow all authenticated users, or specify groups for access control</span>
+      <span class="help-text">{$t('settings.ldap.allowedUserGroupsHelp')}</span>
     </div>
   </div>
 
@@ -326,14 +327,14 @@
       on:click={handleTest}
       disabled={!formData.ldap_enabled || testing}
     >
-      {testing ? 'Testing...' : 'Test Connection'}
+      {testing ? $t('common.testing') : $t('settings.ldap.testConnection')}
     </button>
     <button
       class="btn btn-primary"
       on:click={handleSave}
       disabled={saving}
     >
-      {saving ? 'Saving...' : 'Save Configuration'}
+      {saving ? $t('common.saving') : $t('settings.ldap.saveConfiguration')}
     </button>
   </div>
 </div>

@@ -10,6 +10,7 @@ import io
 import logging
 
 from app.core.celery import celery_app
+from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -21,7 +22,9 @@ from app.utils.thumbnail import generate_thumbnail_from_url
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="migrate_thumbnails_to_webp", bind=True, queue="cpu")
+@celery_app.task(
+    name="migrate_thumbnails_to_webp", bind=True, queue="cpu", priority=CPUPriority.ADMIN_BATCH
+)
 def migrate_thumbnails_to_webp(self, batch_size: int = 20) -> dict:
     """
     Migrate existing JPEG thumbnails to optimized WebP format.

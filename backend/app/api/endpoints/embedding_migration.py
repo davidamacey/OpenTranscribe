@@ -15,11 +15,58 @@ from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
 from app.models.user import User
 from app.services.embedding_mode_service import EmbeddingModeService
-from app.services.migration_lock_service import migration_lock
 from app.services.migration_progress_service import migration_progress
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _compute_ground_truth_status(db: Session) -> dict | None:
+    """Compute true migration state from OpenSearch + DB when Redis data is stale.
+
+    Only counts files that have embeddable speakers (>= 0.5s segments).
+    Files with no speakers or only sub-0.5s segments are excluded — they
+    legitimately cannot produce embeddings and are not "stalled".
+
+    Returns dict with stalled info or None if not stalled.
+    """
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+    from app.tasks.embedding_migration_v4 import _count_embeddable_speakers_per_file
+    from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+
+    try:
+        completed_ids = [
+            int(row[0])
+            for row in db.query(MediaFile.id).filter(MediaFile.status == FileStatus.COMPLETED).all()
+        ]
+
+        if not completed_ids:
+            return None
+
+        # Only count files that actually have embeddable speakers
+        embeddable_counts = _count_embeddable_speakers_per_file(completed_ids)
+        migratable_ids = {fid for fid, count in embeddable_counts.items() if count > 0}
+
+        if not migratable_ids:
+            return None
+
+        already_migrated_ids = _get_already_migrated_file_ids()
+        migrated_count = len(migratable_ids & already_migrated_ids)
+
+        remaining = len(migratable_ids) - migrated_count
+        if remaining <= 0:
+            return None
+
+        return {
+            "stalled": True,
+            "total_completed_files": len(migratable_ids),
+            "migrated_files": migrated_count,
+            "remaining_files": remaining,
+        }
+    except Exception as e:
+        logger.warning("Could not compute ground truth status: %s", e)
+        return None
 
 
 @router.get("/status")
@@ -35,6 +82,7 @@ async def get_migration_status(
     - Whether migration is needed
     - Document counts in each index
     - Progress tracking (if migration is running)
+    - Stalled migration detection (when Redis data expired)
     """
     from app.tasks.embedding_migration_v4 import get_migration_status
 
@@ -48,8 +96,20 @@ async def get_migration_status(
         progress = migration_progress.get_status()
         status["progress"] = progress
 
-        # Indicate whether transcription is paused by migration lock
-        status["transcription_paused"] = migration_lock.is_active()
+        status["transcription_paused"] = False
+
+        # Detect stalled migration: v4 index has docs but mode is still v3
+        # and Redis progress is empty/expired (no running migration)
+        status["stalled"] = False
+        if (
+            not progress.get("running")
+            and status.get("current_mode") == "v3"
+            and status.get("v4_document_count", 0) > 0
+        ):
+            ground_truth = _compute_ground_truth_status(db)
+            if ground_truth:
+                status["stalled"] = True
+                status["stalled_info"] = ground_truth
 
         return status
 
@@ -91,17 +151,19 @@ async def get_migration_progress(
 @router.post("/start")
 async def start_migration(
     user_id: int | None = None,
+    force: bool = False,
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
-    """
-    Start the speaker embedding migration from v3 to v4.
+    """Start the speaker embedding migration from v3 to v4.
 
     This is an async operation - it dispatches Celery tasks and returns immediately.
     Use the /status or /progress endpoints to monitor progress.
 
     Args:
         user_id: Optional user ID to migrate (None for all users)
+        force: If True, clear existing v4 embeddings and re-extract all from
+            scratch. Use after code changes that improve extraction quality.
 
     Returns:
         - status: "started", "skipped", or "error"
@@ -111,41 +173,38 @@ async def start_migration(
     """
     from app.tasks.embedding_migration_v4 import migrate_speaker_embeddings_v4_task
 
-    # Check if migration lock is already held (another migration in progress)
-    if migration_lock.is_active():
-        return {
-            "status": "already_running",
-            "message": "Migration lock is active — another migration is in progress",
-            "transcription_paused": True,
-        }
-
-    # Check if a migration is already running
+    # Check if THIS migration type is already running
     if migration_progress.is_running():
         progress = migration_progress.get_status()
         return {
             "status": "already_running",
-            "message": "A migration is already in progress",
+            "message": "Embedding migration is already in progress",
             "progress": progress,
         }
 
-    # Check if already in v4 mode
+    # Check if already in v4 mode (skip unless force re-extract)
     current_mode = EmbeddingModeService.detect_mode()
-    if current_mode == "v4":
+    if current_mode == "v4" and not force:
         return {
             "status": "skipped",
             "message": "Already using v4 embeddings, no migration needed",
         }
 
     try:
-        # Dispatch the migration task
-        task = migrate_speaker_embeddings_v4_task.delay(user_id=user_id)
+        # Dispatch the migration task — lock is ref-counted, multiple migrations can coexist
+        task = migrate_speaker_embeddings_v4_task.delay(
+            user_id=user_id,
+            force=force,
+        )
 
-        logger.info(f"Started embedding migration task: {task.id}")
+        action = "Force re-migration" if force else "Migration"
+        logger.info(f"{action} task started: {task.id}")
 
         return {
             "status": "started",
             "task_id": task.id,
-            "message": "Migration task dispatched. Check /status or /progress for updates.",
+            "message": f"{action} task dispatched. Check /status or /progress for updates.",
+            "force": force,
         }
 
     except Exception as e:
@@ -179,8 +238,23 @@ async def stop_migration(
 
         success = migration_progress.force_stop()
 
-        # Release migration lock so transcription can resume
-        migration_lock.deactivate()
+        # Revoke any in-flight batch tasks
+        try:
+            from app.core.celery import celery_app
+            from app.core.redis import get_redis
+
+            r = get_redis()
+            raw = r.get("embedding_migration:batch_task_ids")
+            if raw:
+                import json
+
+                batch_ids = json.loads(raw)
+                for tid in batch_ids:
+                    celery_app.control.revoke(tid, terminate=True)
+                r.delete("embedding_migration:batch_task_ids")
+                logger.info("Revoked %d embedding migration batch tasks", len(batch_ids))
+        except Exception as e:
+            logger.warning("Failed to revoke batch tasks: %s", e)
 
         if success:
             logger.warning("Migration force stopped by user")
@@ -287,6 +361,137 @@ async def clear_progress(
 
     except Exception as e:
         logger.error("Error clearing progress: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
+
+
+@router.post("/retry-failed")
+async def retry_failed_files(
+    current_user: User = Depends(get_current_active_superuser),
+    db: Session = Depends(get_db),
+):
+    """
+    Retry migration for files that were not successfully migrated.
+
+    Computes truly-missing files from DB + OpenSearch ground truth
+    (does not rely on stale Redis failed_files list).
+    """
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+    from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+    from app.tasks.embedding_migration_v4 import extract_v4_embeddings_batch_task
+
+    batch_size = 25
+
+    # Guard: reject if already running
+    if migration_progress.is_running():
+        return {
+            "status": "error",
+            "message": "A migration is already in progress",
+        }
+
+    try:
+        from app.tasks.embedding_migration_v4 import _count_embeddable_speakers_per_file
+
+        # Compute truly-missing files from ground truth
+        completed_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.COMPLETED).all()
+        already_migrated = _get_already_migrated_file_ids()
+
+        # Only retry files that have embeddable speakers (>= 0.5s segments)
+        embeddable_counts = _count_embeddable_speakers_per_file(
+            [int(f.id) for f in completed_files]
+        )
+
+        missing_files = [
+            f
+            for f in completed_files
+            if f.id not in already_migrated and embeddable_counts.get(int(f.id), 0) > 0
+        ]
+        if not missing_files:
+            return {
+                "status": "skipped",
+                "message": "No files need retry — all completed files have been migrated",
+            }
+
+        total_retry = len(missing_files)
+        file_uuids = [str(f.uuid) for f in missing_files]
+
+        migration_progress.start_migration(total_files=total_retry)
+
+        # Dispatch batch tasks
+        batches = [file_uuids[i : i + batch_size] for i in range(0, len(file_uuids), batch_size)]
+        for batch_idx, batch in enumerate(batches):
+            extract_v4_embeddings_batch_task.delay(
+                file_uuids=batch,
+                batch_index=batch_idx,
+                total_batches=len(batches),
+                total_files=total_retry,
+            )
+
+        logger.info(f"Retry: dispatched {len(batches)} batches for {total_retry} files")
+
+        return {
+            "status": "started",
+            "message": f"Retrying {total_retry} files in {len(batches)} batches",
+            "total_files": total_retry,
+        }
+
+    except Exception as e:
+        logger.error("Error retrying failed files: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
+
+
+@router.post("/force-complete")
+async def force_complete_migration(
+    current_user: User = Depends(get_current_active_superuser),
+    db: Session = Depends(get_db),
+):
+    """
+    Force-mark the migration as complete, skipping any unprocessed files.
+
+    Use this for genuinely unrecoverable files (e.g., missing from MinIO).
+    """
+    from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
+    from app.utils.websocket_notify import send_ws_event
+
+    try:
+        # Compute how many files are being skipped
+        ground_truth = _compute_ground_truth_status(db)
+        skipped_count = ground_truth["remaining_files"] if ground_truth else 0
+
+        # Mark migration as complete
+        migration_progress.complete_migration(success=True)
+
+        # Send completion notification
+        send_ws_event(
+            current_user.id,
+            NOTIFICATION_TYPE_MIGRATION_COMPLETE,
+            {
+                "status": "force_completed",
+                "skipped_files": skipped_count,
+                "message": f"Migration force-completed, {skipped_count} files skipped",
+            },
+        )
+
+        logger.warning(
+            "Migration force-completed by %s, skipping %d files",
+            current_user.email,
+            skipped_count,
+        )
+
+        return {
+            "status": "completed",
+            "message": f"Migration marked as complete. {skipped_count} files skipped.",
+            "skipped_files": skipped_count,
+        }
+
+    except Exception as e:
+        logger.error("Error force-completing migration: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An internal error occurred. Please try again.",

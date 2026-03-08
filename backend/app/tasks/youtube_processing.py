@@ -8,7 +8,6 @@ progress tracking, error handling, and automatic transcription initiation.
 Supports YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other platforms via yt-dlp.
 """
 
-import json
 import logging
 from typing import TypedDict
 
@@ -16,6 +15,7 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import DEFAULT_AUDIO_QUALITY
 from app.core.constants import DEFAULT_VIDEO_QUALITY
+from app.core.constants import DownloadPriority
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -29,21 +29,9 @@ from app.tasks.waveform import generate_waveform_task
 from app.utils.error_classification import RETRIABLE_CATEGORIES
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
+from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
-
-
-_notification_redis_client = None
-
-
-def _get_notification_redis():
-    """Get or create a module-level Redis client for notifications."""
-    global _notification_redis_client
-    if _notification_redis_client is None:
-        import redis as sync_redis
-
-        _notification_redis_client = sync_redis.from_url(settings.REDIS_URL)
-    return _notification_redis_client
 
 
 def _get_user_download_settings(db, user_id: int) -> dict[str, str | bool]:
@@ -123,32 +111,21 @@ def send_youtube_notification_via_redis(
         True if notification was sent successfully, False otherwise
     """
     try:
-        redis_client = _get_notification_redis()
-
         # Get file metadata
         file_metadata = get_file_metadata(file_id)
 
         # Prepare notification data
-        notification = {
-            "user_id": user_id,
-            "type": "youtube_processing_status",
-            "data": {
-                "file_id": file_metadata.get("file_uuid"),  # Use UUID from metadata
-                "status": status.value,
-                "message": message,
-                "progress": progress,
-                "filename": file_metadata["filename"],
-                "content_type": file_metadata["content_type"],
-                "file_size": file_metadata["file_size"],
-            },
+        data = {
+            "file_id": file_metadata.get("file_uuid"),  # Use UUID from metadata
+            "status": status.value,
+            "message": message,
+            "progress": progress,
+            "filename": file_metadata["filename"],
+            "content_type": file_metadata["content_type"],
+            "file_size": file_metadata["file_size"],
         }
 
-        # Publish to Redis
-        redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(
-            f"Published YouTube notification via Redis for user {user_id}, file {file_id}: {status.value}"
-        )
-        return True
+        return send_ws_event(user_id, "youtube_processing_status", data)
 
     except Exception as e:
         logger.error(f"Failed to send YouTube notification via Redis for file {file_id}: {e}")
@@ -166,6 +143,7 @@ class YouTubeProcessingResult(TypedDict):
 @celery_app.task(
     name="download.media_url",
     bind=True,
+    priority=DownloadPriority.SINGLE_URL,
     max_retries=3,
     retry_backoff=True,
     retry_backoff_max=600,
@@ -379,11 +357,11 @@ def process_youtube_url_task(
                             else None,
                         }
 
-                        # Send file_updated notification via Redis
-                        notification = {
-                            "user_id": user_id,
-                            "type": "file_updated",
-                            "data": {
+                        # Send file_updated notification
+                        send_ws_event(
+                            user_id,
+                            "file_updated",
+                            {
                                 "file_id": str(updated_media_file_refreshed.uuid),  # Use UUID
                                 "file": file_data,
                                 "status": updated_media_file_refreshed.status.value
@@ -396,9 +374,6 @@ def process_youtube_url_task(
                                 else "Pending",
                                 "message": "YouTube processing completed",
                             },
-                        }
-                        _get_notification_redis().publish(
-                            "websocket_notifications", json.dumps(notification)
                         )
                         logger.info(
                             f"Sent file_updated notification for YouTube completion: {file_id}"
@@ -545,12 +520,7 @@ def _send_playlist_notification(
         }
         if extra_data:
             data.update(extra_data)
-        notification = {
-            "user_id": user_id,
-            "type": "playlist_processing_status",
-            "data": data,
-        }
-        _get_notification_redis().publish("websocket_notifications", json.dumps(notification))
+        send_ws_event(user_id, "playlist_processing_status", data)
     except Exception as e:
         logger.error(f"Failed to send playlist notification: {e}")
 
@@ -596,15 +566,14 @@ def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None
             "upload_time": media_file.upload_time.isoformat() if media_file.upload_time else None,
         }
 
-        notification = {
-            "user_id": user_id,
-            "type": "file_created",
-            "data": {
+        send_ws_event(
+            user_id,
+            "file_created",
+            {
                 "file_id": str(media_file.uuid),
                 "file": file_data,
             },
-        }
-        _get_notification_redis().publish("websocket_notifications", json.dumps(notification))
+        )
     except Exception as e:
         logger.error(f"Failed to send file_created notification for video {media_file.id}: {e}")
 
@@ -666,7 +635,7 @@ def _dispatch_video_task(
         return False
 
 
-@celery_app.task(name="download.media_playlist", bind=True)
+@celery_app.task(name="download.media_playlist", bind=True, priority=DownloadPriority.PLAYLIST)
 def process_youtube_playlist_task(
     self,
     url: str,

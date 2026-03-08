@@ -3,9 +3,10 @@
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
-# Patch path for get_opensearch_client — it's imported inside function bodies
+# Patch path for get_opensearch_client -- it's imported inside function bodies
 # from app.services.opensearch_service, so we patch at the source.
 _OS_CLIENT_PATCH = "app.services.opensearch_service.get_opensearch_client"
 
@@ -29,8 +30,9 @@ class TestGetAlreadyMigratedFileIds:
         mock_get_client.return_value = mock_client
         assert _get_already_migrated_file_ids() == set()
 
+    @patch("app.tasks.embedding_migration_v4._count_embeddable_speakers_per_file")
     @patch(_OS_CLIENT_PATCH)
-    def test_returns_file_ids_from_aggregation(self, mock_get_client):
+    def test_returns_file_ids_from_aggregation(self, mock_get_client, mock_count):
         from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
 
         mock_client = MagicMock()
@@ -47,9 +49,35 @@ class TestGetAlreadyMigratedFileIds:
             }
         }
         mock_get_client.return_value = mock_client
+        # Embeddable counts match or are below v4 doc_count so all are "fully migrated"
+        mock_count.return_value = {10: 3, 25: 1, 42: 5}
 
         result = _get_already_migrated_file_ids()
         assert result == {10, 25, 42}
+
+    @patch("app.tasks.embedding_migration_v4._count_embeddable_speakers_per_file")
+    @patch(_OS_CLIENT_PATCH)
+    def test_excludes_partially_migrated_files(self, mock_get_client, mock_count):
+        from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+
+        mock_client = MagicMock()
+        mock_client.indices.exists.return_value = True
+        mock_client.search.return_value = {
+            "aggregations": {
+                "file_ids": {
+                    "buckets": [
+                        {"key": 10, "doc_count": 2},  # Only 2 of 5 migrated
+                        {"key": 25, "doc_count": 3},  # All 3 migrated
+                    ]
+                }
+            }
+        }
+        mock_get_client.return_value = mock_client
+        mock_count.return_value = {10: 5, 25: 3}
+
+        result = _get_already_migrated_file_ids()
+        # File 10 is partially migrated (2 < 5), file 25 is fully migrated
+        assert result == {25}
 
     @patch(_OS_CLIENT_PATCH)
     def test_returns_empty_on_search_error(self, mock_get_client):
@@ -122,9 +150,9 @@ class TestBulkWriteV4Embeddings:
         }
         mock_get_client.return_value = mock_client
 
-        # Should still return count (errors are logged, not raised)
+        # 1 doc sent, 1 failed => returns 0 (len(docs) - failed_count)
         result = _bulk_write_v4_embeddings([{"_id": "x", "data": "bad"}])
-        assert result == 1
+        assert result == 0
 
 
 class TestBuildSpeakerSegments:
@@ -158,131 +186,218 @@ class TestBuildSpeakerSegments:
         assert result == {}
 
 
-class TestPrepareFileForGpu:
-    """Tests for _prepare_file_for_gpu I/O preparation."""
+class TestPrepareFile:
+    """Tests for prepare_file from migration_pipeline.
 
-    @patch("app.tasks.embedding_migration_v4._build_speaker_segments")
-    @patch("app.tasks.embedding_migration_v4.session_scope")
-    def test_returns_none_when_no_speakers(self, mock_scope, mock_build_segs):
-        from app.tasks.embedding_migration_v4 import _prepare_file_for_gpu
+    This function queries the DB, builds speaker snapshots, generates
+    a presigned URL, and returns a PreparedFile (or None/raises).
+
+    Note: get_file_by_uuid and minio_client are lazy-imported inside
+    prepare_file(), so we patch them at their source modules.
+    """
+
+    @patch("app.services.minio_service.minio_client")
+    @patch("app.utils.uuid_helpers.get_file_by_uuid")
+    @patch("app.tasks.migration_pipeline.session_scope")
+    def test_returns_none_when_no_speakers(self, mock_scope, mock_get_file, mock_minio):
+        from app.tasks.migration_pipeline import prepare_file
 
         mock_db = MagicMock()
         mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
         mock_scope.return_value.__exit__ = MagicMock(return_value=False)
 
         mock_media_file = MagicMock(id=1, user_id=1, storage_path="test.wav")
-        mock_get_file = MagicMock(return_value=mock_media_file)
+        mock_get_file.return_value = mock_media_file
+        # No speakers found
         mock_db.query.return_value.filter.return_value.all.return_value = []
 
-        result = _prepare_file_for_gpu("test-uuid", MagicMock(), mock_get_file, MagicMock())
+        result = prepare_file("test-uuid")
         assert result is None
 
-    @patch("app.tasks.embedding_migration_v4._build_speaker_segments")
-    @patch("app.tasks.embedding_migration_v4.session_scope")
-    def test_raises_when_file_not_found(self, mock_scope, mock_build_segs):
-        from app.tasks.embedding_migration_v4 import _prepare_file_for_gpu
+    @patch("app.services.minio_service.minio_client")
+    @patch("app.utils.uuid_helpers.get_file_by_uuid")
+    @patch("app.tasks.migration_pipeline.session_scope")
+    def test_raises_when_file_not_found(self, mock_scope, mock_get_file, mock_minio):
+        from app.tasks.migration_pipeline import prepare_file
 
         mock_db = MagicMock()
         mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
         mock_scope.return_value.__exit__ = MagicMock(return_value=False)
 
-        mock_get_file = MagicMock(return_value=None)
+        mock_get_file.return_value = None
 
         with pytest.raises(ValueError, match="not found"):
-            _prepare_file_for_gpu("missing-uuid", MagicMock(), mock_get_file, MagicMock())
+            prepare_file("missing-uuid")
 
 
-class TestExtractSpeakerEmbeddingFromPrepared:
-    """Tests for _extract_speaker_embedding_from_prepared."""
+class TestEmbeddingResultWriter:
+    """Tests for _embedding_result_writer.
 
-    def _make_prepared(self, speaker_segments=None):
-        from app.tasks.embedding_migration_v4 import PreparedFile
+    This callback receives a PreparedFile and results_by_model dict
+    (from the pipeline), aggregates embeddings per speaker, and bulk-writes
+    to OpenSearch.
+    """
+
+    @staticmethod
+    def _make_prepared(speakers, speaker_segments=None, speaker_profiles=None):
+        from app.tasks.migration_pipeline import PreparedFile
 
         return PreparedFile(
             file_uuid="test-uuid",
             audio_source="http://minio:9000/test/audio.mp4?presigned=1",
-            speakers=[],
+            speakers=speakers,
             speaker_segments=speaker_segments or {},
             media_file_id=1,
-            media_file_user_id=1,
-            speaker_profiles={},
+            user_id=1,
+            extra={"speaker_profiles": speaker_profiles or {}},
         )
 
-    def test_returns_none_when_speaker_not_in_segments(self):
-        from app.tasks.embedding_migration_v4 import SpeakerSnapshot
-        from app.tasks.embedding_migration_v4 import _extract_speaker_embedding_from_prepared
+    @staticmethod
+    def _make_speaker(speaker_id, uuid, name, profile_id=None):
+        from app.tasks.migration_pipeline import SpeakerSnapshot
 
-        speaker = SpeakerSnapshot(id=99, uuid="sp-99", name="X", profile_id=None)
-        prepared = self._make_prepared({1: [{"start": 0, "end": 5}]})
+        return SpeakerSnapshot(id=speaker_id, uuid=uuid, name=name, profile_id=profile_id)
 
-        result = _extract_speaker_embedding_from_prepared(speaker, prepared, MagicMock())
-        assert result is None
+    def test_returns_zero_when_no_embedding_results(self):
+        from app.tasks.embedding_migration_v4 import _embedding_result_writer
 
-    def test_returns_none_when_segments_empty(self):
-        from app.tasks.embedding_migration_v4 import SpeakerSnapshot
-        from app.tasks.embedding_migration_v4 import _extract_speaker_embedding_from_prepared
+        speaker = self._make_speaker(1, "sp-1", "Alice")
+        prepared = self._make_prepared([speaker])
 
-        speaker = SpeakerSnapshot(id=1, uuid="sp-1", name="A", profile_id=None)
-        prepared = self._make_prepared({1: []})
+        # No "embedding" key in results
+        result = _embedding_result_writer(prepared, {"other_model": []})
+        assert result == 0
 
-        result = _extract_speaker_embedding_from_prepared(speaker, prepared, MagicMock())
-        assert result is None
+    def test_returns_zero_when_embedding_results_empty(self):
+        from app.tasks.embedding_migration_v4 import _embedding_result_writer
 
-    def test_skips_short_segments(self):
-        from app.tasks.embedding_migration_v4 import SpeakerSnapshot
-        from app.tasks.embedding_migration_v4 import _extract_speaker_embedding_from_prepared
+        speaker = self._make_speaker(1, "sp-1", "Alice")
+        prepared = self._make_prepared([speaker])
 
-        speaker = SpeakerSnapshot(id=1, uuid="sp-uuid", name="Alice", profile_id=None)
-        prepared = self._make_prepared({1: [{"start": 0, "end": 0.3}]})
-        mock_service = MagicMock()
+        result = _embedding_result_writer(prepared, {"embedding": []})
+        assert result == 0
 
-        result = _extract_speaker_embedding_from_prepared(speaker, prepared, mock_service)
-        assert result is None
-        mock_service.extract_embedding_from_segment.assert_not_called()
+    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
+    def test_aggregates_and_writes_single_speaker(self, mock_bulk):
+        from app.services.speaker_analysis_models import SegmentResult
+        from app.tasks.embedding_migration_v4 import _embedding_result_writer
 
-    def test_returns_doc_with_aggregated_embedding(self):
-        import numpy as np
+        speaker = self._make_speaker(1, "sp-uuid", "Alice")
+        prepared = self._make_prepared(
+            [speaker],
+            speaker_profiles={1: None},
+        )
 
-        from app.tasks.embedding_migration_v4 import SpeakerSnapshot
-        from app.tasks.embedding_migration_v4 import _extract_speaker_embedding_from_prepared
+        emb1 = np.random.randn(256).astype(np.float32)
+        emb2 = np.random.randn(256).astype(np.float32)
+        results_by_model = {
+            "embedding": [
+                SegmentResult(model_name="embedding", speaker_id=1, value=emb1),
+                SegmentResult(model_name="embedding", speaker_id=1, value=emb2),
+            ]
+        }
 
-        speaker = SpeakerSnapshot(id=1, uuid="sp-uuid", name="Alice", profile_id=None)
-        prepared = self._make_prepared({1: [{"start": 0, "end": 5.0}, {"start": 5, "end": 12.0}]})
-        prepared.speaker_profiles = {1: None}
+        result = _embedding_result_writer(prepared, results_by_model)
 
-        mock_embedding = np.random.randn(256)
-        mock_service = MagicMock()
-        mock_service.extract_embedding_from_segment.return_value = mock_embedding
-        mock_service.aggregate_embeddings.return_value = mock_embedding
+        assert result == 1
+        mock_bulk.assert_called_once()
+        docs = mock_bulk.call_args[0][0]
+        assert len(docs) == 1
+        assert docs[0]["_id"] == "sp-uuid"
+        assert docs[0]["speaker_id"] == 1
+        assert docs[0]["name"] == "Alice"
+        assert docs[0]["media_file_id"] == 1
+        assert docs[0]["segment_count"] == 2
+        assert len(docs[0]["embedding"]) == 256
 
-        result = _extract_speaker_embedding_from_prepared(speaker, prepared, mock_service)
+    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
+    def test_aggregates_multiple_speakers(self, mock_bulk):
+        from app.services.speaker_analysis_models import SegmentResult
+        from app.tasks.embedding_migration_v4 import _embedding_result_writer
 
-        assert result is not None
-        assert result["_id"] == "sp-uuid"
-        assert result["speaker_id"] == 1
-        assert result["name"] == "Alice"
-        assert result["media_file_id"] == 1
-        assert result["segment_count"] == 2
-        assert len(result["embedding"]) == 256
+        alice = self._make_speaker(1, "sp-alice", "Alice")
+        bob = self._make_speaker(2, "sp-bob", "Bob")
+        prepared = self._make_prepared(
+            [alice, bob],
+            speaker_profiles={1: None, 2: None},
+        )
+
+        results_by_model = {
+            "embedding": [
+                SegmentResult(model_name="embedding", speaker_id=1, value=np.ones(256)),
+                SegmentResult(model_name="embedding", speaker_id=2, value=np.ones(256) * 2),
+            ]
+        }
+
+        result = _embedding_result_writer(prepared, results_by_model)
+
+        assert result == 2
+        mock_bulk.assert_called_once()
+        docs = mock_bulk.call_args[0][0]
+        assert len(docs) == 2
+        speaker_ids = {d["speaker_id"] for d in docs}
+        assert speaker_ids == {1, 2}
+
+    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
+    def test_skips_unknown_speaker_id(self, mock_bulk):
+        from app.services.speaker_analysis_models import SegmentResult
+        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+
+        alice = self._make_speaker(1, "sp-alice", "Alice")
+        prepared = self._make_prepared([alice])
+
+        # speaker_id=99 is not in prepared.speakers
+        results_by_model = {
+            "embedding": [
+                SegmentResult(model_name="embedding", speaker_id=99, value=np.ones(256)),
+            ]
+        }
+
+        result = _embedding_result_writer(prepared, results_by_model)
+        assert result == 0
+        mock_bulk.assert_not_called()
+
+    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
+    def test_normalizes_aggregated_embedding(self, mock_bulk):
+        from app.services.speaker_analysis_models import SegmentResult
+        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+
+        speaker = self._make_speaker(1, "sp-1", "Alice")
+        prepared = self._make_prepared([speaker], speaker_profiles={1: None})
+
+        # Two embeddings that should be averaged and L2-normalized
+        emb1 = np.array([3.0, 0.0] + [0.0] * 254)
+        emb2 = np.array([1.0, 0.0] + [0.0] * 254)
+        results_by_model = {
+            "embedding": [
+                SegmentResult(model_name="embedding", speaker_id=1, value=emb1),
+                SegmentResult(model_name="embedding", speaker_id=1, value=emb2),
+            ]
+        }
+
+        _embedding_result_writer(prepared, results_by_model)
+
+        docs = mock_bulk.call_args[0][0]
+        embedding = np.array(docs[0]["embedding"])
+        # Mean of [3,0,...] and [1,0,...] is [2,0,...], normalized to [1,0,...]
+        assert abs(np.linalg.norm(embedding) - 1.0) < 1e-6
 
 
 class TestGetMigrationStatus:
     """Tests for get_migration_status."""
 
-    @patch("app.tasks.embedding_migration_v4.migration_lock")
     @patch("app.tasks.embedding_migration_v4.EmbeddingModeService")
     @patch(_OS_CLIENT_PATCH)
-    def test_returns_error_when_no_client(self, mock_get_client, mock_mode, mock_lock):
+    def test_returns_error_when_no_client(self, mock_get_client, mock_mode):
         from app.tasks.embedding_migration_v4 import get_migration_status
 
         mock_get_client.return_value = None
         result = get_migration_status()
         assert result["status"] == "error"
 
-    @patch("app.tasks.embedding_migration_v4.migration_lock")
     @patch("app.tasks.embedding_migration_v4.EmbeddingModeService")
     @patch(_OS_CLIENT_PATCH)
-    def test_includes_transcription_paused_flag(self, mock_get_client, mock_mode, mock_lock):
+    def test_includes_transcription_paused_flag(self, mock_get_client, mock_mode):
         from app.tasks.embedding_migration_v4 import get_migration_status
 
         mock_client = MagicMock()
@@ -290,89 +405,53 @@ class TestGetMigrationStatus:
         mock_client.count.return_value = {"count": 0}
         mock_get_client.return_value = mock_client
         mock_mode.detect_mode.return_value = "v3"
-        mock_lock.is_active.return_value = True
 
         result = get_migration_status()
-        assert result["transcription_paused"] is True
+        assert result["transcription_paused"] is False
         assert result["migration_needed"] is True
 
 
-class TestGpuExtractAndWrite:
-    """Tests for _gpu_extract_and_write parallel pipeline.
+class TestPreparedFileDataclass:
+    """Tests for the PreparedFile and SpeakerSnapshot dataclasses from migration_pipeline."""
 
-    The pipeline: parallel ffmpeg seeks → sequential GPU inference → bulk write.
-    No temp dirs are created — audio is streamed via presigned URLs.
-    """
+    def test_prepared_file_construction(self):
+        from app.tasks.migration_pipeline import PreparedFile
+        from app.tasks.migration_pipeline import SpeakerSnapshot
 
-    @staticmethod
-    def _make_prepared(speakers, speaker_segments):
-        from app.tasks.embedding_migration_v4 import PreparedFile
-
-        return PreparedFile(
+        speaker = SpeakerSnapshot(id=1, uuid="sp-1", name="Alice", profile_id=None)
+        pf = PreparedFile(
             file_uuid="test-uuid",
-            audio_source="http://minio:9000/test/audio.mp4?presigned=1",
-            speakers=speakers,
-            speaker_segments=speaker_segments,
-            media_file_id=1,
-            media_file_user_id=1,
-            speaker_profiles={},
+            audio_source="http://example.com/audio.mp4",
+            speakers=[speaker],
+            speaker_segments={1: [{"start": 0.0, "end": 5.0}]},
+            media_file_id=42,
+            user_id=1,
         )
 
-    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
-    def test_returns_zero_when_no_segments(self, mock_bulk):
-        from app.tasks.embedding_migration_v4 import SpeakerSnapshot
-        from app.tasks.embedding_migration_v4 import _gpu_extract_and_write
+        assert pf.file_uuid == "test-uuid"
+        assert len(pf.speakers) == 1
+        assert pf.speakers[0].name == "Alice"
+        assert pf.media_file_id == 42
+        assert pf.user_id == 1
+        assert pf.extra == {}
 
-        speaker = SpeakerSnapshot(id=1, uuid="sp-1", name="Alice", profile_id=None)
-        prepared = self._make_prepared([speaker], {})
+    def test_prepared_file_extra_field(self):
+        from app.tasks.migration_pipeline import PreparedFile
 
-        result = _gpu_extract_and_write(prepared, MagicMock())
-        assert result == 0
-        mock_bulk.assert_not_called()
+        pf = PreparedFile(
+            file_uuid="uuid",
+            audio_source="url",
+            speakers=[],
+            speaker_segments={},
+            media_file_id=1,
+            user_id=1,
+            extra={"speaker_profiles": {1: "profile-uuid"}},
+        )
 
-    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
-    @patch("app.services.speaker_embedding_service.SpeakerEmbeddingService._load_audio_segment")
-    def test_extracts_and_bulk_writes(self, mock_load_seg, mock_bulk):
-        import numpy as np
-        import torch
+        assert pf.extra["speaker_profiles"][1] == "profile-uuid"
 
-        from app.tasks.embedding_migration_v4 import SpeakerSnapshot
-        from app.tasks.embedding_migration_v4 import _gpu_extract_and_write
+    def test_speaker_snapshot_defaults(self):
+        from app.tasks.migration_pipeline import SpeakerSnapshot
 
-        speaker = SpeakerSnapshot(id=1, uuid="sp-1", name="Alice", profile_id=None)
-        segments = {1: [{"start": 0.0, "end": 5.0}, {"start": 6.0, "end": 12.0}]}
-        prepared = self._make_prepared([speaker], segments)
-
-        # Mock _load_audio_segment to return a dummy waveform
-        mock_load_seg.return_value = torch.zeros(1, 16000)
-
-        # Mock embedding service methods
-        mock_service = MagicMock()
-        mock_embedding = np.random.randn(256)
-        mock_service.extract_embedding_from_waveform.return_value = mock_embedding
-        mock_service.aggregate_embeddings.return_value = mock_embedding
-        mock_bulk.return_value = 1
-
-        result = _gpu_extract_and_write(prepared, mock_service)
-
-        assert result == 1
-        mock_bulk.assert_called_once()
-        docs = mock_bulk.call_args[0][0]
-        assert len(docs) == 1
-        assert docs[0]["speaker_id"] == 1
-        assert docs[0]["_id"] == "sp-1"
-
-    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
-    @patch("app.services.speaker_embedding_service.SpeakerEmbeddingService._load_audio_segment")
-    def test_skips_short_segments(self, mock_load_seg, mock_bulk):
-        from app.tasks.embedding_migration_v4 import SpeakerSnapshot
-        from app.tasks.embedding_migration_v4 import _gpu_extract_and_write
-
-        speaker = SpeakerSnapshot(id=1, uuid="sp-1", name="A", profile_id=None)
-        # All segments under 0.5s threshold
-        segments = {1: [{"start": 0.0, "end": 0.3}, {"start": 1.0, "end": 1.4}]}
-        prepared = self._make_prepared([speaker], segments)
-
-        result = _gpu_extract_and_write(prepared, MagicMock())
-        assert result == 0
-        mock_load_seg.assert_not_called()
+        sp = SpeakerSnapshot(id=1, uuid="sp-1", name="Alice")
+        assert sp.profile_id is None

@@ -7,6 +7,7 @@ from .endpoints import admin
 from .endpoints import asr_settings
 from .endpoints import auth
 from .endpoints import auth_config
+from .endpoints import combined_speaker_migration
 from .endpoints import comments
 from .endpoints import custom_vocabulary
 from .endpoints import embedding_migration
@@ -16,6 +17,7 @@ from .endpoints import llm_status
 from .endpoints import media_collections
 from .endpoints import prompts
 from .endpoints import search
+from .endpoints import speaker_attribute_migration
 from .endpoints import speaker_clusters
 from .endpoints import speaker_profiles
 from .endpoints import speakers
@@ -101,6 +103,16 @@ include_router_with_consistency(
 )
 include_router_with_consistency(
     embedding_migration.router, prefix="/embeddings/migration", tags=["embedding-migration"]
+)
+include_router_with_consistency(
+    speaker_attribute_migration.router,
+    prefix="/speaker-attributes/migration",
+    tags=["speaker-attribute-migration"],
+)
+include_router_with_consistency(
+    combined_speaker_migration.router,
+    prefix="/speakers/combined-migration",
+    tags=["combined-speaker-migration"],
 )
 
 # Include WebSocket router without prefix since it handles its own paths

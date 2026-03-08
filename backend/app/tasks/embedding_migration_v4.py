@@ -4,66 +4,44 @@ Speaker embedding migration task for v3->v4 upgrade.
 This module provides the migration infrastructure for upgrading speaker
 embeddings from PyAnnote v3 (512-dim) to v4 (256-dim WeSpeaker).
 
-Key improvements over the initial implementation:
+Uses the unified migration_pipeline for I/O pipelining and GPU workers,
+and speaker_analysis_models.EmbeddingModelAdapter for model abstraction.
+
+Key features:
 - Batched extraction (25 files/task) with warm-cached embedding model
 - Prefetch pipeline: I/O threads download next files while GPU processes current
 - Skip logic for files already migrated to v4
 - Bulk OpenSearch writes instead of individual calls
-- Migration lock pauses transcription so GPU is fully available
+- Celery priorities ensure migration tasks run before transcription
 - Safe finalize with count validation, backup, and finally-block cleanup
 """
 
-import contextlib
 import datetime
 import json
 import logging
-from concurrent.futures import Future
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
-from dataclasses import field
-
-import redis
 
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_PROGRESS
+from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
+from app.core.constants import CPUPriority
+from app.core.constants import GPUPriority
+from app.core.constants import UtilityPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.embedding_mode_service import MODE_V4
 from app.services.embedding_mode_service import EmbeddingModeService
-from app.services.migration_lock_service import migration_lock
 from app.services.migration_progress_service import migration_progress
+from app.services.speaker_analysis_models import SegmentResult
+from app.tasks.migration_pipeline import PreparedFile
+from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
 # Batch size for grouping files into a single GPU task
 _BATCH_SIZE = 25
-
-
-# ---------------------------------------------------------------------------
-# Notification helper
-# ---------------------------------------------------------------------------
-
-
-def _send_migration_notification(
-    notification_type: str,
-    data: dict,
-    user_id: int | None = None,
-) -> None:
-    """Send a migration progress notification via Redis pub/sub."""
-    try:
-        redis_client = redis.from_url(settings.REDIS_URL)
-        target_user = user_id if user_id else 1
-        notification = {
-            "user_id": target_user,
-            "type": notification_type,
-            "data": data,
-        }
-        redis_client.publish("websocket_notifications", json.dumps(notification))
-    except Exception as e:
-        logger.error(f"Failed to send migration notification: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -102,14 +80,47 @@ def get_migration_status() -> dict:
         "migration_needed": current_mode == "v3",
         "migration_complete": current_mode == "v4"
         and not client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX + "_v3_backup"),
-        "transcription_paused": migration_lock.is_active(),
+        "transcription_paused": False,
     }
 
 
-@celery_app.task(bind=True, name="check_migration_status", queue="utility")
+@celery_app.task(
+    bind=True, name="check_migration_status", queue="utility", priority=UtilityPriority.BACKGROUND
+)
 def check_migration_status_task(self):
     """Check the current embedding migration status."""
     return get_migration_status()
+
+
+# ---------------------------------------------------------------------------
+# Index management helpers
+# ---------------------------------------------------------------------------
+
+
+def _clear_v4_index() -> None:
+    """Delete all documents from the v4 speaker index for a clean re-migration."""
+    from app.services.opensearch_service import get_opensearch_client
+
+    client = get_opensearch_client()
+    if not client:
+        logger.warning("OpenSearch not available — cannot clear v4 index")
+        return
+
+    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    if not client.indices.exists(index=v4_index):
+        logger.info("v4 index does not exist — nothing to clear")
+        return
+
+    try:
+        count_before = client.count(index=v4_index).get("count", 0)
+        client.delete_by_query(
+            index=v4_index,
+            body={"query": {"match_all": {}}},
+            refresh=True,
+        )
+        logger.info(f"Cleared {count_before} documents from {v4_index} for force re-migration")
+    except Exception as e:
+        logger.error(f"Failed to clear v4 index: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -117,12 +128,44 @@ def check_migration_status_task(self):
 # ---------------------------------------------------------------------------
 
 
-def _get_already_migrated_file_ids() -> set[int]:
-    """Return set of media_file_id values already present in the v4 index.
+def _count_embeddable_speakers_per_file(file_ids: list[int]) -> dict[int, int]:
+    """Count speakers that the pipeline will produce embeddings for, per file.
 
-    Uses an OpenSearch terms aggregation (single query) so this is fast
-    even for thousands of documents.
+    Mirrors the threshold logic in migration_pipeline.collect_work_items:
+    any speaker with at least one segment >= SPEAKER_SHORT_SEGMENT_MIN_DURATION
+    will be processed (the pipeline falls back to that lower threshold when a
+    speaker's longest merged segment is below SPEAKER_SEGMENT_MIN_DURATION).
     """
+    from sqlalchemy import distinct
+    from sqlalchemy import func as sa_func
+
+    from app.models.media import Speaker
+    from app.models.media import TranscriptSegment
+
+    if not file_ids:
+        return {}
+
+    with session_scope() as db:
+        rows = (
+            db.query(Speaker.media_file_id, sa_func.count(distinct(Speaker.id)))
+            .join(
+                TranscriptSegment,
+                (TranscriptSegment.speaker_id == Speaker.id)
+                & (TranscriptSegment.media_file_id == Speaker.media_file_id),
+            )
+            .filter(
+                Speaker.media_file_id.in_(file_ids),
+                (TranscriptSegment.end_time - TranscriptSegment.start_time)
+                >= SPEAKER_SHORT_SEGMENT_MIN_DURATION,
+            )
+            .group_by(Speaker.media_file_id)
+            .all()
+        )
+        return {int(fid): cnt for fid, cnt in rows}
+
+
+def _get_already_migrated_file_ids() -> set[int]:
+    """Return set of media_file_id values fully migrated in the v4 index."""
     from app.services.opensearch_service import get_opensearch_client
 
     client = get_opensearch_client()
@@ -149,10 +192,30 @@ def _get_already_migrated_file_ids() -> set[int]:
             },
         )
         buckets = response.get("aggregations", {}).get("file_ids", {}).get("buckets", [])
-        return {int(b["key"]) for b in buckets}
+        v4_counts = {int(b["key"]): b["doc_count"] for b in buckets}
     except Exception as e:
         logger.warning(f"Could not query v4 index for skip logic: {e}")
         return set()
+
+    if not v4_counts:
+        return set()
+
+    embeddable_counts = _count_embeddable_speakers_per_file(list(v4_counts.keys()))
+
+    fully_migrated: set[int] = set()
+    partial_count = 0
+
+    for file_id, v4_count in v4_counts.items():
+        embeddable = embeddable_counts.get(file_id, 0)
+        if embeddable == 0 or v4_count >= embeddable:
+            fully_migrated.add(file_id)
+        else:
+            partial_count += 1
+
+    if partial_count:
+        logger.info(f"Found {partial_count} partially migrated files (will be re-processed)")
+
+    return fully_migrated
 
 
 # ---------------------------------------------------------------------------
@@ -182,15 +245,7 @@ def _build_speaker_segments(db, media_file_id: int) -> dict[int, list[dict[str, 
 
 
 def _bulk_write_v4_embeddings(speaker_docs: list[dict]) -> int:
-    """Bulk-index a list of speaker embedding documents to the v4 index.
-
-    Args:
-        speaker_docs: List of dicts, each containing the document body
-            and a ``_id`` key for the document ID.
-
-    Returns:
-        Number of documents successfully indexed.
-    """
+    """Bulk-index a list of speaker embedding documents to the v4 index."""
     from app.services.opensearch_service import get_opensearch_client
 
     if not speaker_docs:
@@ -212,10 +267,13 @@ def _bulk_write_v4_embeddings(speaker_docs: list[dict]) -> int:
         response = client.bulk(body=bulk_body)
         errors = response.get("errors", False)
         if errors:
+            failed_count = 0
             for item in response.get("items", []):
                 err = item.get("index", {}).get("error")
                 if err:
                     logger.error(f"Bulk index error: {err}")
+                    failed_count += 1
+            return len(speaker_docs) - failed_count
         return len(speaker_docs)
     except Exception as e:
         logger.error(f"Bulk write to v4 index failed: {e}")
@@ -223,12 +281,99 @@ def _bulk_write_v4_embeddings(speaker_docs: list[dict]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Result writer for the unified pipeline
+# ---------------------------------------------------------------------------
+
+
+def _embedding_result_writer(
+    prepared: PreparedFile,
+    results_by_model: dict[str, list[SegmentResult]],
+) -> int:
+    """Aggregate embedding results and bulk-write to OpenSearch v4 index.
+
+    This is the result_writer callback for process_batch_pipelined().
+    """
+    embedding_results = results_by_model.get("embedding", [])
+    if not embedding_results:
+        return 0
+
+    # Group embeddings by speaker
+    speaker_embeddings: dict[int, list] = {}
+    for sr in embedding_results:
+        speaker_embeddings.setdefault(sr.speaker_id, []).append(sr.value)
+
+    # Aggregate and build docs
+    docs: list[dict] = []
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    speaker_profiles = prepared.extra.get("speaker_profiles", {})
+
+    # Build speaker lookup for metadata
+    speaker_by_id = {sp.id: sp for sp in prepared.speakers}
+
+    for speaker_id, embs in speaker_embeddings.items():
+        if not embs:
+            continue
+
+        # Use static aggregate method
+        import numpy as np
+
+        if len(embs) == 1:
+            aggregated = embs[0]
+            norm = np.linalg.norm(aggregated)
+            if norm > 0:
+                aggregated = aggregated / norm
+        else:
+            stacked = np.vstack(embs)
+            aggregated = np.mean(stacked, axis=0)
+            norm = np.linalg.norm(aggregated)
+            if norm > 0:
+                aggregated = aggregated / norm
+
+        speaker = speaker_by_id.get(speaker_id)
+        if not speaker:
+            continue
+
+        docs.append(
+            {
+                "_id": str(speaker.uuid),
+                "speaker_id": speaker.id,
+                "speaker_uuid": str(speaker.uuid),
+                "profile_id": speaker.profile_id,
+                "profile_uuid": speaker_profiles.get(speaker.id),
+                "user_id": prepared.user_id,
+                "name": speaker.name,
+                "display_name": None,
+                "collection_ids": [],
+                "media_file_id": prepared.media_file_id,
+                "segment_count": len(embs),
+                "created_at": now,
+                "updated_at": now,
+                "embedding": aggregated.tolist(),
+            }
+        )
+
+    if docs:
+        _bulk_write_v4_embeddings(docs)
+
+    return len(docs)
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator task
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(bind=True, name="migrate_speaker_embeddings_to_v4", queue="cpu")
-def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
+@celery_app.task(
+    bind=True,
+    name="migrate_speaker_embeddings_to_v4",
+    queue="cpu",
+    priority=CPUPriority.ADMIN_BATCH,
+)
+def migrate_speaker_embeddings_v4_task(
+    self,
+    user_id: int | None = None,
+    force: bool = False,
+):
     """Orchestrate migration of all speaker embeddings to v4.
 
     Acquires the migration lock (pausing transcription), queries completed
@@ -238,9 +383,10 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
     from app.services.opensearch_service import create_speaker_index_v4
 
     task_id = self.request.id
-    logger.info(f"Starting speaker embedding migration to v4: task_id={task_id}")
+    action = "force re-migration" if force else "migration"
+    logger.info(f"Starting speaker embedding {action} to v4: task_id={task_id}")
 
-    # Prevent concurrent migrations
+    # Prevent concurrent migrations of the same type
     if migration_progress.is_running():
         logger.warning("Migration already in progress, skipping")
         return {
@@ -249,22 +395,18 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
             "existing_status": migration_progress.get_status(),
         }
 
-    # Check current mode
+    # Check current mode (allow force even if already v4)
     current_mode = EmbeddingModeService.detect_mode()
-    if current_mode == MODE_V4:
+    if current_mode == MODE_V4 and not force:
         logger.info("Already in v4 mode, no migration needed")
         return {"status": "skipped", "message": "Already using v4 embeddings"}
 
-    # Acquire migration lock (pauses transcription workers)
-    if not migration_lock.activate():
-        return {
-            "status": "error",
-            "message": "Could not acquire migration lock (another migration may be running)",
-        }
+    # Force mode: delete all existing v4 documents for clean re-extraction
+    if force:
+        _clear_v4_index()
 
-    # Create the v4 staging index
+    # Create the v4 staging index (no-op if already exists)
     if not create_speaker_index_v4():
-        migration_lock.deactivate()
         logger.error("Failed to create v4 staging index")
         return {"status": "error", "message": "Failed to create v4 staging index"}
 
@@ -275,10 +417,14 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
             query = query.filter(MediaFile.user_id == user_id)
         media_files = query.all()
 
-        # Filter out files already in v4 index
-        already_migrated = _get_already_migrated_file_ids()
-        files_to_migrate = [f for f in media_files if f.id not in already_migrated]
-        skipped = len(media_files) - len(files_to_migrate)
+        # Filter out files already in v4 index (force mode: nothing to skip)
+        if force:
+            files_to_migrate = list(media_files)
+            skipped = 0
+        else:
+            already_migrated = _get_already_migrated_file_ids()
+            files_to_migrate = [f for f in media_files if f.id not in already_migrated]
+            skipped = len(media_files) - len(files_to_migrate)
 
         total_files = len(files_to_migrate)
         logger.info(
@@ -287,7 +433,6 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
         )
 
         if total_files == 0:
-            migration_lock.deactivate()
             return {
                 "status": "success",
                 "message": f"No files to migrate ({skipped} already done)",
@@ -308,7 +453,8 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
         )
         tracker.start(message="Starting embedding migration...")
 
-        _send_migration_notification(
+        send_ws_event(
+            user_id or 1,
             NOTIFICATION_TYPE_MIGRATION_PROGRESS,
             {
                 "processed_files": 0,
@@ -317,7 +463,6 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
                 "progress": 0,
                 "running": True,
             },
-            user_id,
         )
 
         # Build batches of file UUIDs
@@ -325,16 +470,46 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
 
     batches = [file_uuids[i : i + _BATCH_SIZE] for i in range(0, len(file_uuids), _BATCH_SIZE)]
 
+    batch_task_ids = []
     for batch_idx, batch in enumerate(batches):
-        extract_v4_embeddings_batch_task.delay(
-            file_uuids=batch,
-            batch_index=batch_idx,
-            total_batches=len(batches),
-            total_files=total_files,
-            user_id=user_id,
+        result = extract_v4_embeddings_batch_task.apply_async(
+            kwargs={
+                "file_uuids": batch,
+                "batch_index": batch_idx,
+                "total_batches": len(batches),
+                "total_files": total_files,
+                "user_id": user_id,
+            },
+            priority=GPUPriority.ADMIN_MIGRATION,
         )
+        batch_task_ids.append(result.id)
+
+    # Store batch task IDs for revocation on stop
+    try:
+        from app.core.redis import get_redis
+
+        r = get_redis()
+        r.set("embedding_migration:batch_task_ids", json.dumps(batch_task_ids), ex=86400)
+    except Exception as e:
+        logger.warning("Failed to store batch task IDs: %s", e)
 
     logger.info(f"Dispatched {len(batches)} batch tasks for {total_files} files")
+
+    # Notify frontend that batches are queued and waiting for a GPU worker.
+    # The first WS event (above) had no message; this one tells the user why
+    # progress is stuck at 0% — GPU may be busy with another task.
+    send_ws_event(
+        user_id or 1,
+        NOTIFICATION_TYPE_MIGRATION_PROGRESS,
+        {
+            "processed_files": 0,
+            "total_files": total_files,
+            "failed_files": [],
+            "progress": 0,
+            "running": True,
+            "message": f"Queued — {len(batches)} batches waiting for GPU worker",
+        },
+    )
 
     return {
         "status": "in_progress",
@@ -346,449 +521,13 @@ def migrate_speaker_embeddings_v4_task(self, user_id: int | None = None):
 
 
 # ---------------------------------------------------------------------------
-# Prefetch pipeline: I/O prep runs on threads while GPU processes
-# ---------------------------------------------------------------------------
-
-# I/O thread pool size for parallel ffmpeg segment extraction.
-# Since transcription is paused during migration, we can use more threads
-# for network I/O (MinIO presigned URL seeks) without contention.
-_SEGMENT_IO_WORKERS = 16
-
-# Number of embedding model instances to load on the GPU for parallel
-# inference. Multiple instances on one GPU allow CPU↔GPU transfer overlap:
-# while one model's CUDA kernel runs (GIL released), other threads prepare
-# the next waveform. The WeSpeaker v4 model is ~50MB so 3 instances use
-# only ~150MB additional VRAM.
-_GPU_MODEL_WORKERS = 3
-
-
-@dataclass
-class SpeakerSnapshot:
-    """Plain-data snapshot of a Speaker, detached from any SQLAlchemy session."""
-
-    id: int
-    uuid: str
-    name: str
-    profile_id: int | None
-
-
-@dataclass
-class PreparedFile:
-    """Metadata for a file ready for GPU embedding extraction.
-
-    No audio data is stored — segments are extracted on-demand via
-    ffmpeg seeking from the audio_source (presigned URL or local path).
-    """
-
-    file_uuid: str
-    audio_source: str  # Presigned MinIO URL or local file path
-    speakers: list[SpeakerSnapshot]
-    speaker_segments: dict[int, list[dict[str, float]]]
-    media_file_id: int
-    media_file_user_id: int
-    speaker_profiles: dict[int, str | None] = field(default_factory=dict)
-
-
-def _prepare_file_for_gpu(
-    file_uuid: str,
-    download_file_fn,
-    get_file_by_uuid_fn,
-    speaker_model,
-) -> PreparedFile | None:
-    """Query DB for file metadata and generate a presigned URL — pure I/O, no GPU.
-
-    Does NOT download the file. Instead, generates a presigned MinIO URL
-    that ffmpeg can seek into directly for segment-level audio extraction.
-
-    Returns:
-        PreparedFile ready for GPU extraction, or None if file has no speakers.
-    """
-    with session_scope() as db:
-        media_file = get_file_by_uuid_fn(db, file_uuid)
-        if not media_file:
-            raise ValueError(f"Media file {file_uuid} not found")
-
-        speakers = (
-            db.query(speaker_model).filter(speaker_model.media_file_id == media_file.id).all()
-        )
-        if not speakers:
-            return None
-
-        speaker_segments = _build_speaker_segments(db, media_file.id)
-        storage_path = media_file.storage_path
-
-        # Snapshot speaker data (plain Python objects, session-independent)
-        speaker_profiles: dict[int, str | None] = {}
-        speaker_snapshots: list[SpeakerSnapshot] = []
-        for sp in speakers:
-            snapshot = SpeakerSnapshot(
-                id=sp.id,
-                uuid=str(sp.uuid),
-                name=sp.name,
-                profile_id=sp.profile_id,
-            )
-            speaker_snapshots.append(snapshot)
-            profile_uuid = None
-            if sp.profile_id and sp.profile:
-                profile_uuid = str(sp.profile.uuid)
-            speaker_profiles[sp.id] = profile_uuid
-
-        media_file_id = int(media_file.id)
-        media_file_user_id = int(media_file.user_id)
-
-    # Generate presigned URL — ffmpeg will seek directly into MinIO
-    from app.services.minio_service import minio_client
-
-    audio_source = minio_client.presigned_get_object(
-        bucket_name=settings.MEDIA_BUCKET_NAME,
-        object_name=storage_path,
-        expires=datetime.timedelta(hours=2),
-    )
-
-    return PreparedFile(
-        file_uuid=file_uuid,
-        audio_source=audio_source,
-        speakers=speaker_snapshots,
-        speaker_segments=speaker_segments,
-        media_file_id=media_file_id,
-        media_file_user_id=media_file_user_id,
-        speaker_profiles=speaker_profiles,
-    )
-
-
-def _collect_work_items(
-    prepared: PreparedFile,
-) -> list[tuple[SpeakerSnapshot, dict[str, float]]]:
-    """Collect eligible segments for embedding extraction.
-
-    Returns list of (speaker, segment) tuples — up to 5 longest segments
-    per speaker, minimum 0.5s duration each.
-    """
-    work_items: list[tuple[SpeakerSnapshot, dict[str, float]]] = []
-    for speaker in prepared.speakers:
-        segs = prepared.speaker_segments.get(speaker.id, [])
-        if not segs:
-            continue
-        segs_sorted = sorted(segs, key=lambda x: x["end"] - x["start"], reverse=True)
-        for seg in segs_sorted[:5]:
-            if seg["end"] - seg["start"] >= 0.5:
-                work_items.append((speaker, seg))
-    return work_items
-
-
-def _submit_segment_fetches(
-    prepared: PreparedFile,
-    pool: ThreadPoolExecutor,
-) -> list[tuple[SpeakerSnapshot, dict, Future]]:
-    """Submit ffmpeg segment extraction jobs to a shared thread pool.
-
-    Does NOT block — returns futures immediately so the caller can
-    continue submitting work for other files or start GPU inference
-    on already-completed segments.
-    """
-    from app.services.speaker_embedding_service import SpeakerEmbeddingService
-
-    work_items = _collect_work_items(prepared)
-    futures = []
-    for speaker, seg in work_items:
-        fut = pool.submit(
-            SpeakerEmbeddingService._load_audio_segment,
-            prepared.audio_source,
-            seg["start"],
-            seg["end"] - seg["start"],
-        )
-        futures.append((speaker, seg, fut))
-    return futures
-
-
-def _gpu_infer_and_write(
-    prepared: PreparedFile,
-    segment_futures: list[tuple[SpeakerSnapshot, dict, Future]],
-    embedding_service,
-) -> int:
-    """Run GPU inference on pre-fetched waveforms and bulk-write results.
-
-    This is the GPU-bound phase — runs on the main thread for PyTorch
-    safety. All I/O (ffmpeg seeks) should already be in progress or
-    complete in the thread pool.
-
-    Args:
-        prepared: File metadata.
-        segment_futures: Futures from _submit_segment_fetches.
-        embedding_service: Warm-cached embedding service.
-
-    Returns:
-        Number of speakers successfully migrated.
-    """
-    if not segment_futures:
-        return 0
-
-    # Collect waveforms as they complete
-    waveform_results: list[tuple[SpeakerSnapshot, dict, object]] = []
-    for speaker, seg, fut in segment_futures:
-        try:
-            waveform = fut.result(timeout=30)
-            if waveform is not None and waveform.shape[1] > 0:
-                waveform_results.append((speaker, seg, waveform))
-        except Exception as e:
-            logger.debug(f"Segment seek failed for speaker {speaker.id}: {e}")
-
-    # GPU inference — sequential on main thread
-    speaker_embeddings: dict[int, list] = {}
-    for speaker, _seg, waveform in waveform_results:
-        emb = embedding_service.extract_embedding_from_waveform(waveform, 16000)
-        if emb is not None:
-            speaker_embeddings.setdefault(speaker.id, []).append(emb)
-
-    # Aggregate and build docs
-    docs: list[dict] = []
-    now = datetime.datetime.now().isoformat()
-    seen_speakers: set[int] = set()
-    for speaker in prepared.speakers:
-        if speaker.id in seen_speakers:
-            continue
-        seen_speakers.add(speaker.id)
-
-        embs = speaker_embeddings.get(speaker.id, [])
-        if not embs:
-            continue
-
-        aggregated = embedding_service.aggregate_embeddings(embs)
-        docs.append(
-            {
-                "_id": str(speaker.uuid),
-                "speaker_id": speaker.id,
-                "speaker_uuid": str(speaker.uuid),
-                "profile_id": speaker.profile_id,
-                "profile_uuid": prepared.speaker_profiles.get(speaker.id),
-                "user_id": prepared.media_file_user_id,
-                "name": speaker.name,
-                "display_name": None,
-                "collection_ids": [],
-                "media_file_id": prepared.media_file_id,
-                "segment_count": len(embs),
-                "created_at": now,
-                "updated_at": now,
-                "embedding": aggregated.tolist(),
-            }
-        )
-
-    if docs:
-        _bulk_write_v4_embeddings(docs)
-
-    return len(docs)
-
-
-def _gpu_extract_and_write(prepared: PreparedFile, embedding_service) -> int:
-    """Extract v4 embeddings for all speakers in a file, then bulk-write.
-
-    Standalone version that creates its own thread pool for single-file
-    use (benchmarks, tests). For batch processing, use
-    _submit_segment_fetches + _gpu_infer_and_write with a shared pool.
-
-    Returns:
-        Number of speakers successfully migrated.
-    """
-    work_items = _collect_work_items(prepared)
-    if not work_items:
-        return 0
-
-    with ThreadPoolExecutor(max_workers=_SEGMENT_IO_WORKERS, thread_name_prefix="ffmpeg") as pool:
-        segment_futures = _submit_segment_fetches(prepared, pool)
-        return _gpu_infer_and_write(prepared, segment_futures, embedding_service)
-
-
-def _process_batch_pipelined(
-    prepared_files: list[tuple[str, PreparedFile]],
-    primary_service,
-) -> tuple[int, int]:
-    """Process files with cross-file I/O pipelining and multi-model GPU workers.
-
-    Architecture (producer-consumer on one GPU):
-
-        ┌──────────────────────────────────────────┐
-        │  Shared I/O Pool (16 ffmpeg threads)     │
-        │  Fetches segments for ALL files upfront   │
-        └────────────────┬─────────────────────────┘
-                         │ waveform futures
-                         ▼
-        ┌──────────────────────────────────────────┐
-        │  Work Queue (file + segment futures)     │
-        └──┬──────────┬──────────┬─────────────────┘
-           │          │          │
-           ▼          ▼          ▼
-        ┌──────┐  ┌──────┐  ┌──────┐
-        │Model │  │Model │  │Model │  (same GPU)
-        │  0   │  │  1   │  │  2   │
-        └──┬───┘  └──┬───┘  └──┬───┘
-           │          │          │
-           ▼          ▼          ▼
-        ┌──────────────────────────────────────────┐
-        │  Bulk Write to OpenSearch (per file)     │
-        └──────────────────────────────────────────┘
-
-    Multiple model instances on one GPU allow CPU↔GPU transfer overlap:
-    the GIL is released during CUDA kernel execution, so while Model 0
-    runs inference, Model 1's thread prepares the next waveform tensor.
-    This keeps the GPU continuously fed without idle gaps.
-
-    Args:
-        prepared_files: List of (file_uuid, PreparedFile) tuples.
-        primary_service: Warm-cached embedding service (reused as worker 0).
-
-    Returns:
-        (migrated_count, failed_count) tuple.
-    """
-    import queue
-    import threading
-
-    from app.services.speaker_embedding_service import SpeakerEmbeddingService
-
-    if not prepared_files:
-        return 0, 0
-
-    migrated = 0
-    failed = 0
-    results_lock = threading.Lock()
-
-    # Create GPU worker pool — primary service + additional instances
-    gpu_services = [primary_service]
-    for _ in range(_GPU_MODEL_WORKERS - 1):
-        gpu_services.append(SpeakerEmbeddingService(mode=MODE_V4))
-
-    try:
-        work_q: queue.Queue[tuple[str, PreparedFile, list]] = queue.Queue()
-
-        # Shared I/O pool for ALL segment fetches across ALL files
-        with ThreadPoolExecutor(
-            max_workers=_SEGMENT_IO_WORKERS,
-            thread_name_prefix="ffmpeg",
-        ) as io_pool:
-            # Submit ALL segment fetches upfront — pool processes them FIFO
-            # so early files' segments complete first, keeping GPU workers fed
-            for fuuid, prepared in prepared_files:
-                seg_futures = _submit_segment_fetches(prepared, io_pool)
-                work_q.put((fuuid, prepared, seg_futures))
-
-            # GPU worker threads — each pulls files from the queue
-            def gpu_worker(service, worker_id: int) -> None:
-                nonlocal migrated, failed
-                while True:
-                    try:
-                        fuuid, prepared, seg_futures = work_q.get_nowait()
-                    except queue.Empty:
-                        break
-
-                    if not migration_lock.is_active():
-                        logger.warning(f"[GPU-{worker_id}] Lock released, stopping")
-                        break
-
-                    try:
-                        count = _gpu_infer_and_write(
-                            prepared,
-                            seg_futures,
-                            service,
-                        )
-                        with results_lock:
-                            migration_progress.increment_processed(success=True)
-                            migrated += 1
-                        if count:
-                            logger.info(
-                                f"[GPU-{worker_id}] {fuuid[:12]}… {count} speakers migrated"
-                            )
-                    except Exception as e:
-                        logger.error(f"[GPU-{worker_id}] {fuuid[:12]}… failed: {e}")
-                        with results_lock:
-                            migration_progress.increment_processed(
-                                success=False,
-                                file_uuid=fuuid,
-                            )
-                            failed += 1
-
-                    migration_lock.refresh_ttl()
-
-            # Launch workers
-            threads = []
-            for i, svc in enumerate(gpu_services):
-                t = threading.Thread(
-                    target=gpu_worker,
-                    args=(svc, i),
-                    name=f"gpu-worker-{i}",
-                    daemon=True,
-                )
-                t.start()
-                threads.append(t)
-
-            for t in threads:
-                t.join()
-
-    finally:
-        # Cleanup additional instances — keep primary warm-cached
-        for svc in gpu_services[1:]:
-            with contextlib.suppress(Exception):
-                svc.cleanup()
-
-    return migrated, failed
-
-
-def _extract_speaker_embedding_from_prepared(
-    speaker: SpeakerSnapshot,
-    prepared: PreparedFile,
-    embedding_service,
-) -> dict | None:
-    """Extract embedding for one speaker using segment-level ffmpeg seeking.
-
-    For single-speaker extraction (e.g., benchmarks). The batch path
-    (_gpu_extract_and_write) parallelizes all segments for better throughput.
-    """
-    if speaker.id not in prepared.speaker_segments:
-        return None
-
-    segs = prepared.speaker_segments[speaker.id]
-    if not segs:
-        return None
-
-    segs_sorted = sorted(segs, key=lambda x: x["end"] - x["start"], reverse=True)
-    selected_segs = segs_sorted[:5]
-
-    embeddings = []
-    for seg in selected_segs:
-        if seg["end"] - seg["start"] < 0.5:
-            continue
-        emb = embedding_service.extract_embedding_from_segment(prepared.audio_source, seg)
-        if emb is not None:
-            embeddings.append(emb)
-
-    if not embeddings:
-        return None
-
-    aggregated = embedding_service.aggregate_embeddings(embeddings)
-
-    now = datetime.datetime.now().isoformat()
-    return {
-        "_id": str(speaker.uuid),
-        "speaker_id": speaker.id,
-        "speaker_uuid": str(speaker.uuid),
-        "profile_id": speaker.profile_id,
-        "profile_uuid": prepared.speaker_profiles.get(speaker.id),
-        "user_id": prepared.media_file_user_id,
-        "name": speaker.name,
-        "display_name": None,
-        "collection_ids": [],
-        "media_file_id": prepared.media_file_id,
-        "segment_count": len(embeddings),
-        "created_at": now,
-        "updated_at": now,
-        "embedding": aggregated.tolist(),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Batched extraction task with prefetch pipeline
+# Batched extraction task with unified pipeline
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(bind=True, name="extract_v4_embeddings_batch", queue="gpu", priority=5)
+@celery_app.task(
+    bind=True, name="extract_v4_embeddings_batch", queue="gpu", priority=GPUPriority.ADMIN_MIGRATION
+)
 def extract_v4_embeddings_batch_task(
     self,
     file_uuids: list[str],
@@ -799,103 +538,87 @@ def extract_v4_embeddings_batch_task(
 ):
     """Extract v4 embeddings for a batch of media files.
 
-    Uses a multi-model producer-consumer pipeline on a single GPU:
-    1. Prepare all files (fast — presigned URLs + DB queries)
-    2. Shared I/O pool (16 threads) fetches ALL audio segments upfront
-    3. N GPU model instances (work-stealing) process files as data arrives
-
-    The I/O pool continuously feeds waveforms while GPU workers consume them.
-    Multiple model instances hide CPU↔GPU transfer latency: while one model's
-    CUDA kernel runs (GIL released), other workers prepare the next tensor.
-
-    The primary embedding model is loaded ONCE and kept warm across batches.
-    Additional instances are created per-batch and cleaned up after.
+    Uses the unified migration_pipeline with EmbeddingModelAdapter for
+    multi-model GPU pipelining. The primary embedding model is loaded ONCE
+    and kept warm across batches.
     """
-    from app.models.media import Speaker
-    from app.services.minio_service import download_file
+    from app.services.speaker_analysis_models import EmbeddingModelAdapter
+    from app.services.speaker_analysis_models import MultiModelRunner
     from app.services.speaker_embedding_service import get_cached_embedding_service
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.tasks.migration_pipeline import prepare_file
+    from app.tasks.migration_pipeline import process_batch_pipelined
 
     logger.info(f"Batch {batch_index + 1}/{total_batches}: processing {len(file_uuids)} files")
 
     # Get warm-cached embedding service (loaded once, reused across batches)
     embedding_service = get_cached_embedding_service(mode=MODE_V4)
+    runner = MultiModelRunner([EmbeddingModelAdapter(embedding_service)])
 
-    batch_migrated = 0
-    batch_failed = 0
+    # Initialize unified progress tracker for ETA
+    from app.services.progress_tracker import ProgressTracker
+
+    target_user = user_id or 1
+    tracker = ProgressTracker(
+        task_type="migration",
+        user_id=target_user,
+        total=total_files,
+    )
+    existing_tracker = ProgressTracker.get_state("migration", target_user)
+    if existing_tracker:
+        tracker.resume_from_state(existing_tracker)
 
     # Phase 1: Prepare all files (presigned URLs + DB queries — fast)
     files_with_speakers: list[tuple[str, PreparedFile]] = []
     for fuuid in file_uuids:
-        if not migration_lock.is_active():
-            logger.warning("Migration lock released — aborting batch")
+        if not migration_progress.is_running():
+            logger.warning("Migration stopped — aborting batch")
             break
         try:
-            prepared = _prepare_file_for_gpu(
-                fuuid,
-                download_file,
-                get_file_by_uuid,
-                Speaker,
-            )
+            prepared = prepare_file(fuuid, include_profile=True)
             if prepared is None:
                 # No speakers — still counts as processed
                 migration_progress.increment_processed(success=True)
-                batch_migrated += 1
+                _emit_progress(tracker, target_user, total_files)
             else:
                 files_with_speakers.append((fuuid, prepared))
         except Exception as e:
             logger.error(f"Failed to prepare file {fuuid}: {e}")
             migration_progress.increment_processed(success=False, file_uuid=fuuid)
-            batch_failed += 1
+            _emit_progress(tracker, target_user, total_files, failed_item=fuuid)
 
     # Phase 2: Multi-model pipelined GPU extraction
     if files_with_speakers:
-        m, f = _process_batch_pipelined(files_with_speakers, embedding_service)
-        batch_migrated += m
-        batch_failed += f
 
-    # Send progress notification after batch (with ETA from unified tracker)
+        def on_success(fuuid: str) -> None:
+            migration_progress.increment_processed(success=True)
+            _emit_progress(tracker, target_user, total_files)
+
+        def on_failure(fuuid: str, exc: Exception | None) -> None:
+            migration_progress.increment_processed(success=False, file_uuid=fuuid)
+            _emit_progress(tracker, target_user, total_files, failed_item=fuuid)
+
+        process_batch_pipelined(
+            prepared_files=files_with_speakers,
+            runner=runner,
+            result_writer=_embedding_result_writer,
+            is_running_check=migration_progress.is_running,
+            on_file_success=on_success,
+            on_file_failure=on_failure,
+            min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION,
+        )
+
+    # Check completion
     status = migration_progress.get_status()
     processed = status.get("processed_files", 0)
     total = status.get("total_files", 0) or total_files
     failed_files = status.get("failed_files", [])
-
-    progress_pct = processed / total if total > 0 else 0
     is_complete = processed >= total and total > 0
 
-    # Update unified progress tracker for ETA calculation
-    from app.services.progress_tracker import ProgressTracker
-
-    tracker = ProgressTracker(
-        task_type="migration",
-        user_id=user_id or 1,
-        total=total,
-    )
-    tracker_state = tracker.update(
-        processed,
-        message=f"Processed {processed} of {total} files",
-    )
-    eta_seconds = tracker_state.eta_seconds if tracker_state else None
-
-    _send_migration_notification(
-        NOTIFICATION_TYPE_MIGRATION_PROGRESS,
-        {
-            "processed_files": processed,
-            "total_files": total,
-            "failed_files": failed_files,
-            "progress": progress_pct,
-            "running": not is_complete,
-            "message": f"Processed {processed} of {total} files",
-            "eta_seconds": eta_seconds,
-        },
-        user_id,
-    )
-
-    if is_complete:
+    if is_complete and migration_progress.complete_migration(success=True):
         logger.info(f"All {total} migration files processed")
-        migration_progress.complete_migration(success=True)
         tracker.complete(message="Migration complete")
-        _send_migration_notification(
+        send_ws_event(
+            user_id or 1,
             NOTIFICATION_TYPE_MIGRATION_COMPLETE,
             {
                 "status": "complete",
@@ -903,15 +626,42 @@ def extract_v4_embeddings_batch_task(
                 "failed_files": failed_files,
                 "success_count": total - len(failed_files),
             },
-            user_id,
         )
 
     return {
         "status": "success",
         "batch_index": batch_index,
-        "migrated": batch_migrated,
-        "failed": batch_failed,
     }
+
+
+def _emit_progress(
+    tracker,
+    user_id: int,
+    total_files: int,
+    failed_item: str | None = None,
+) -> None:
+    """Emit migration progress notification with ETA."""
+    from app.services.progress_tracker import emit_progress_notification
+
+    status = migration_progress.get_status()
+    processed = status.get("processed_files", 0)
+    total = status.get("total_files", 0) or total_files
+    failed_files = status.get("failed_files", [])
+
+    emit_progress_notification(
+        tracker=tracker,
+        processed=processed,
+        user_id=user_id,
+        notification_type=NOTIFICATION_TYPE_MIGRATION_PROGRESS,
+        extra_data={
+            "processed_files": processed,
+            "total_files": total,
+            "failed_files": failed_files,
+            "running": processed < total,
+        },
+        message=f"Processed {processed} of {total} files",
+        failed_item=failed_item,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -919,7 +669,9 @@ def extract_v4_embeddings_batch_task(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(bind=True, name="extract_v4_embeddings", queue="gpu", priority=5)
+@celery_app.task(
+    bind=True, name="extract_v4_embeddings", queue="gpu", priority=GPUPriority.ADMIN_MIGRATION
+)
 def extract_v4_embeddings_task(
     self,
     file_uuid: str,
@@ -931,20 +683,35 @@ def extract_v4_embeddings_task(
 
     New migrations use extract_v4_embeddings_batch_task instead.
     """
-    from app.models.media import Speaker
-    from app.services.minio_service import download_file
+    from app.services.speaker_analysis_models import EmbeddingModelAdapter
+    from app.services.speaker_analysis_models import MultiModelRunner
     from app.services.speaker_embedding_service import get_cached_embedding_service
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.tasks.migration_pipeline import prepare_file
+    from app.tasks.migration_pipeline import process_batch_pipelined
 
     logger.info(f"[legacy] Extracting v4 embeddings for file {file_uuid}")
 
     embedding_service = get_cached_embedding_service(mode=MODE_V4)
+    runner = MultiModelRunner([EmbeddingModelAdapter(embedding_service)])
 
     try:
-        prepared = _prepare_file_for_gpu(file_uuid, download_file, get_file_by_uuid, Speaker)
+        prepared = prepare_file(file_uuid, include_profile=True)
         if prepared:
-            _gpu_extract_and_write(prepared, embedding_service)
-        migration_progress.increment_processed(success=True)
+            process_batch_pipelined(
+                prepared_files=[(file_uuid, prepared)],
+                runner=runner,
+                result_writer=_embedding_result_writer,
+                is_running_check=migration_progress.is_running,
+                on_file_success=lambda _: migration_progress.increment_processed(  # type: ignore[arg-type]
+                    success=True
+                ),
+                on_file_failure=lambda f, _: migration_progress.increment_processed(  # type: ignore[arg-type]
+                    success=False, file_uuid=f
+                ),
+                min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION,
+            )
+        else:
+            migration_progress.increment_processed(success=True)
     except Exception as e:
         logger.error(f"[legacy] Error migrating {file_uuid}: {e}")
         migration_progress.increment_processed(success=False, file_uuid=file_uuid)
@@ -964,7 +731,9 @@ def extract_v4_embeddings_task(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(bind=True, name="finalize_v4_migration", queue="utility")
+@celery_app.task(
+    bind=True, name="finalize_v4_migration", queue="utility", priority=UtilityPriority.BACKGROUND
+)
 def finalize_v4_migration_task(self):
     """Finalize the v4 migration by swapping indices.
 
@@ -1011,13 +780,8 @@ def finalize_v4_migration_task(self):
                 ),
             }
 
-        # Ensure migration lock is held during swap
-        if not migration_lock.is_active():
-            migration_lock.activate()
-
         # ---- Backup v3 ----
         if client.indices.exists(index=main_index):
-            # Remove old backup if exists
             if client.indices.exists(index=backup_index):
                 client.indices.delete(index=backup_index)
 
@@ -1073,7 +837,6 @@ def finalize_v4_migration_task(self):
         return {"status": "error", "message": str(e)}
 
     finally:
-        # ALWAYS clear caches and release lock, even on error
+        # ALWAYS clear caches, even on error
         EmbeddingModeService.clear_cache()
-        migration_lock.deactivate()
         migration_progress.clear_status()

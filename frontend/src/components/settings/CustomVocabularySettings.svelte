@@ -40,7 +40,7 @@
       terms = await CustomVocabularyApi.getVocabulary(selectedDomain);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to load vocabulary', 4000);
+      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.loadFailed'), 4000);
     } finally {
       loading = false;
     }
@@ -70,10 +70,10 @@
       }
       newTerm = '';
       newCategory = '';
-      toastStore.success(`"${created.term}" added to vocabulary`);
+      toastStore.success($t('settings.vocabulary.termAdded', { term: created.term }));
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to add term', 4000);
+      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.addFailed'), 4000);
     } finally {
       addingTerm = false;
     }
@@ -85,7 +85,7 @@
       terms = terms.map(t => t.id === updated.id ? updated : t);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to update term', 4000);
+      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.updateFailed'), 4000);
     }
   }
 
@@ -107,10 +107,10 @@
     try {
       await CustomVocabularyApi.deleteTerm(term.id);
       terms = terms.filter(t => t.id !== term.id);
-      toastStore.success(`"${term.term}" removed`);
+      toastStore.success($t('settings.vocabulary.termRemoved', { term: term.term }));
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to delete term', 4000);
+      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.deleteFailed'), 4000);
     }
   }
 
@@ -121,13 +121,13 @@
     try {
       const termsToImport: CustomVocabularyCreate[] = lines.map(term => ({ term, domain: bulkDomain }));
       const result = await CustomVocabularyApi.bulkImport(termsToImport);
-      toastStore.success(`Imported ${result.created} terms (${result.skipped} skipped)`);
+      toastStore.success($t('settings.vocabulary.importSuccess', { created: result.created, skipped: result.skipped }));
       bulkText = '';
       showBulkImport = false;
       await loadVocabulary();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Bulk import failed', 5000);
+      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.importFailed'), 5000);
     } finally {
       importing = false;
     }
@@ -191,7 +191,7 @@
       <input
         type="text"
         bind:value={newCategory}
-        placeholder="Category (optional)"
+        placeholder={$t('settings.vocabulary.categoryPlaceholder')}
         class="category-input"
       />
       <button class="btn-add" on:click={addTerm} disabled={addingTerm || !newTerm.trim()}>
@@ -202,10 +202,10 @@
 
   <!-- Terms list -->
   {#if loading}
-    <div class="list-loading">Loading vocabulary...</div>
+    <div class="list-loading">{$t('settings.vocabulary.loading')}</div>
   {:else if filteredTerms.length === 0}
     <div class="empty-terms">
-      <p>No terms in {getDomainLabel(selectedDomain)} domain.</p>
+      <p>{$t('settings.vocabulary.noTerms', { domain: getDomainLabel(selectedDomain) })}</p>
     </div>
   {:else}
     <div class="terms-list">
@@ -248,9 +248,11 @@
                   title={$t('settings.customVocabulary.removeTerm')}
                   aria-label={$t('settings.customVocabulary.removeTerm') + ': ' + term.term}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="3,6 5,6 21,6"/>
                     <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                    <line x1="10" y1="11" x2="10" y2="17"/>
+                    <line x1="14" y1="11" x2="14" y2="17"/>
                   </svg>
                 </button>
               {/if}
@@ -271,7 +273,7 @@
       <div class="bulk-form">
         <textarea
           bind:value={bulkText}
-          placeholder="One term per line&#10;Atelectasis&#10;Pneumothorax&#10;Cephalosporin"
+          placeholder={$t('settings.customVocabulary.bulkImportPlaceholder')}
           class="bulk-textarea"
           rows="6"
         ></textarea>
@@ -282,7 +284,7 @@
             {/each}
           </select>
           <button class="btn-import" on:click={bulkImport} disabled={importing || !bulkText.trim()}>
-            {importing ? 'Importing...' : 'Import'}
+            {importing ? $t('settings.vocabulary.importing') : $t('settings.vocabulary.import')}
           </button>
         </div>
       </div>
@@ -333,8 +335,8 @@
   .domain-tab:hover { color: var(--text-color); border-color: var(--border-hover, #6b7280); }
 
   .domain-tab.active {
-    background: #3b82f6;
-    border-color: #3b82f6;
+    background: var(--primary-color);
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -375,17 +377,26 @@
 
   .btn-add {
     padding: 0.45rem 1rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 5px;
     cursor: pointer;
     font-size: 0.8125rem;
     white-space: nowrap;
-    transition: background 0.15s;
+    transition: all 0.15s;
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
-  .btn-add:hover:not(:disabled) { background: #2563eb; }
+  .btn-add:hover:not(:disabled) {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
+  }
+
+  .btn-add:active:not(:disabled) {
+    transform: translateY(0);
+  }
 
   .list-loading, .empty-terms {
     text-align: center;
@@ -431,8 +442,8 @@
 
   .domain-badge {
     padding: 0.1rem 0.4rem;
-    background: rgba(99, 102, 241, 0.1);
-    color: #6366f1;
+    background: rgba(var(--primary-color-rgb), 0.1);
+    color: var(--primary-color);
     border-radius: 4px;
     font-size: 0.7rem;
   }
@@ -495,7 +506,7 @@
   }
 
   .toggle input:checked + .toggle-slider {
-    background: #10b981;
+    background: var(--success-color, #10b981);
   }
 
   .toggle input:checked + .toggle-slider::after {
@@ -511,14 +522,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
     background: transparent;
     border: 1px solid var(--error-color, #ef4444);
     color: var(--error-color, #ef4444);
-    border-radius: 4px;
+    border-radius: 5px;
     cursor: pointer;
     transition: all 0.15s;
+    flex-shrink: 0;
   }
 
   .btn-delete-term:hover {
@@ -533,32 +546,39 @@
   }
 
   .btn-confirm-delete {
-    padding: 0.2rem 0.5rem;
+    padding: 0.25rem 0.625rem;
     background: var(--error-color, #ef4444);
     color: white;
     border: none;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.15s;
-  }
-
-  .btn-confirm-delete:hover { background: #dc2626; }
-
-  .btn-cancel-delete {
-    padding: 0.2rem 0.5rem;
-    background: transparent;
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.7rem;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.15s;
   }
 
-  .btn-cancel-delete:hover { color: var(--text-color); border-color: var(--text-muted); }
+  .btn-confirm-delete:hover {
+    background: var(--error-color, #ef4444);
+    filter: brightness(0.85);
+  }
+
+  .btn-cancel-delete {
+    padding: 0.25rem 0.625rem;
+    background: transparent;
+    color: var(--text-secondary, #999);
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+
+  .btn-cancel-delete:hover {
+    color: var(--text-color);
+    border-color: var(--text-secondary, #999);
+  }
 
   .bulk-section {
     border-top: 1px solid var(--border-color);
@@ -606,17 +626,26 @@
 
   .btn-import {
     padding: 0.45rem 1rem;
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 5px;
     cursor: pointer;
     font-size: 0.8125rem;
     white-space: nowrap;
-    transition: background 0.15s;
+    transition: all 0.15s;
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
-  .btn-import:hover:not(:disabled) { background: #2563eb; }
+  .btn-import:hover:not(:disabled) {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
+  }
+
+  .btn-import:active:not(:disabled) {
+    transform: translateY(0);
+  }
 
   button:disabled {
     opacity: 0.6;
@@ -625,6 +654,7 @@
 
   input:focus, select:focus, textarea:focus {
     outline: none;
-    border-color: #3b82f6;
+    border-color: var(--input-focus-border, var(--primary-color));
+    box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.2);
   }
 </style>

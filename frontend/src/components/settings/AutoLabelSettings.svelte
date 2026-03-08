@@ -275,7 +275,7 @@
           <span class="progress-text">
             {Math.round((retroactiveProcessed / retroactiveTotal) * 100)}%
             {#if formatEta(retroactiveEtaSeconds)}
-              ({formatEta(retroactiveEtaSeconds)} remaining)
+              ({formatEta(retroactiveEtaSeconds)} {$t('upload.remaining')})
             {/if}
           </span>
         </div>

@@ -25,6 +25,7 @@ export type SettingsSection =
   | 'admin-task-health'
   | 'admin-settings'
   | 'embedding-migration'
+  | 'data-integrity'
   | 'retention'
   // Super Admin sections
   | 'authentication'
@@ -62,6 +63,7 @@ const initialState: SettingsModalState = {
     'admin-task-health': false,
     'admin-settings': false,
     'embedding-migration': false,
+    'data-integrity': false,
     retention: false,
     authentication: false,
     'account-status': false,

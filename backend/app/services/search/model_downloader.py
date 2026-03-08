@@ -10,6 +10,7 @@ import logging
 import urllib.error
 import urllib.request
 from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -186,11 +187,11 @@ def _update_manifest(cache_dir: Path, model_name: str, model_info: dict[str, Any
             "short_name": model_info["short_name"],
             "version": model_info["version"],
             "dimension": model_info["dimension"],
-            "downloaded_at": datetime.now().isoformat(),
+            "downloaded_at": datetime.now(timezone.utc).isoformat(),
         }
     )
 
-    manifest["updated_at"] = datetime.now().isoformat()
+    manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     # Write manifest
     try:

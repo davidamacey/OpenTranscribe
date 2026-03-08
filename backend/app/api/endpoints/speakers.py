@@ -1457,9 +1457,20 @@ def delete_speaker(
     if speaker.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
+    # Capture UUID before DB delete
+    uuid_to_clean = str(speaker.uuid)
+
     # Delete the speaker
     db.delete(speaker)
     db.commit()
+
+    # Remove from all OpenSearch speaker indices (non-fatal)
+    try:
+        from app.services.opensearch_service import remove_speaker_embedding
+
+        remove_speaker_embedding(uuid_to_clean)
+    except Exception as e:
+        logger.warning(f"Failed to remove speaker {uuid_to_clean} from OpenSearch: {e}")
 
     # Invalidate caches
     try:

@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
+from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.search import SetEmbeddingModelSchema
@@ -362,8 +363,6 @@ def stop_reindex(
     Returns:
         Dict with stop status.
     """
-    import redis as sync_redis
-
     user_id = int(current_user.id)
 
     if not _check_reindex_task_active(user_id):
@@ -373,7 +372,7 @@ def stop_reindex(
         }
 
     try:
-        redis_client = sync_redis.from_url(settings.REDIS_URL)
+        redis_client = get_redis()
         redis_client.setex(f"reindex_cancel:{user_id}", 3600, "1")
 
         logger.info(f"Reindex stop requested for user {user_id}")
@@ -520,9 +519,7 @@ def reindex_status(
     stop_requested = False
     if in_progress:
         try:
-            import redis as sync_redis
-
-            redis_client = sync_redis.from_url(settings.REDIS_URL)
+            redis_client = get_redis()
             stop_requested = bool(redis_client.get(f"reindex_cancel:{int(current_user.id)}"))
         except Exception as e:
             logger.debug(f"Could not check reindex cancellation flag: {e}")

@@ -16,6 +16,7 @@ import numpy as np
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.constants import CPUPriority
 from app.services.opensearch_service import get_opensearch_client
 
 logger = logging.getLogger(__name__)
@@ -208,7 +209,9 @@ def _normalize_index(
                 client.clear_scroll(scroll_id=scroll_id)
 
 
-@celery_app.task(name="migration.normalize_embeddings", bind=True, queue="cpu")
+@celery_app.task(
+    name="migration.normalize_embeddings", bind=True, queue="cpu", priority=CPUPriority.ADMIN_BATCH
+)
 def normalize_speaker_embeddings_task(self, batch_size: int = SCROLL_BATCH_SIZE) -> dict[str, Any]:
     """Normalize all speaker/cluster/profile embeddings to L2 unit vectors.
 

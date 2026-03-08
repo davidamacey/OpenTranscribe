@@ -6,13 +6,11 @@ similar to the transcription retry mechanism in task_utils.py
 """
 
 import asyncio
-import builtins
-import contextlib
 import logging
 
 from sqlalchemy.orm import Session
 
-from app.db.base import SessionLocal
+from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.llm_service import is_llm_available
 from app.tasks.summarization import summarize_transcript_task
@@ -91,17 +89,13 @@ def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
     from app.utils.uuid_helpers import get_file_by_uuid
 
     # Check if LLM is available
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    try:
-        llm_available = loop.run_until_complete(check_llm_availability())
-    finally:
-        with contextlib.suppress(builtins.BaseException):
-            loop.close()
+    llm_available = asyncio.run(check_llm_availability())
 
     # Get internal ID for logging
     media_file = get_file_by_uuid(db, file_uuid)
+    if not media_file:
+        logger.debug(f"File {file_uuid} not found for retry")
+        return False
     file_id = media_file.id
 
     if not llm_available:
@@ -130,15 +124,13 @@ def get_failed_summary_count() -> int:
     Returns:
         Number of files with failed summaries
     """
-    db = SessionLocal()
-    try:
-        return (  # type: ignore[no-any-return]
-            db.query(MediaFile)
-            .filter(MediaFile.summary_status == "failed", MediaFile.status == "completed")
-            .count()
-        )
-    except Exception as e:
-        logger.error(f"Error getting failed summary count: {e}")
-        return 0
-    finally:
-        db.close()
+    with session_scope() as db:
+        try:
+            return (  # type: ignore[no-any-return]
+                db.query(MediaFile)
+                .filter(MediaFile.summary_status == "failed", MediaFile.status == "completed")
+                .count()
+            )
+        except Exception as e:
+            logger.error(f"Error getting failed summary count: {e}")
+            return 0

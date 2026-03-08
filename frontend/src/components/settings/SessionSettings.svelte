@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
   import type { SessionConfig } from '$lib/api/authConfig';
 
   export let config: Partial<SessionConfig> = {};
@@ -39,39 +40,39 @@
   }
 
   const sessionPolicies = [
-    { value: 'oldest', label: 'Terminate Oldest Session', description: 'When limit reached, oldest session is terminated' },
-    { value: 'newest', label: 'Deny New Session', description: 'When limit reached, new login attempts are denied' },
-    { value: 'all', label: 'Terminate All Others', description: 'New login terminates all existing sessions' }
+    { value: 'oldest', labelKey: 'settings.session.policyOldestLabel', descKey: 'settings.session.policyOldestDesc' },
+    { value: 'newest', labelKey: 'settings.session.policyNewestLabel', descKey: 'settings.session.policyNewestDesc' },
+    { value: 'all', labelKey: 'settings.session.policyAllLabel', descKey: 'settings.session.policyAllDesc' }
   ];
 
   function formatDuration(minutes: number): string {
-    if (minutes < 60) return `${minutes} minutes`;
+    if (minutes < 60) return `${minutes} ${$t('settings.session.minutes')}`;
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
-    if (remainingMinutes === 0) return `${hours} hour${hours > 1 ? 's' : ''}`;
+    if (remainingMinutes === 0) return `${hours} ${hours > 1 ? $t('settings.session.hours') : $t('settings.session.hour')}`;
     return `${hours}h ${remainingMinutes}m`;
   }
 
   function formatDays(days: number): string {
-    if (days === 1) return '1 day';
-    if (days < 7) return `${days} days`;
+    if (days === 1) return `1 ${$t('settings.session.day')}`;
+    if (days < 7) return `${days} ${$t('settings.session.days')}`;
     const weeks = Math.floor(days / 7);
     const remainingDays = days % 7;
-    if (remainingDays === 0) return `${weeks} week${weeks > 1 ? 's' : ''}`;
+    if (remainingDays === 0) return `${weeks} ${weeks > 1 ? $t('settings.session.weeks') : $t('settings.session.week')}`;
     return `${weeks}w ${remainingDays}d`;
   }
 </script>
 
 <div class="settings-panel">
   <div class="intro-text">
-    <p>Configure session and token lifetimes to balance security with user convenience. Shorter durations improve security but may require more frequent re-authentication.</p>
+    <p>{$t('settings.session.introText')}</p>
   </div>
 
   <div class="section">
-    <h3>Token Lifetimes</h3>
+    <h3>{$t('settings.session.tokenLifetimes')}</h3>
 
     <div class="form-group">
-      <label for="jwt_access_token_expire_minutes">Access Token Lifetime</label>
+      <label for="jwt_access_token_expire_minutes">{$t('settings.session.accessTokenLifetime')}</label>
       <div class="input-with-preview">
         <input
           id="jwt_access_token_expire_minutes"
@@ -83,11 +84,11 @@
         />
         <span class="preview">({formatDuration(formData.jwt_access_token_expire_minutes)})</span>
       </div>
-      <span class="help-text">Short-lived tokens used for API authentication. Recommended: 15-30 minutes.</span>
+      <span class="help-text">{$t('settings.session.accessTokenHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="jwt_refresh_token_expire_days">Refresh Token Lifetime</label>
+      <label for="jwt_refresh_token_expire_days">{$t('settings.session.refreshTokenLifetime')}</label>
       <div class="input-with-preview">
         <input
           id="jwt_refresh_token_expire_days"
@@ -99,24 +100,24 @@
         />
         <span class="preview">({formatDays(formData.jwt_refresh_token_expire_days)})</span>
       </div>
-      <span class="help-text">Used to obtain new access tokens without re-authentication. Recommended: 7-30 days.</span>
+      <span class="help-text">{$t('settings.session.refreshTokenHelp')}</span>
     </div>
 
     <div class="token-info">
-      <strong>How tokens work:</strong>
+      <strong>{$t('settings.session.howTokensWork')}</strong>
       <ul>
-        <li>Access tokens are short-lived and automatically refreshed in the background</li>
-        <li>Users stay logged in as long as refresh token is valid and they remain active</li>
-        <li>Refresh tokens rotate on each use for enhanced security</li>
+        <li>{$t('settings.session.tokenInfo1')}</li>
+        <li>{$t('settings.session.tokenInfo2')}</li>
+        <li>{$t('settings.session.tokenInfo3')}</li>
       </ul>
     </div>
   </div>
 
   <div class="section">
-    <h3>Session Timeouts</h3>
+    <h3>{$t('settings.session.sessionTimeouts')}</h3>
 
     <div class="form-group">
-      <label for="session_idle_timeout_minutes">Idle Timeout</label>
+      <label for="session_idle_timeout_minutes">{$t('settings.session.idleTimeout')}</label>
       <div class="input-with-preview">
         <input
           id="session_idle_timeout_minutes"
@@ -128,11 +129,11 @@
         />
         <span class="preview">({formatDuration(formData.session_idle_timeout_minutes)})</span>
       </div>
-      <span class="help-text">Session expires after this period of inactivity. Set to 0 to disable.</span>
+      <span class="help-text">{$t('settings.session.idleTimeoutHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="session_absolute_timeout_minutes">Absolute Timeout</label>
+      <label for="session_absolute_timeout_minutes">{$t('settings.session.absoluteTimeout')}</label>
       <div class="input-with-preview">
         <input
           id="session_absolute_timeout_minutes"
@@ -144,15 +145,15 @@
         />
         <span class="preview">({formatDuration(formData.session_absolute_timeout_minutes)})</span>
       </div>
-      <span class="help-text">Maximum session duration regardless of activity. Forces re-authentication.</span>
+      <span class="help-text">{$t('settings.session.absoluteTimeoutHelp')}</span>
     </div>
   </div>
 
   <div class="section">
-    <h3>Concurrent Sessions</h3>
+    <h3>{$t('settings.session.concurrentSessions')}</h3>
 
     <div class="form-group">
-      <label for="max_concurrent_sessions">Maximum Concurrent Sessions</label>
+      <label for="max_concurrent_sessions">{$t('settings.session.maxConcurrentSessions')}</label>
       <input
         id="max_concurrent_sessions"
         type="number"
@@ -161,11 +162,11 @@
         min="1"
         max="20"
       />
-      <span class="help-text">Maximum number of simultaneous sessions per user. Set to 0 for unlimited.</span>
+      <span class="help-text">{$t('settings.session.maxConcurrentSessionsHelp')}</span>
     </div>
 
     <div class="form-group">
-      <span class="group-label">Session Limit Policy</span>
+      <span class="group-label">{$t('settings.session.sessionLimitPolicy')}</span>
       <div class="radio-group">
         {#each sessionPolicies as policy}
           <label class="radio-label">
@@ -177,8 +178,8 @@
               on:change={handleChange}
             />
             <div class="radio-content">
-              <span class="radio-title">{policy.label}</span>
-              <span class="radio-description">{policy.description}</span>
+              <span class="radio-title">{$t(policy.labelKey)}</span>
+              <span class="radio-description">{$t(policy.descKey)}</span>
             </div>
           </label>
         {/each}
@@ -187,19 +188,19 @@
   </div>
 
   <div class="section info">
-    <h3>Security Recommendations</h3>
+    <h3>{$t('settings.session.securityRecommendations')}</h3>
     <div class="recommendations">
       <div class="recommendation">
-        <strong>High Security Environments</strong>
-        <p>Access: 15min, Refresh: 1 day, Idle: 15min, Sessions: 1</p>
+        <strong>{$t('settings.session.highSecurity')}</strong>
+        <p>{$t('settings.session.highSecurityDesc')}</p>
       </div>
       <div class="recommendation">
-        <strong>Standard Security</strong>
-        <p>Access: 30min, Refresh: 7 days, Idle: 30min, Sessions: 5</p>
+        <strong>{$t('settings.session.standardSecurity')}</strong>
+        <p>{$t('settings.session.standardSecurityDesc')}</p>
       </div>
       <div class="recommendation">
-        <strong>Convenience-Focused</strong>
-        <p>Access: 60min, Refresh: 30 days, Idle: 60min, Sessions: 10</p>
+        <strong>{$t('settings.session.convenienceFocused')}</strong>
+        <p>{$t('settings.session.convenienceFocusedDesc')}</p>
       </div>
     </div>
   </div>
@@ -210,7 +211,7 @@
       on:click={handleSave}
       disabled={saving}
     >
-      {saving ? 'Saving...' : 'Save Configuration'}
+      {saving ? $t('common.saving') : $t('settings.session.saveConfiguration')}
     </button>
   </div>
 </div>

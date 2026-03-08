@@ -14,6 +14,7 @@ import time
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.constants import GPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import TranscriptSegment
@@ -159,7 +160,7 @@ def _dispatch_downstream(
             logger.warning(f"Failed to dispatch downstream task '{stage}' for {file_uuid}: {e}")
 
 
-@celery_app.task(bind=True, name="rediarize", queue="gpu", priority=5)
+@celery_app.task(bind=True, name="rediarize", queue="gpu", priority=GPUPriority.USER_REDIARIZ)
 def rediarize_task(  # noqa: C901
     self,
     file_uuid: str,
@@ -183,13 +184,6 @@ def rediarize_task(  # noqa: C901
             Valid values: 'analytics', 'speaker_llm', 'summarization',
             'topic_extraction', 'search_indexing'.
     """
-    # Gate: defer while speaker embedding migration holds the GPU
-    from app.services.migration_lock_service import migration_lock
-
-    if migration_lock.is_active():
-        logger.info("Migration lock active — deferring rediarize for %s (retry in 60s)", file_uuid)
-        raise self.retry(countdown=60, max_retries=120)
-
     import shutil
 
     from app.utils.uuid_helpers import get_file_by_uuid

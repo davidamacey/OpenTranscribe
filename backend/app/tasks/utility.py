@@ -10,23 +10,10 @@ import json
 import logging
 
 from app.core.celery import celery_app
+from app.core.constants import CPUPriority
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
-
-
-_broadcast_redis_client = None
-
-
-def _get_broadcast_redis():
-    """Get or create a module-level Redis client for WebSocket broadcasts."""
-    global _broadcast_redis_client
-    if _broadcast_redis_client is None:
-        import redis as sync_redis
-
-        from app.core.config import settings
-
-        _broadcast_redis_client = sync_redis.from_url(settings.REDIS_URL)
-    return _broadcast_redis_client
 
 
 def _query_single_gpu(device_id: int, subprocess_mod, format_bytes) -> dict | None:
@@ -83,7 +70,7 @@ def _query_single_gpu(device_id: int, subprocess_mod, format_bytes) -> dict | No
         return None
 
 
-@celery_app.task(name="system.update_gpu_stats", bind=True)
+@celery_app.task(name="system.update_gpu_stats", bind=True, priority=CPUPriority.SYSTEM)
 def update_gpu_stats(self):
     """Periodic task to update GPU statistics in Redis.
 
@@ -153,7 +140,7 @@ def update_gpu_stats(self):
 
         # Broadcast array to all connected WebSocket clients
         try:
-            _get_broadcast_redis().publish(
+            get_redis().publish(
                 "websocket_notifications",
                 json.dumps(
                     {

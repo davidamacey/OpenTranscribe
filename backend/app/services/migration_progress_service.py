@@ -8,6 +8,8 @@ long-running migrations like the v3 to v4 speaker embedding migration.
 import json
 import logging
 from datetime import datetime
+from datetime import timezone
+from typing import NotRequired
 from typing import TypedDict
 from typing import cast
 
@@ -32,18 +34,21 @@ class MigrationStatus(TypedDict):
     completed_at: str | None  # ISO timestamp
     orchestrator_task_id: str | None
     last_updated: str | None  # ISO timestamp
+    eta_seconds: NotRequired[float | None]  # Added by API layer from ProgressTracker
 
 
 class MigrationProgressService:
     """Service for tracking migration progress in Redis."""
 
-    def __init__(self, redis_url: str | None = None):
+    def __init__(self, redis_url: str | None = None, key_prefix: str | None = None):
         """Initialize the service with Redis connection.
 
         Args:
             redis_url: Redis connection URL. Defaults to settings.CELERY_BROKER_URL.
+            key_prefix: Redis key prefix. Defaults to MIGRATION_KEY_PREFIX.
         """
         self.redis_url = redis_url or settings.CELERY_BROKER_URL
+        self.key_prefix = key_prefix or MIGRATION_KEY_PREFIX
         self._redis_client: redis.Redis | None = None
 
     @property
@@ -67,7 +72,7 @@ class MigrationProgressService:
         Returns:
             Full Redis key.
         """
-        return f"{MIGRATION_KEY_PREFIX}:{suffix}"
+        return f"{self.key_prefix}:{suffix}"
 
     def get_status(self) -> MigrationStatus:
         """Get the current migration status.
@@ -130,15 +135,17 @@ class MigrationProgressService:
                 "total_files": total_files,
                 "processed_files": 0,
                 "failed_files": [],
-                "started_at": datetime.utcnow().isoformat(),
+                "started_at": datetime.now(timezone.utc).isoformat(),
                 "completed_at": None,
                 "orchestrator_task_id": task_id,
-                "last_updated": datetime.utcnow().isoformat(),
+                "last_updated": datetime.now(timezone.utc).isoformat(),
             }
 
             status_key = self._get_key("status")
             # Set with 24-hour TTL as a safety measure
             self.redis_client.set(status_key, json.dumps(status), ex=86400)
+            # Clear any previous completion flag
+            self.redis_client.delete(self._get_key("completed"))
             logger.info(f"Started migration tracking: {total_files} files")
             return True
 
@@ -146,8 +153,43 @@ class MigrationProgressService:
             logger.error(f"Error starting migration tracking: {e}")
             return False
 
+    # Lua script for atomic increment of processed_files + optional failed_files append.
+    # Runs entirely within Redis — no race conditions between concurrent callers.
+    _INCREMENT_LUA = """
+    local key = KEYS[1]
+    local file_uuid = ARGV[1]
+    local is_failure = ARGV[2] == "1"
+    local now = ARGV[3]
+
+    local raw = redis.call("GET", key)
+    if not raw then return 0 end
+
+    local status = cjson.decode(raw)
+    status["processed_files"] = (status["processed_files"] or 0) + 1
+    status["last_updated"] = now
+
+    if is_failure and file_uuid ~= "" then
+        local failed = status["failed_files"] or {}
+        -- check for duplicate
+        local found = false
+        for _, v in ipairs(failed) do
+            if v == file_uuid then found = true; break end
+        end
+        if not found then
+            table.insert(failed, file_uuid)
+            status["failed_files"] = failed
+        end
+    end
+
+    redis.call("SET", key, cjson.encode(status), "EX", 86400)
+    return status["processed_files"]
+    """
+
     def increment_processed(self, success: bool = True, file_uuid: str | None = None) -> bool:
-        """Increment the processed file count.
+        """Atomically increment the processed file count using a Redis Lua script.
+
+        This is safe to call concurrently from multiple Celery workers —
+        the Lua script executes atomically within Redis.
 
         Args:
             success: Whether the file was processed successfully.
@@ -160,19 +202,15 @@ class MigrationProgressService:
             return False
 
         try:
-            status = self.get_status()
-
-            status["processed_files"] = status.get("processed_files", 0) + 1
-            status["last_updated"] = datetime.utcnow().isoformat()
-
-            if not success and file_uuid:
-                failed_files = status.get("failed_files", [])
-                if file_uuid not in failed_files:
-                    failed_files.append(file_uuid)
-                status["failed_files"] = failed_files
-
             status_key = self._get_key("status")
-            self.redis_client.set(status_key, json.dumps(status), ex=86400)
+            self.redis_client.eval(
+                self._INCREMENT_LUA,
+                1,  # number of KEYS
+                status_key,
+                file_uuid or "",
+                "1" if not success else "0",
+                datetime.now(timezone.utc).isoformat(),
+            )
             return True
 
         except Exception as e:
@@ -182,24 +220,34 @@ class MigrationProgressService:
     def complete_migration(self, success: bool = True) -> bool:
         """Mark the migration as complete.
 
+        Uses SETNX on a completion flag to ensure only one caller
+        executes the completion logic, even with concurrent batch tasks.
+
         Args:
             success: Whether the migration completed successfully.
 
         Returns:
-            True if the completion was recorded successfully.
+            True if this caller was the one that marked completion.
+            False if already completed by another caller, or on error.
         """
         if not self.redis_client:
             return False
 
         try:
+            # Atomic guard: only the first caller to set this key wins
+            completion_key = self._get_key("completed")
+            if not self.redis_client.set(completion_key, "1", nx=True, ex=3600):
+                logger.debug("Migration already marked complete by another caller")
+                return False
+
             status = self.get_status()
             status["running"] = False
-            status["completed_at"] = datetime.utcnow().isoformat()
-            status["last_updated"] = datetime.utcnow().isoformat()
+            status["completed_at"] = datetime.now(timezone.utc).isoformat()
+            status["last_updated"] = datetime.now(timezone.utc).isoformat()
 
             status_key = self._get_key("status")
-            # Keep completed status for 7 days for review
-            self.redis_client.set(status_key, json.dumps(status), ex=604800)
+            # Keep completed status for 1 hour (UI can show "complete" message)
+            self.redis_client.set(status_key, json.dumps(status), ex=3600)
 
             processed = status.get("processed_files", 0)
             total = status.get("total_files", 0)
@@ -223,6 +271,7 @@ class MigrationProgressService:
         try:
             status_key = self._get_key("status")
             self.redis_client.delete(status_key)
+            self.redis_client.delete(self._get_key("completed"))
             logger.info("Migration status cleared")
             return True
 
@@ -249,11 +298,11 @@ class MigrationProgressService:
                 return False
 
             status["running"] = False
-            status["completed_at"] = datetime.utcnow().isoformat()
-            status["last_updated"] = datetime.utcnow().isoformat()
+            status["completed_at"] = datetime.now(timezone.utc).isoformat()
+            status["last_updated"] = datetime.now(timezone.utc).isoformat()
 
             status_key = self._get_key("status")
-            self.redis_client.set(status_key, json.dumps(status), ex=604800)
+            self.redis_client.set(status_key, json.dumps(status), ex=3600)
             logger.warning("Migration force stopped")
             return True
 

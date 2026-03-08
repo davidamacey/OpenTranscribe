@@ -493,9 +493,20 @@ def delete_speaker_profile(
             except Exception:
                 logger.warning(f"Failed to delete avatar for profile {profile.uuid}")
 
+        # Capture UUID before DB delete
+        profile_uuid_str = str(profile.uuid)
+
         # Delete the profile
         db.delete(profile)
         db.commit()
+
+        # Remove profile embedding from all OpenSearch indices (non-fatal)
+        try:
+            from app.services.opensearch_service import remove_profile_embedding
+
+            remove_profile_embedding(profile_uuid_str)
+        except Exception as e:
+            logger.warning(f"Failed to remove profile {profile_uuid_str} from OpenSearch: {e}")
 
         return None
 

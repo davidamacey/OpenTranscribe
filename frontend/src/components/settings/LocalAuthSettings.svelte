@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
 
   // All fields come from a single config object (saved under "local" category)
   export let config: Record<string, any> = {};
@@ -67,12 +68,12 @@
   function getPasswordStrengthPreview(): string {
     const requirements: string[] = [];
     if (formData.password_min_length > 0) {
-      requirements.push(`${formData.password_min_length}+ characters`);
+      requirements.push(`${formData.password_min_length}+ ${$t('settings.localAuth.characters')}`);
     }
-    if (formData.password_require_uppercase) requirements.push('uppercase');
-    if (formData.password_require_lowercase) requirements.push('lowercase');
-    if (formData.password_require_numbers) requirements.push('numbers');
-    if (formData.password_require_special) requirements.push('special chars');
+    if (formData.password_require_uppercase) requirements.push($t('settings.localAuth.uppercase'));
+    if (formData.password_require_lowercase) requirements.push($t('settings.localAuth.lowercase'));
+    if (formData.password_require_numbers) requirements.push($t('settings.localAuth.numbers'));
+    if (formData.password_require_special) requirements.push($t('settings.localAuth.specialChars'));
     return requirements.join(', ');
   }
 </script>
@@ -85,12 +86,12 @@
         bind:checked={formData.local_enabled}
         on:change={handleChange}
       />
-      <span class="toggle-text">Enable Local (Username/Password) Authentication</span>
+      <span class="toggle-text">{$t('settings.localAuth.enableLocal')}</span>
     </label>
   </div>
 
   <div class="section" class:disabled={!formData.local_enabled}>
-    <h3>Registration Settings</h3>
+    <h3>{$t('settings.localAuth.registrationSettings')}</h3>
 
     <label class="checkbox-label">
       <input
@@ -99,20 +100,20 @@
         on:change={handleChange}
         disabled={!formData.local_enabled}
       />
-      <span>Allow self-registration</span>
+      <span>{$t('settings.localAuth.allowSelfRegistration')}</span>
     </label>
-    <span class="help-text indented">When disabled, only admins can create new accounts</span>
+    <span class="help-text indented">{$t('settings.localAuth.selfRegistrationHelp')}</span>
   </div>
 
   <div class="section" class:disabled={!formData.local_enabled}>
-    <h3>Password Policy</h3>
+    <h3>{$t('settings.localAuth.passwordPolicy')}</h3>
 
     <div class="policy-preview">
-      <strong>Current requirements:</strong> {getPasswordStrengthPreview()}
+      <strong>{$t('settings.localAuth.currentRequirements')}</strong> {getPasswordStrengthPreview()}
     </div>
 
     <div class="form-group">
-      <label for="password_min_length">Minimum Password Length</label>
+      <label for="password_min_length">{$t('settings.localAuth.minPasswordLength')}</label>
       <input
         id="password_min_length"
         type="number"
@@ -132,7 +133,7 @@
           on:change={handleChange}
           disabled={!formData.local_enabled}
         />
-        <span>Require uppercase letters</span>
+        <span>{$t('settings.localAuth.requireUppercase')}</span>
       </label>
 
       <label class="checkbox-label">
@@ -142,7 +143,7 @@
           on:change={handleChange}
           disabled={!formData.local_enabled}
         />
-        <span>Require lowercase letters</span>
+        <span>{$t('settings.localAuth.requireLowercase')}</span>
       </label>
 
       <label class="checkbox-label">
@@ -152,7 +153,7 @@
           on:change={handleChange}
           disabled={!formData.local_enabled}
         />
-        <span>Require numbers</span>
+        <span>{$t('settings.localAuth.requireNumbers')}</span>
       </label>
 
       <label class="checkbox-label">
@@ -162,13 +163,13 @@
           on:change={handleChange}
           disabled={!formData.local_enabled}
         />
-        <span>Require special characters</span>
+        <span>{$t('settings.localAuth.requireSpecial')}</span>
       </label>
     </div>
 
     <div class="form-row">
       <div class="form-group">
-        <label for="password_max_age_days">Password Expiry (days)</label>
+        <label for="password_max_age_days">{$t('settings.localAuth.passwordExpiry')}</label>
         <input
           id="password_max_age_days"
           type="number"
@@ -178,11 +179,11 @@
           max="365"
           disabled={!formData.local_enabled}
         />
-        <span class="help-text">Set to 0 for no expiration</span>
+        <span class="help-text">{$t('settings.localAuth.passwordExpiryHelp')}</span>
       </div>
 
       <div class="form-group">
-        <label for="password_history_count">Password History Count</label>
+        <label for="password_history_count">{$t('settings.localAuth.passwordHistoryCount')}</label>
         <input
           id="password_history_count"
           type="number"
@@ -192,13 +193,13 @@
           max="24"
           disabled={!formData.local_enabled}
         />
-        <span class="help-text">Prevent reuse of recent passwords</span>
+        <span class="help-text">{$t('settings.localAuth.passwordHistoryHelp')}</span>
       </div>
     </div>
   </div>
 
   <div class="section" class:disabled={!formData.local_enabled}>
-    <h3>Multi-Factor Authentication (MFA)</h3>
+    <h3>{$t('settings.localAuth.mfaTitle')}</h3>
 
     <label class="checkbox-label">
       <input
@@ -207,9 +208,9 @@
         on:change={handleChange}
         disabled={!formData.local_enabled}
       />
-      <span>Enable TOTP-based MFA</span>
+      <span>{$t('settings.localAuth.enableTotp')}</span>
     </label>
-    <span class="help-text indented">Allow users to set up authenticator apps (Google Authenticator, Authy, etc.)</span>
+    <span class="help-text indented">{$t('settings.localAuth.totpHelp')}</span>
 
     {#if formData.mfa_enabled}
       <div class="mfa-options">
@@ -220,12 +221,12 @@
             on:change={handleChange}
             disabled={!formData.local_enabled}
           />
-          <span>Require MFA for all users</span>
+          <span>{$t('settings.localAuth.requireMfa')}</span>
         </label>
-        <span class="help-text indented">When enabled, users must set up MFA on next login</span>
+        <span class="help-text indented">{$t('settings.localAuth.requireMfaHelp')}</span>
 
         <div class="form-group">
-          <label for="mfa_issuer">MFA Issuer Name</label>
+          <label for="mfa_issuer">{$t('settings.localAuth.mfaIssuerName')}</label>
           <input
             id="mfa_issuer"
             type="text"
@@ -234,18 +235,18 @@
             placeholder="OpenTranscribe"
             disabled={!formData.local_enabled}
           />
-          <span class="help-text">Displayed in authenticator apps</span>
+          <span class="help-text">{$t('settings.localAuth.mfaIssuerHelp')}</span>
         </div>
       </div>
     {/if}
   </div>
 
   <div class="section" class:disabled={!formData.local_enabled}>
-    <h3>Account Lockout</h3>
+    <h3>{$t('settings.localAuth.accountLockout')}</h3>
 
     <div class="form-row">
       <div class="form-group">
-        <label for="max_login_attempts">Max Login Attempts</label>
+        <label for="max_login_attempts">{$t('settings.localAuth.maxLoginAttempts')}</label>
         <input
           id="max_login_attempts"
           type="number"
@@ -255,11 +256,11 @@
           max="20"
           disabled={!formData.local_enabled}
         />
-        <span class="help-text">Failed attempts before lockout</span>
+        <span class="help-text">{$t('settings.localAuth.maxLoginAttemptsHelp')}</span>
       </div>
 
       <div class="form-group">
-        <label for="lockout_duration_minutes">Lockout Duration (minutes)</label>
+        <label for="lockout_duration_minutes">{$t('settings.localAuth.lockoutDuration')}</label>
         <input
           id="lockout_duration_minutes"
           type="number"
@@ -269,7 +270,7 @@
           max="1440"
           disabled={!formData.local_enabled}
         />
-        <span class="help-text">Time until automatic unlock</span>
+        <span class="help-text">{$t('settings.localAuth.lockoutDurationHelp')}</span>
       </div>
     </div>
   </div>
@@ -280,7 +281,7 @@
       on:click={handleSave}
       disabled={saving}
     >
-      {saving ? 'Saving...' : 'Save Configuration'}
+      {saving ? $t('common.saving') : $t('settings.localAuth.saveConfiguration')}
     </button>
   </div>
 </div>

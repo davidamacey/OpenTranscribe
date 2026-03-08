@@ -154,6 +154,52 @@ async def _setup_minio():
         logger.error(f"Error setting up MinIO bucket: {e}")
 
 
+def _clear_stale_migration_state():
+    """Clear ALL migration state from Redis on startup.
+
+    Any migration state from the previous process lifetime is stale — the
+    Celery workers that were processing it are gone. Clear everything so
+    the UI starts clean and migrations can be re-triggered.
+    """
+    from app.core.redis import get_redis
+
+    r = get_redis()
+
+    # All migration progress services and their associated keys
+    prefixes = [
+        "speaker_attr_migration",
+        "combined_speaker_migration",
+        "embedding_migration",
+    ]
+
+    cleared = []
+    for prefix in prefixes:
+        # Unconditionally clear ALL migration-related keys for each prefix.
+        # Whether the migration was running, completed, or in any other state,
+        # it's stale after a restart.
+        suffixes = [
+            ":status",
+            ":batch_task_ids",
+            ":orchestrator_lock",
+            ":completed",
+            ":lock",
+        ]
+        deleted_any = False
+        for suffix in suffixes:
+            key = f"{prefix}{suffix}"
+            if r.delete(key):
+                deleted_any = True
+        if deleted_any:
+            cleared.append(prefix)
+
+    # Clear stale progress tracker states
+    for key in r.scan_iter(match="task_progress:*migration*"):
+        r.delete(key)
+
+    if cleared:
+        logger.info("Cleared stale migration state on startup: %s", cleared)
+
+
 async def _run_startup_recovery():
     """Schedule startup recovery task after a delay."""
     try:
@@ -409,6 +455,12 @@ async def lifespan(app: FastAPI):
         check_and_repair_indices()
     except Exception as e:
         logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
+
+    # Clear stale migration state from Redis (orphaned by unclean shutdown)
+    try:
+        _clear_stale_migration_state()
+    except Exception as e:
+        logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
 
     logger.info("Setting up MinIO and task recovery...")
     minio_task = asyncio.create_task(_setup_minio())

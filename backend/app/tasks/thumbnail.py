@@ -9,6 +9,7 @@ import logging
 from datetime import timedelta
 
 from app.core.celery import celery_app
+from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.minio_service import MinIOService
@@ -18,7 +19,9 @@ from app.utils.thumbnail import generate_thumbnail_from_url
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="generate_thumbnail", bind=True, queue="cpu")
+@celery_app.task(
+    name="generate_thumbnail", bind=True, queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL
+)
 def generate_thumbnail_task(self, file_id: int, user_id: int, storage_path: str) -> dict:
     """
     Generate and upload a WebP thumbnail for a video file.

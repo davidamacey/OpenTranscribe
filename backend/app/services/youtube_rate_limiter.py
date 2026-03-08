@@ -12,6 +12,7 @@ All features degrade gracefully if Redis is unavailable.
 import logging
 import random
 from datetime import datetime
+from datetime import timezone
 
 from app.core.config import settings
 
@@ -108,7 +109,7 @@ class YouTubeRateLimiter:
                 logger.warning("Rate limiter check failed: Redis unavailable. Allowing request.")
                 return (True, "")
 
-            now = datetime.now().timestamp()
+            now = datetime.now(timezone.utc).timestamp()
 
             # Check hourly limit
             hour_key = f"youtube:ratelimit:hour:{user_id}"
@@ -158,7 +159,7 @@ class YouTubeRateLimiter:
             if client is None:
                 return
 
-            now = datetime.now().timestamp()
+            now = datetime.now(timezone.utc).timestamp()
 
             # Add to hourly tracker
             hour_key = f"youtube:ratelimit:hour:{user_id}"
@@ -193,7 +194,7 @@ class YouTubeRateLimiter:
                     "daily_limit": -1,
                 }
 
-            now = datetime.now().timestamp()
+            now = datetime.now(timezone.utc).timestamp()
 
             # Hourly quota
             hour_key = f"youtube:ratelimit:hour:{user_id}"

@@ -70,8 +70,8 @@ def get_system_uptime():
     """Get system uptime in a readable format"""
     try:
         # Get boot time and calculate uptime
-        boot_time = datetime.fromtimestamp(psutil.boot_time())
-        uptime = datetime.now() - boot_time
+        boot_time = datetime.fromtimestamp(psutil.boot_time(), tz=timezone.utc)
+        uptime = datetime.now(timezone.utc) - boot_time
 
         # Format as days, hours, minutes, seconds
         days, remainder = divmod(uptime.total_seconds(), 86400)
@@ -274,17 +274,33 @@ def format_bytes(byte_count):
 
 
 def _delete_user_speakers(db: Session, user_id: int) -> None:
-    """Delete all speakers for a user.
+    """Delete all speakers for a user, including OpenSearch embeddings.
+
+    Collects speaker UUIDs before bulk SQL delete so OpenSearch can be cleaned
+    even though the bulk operation bypasses ORM instance-level callbacks.
 
     Args:
         db: Database session
         user_id: ID of the user whose speakers to delete
     """
-    speakers_count = db.query(Speaker).filter(Speaker.user_id == user_id).count()
-    if speakers_count > 0:
-        logger.info(f"Deleting {speakers_count} speakers for user {user_id}")
-        db.query(Speaker).filter(Speaker.user_id == user_id).delete(synchronize_session=False)
-        logger.info("Speakers deleted successfully")
+    speaker_rows = db.query(Speaker.uuid).filter(Speaker.user_id == user_id).all()
+    if not speaker_rows:
+        return
+
+    speaker_uuids = [str(row[0]) for row in speaker_rows]
+    logger.info(f"Deleting {len(speaker_uuids)} speakers for user {user_id}")
+    db.query(Speaker).filter(Speaker.user_id == user_id).delete(synchronize_session=False)
+    logger.info("Speakers deleted from DB")
+
+    # Clean OpenSearch embeddings after bulk DB delete (non-fatal)
+    try:
+        from app.services.opensearch_service import remove_speaker_embedding
+
+        for uuid in speaker_uuids:
+            remove_speaker_embedding(uuid)
+        logger.info(f"Removed {len(speaker_uuids)} speaker embeddings from OpenSearch")
+    except Exception as e:
+        logger.warning(f"OpenSearch speaker cleanup failed during user {user_id} deletion: {e}")
 
 
 def _delete_user_owned_records(db: Session, user_id: int) -> None:
@@ -301,7 +317,7 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     ]
     if sc_ids:
         db.query(SpeakerCollectionMember).filter(
-            SpeakerCollectionMember.speaker_collection_id.in_(sc_ids)
+            SpeakerCollectionMember.collection_id.in_(sc_ids)
         ).delete(synchronize_session=False)
         db.query(SpeakerCollection).filter(SpeakerCollection.user_id == user_id).delete(
             synchronize_session=False
@@ -317,7 +333,9 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         db.query(Collection).filter(Collection.user_id == user_id).delete(synchronize_session=False)
         logger.info(f"Deleted {len(col_ids)} collections for user {user_id}")
 
-    # Speaker profiles
+    # Speaker profiles — collect UUIDs first so OpenSearch can be cleaned
+    profile_rows = db.query(SpeakerProfile.uuid).filter(SpeakerProfile.user_id == user_id).all()
+    profile_uuids = [str(row[0]) for row in profile_rows]
     profiles_deleted = (
         db.query(SpeakerProfile)
         .filter(SpeakerProfile.user_id == user_id)
@@ -325,6 +343,14 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     )
     if profiles_deleted:
         logger.info(f"Deleted {profiles_deleted} speaker profiles for user {user_id}")
+        try:
+            from app.services.opensearch_service import remove_profile_embedding
+
+            for puuid in profile_uuids:
+                remove_profile_embedding(puuid)
+            logger.info(f"Removed {len(profile_uuids)} profile embeddings from OpenSearch")
+        except Exception as e:
+            logger.warning(f"OpenSearch profile cleanup failed during user {user_id} deletion: {e}")
 
     # Comments
     comments_deleted = (
@@ -1444,7 +1470,7 @@ async def export_audit_logs(
             content = output.getvalue()
             media_type = "text/csv"
 
-        filename = f"audit-logs-{datetime.now().strftime('%Y%m%d')}.{export_format}"
+        filename = f"audit-logs-{datetime.now(timezone.utc).strftime('%Y%m%d')}.{export_format}"
 
         return StreamingResponse(
             iter([content]),
@@ -1458,3 +1484,48 @@ async def export_audit_logs(
             status_code=500,
             detail="An internal error occurred. Please try again.",
         ) from e
+
+
+# ---------------------------------------------------------------------------
+# Data Integrity (Orphan Cleanup) Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/data-integrity")
+async def start_data_integrity_check(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Start an OpenSearch orphan cleanup task.
+
+    Scans all OpenSearch indices for documents referencing deleted files
+    and removes them.
+    """
+    from app.tasks.search_maintenance_task import get_integrity_status
+    from app.tasks.search_maintenance_task import opensearch_orphan_cleanup_task
+
+    status = get_integrity_status()
+    if status.get("running"):
+        return {"status": "already_running"}
+
+    result = opensearch_orphan_cleanup_task.delay()
+    return {"status": "started", "task_id": str(result.id)}
+
+
+@router.get("/data-integrity/status")
+async def get_data_integrity_status(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Get data integrity check status and last run results."""
+    from app.tasks.search_maintenance_task import get_integrity_status
+
+    return get_integrity_status()
+
+
+@router.get("/data-integrity/counts")
+async def get_data_integrity_counts(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Quick dry-run scan to count orphaned documents without deleting."""
+    from app.tasks.search_maintenance_task import get_integrity_counts
+
+    return get_integrity_counts()

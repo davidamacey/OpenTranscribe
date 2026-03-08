@@ -10,7 +10,10 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.celery import celery_app
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
-from app.db.base import SessionLocal
+from app.core.constants import CPUPriority
+from app.core.constants import GPUPriority
+from app.core.constants import NLPPriority
+from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
@@ -319,7 +322,7 @@ def _store_speaker_predictions(db: Session, file_id: int, predictions: dict[str,
     db.commit()
 
 
-@celery_app.task(bind=True, name="ai.identify_speakers")
+@celery_app.task(bind=True, name="ai.identify_speakers", priority=NLPPriority.USER_TRIGGERED)
 def identify_speakers_llm_task(self, file_uuid: str):
     """
     Use LLM to provide speaker identification suggestions
@@ -335,79 +338,80 @@ def identify_speakers_llm_task(self, file_uuid: str):
     from app.utils.uuid_helpers import get_file_by_uuid
 
     task_id = self.request.id
-    db = SessionLocal()
     file_id = None
 
-    try:
-        media_file = get_file_by_uuid(db, file_uuid)
-        if not media_file:
-            raise ValueError(f"Media file with UUID {file_uuid} not found")
-
-        file_id = int(media_file.id)
-
-        create_task_record(db, task_id, int(media_file.user_id), file_id, "speaker_identification")
-        update_task_status(db, task_id, "in_progress", progress=0.1)
-
-        # Store metadata hints immediately so they appear in the UI before the LLM call
-        _store_metadata_hints_as_suggestions(db, file_id, media_file)
+    with session_scope() as db:
         try:
-            db.commit()
-        except Exception as e:
-            logger.debug(f"Metadata hints commit skipped: {e}")
-            db.rollback()
+            media_file = get_file_by_uuid(db, file_uuid)
+            if not media_file:
+                raise ValueError(f"Media file with UUID {file_uuid} not found")
 
-        transcript_segments = (
-            db.query(TranscriptSegment)
-            .filter(TranscriptSegment.media_file_id == file_id)
-            .order_by(TranscriptSegment.start_time)
-            .all()
-        )
+            file_id = int(media_file.id)
 
-        if not transcript_segments:
-            raise ValueError(f"No transcript segments found for file {file_id}")
+            create_task_record(
+                db, task_id, int(media_file.user_id), file_id, "speaker_identification"
+            )
+            update_task_status(db, task_id, "in_progress", progress=0.1)
 
-        speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+            # Store metadata hints immediately so they appear in the UI before the LLM call
+            _store_metadata_hints_as_suggestions(db, file_id, media_file)
+            try:
+                db.commit()
+            except Exception as e:
+                logger.debug(f"Metadata hints commit skipped: {e}")
+                db.rollback()
 
-        if not speakers:
-            logger.info(f"No speakers found for file {file_id}, skipping LLM identification")
+            transcript_segments = (
+                db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .order_by(TranscriptSegment.start_time)
+                .all()
+            )
+
+            if not transcript_segments:
+                raise ValueError(f"No transcript segments found for file {file_id}")
+
+            speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+
+            if not speakers:
+                logger.info(f"No speakers found for file {file_id}, skipping LLM identification")
+                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+                return {"status": "skipped", "message": "No speakers to identify"}
+
+            full_transcript = _build_full_transcript(transcript_segments)
+            speaker_segments = _build_speaker_segments(transcript_segments)
+            known_speakers = _get_known_speakers(db, int(media_file.user_id))
+            metadata_context = _build_metadata_context(media_file)
+            if metadata_context:
+                logger.info(
+                    f"Built metadata context for speaker ID ({len(metadata_context)} chars)"
+                )
+
+            update_task_status(db, task_id, "in_progress", progress=0.5)
+
+            predictions = _generate_predictions(
+                file_id,
+                int(media_file.user_id),
+                db,
+                full_transcript,
+                speaker_segments,
+                known_speakers,
+                metadata_context,
+            )
+
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            return {"status": "skipped", "message": "No speakers to identify"}
 
-        full_transcript = _build_full_transcript(transcript_segments)
-        speaker_segments = _build_speaker_segments(transcript_segments)
-        known_speakers = _get_known_speakers(db, int(media_file.user_id))
-        metadata_context = _build_metadata_context(media_file)
-        if metadata_context:
-            logger.info(f"Built metadata context for speaker ID ({len(metadata_context)} chars)")
+            return {
+                "status": "success",
+                "file_id": file_id,
+                "predictions_count": len(predictions.get("speaker_predictions", [])),
+                "overall_confidence": predictions.get("overall_confidence", "unknown"),
+            }
 
-        update_task_status(db, task_id, "in_progress", progress=0.5)
-
-        predictions = _generate_predictions(
-            file_id,
-            int(media_file.user_id),
-            db,
-            full_transcript,
-            speaker_segments,
-            known_speakers,
-            metadata_context,
-        )
-
-        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-
-        return {
-            "status": "success",
-            "file_id": file_id,
-            "predictions_count": len(predictions.get("speaker_predictions", [])),
-            "overall_confidence": predictions.get("overall_confidence", "unknown"),
-        }
-
-    except Exception as e:
-        logger.error(f"Error in speaker identification task for file {file_id}: {str(e)}")
-        update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-        return {"status": "error", "message": str(e)}
-
-    finally:
-        db.close()
+        except Exception as e:
+            logger.error(f"Error in speaker identification task for file {file_id}: {str(e)}")
+            update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
+            return {"status": "error", "message": str(e)}
 
 
 def _generate_predictions(
@@ -494,7 +498,9 @@ def _generate_predictions(
         return {"speaker_predictions": [], "error": str(e)}
 
 
-@celery_app.task(bind=True, name="process_speaker_update_background")
+@celery_app.task(
+    bind=True, name="process_speaker_update_background", priority=CPUPriority.USER_TRIGGERED
+)
 def process_speaker_update_background(
     self,
     speaker_uuid: str,
@@ -531,118 +537,101 @@ def process_speaker_update_background(
         display_name_changed: Whether the display_name was changed
         media_file_id: ID of the media file the speaker belongs to
     """
-    import asyncio
-
     from app.api.endpoints.speakers import _clear_video_cache_for_speaker
     from app.api.endpoints.speakers import _handle_profile_embedding_updates
     from app.api.endpoints.speakers import _handle_speaker_labeling_workflow
     from app.api.endpoints.speakers import _update_opensearch_profile_info
     from app.api.endpoints.speakers import _update_opensearch_speaker_name
-    from app.api.websockets import publish_notification
     from app.utils.uuid_helpers import get_speaker_by_uuid
+    from app.utils.websocket_notify import send_ws_event
 
-    db = SessionLocal()
-
-    try:
-        logger.info(
-            f"Starting background processing for speaker {speaker_uuid} "
-            f"(display_name: {display_name})"
-        )
-
-        # Get the speaker from the database (fresh state in case it was updated again)
-        speaker = get_speaker_by_uuid(db, speaker_uuid)
-        if not speaker:
-            logger.error(f"Speaker {speaker_uuid} not found in background task")
-            return {"status": "error", "message": "Speaker not found"}
-
-        # Use the current display_name from DB in case user updated again before task ran
-        display_name = str(speaker.display_name) if speaker.display_name else ""
-        new_profile_id = int(speaker.profile_id) if speaker.profile_id else None
-
-        # 1. Handle profile embedding updates
-        logger.debug(f"Updating profile embeddings for speaker {speaker_uuid}")
-        _handle_profile_embedding_updates(
-            db,
-            speaker_id,
-            old_profile_id,
-            new_profile_id,
-            was_auto_labeled,
-            display_name_changed,
-        )
-
-        # 2. Update OpenSearch with speaker name
-        if display_name_changed and display_name:
-            logger.debug(f"Updating OpenSearch speaker name for {speaker_uuid}")
-            _update_opensearch_speaker_name(speaker_uuid, display_name)
-
-        # 3. Update OpenSearch profile info
-        logger.debug(f"Updating OpenSearch profile info for speaker {speaker_uuid}")
-        _update_opensearch_profile_info(speaker, old_profile_id, display_name_changed, db)
-
-        # 4. Handle speaker labeling workflow (retroactive matching)
-        auto_applied_count = 0
-        suggested_count = 0
-        if display_name_changed and display_name and display_name.strip():
-            logger.debug(f"Running retroactive matching for speaker {speaker_uuid}")
-            result = _handle_speaker_labeling_workflow(speaker, display_name, db)
-            if result:
-                auto_applied_count = result.get("auto_applied_count", 0)
-                suggested_count = result.get("suggested_count", 0)
-
-        # 5. Clear video cache
-        logger.debug(f"Clearing video cache for media file {media_file_id}")
-        _clear_video_cache_for_speaker(db, media_file_id)
-
-        # 6. Send WebSocket notification that background processing is complete
-        logger.debug(f"Sending WebSocket notification for speaker {speaker_uuid}")
-
-        notification_data = {
-            "speaker_uuid": speaker_uuid,
-            "display_name": display_name,
-            "profile_id": str(speaker.profile.uuid) if speaker.profile else None,
-            "auto_applied_count": auto_applied_count,
-            "suggested_count": suggested_count,
-            "processing_status": "complete",
-            "media_file_id": str(speaker.media_file.uuid) if speaker.media_file else None,
-        }
-
-        # Publish notification using async pattern
-        coro = publish_notification(
-            user_id=user_id,
-            notification_type="speaker_processing_complete",
-            data=notification_data,
-        )
-
+    with session_scope() as db:
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(coro)
-        except RuntimeError:
-            asyncio.run(coro)
+            logger.info(
+                f"Starting background processing for speaker {speaker_uuid} "
+                f"(display_name: {display_name})"
+            )
 
-        logger.info(
-            f"Background processing complete for speaker {speaker_uuid}. "
-            f"Auto-applied: {auto_applied_count}, Suggested: {suggested_count}"
-        )
+            # Get the speaker from the database (fresh state in case it was updated again)
+            speaker = get_speaker_by_uuid(db, speaker_uuid)
+            if not speaker:
+                logger.error(f"Speaker {speaker_uuid} not found in background task")
+                return {"status": "error", "message": "Speaker not found"}
 
-        return {
-            "status": "success",
-            "speaker_uuid": speaker_uuid,
-            "auto_applied_count": auto_applied_count,
-            "suggested_count": suggested_count,
-        }
+            # Use the current display_name from DB in case user updated again before task ran
+            display_name = str(speaker.display_name) if speaker.display_name else ""
+            new_profile_id = int(speaker.profile_id) if speaker.profile_id else None
 
-    except Exception as e:
-        logger.error(
-            f"Error in background speaker processing for {speaker_uuid}: {type(e).__name__}: {e}"
-        )
-        logger.error("Full traceback:", exc_info=True)
-        return {"status": "error", "message": str(e)}
+            # 1. Handle profile embedding updates
+            logger.debug(f"Updating profile embeddings for speaker {speaker_uuid}")
+            _handle_profile_embedding_updates(
+                db,
+                speaker_id,
+                old_profile_id,
+                new_profile_id,
+                was_auto_labeled,
+                display_name_changed,
+            )
 
-    finally:
-        db.close()
+            # 2. Update OpenSearch with speaker name
+            if display_name_changed and display_name:
+                logger.debug(f"Updating OpenSearch speaker name for {speaker_uuid}")
+                _update_opensearch_speaker_name(speaker_uuid, display_name)
+
+            # 3. Update OpenSearch profile info
+            logger.debug(f"Updating OpenSearch profile info for speaker {speaker_uuid}")
+            _update_opensearch_profile_info(speaker, old_profile_id, display_name_changed, db)
+
+            # 4. Handle speaker labeling workflow (retroactive matching)
+            auto_applied_count = 0
+            suggested_count = 0
+            if display_name_changed and display_name and display_name.strip():
+                logger.debug(f"Running retroactive matching for speaker {speaker_uuid}")
+                result = _handle_speaker_labeling_workflow(speaker, display_name, db)
+                if result:
+                    auto_applied_count = result.get("auto_applied_count", 0)
+                    suggested_count = result.get("suggested_count", 0)
+
+            # 5. Clear video cache
+            logger.debug(f"Clearing video cache for media file {media_file_id}")
+            _clear_video_cache_for_speaker(db, media_file_id)
+
+            # 6. Send WebSocket notification that background processing is complete
+            logger.debug(f"Sending WebSocket notification for speaker {speaker_uuid}")
+
+            notification_data = {
+                "speaker_uuid": speaker_uuid,
+                "display_name": display_name,
+                "profile_id": str(speaker.profile.uuid) if speaker.profile else None,
+                "auto_applied_count": auto_applied_count,
+                "suggested_count": suggested_count,
+                "processing_status": "complete",
+                "media_file_id": str(speaker.media_file.uuid) if speaker.media_file else None,
+            }
+
+            send_ws_event(user_id, "speaker_processing_complete", notification_data)
+
+            logger.info(
+                f"Background processing complete for speaker {speaker_uuid}. "
+                f"Auto-applied: {auto_applied_count}, Suggested: {suggested_count}"
+            )
+
+            return {
+                "status": "success",
+                "speaker_uuid": speaker_uuid,
+                "auto_applied_count": auto_applied_count,
+                "suggested_count": suggested_count,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error in background speaker processing for {speaker_uuid}: {type(e).__name__}: {e}"
+            )
+            logger.error("Full traceback:", exc_info=True)
+            return {"status": "error", "message": str(e)}
 
 
-@celery_app.task(bind=True, name="extract_speaker_embeddings")
+@celery_app.task(bind=True, name="extract_speaker_embeddings", priority=GPUPriority.NEAR_REALTIME)
 def extract_speaker_embeddings_task(
     self,
     file_uuid: str,
@@ -673,117 +662,116 @@ def extract_speaker_embeddings_task(
     from app.utils.uuid_helpers import get_file_by_uuid
 
     task_id = self.request.id
-    db = SessionLocal()
 
-    try:
-        media_file = get_file_by_uuid(db, file_uuid)
-        if not media_file:
-            raise ValueError(f"Media file with UUID {file_uuid} not found")
+    with session_scope() as db:
+        try:
+            media_file = get_file_by_uuid(db, file_uuid)
+            if not media_file:
+                raise ValueError(f"Media file with UUID {file_uuid} not found")
 
-        file_id = int(media_file.id)
-        user_id = int(media_file.user_id)
-        storage_path = str(media_file.storage_path)
-        content_type = str(media_file.content_type)
-        filename = str(media_file.filename)
+            file_id = int(media_file.id)
+            user_id = int(media_file.user_id)
+            storage_path = str(media_file.storage_path)
+            content_type = str(media_file.content_type)
+            filename = str(media_file.filename)
 
-        create_task_record(db, task_id, user_id, file_id, "speaker_embedding")
-        update_task_status(db, task_id, "in_progress", progress=0.1)
+            create_task_record(db, task_id, user_id, file_id, "speaker_embedding")
+            update_task_status(db, task_id, "in_progress", progress=0.1)
 
-        # Force GPU synchronization before loading embedding model
-        hardware_config = detect_hardware()
-        hardware_config.optimize_memory_usage()
-        logger.info("GPU memory synchronized before speaker embedding extraction")
+            # Force GPU synchronization before loading embedding model
+            hardware_config = detect_hardware()
+            hardware_config.optimize_memory_usage()
+            logger.info("GPU memory synchronized before speaker embedding extraction")
 
-        # Get transcript segments for embedding extraction
-        transcript_segments = (
-            db.query(TranscriptSegment)
-            .filter(TranscriptSegment.media_file_id == file_id)
-            .order_by(TranscriptSegment.start_time)
-            .all()
-        )
+            # Get transcript segments for embedding extraction
+            transcript_segments = (
+                db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .order_by(TranscriptSegment.start_time)
+                .all()
+            )
 
-        if not transcript_segments:
-            logger.warning(f"No transcript segments found for file {file_id}")
+            if not transcript_segments:
+                logger.warning(f"No transcript segments found for file {file_id}")
+                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+                return {"status": "skipped", "message": "No segments to process"}
+
+            # Convert segments to dict format for embedding service
+            processed_segments = [
+                {
+                    "start": seg.start_time,
+                    "end": seg.end_time,
+                    "text": seg.text,
+                    "speaker": seg.speaker.name if seg.speaker else "SPEAKER_00",
+                    "speaker_id": seg.speaker_id,
+                }
+                for seg in transcript_segments
+            ]
+
+            update_task_status(db, task_id, "in_progress", progress=0.2)
+
+            # Download file from MinIO and prepare audio
+            logger.info(f"Downloading file {storage_path} for speaker embedding extraction")
+            file_data, _, _ = download_file(storage_path)
+            file_ext = get_audio_file_extension(content_type, filename)
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save downloaded file
+                temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
+                with open(temp_file_path, "wb") as f:
+                    f.write(file_data.read())
+
+                # Prepare audio for embedding extraction
+                audio_file_path = prepare_audio_for_transcription(
+                    temp_file_path, content_type, temp_dir
+                )
+
+                update_task_status(db, task_id, "in_progress", progress=0.4)
+
+                # Initialize embedding service and extract embeddings
+                embedding_service = SpeakerEmbeddingService()
+                logger.info(
+                    f"Using speaker embedding mode: {embedding_service.mode} ({embedding_service.model_name})"
+                )
+
+                try:
+                    matching_service = SpeakerMatchingService(db, embedding_service)
+                    logger.info(
+                        f"Starting speaker matching for {len(speaker_mapping)} speakers in file {file_id}"
+                    )
+
+                    speaker_results = matching_service.process_speaker_segments(
+                        audio_file_path, file_id, user_id, processed_segments, speaker_mapping
+                    )
+
+                    update_task_status(db, task_id, "in_progress", progress=0.9)
+                    logger.info(
+                        f"Speaker matching completed: {len(speaker_results) if speaker_results else 0} results"
+                    )
+
+                finally:
+                    # Clean up embedding service to free VRAM
+                    embedding_service.cleanup()
+                    hardware_config.optimize_memory_usage()
+
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            return {"status": "skipped", "message": "No segments to process"}
 
-        # Convert segments to dict format for embedding service
-        processed_segments = [
-            {
-                "start": seg.start_time,
-                "end": seg.end_time,
-                "text": seg.text,
-                "speaker": seg.speaker.name if seg.speaker else "SPEAKER_00",
-                "speaker_id": seg.speaker_id,
+            return {
+                "status": "success",
+                "file_id": file_id,
+                "speakers_processed": len(speaker_results) if speaker_results else 0,
             }
-            for seg in transcript_segments
-        ]
 
-        update_task_status(db, task_id, "in_progress", progress=0.2)
-
-        # Download file from MinIO and prepare audio
-        logger.info(f"Downloading file {storage_path} for speaker embedding extraction")
-        file_data, _, _ = download_file(storage_path)
-        file_ext = get_audio_file_extension(content_type, filename)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Save downloaded file
-            temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
-            with open(temp_file_path, "wb") as f:
-                f.write(file_data.read())
-
-            # Prepare audio for embedding extraction
-            audio_file_path = prepare_audio_for_transcription(
-                temp_file_path, content_type, temp_dir
-            )
-
-            update_task_status(db, task_id, "in_progress", progress=0.4)
-
-            # Initialize embedding service and extract embeddings
-            embedding_service = SpeakerEmbeddingService()
-            logger.info(
-                f"Using speaker embedding mode: {embedding_service.mode} ({embedding_service.model_name})"
-            )
-
-            try:
-                matching_service = SpeakerMatchingService(db, embedding_service)
-                logger.info(
-                    f"Starting speaker matching for {len(speaker_mapping)} speakers in file {file_id}"
-                )
-
-                speaker_results = matching_service.process_speaker_segments(
-                    audio_file_path, file_id, user_id, processed_segments, speaker_mapping
-                )
-
-                update_task_status(db, task_id, "in_progress", progress=0.9)
-                logger.info(
-                    f"Speaker matching completed: {len(speaker_results) if speaker_results else 0} results"
-                )
-
-            finally:
-                # Clean up embedding service to free VRAM
-                embedding_service.cleanup()
-                hardware_config.optimize_memory_usage()
-
-        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-
-        return {
-            "status": "success",
-            "file_id": file_id,
-            "speakers_processed": len(speaker_results) if speaker_results else 0,
-        }
-
-    except Exception as e:
-        logger.error(f"Error in speaker embedding task for {file_uuid}: {str(e)}")
-        logger.error("Full traceback:", exc_info=True)
-        update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-        return {"status": "error", "message": str(e)}
-
-    finally:
-        db.close()
+        except Exception as e:
+            logger.error(f"Error in speaker embedding task for {file_uuid}: {str(e)}")
+            logger.error("Full traceback:", exc_info=True)
+            update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
+            return {"status": "error", "message": str(e)}
 
 
-@celery_app.task(bind=True, name="update_speaker_embedding_on_reassignment", priority=5)
+@celery_app.task(
+    bind=True, name="update_speaker_embedding_on_reassignment", priority=GPUPriority.INTERACTIVE
+)
 def update_speaker_embedding_on_reassignment(
     self,
     segment_uuid: str,
@@ -806,13 +794,6 @@ def update_speaker_embedding_on_reassignment(
         source_speaker_uuid: UUID of the speaker that lost the segment (or None if orphan-deleted)
         user_id: ID of the user who owns the data
     """
-    # Gate: defer while speaker embedding migration holds the GPU
-    from app.services.migration_lock_service import migration_lock
-
-    if migration_lock.is_active():
-        logger.info("Migration lock active — deferring speaker embedding update (retry in 60s)")
-        raise self.retry(countdown=60, max_retries=120)
-
     import os
     import tempfile
 
@@ -827,160 +808,168 @@ def update_speaker_embedding_on_reassignment(
     from app.tasks.transcription.audio_processor import prepare_audio_for_transcription
     from app.utils.uuid_helpers import get_by_uuid
 
-    db = SessionLocal()
+    with session_scope() as db:
+        try:
+            # Look up the segment and verify it still belongs to the target speaker
+            segment = get_by_uuid(db, TranscriptSegment, segment_uuid)
+            if not segment:
+                logger.warning(f"Segment {segment_uuid} not found, skipping embedding update")
+                return {"status": "skipped", "reason": "segment_not_found"}
 
-    try:
-        # Look up the segment and verify it still belongs to the target speaker
-        segment = get_by_uuid(db, TranscriptSegment, segment_uuid)
-        if not segment:
-            logger.warning(f"Segment {segment_uuid} not found, skipping embedding update")
-            return {"status": "skipped", "reason": "segment_not_found"}
+            target_speaker = get_by_uuid(db, Speaker, target_speaker_uuid)
+            if not target_speaker:
+                logger.warning(
+                    f"Target speaker {target_speaker_uuid} not found, skipping embedding update"
+                )
+                return {"status": "skipped", "reason": "target_speaker_not_found"}
 
-        target_speaker = get_by_uuid(db, Speaker, target_speaker_uuid)
-        if not target_speaker:
-            logger.warning(
-                f"Target speaker {target_speaker_uuid} not found, skipping embedding update"
-            )
-            return {"status": "skipped", "reason": "target_speaker_not_found"}
+            # Guard against race conditions: verify segment still belongs to target speaker
+            if segment.speaker_id != target_speaker.id:
+                logger.info(
+                    f"Segment {segment_uuid} no longer belongs to speaker {target_speaker_uuid} "
+                    f"(race condition), skipping"
+                )
+                return {"status": "skipped", "reason": "segment_reassigned"}
 
-        # Guard against race conditions: verify segment still belongs to target speaker
-        if segment.speaker_id != target_speaker.id:
+            # Skip segments shorter than 0.5s (unreliable embeddings)
+            duration = float(segment.end_time) - float(segment.start_time)
+            if duration < 0.5:
+                logger.info(
+                    f"Segment {segment_uuid} too short ({duration:.2f}s), skipping embedding update"
+                )
+                return {"status": "skipped", "reason": "segment_too_short"}
+
+            # Get the media file for audio download
+            media_file = db.query(MediaFile).filter(MediaFile.id == segment.media_file_id).first()
+            if not media_file:
+                logger.error(f"Media file not found for segment {segment_uuid}")
+                return {"status": "error", "reason": "media_file_not_found"}
+
+            storage_path = str(media_file.storage_path)
+            content_type = str(media_file.content_type)
+            filename = str(media_file.filename)
+
+            # Download audio from MinIO and extract embedding
             logger.info(
-                f"Segment {segment_uuid} no longer belongs to speaker {target_speaker_uuid} "
-                f"(race condition), skipping"
+                f"Extracting embedding for segment {segment_uuid} "
+                f"(speaker {target_speaker_uuid}, {duration:.1f}s)"
             )
-            return {"status": "skipped", "reason": "segment_reassigned"}
+            file_data, _, _ = download_file(storage_path)
+            file_ext = get_audio_file_extension(content_type, filename)
 
-        # Skip segments shorter than 0.5s (unreliable embeddings)
-        duration = float(segment.end_time) - float(segment.start_time)
-        if duration < 0.5:
-            logger.info(
-                f"Segment {segment_uuid} too short ({duration:.2f}s), skipping embedding update"
-            )
-            return {"status": "skipped", "reason": "segment_too_short"}
+            new_embedding = None
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
+                with open(temp_file_path, "wb") as f:
+                    f.write(file_data.read())
 
-        # Get the media file for audio download
-        media_file = db.query(MediaFile).filter(MediaFile.id == segment.media_file_id).first()
-        if not media_file:
-            logger.error(f"Media file not found for segment {segment_uuid}")
-            return {"status": "error", "reason": "media_file_not_found"}
+                audio_file_path = prepare_audio_for_transcription(
+                    temp_file_path, content_type, temp_dir
+                )
 
-        storage_path = str(media_file.storage_path)
-        content_type = str(media_file.content_type)
-        filename = str(media_file.filename)
+                # Use cached embedding service for warm model reuse
+                embedding_service = get_cached_embedding_service()
 
-        # Download audio from MinIO and extract embedding
-        logger.info(
-            f"Extracting embedding for segment {segment_uuid} "
-            f"(speaker {target_speaker_uuid}, {duration:.1f}s)"
-        )
-        file_data, _, _ = download_file(storage_path)
-        file_ext = get_audio_file_extension(content_type, filename)
+                embedding_result = embedding_service.extract_embedding_from_file(
+                    audio_file_path,
+                    {"start": float(segment.start_time), "end": float(segment.end_time)},
+                )
 
-        new_embedding = None
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
-            with open(temp_file_path, "wb") as f:
-                f.write(file_data.read())
+                if embedding_result is not None:
+                    new_embedding = np.array(embedding_result)
+                else:
+                    logger.warning(f"Failed to extract embedding for segment {segment_uuid}")
+                    return {"status": "error", "reason": "embedding_extraction_failed"}
 
-            audio_file_path = prepare_audio_for_transcription(
-                temp_file_path, content_type, temp_dir
-            )
+            # Update target speaker embedding via weighted average
+            existing_doc = get_speaker_document(target_speaker_uuid)
 
-            # Use cached embedding service for warm model reuse
-            embedding_service = get_cached_embedding_service()
-
-            embedding_result = embedding_service.extract_embedding_from_file(
-                audio_file_path,
-                {"start": float(segment.start_time), "end": float(segment.end_time)},
-            )
-
-            if embedding_result is not None:
-                new_embedding = np.array(embedding_result)
+            if existing_doc is None:
+                # New speaker with no existing embedding — store directly
+                logger.info(
+                    f"Storing initial embedding for speaker {target_speaker_uuid} "
+                    f"from segment {segment_uuid}"
+                )
+                add_speaker_embedding(
+                    speaker_id=int(target_speaker.id),
+                    speaker_uuid=target_speaker_uuid,
+                    user_id=user_id,
+                    name=str(target_speaker.name),
+                    embedding=new_embedding.tolist(),
+                    profile_id=(
+                        int(target_speaker.profile_id) if target_speaker.profile_id else None
+                    ),
+                    profile_uuid=(
+                        str(target_speaker.profile.uuid) if target_speaker.profile else None
+                    ),
+                    media_file_id=int(target_speaker.media_file_id),
+                    segment_count=1,
+                    display_name=(
+                        str(target_speaker.display_name) if target_speaker.display_name else None
+                    ),
+                )
             else:
-                logger.warning(f"Failed to extract embedding for segment {segment_uuid}")
-                return {"status": "error", "reason": "embedding_extraction_failed"}
+                # Weighted average: (old * count + new) / (count + 1), then L2 normalize
+                old_embedding = np.array(existing_doc["embedding"])
+                old_count = existing_doc["segment_count"]
+                new_count = old_count + 1
 
-        # Update target speaker embedding via weighted average
-        existing_doc = get_speaker_document(target_speaker_uuid)
+                weighted = (old_embedding * old_count + new_embedding) / new_count
+                norm = np.linalg.norm(weighted)
+                if norm > 0:
+                    weighted = weighted / norm
 
-        if existing_doc is None:
-            # New speaker with no existing embedding — store directly
+                logger.info(
+                    f"Updating speaker {target_speaker_uuid} embedding: "
+                    f"segment_count {old_count} -> {new_count}"
+                )
+                add_speaker_embedding(
+                    speaker_id=int(target_speaker.id),
+                    speaker_uuid=target_speaker_uuid,
+                    user_id=user_id,
+                    name=str(target_speaker.name),
+                    embedding=weighted.tolist(),
+                    profile_id=(
+                        int(target_speaker.profile_id) if target_speaker.profile_id else None
+                    ),
+                    profile_uuid=(
+                        str(target_speaker.profile.uuid) if target_speaker.profile else None
+                    ),
+                    media_file_id=int(target_speaker.media_file_id),
+                    segment_count=new_count,
+                    display_name=(
+                        str(target_speaker.display_name) if target_speaker.display_name else None
+                    ),
+                )
+
+            # Update source speaker segment_count (if it still exists)
+            if source_speaker_uuid:
+                source_speaker = get_by_uuid(db, Speaker, source_speaker_uuid)
+                if source_speaker:
+                    source_doc = get_speaker_document(source_speaker_uuid)
+                    if source_doc and source_doc["segment_count"] > 1:
+                        update_speaker_segment_count(
+                            source_speaker_uuid, source_doc["segment_count"] - 1
+                        )
+                        logger.info(
+                            f"Decremented source speaker {source_speaker_uuid} segment_count"
+                        )
+
+            # Update profile embeddings if either speaker has a profile_id
+            _update_affected_profiles(db, target_speaker, source_speaker_uuid)
+
             logger.info(
-                f"Storing initial embedding for speaker {target_speaker_uuid} "
-                f"from segment {segment_uuid}"
+                f"Successfully updated embeddings after segment {segment_uuid} "
+                f"reassignment to speaker {target_speaker_uuid}"
             )
-            add_speaker_embedding(
-                speaker_id=int(target_speaker.id),
-                speaker_uuid=target_speaker_uuid,
-                user_id=user_id,
-                name=str(target_speaker.name),
-                embedding=new_embedding.tolist(),
-                profile_id=(int(target_speaker.profile_id) if target_speaker.profile_id else None),
-                profile_uuid=(str(target_speaker.profile.uuid) if target_speaker.profile else None),
-                media_file_id=int(target_speaker.media_file_id),
-                segment_count=1,
-                display_name=(
-                    str(target_speaker.display_name) if target_speaker.display_name else None
-                ),
+            return {"status": "success", "target_speaker_uuid": target_speaker_uuid}
+
+        except Exception as e:
+            logger.error(
+                f"Error updating speaker embedding on reassignment: {type(e).__name__}: {e}"
             )
-        else:
-            # Weighted average: (old * count + new) / (count + 1), then L2 normalize
-            old_embedding = np.array(existing_doc["embedding"])
-            old_count = existing_doc["segment_count"]
-            new_count = old_count + 1
-
-            weighted = (old_embedding * old_count + new_embedding) / new_count
-            norm = np.linalg.norm(weighted)
-            if norm > 0:
-                weighted = weighted / norm
-
-            logger.info(
-                f"Updating speaker {target_speaker_uuid} embedding: "
-                f"segment_count {old_count} -> {new_count}"
-            )
-            add_speaker_embedding(
-                speaker_id=int(target_speaker.id),
-                speaker_uuid=target_speaker_uuid,
-                user_id=user_id,
-                name=str(target_speaker.name),
-                embedding=weighted.tolist(),
-                profile_id=(int(target_speaker.profile_id) if target_speaker.profile_id else None),
-                profile_uuid=(str(target_speaker.profile.uuid) if target_speaker.profile else None),
-                media_file_id=int(target_speaker.media_file_id),
-                segment_count=new_count,
-                display_name=(
-                    str(target_speaker.display_name) if target_speaker.display_name else None
-                ),
-            )
-
-        # Update source speaker segment_count (if it still exists)
-        if source_speaker_uuid:
-            source_speaker = get_by_uuid(db, Speaker, source_speaker_uuid)
-            if source_speaker:
-                source_doc = get_speaker_document(source_speaker_uuid)
-                if source_doc and source_doc["segment_count"] > 1:
-                    update_speaker_segment_count(
-                        source_speaker_uuid, source_doc["segment_count"] - 1
-                    )
-                    logger.info(f"Decremented source speaker {source_speaker_uuid} segment_count")
-
-        # Update profile embeddings if either speaker has a profile_id
-        _update_affected_profiles(db, target_speaker, source_speaker_uuid)
-
-        logger.info(
-            f"Successfully updated embeddings after segment {segment_uuid} "
-            f"reassignment to speaker {target_speaker_uuid}"
-        )
-        return {"status": "success", "target_speaker_uuid": target_speaker_uuid}
-
-    except Exception as e:
-        logger.error(f"Error updating speaker embedding on reassignment: {type(e).__name__}: {e}")
-        logger.error("Full traceback:", exc_info=True)
-        return {"status": "error", "message": str(e)}
-
-    finally:
-        db.close()
+            logger.error("Full traceback:", exc_info=True)
+            return {"status": "error", "message": str(e)}
 
 
 def _update_affected_profiles(

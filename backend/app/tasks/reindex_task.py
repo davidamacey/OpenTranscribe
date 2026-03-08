@@ -1,7 +1,6 @@
 """Celery task for re-indexing transcripts with chunk-level embeddings."""
 
 import contextlib
-import functools
 import logging
 from typing import Any
 
@@ -10,16 +9,11 @@ from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_STOPPED
+from app.core.constants import CPUPriority
+from app.core.redis import get_redis
+from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
-
-
-@functools.lru_cache(maxsize=1)
-def _get_notification_redis():
-    """Get or create a module-level Redis client for notifications."""
-    import redis as sync_redis
-
-    return sync_redis.from_url(settings.REDIS_URL)
 
 
 def _ensure_neural_pipeline_ready() -> bool:
@@ -334,8 +328,7 @@ def _is_cancellation_requested(user_id: int) -> bool:
         True if cancellation was requested.
     """
     try:
-        redis_client = _get_notification_redis()
-        return bool(redis_client.get(f"reindex_cancel:{user_id}"))
+        return bool(get_redis().get(f"reindex_cancel:{user_id}"))
     except Exception as e:
         logger.warning(f"Could not check cancellation flag: {e}")
         return False
@@ -348,33 +341,14 @@ def _clear_cancellation_flag(user_id: int) -> None:
         user_id: The user whose cancellation flag to clear.
     """
     try:
-        redis_client = _get_notification_redis()
-        redis_client.delete(f"reindex_cancel:{user_id}")
+        get_redis().delete(f"reindex_cancel:{user_id}")
     except Exception as e:
         logger.warning(f"Could not clear cancellation flag: {e}")
 
 
-def _send_reindex_stopped(user_id: int, stats: dict[str, Any]) -> None:
-    """Send re-index stopped notification via Redis pub/sub for WebSocket delivery."""
-    try:
-        import json
-
-        redis_client = _get_notification_redis()
-
-        notification = {
-            "user_id": user_id,
-            "type": NOTIFICATION_TYPE_REINDEX_STOPPED,
-            "data": {"stats": stats, "reason": "cancelled_by_user"},
-        }
-
-        redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(f"Published reindex stopped via Redis: {stats}")
-
-    except Exception as e:
-        logger.error(f"Failed to send reindex stopped notification: {e}")
-
-
-@celery_app.task(bind=True, name="reindex_transcripts", queue="cpu")
+@celery_app.task(
+    bind=True, name="reindex_transcripts", queue="cpu", priority=CPUPriority.MAINTENANCE
+)
 def reindex_transcripts_task(
     self,
     user_id: int,
@@ -406,8 +380,6 @@ def reindex_transcripts_task(
     Returns:
         Dict with indexing stats.
     """
-    from sqlalchemy import func
-
     from app.db.session_utils import session_scope
     from app.models.media import FileStatus
     from app.models.media import MediaFile
@@ -445,16 +417,18 @@ def reindex_transcripts_task(
     files_since_refresh = 0
 
     try:
-        # Step 1: Count total files in a lightweight query
+        # Step 1: Snapshot file IDs to ensure consistent count throughout reindex.
+        # This prevents count drift from files completing/deleting mid-reindex.
         with session_scope() as db:
-            count_query = db.query(func.count(MediaFile.id)).filter(
+            id_query = db.query(MediaFile.id).filter(
                 MediaFile.user_id == user_id,
                 MediaFile.status == FileStatus.COMPLETED,
             )
             if file_uuids:
-                count_query = count_query.filter(MediaFile.uuid.in_(file_uuids))
-            total_files: int = count_query.scalar() or 0
+                id_query = id_query.filter(MediaFile.uuid.in_(file_uuids))
+            all_file_ids = [int(row[0]) for row in id_query.order_by(MediaFile.id).all()]
 
+        total_files = len(all_file_ids)
         stats["total_files"] = total_files
 
         if total_files == 0:
@@ -476,28 +450,23 @@ def reindex_transcripts_task(
         # Step 2: Disable auto-refresh during bulk ingestion
         _set_bulk_indexing_mode()
 
+        # Track indexed file UUIDs for post-reindex orphan cleanup
+        indexed_file_uuids: set[str] = set()
+
         try:
-            # Step 3: Page through files with keyset (cursor) pagination
-            # Using id > last_id avoids data-shift issues with offset/limit
+            # Step 3: Page through snapshotted file IDs in batches
             global_index = 0
-            last_id = 0
 
-            while True:
+            for batch_start in range(0, total_files, page_size):
+                batch_ids = all_file_ids[batch_start : batch_start + page_size]
+
                 with session_scope() as db:
-                    page_query = db.query(MediaFile).filter(
-                        MediaFile.user_id == user_id,
-                        MediaFile.status == FileStatus.COMPLETED,
-                        MediaFile.id > last_id,
+                    page_files = (
+                        db.query(MediaFile)
+                        .filter(MediaFile.id.in_(batch_ids))
+                        .order_by(MediaFile.id)
+                        .all()
                     )
-                    if file_uuids:
-                        page_query = page_query.filter(MediaFile.uuid.in_(file_uuids))
-
-                    page_files = page_query.order_by(MediaFile.id).limit(page_size).all()
-
-                    if not page_files:
-                        break
-
-                    last_id = int(page_files[-1].id)
 
                     for media_file in page_files:
                         file_uuid = str(media_file.uuid)
@@ -511,7 +480,14 @@ def reindex_transcripts_task(
                             )
                             stats["cancelled"] = True
                             tracker.complete(message="Re-indexing stopped by user")
-                            _send_reindex_stopped(user_id, stats)
+                            send_ws_event(
+                                user_id,
+                                NOTIFICATION_TYPE_REINDEX_STOPPED,
+                                {
+                                    "stats": stats,
+                                    "reason": "cancelled_by_user",
+                                },
+                            )
                             _clear_cancellation_flag(user_id)
                             return stats
 
@@ -541,6 +517,7 @@ def reindex_transcripts_task(
                             stats["indexed_files"] += 1
                             stats["total_chunks"] += chunk_count
                             files_since_refresh += 1
+                            indexed_file_uuids.add(metadata["file_uuid"])
 
                             # Send progress notification with ETA
                             emit_progress_notification(
@@ -572,11 +549,18 @@ def reindex_transcripts_task(
         _refresh_index_and_clear_cache()
         _force_merge_after_reindex()
 
+        # Step 4: Post-reindex orphan cleanup — remove chunks for deleted files
+        if indexed_file_uuids:
+            orphan_cleaned = _cleanup_orphaned_chunks(user_id, indexed_file_uuids)
+            if orphan_cleaned > 0:
+                stats["orphan_chunks_cleaned"] = orphan_cleaned
+                logger.info(f"Cleaned {orphan_cleaned} orphaned chunk documents for user {user_id}")
+
         # Mark progress as completed
         tracker.complete(message="Re-indexing complete")
 
         # Send completion notification
-        _send_reindex_complete(user_id, stats)
+        send_ws_event(user_id, NOTIFICATION_TYPE_REINDEX_COMPLETE, {"stats": stats})
 
         logger.info(
             f"Re-index task {task_id} completed: "
@@ -594,45 +578,62 @@ def reindex_transcripts_task(
         return stats
 
 
-def _send_reindex_progress(user_id: int, progress: float, indexed: int, total: int) -> None:
-    """Send re-index progress via Redis pub/sub for WebSocket delivery."""
+def _cleanup_orphaned_chunks(user_id: int, indexed_file_uuids: set[str]) -> int:
+    """Remove chunk documents for files that were deleted during reindex.
+
+    Compares the set of file UUIDs in the chunks index (for this user) against
+    the set we just indexed. Any file_uuid in the index but NOT in the indexed
+    set is orphaned and gets cleaned up.
+
+    Returns count of orphaned documents deleted.
+    """
+    from app.services.opensearch_service import opensearch_client as os_client
+
+    if not os_client:
+        return 0
+
+    index_name = settings.OPENSEARCH_CHUNKS_INDEX
     try:
-        import json
+        if not os_client.indices.exists(index=index_name):
+            return 0
 
-        redis_client = _get_notification_redis()
-
-        notification = {
-            "user_id": user_id,
-            "type": NOTIFICATION_TYPE_REINDEX_PROGRESS,
-            "data": {
-                "progress": round(progress, 2),
-                "indexed_files": indexed,
-                "total_files": total,
+        # Get all file_uuids in the chunks index for this user
+        agg_resp = os_client.search(
+            index=index_name,
+            body={
+                "size": 0,
+                "query": {"term": {"user_id": user_id}},
+                "aggs": {
+                    "file_uuids": {
+                        "terms": {"field": "file_uuid", "size": 50000},
+                    }
+                },
             },
-        }
+        )
+        buckets = agg_resp.get("aggregations", {}).get("file_uuids", {}).get("buckets", [])
+        indexed_in_os = {b["key"] for b in buckets}
 
-        redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.debug(f"Published reindex progress via Redis: {indexed}/{total}")
+        orphan_uuids = indexed_in_os - indexed_file_uuids
+        if not orphan_uuids:
+            return 0
+
+        # Delete orphaned chunks
+        del_resp = os_client.delete_by_query(
+            index=index_name,
+            body={
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"user_id": user_id}},
+                            {"terms": {"file_uuid": list(orphan_uuids)}},
+                        ]
+                    }
+                }
+            },
+            refresh=True,
+        )
+        return int(del_resp.get("deleted", 0))
 
     except Exception as e:
-        logger.error(f"Failed to send reindex progress notification: {e}")
-
-
-def _send_reindex_complete(user_id: int, stats: dict[str, Any]) -> None:
-    """Send re-index completion via Redis pub/sub for WebSocket delivery."""
-    try:
-        import json
-
-        redis_client = _get_notification_redis()
-
-        notification = {
-            "user_id": user_id,
-            "type": NOTIFICATION_TYPE_REINDEX_COMPLETE,
-            "data": {"stats": stats},
-        }
-
-        redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(f"Published reindex complete via Redis: {stats}")
-
-    except Exception as e:
-        logger.error(f"Failed to send reindex completion notification: {e}")
+        logger.warning(f"Post-reindex orphan cleanup failed: {e}")
+        return 0

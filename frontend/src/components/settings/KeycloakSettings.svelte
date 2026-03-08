@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
   import type { KeycloakConfig } from '$lib/api/authConfig';
 
   export let config: Partial<KeycloakConfig> = {};
@@ -76,20 +77,20 @@
         bind:checked={formData.keycloak_enabled}
         on:change={handleChange}
       />
-      <span class="toggle-text">Enable OIDC/Keycloak Authentication</span>
+      <span class="toggle-text">{$t('settings.keycloak.enable')}</span>
     </label>
   </div>
 
   <div class="info-box">
-    <strong>OpenID Connect (OIDC)</strong>
-    <p>This integration supports Keycloak and other OIDC-compliant identity providers including Azure AD, Okta, Auth0, and Google Workspace.</p>
+    <strong>{$t('settings.keycloak.oidcTitle')}</strong>
+    <p>{$t('settings.keycloak.oidcDescription')}</p>
   </div>
 
   <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>Server Configuration</h3>
+    <h3>{$t('settings.keycloak.serverConfiguration')}</h3>
 
     <div class="form-group">
-      <label for="keycloak_server_url">Server URL (Public)</label>
+      <label for="keycloak_server_url">{$t('settings.keycloak.serverUrlPublic')}</label>
       <input
         id="keycloak_server_url"
         type="text"
@@ -98,11 +99,11 @@
         placeholder="https://keycloak.example.com"
         disabled={!formData.keycloak_enabled}
       />
-      <span class="help-text">Public URL of the Keycloak/OIDC server (used by browser)</span>
+      <span class="help-text">{$t('settings.keycloak.serverUrlPublicHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_internal_url">Server URL (Internal)</label>
+      <label for="keycloak_internal_url">{$t('settings.keycloak.serverUrlInternal')}</label>
       <input
         id="keycloak_internal_url"
         type="text"
@@ -111,11 +112,11 @@
         placeholder="http://keycloak:8080"
         disabled={!formData.keycloak_enabled}
       />
-      <span class="help-text">Internal URL for server-to-server communication (leave empty to use public URL)</span>
+      <span class="help-text">{$t('settings.keycloak.serverUrlInternalHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_realm">Realm</label>
+      <label for="keycloak_realm">{$t('settings.keycloak.realm')}</label>
       <input
         id="keycloak_realm"
         type="text"
@@ -124,11 +125,11 @@
         placeholder="master"
         disabled={!formData.keycloak_enabled}
       />
-      <span class="help-text">Keycloak realm name (or tenant ID for Azure AD)</span>
+      <span class="help-text">{$t('settings.keycloak.realmHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_timeout">Request Timeout (seconds)</label>
+      <label for="keycloak_timeout">{$t('settings.keycloak.requestTimeout')}</label>
       <input
         id="keycloak_timeout"
         type="number"
@@ -142,11 +143,11 @@
   </div>
 
   <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>Client Configuration</h3>
+    <h3>{$t('settings.keycloak.clientConfiguration')}</h3>
 
     <div class="form-row">
       <div class="form-group">
-        <label for="keycloak_client_id">Client ID</label>
+        <label for="keycloak_client_id">{$t('settings.keycloak.clientId')}</label>
         <input
           id="keycloak_client_id"
           type="text"
@@ -158,14 +159,14 @@
       </div>
 
       <div class="form-group">
-        <label for="keycloak_client_secret">Client Secret</label>
+        <label for="keycloak_client_secret">{$t('settings.keycloak.clientSecret')}</label>
         <div class="input-with-toggle">
           <input
             id="keycloak_client_secret"
             type={showSecret ? 'text' : 'password'}
             bind:value={formData.keycloak_client_secret}
             on:input={handleChange}
-            placeholder="Enter client secret"
+            placeholder={$t('settings.keycloak.enterClientSecret')}
             disabled={!formData.keycloak_enabled}
           />
           <button
@@ -174,15 +175,15 @@
             on:click={() => showSecret = !showSecret}
             disabled={!formData.keycloak_enabled}
           >
-            {showSecret ? 'Hide' : 'Show'}
+            {showSecret ? $t('common.hide') : $t('common.show')}
           </button>
         </div>
-        <span class="help-text">Leave empty for public clients using PKCE</span>
+        <span class="help-text">{$t('settings.keycloak.clientSecretHelp')}</span>
       </div>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_callback_url">Callback URL</label>
+      <label for="keycloak_callback_url">{$t('settings.keycloak.callbackUrl')}</label>
       <div class="input-with-button">
         <input
           id="keycloak_callback_url"
@@ -198,15 +199,15 @@
           on:click={generateCallbackUrl}
           disabled={!formData.keycloak_enabled}
         >
-          Auto-detect
+          {$t('settings.keycloak.autoDetect')}
         </button>
       </div>
-      <span class="help-text">Must be registered in your OIDC provider's client configuration</span>
+      <span class="help-text">{$t('settings.keycloak.callbackUrlHelp')}</span>
     </div>
   </div>
 
   <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>Security Options</h3>
+    <h3>{$t('settings.keycloak.securityOptions')}</h3>
 
     <label class="checkbox-label">
       <input
@@ -215,9 +216,9 @@
         on:change={handleChange}
         disabled={!formData.keycloak_enabled}
       />
-      <span>Use PKCE (Proof Key for Code Exchange)</span>
+      <span>{$t('settings.keycloak.usePkce')}</span>
     </label>
-    <span class="help-text indented">Recommended for enhanced security. Required for public clients.</span>
+    <span class="help-text indented">{$t('settings.keycloak.usePkceHelp')}</span>
 
     <label class="checkbox-label">
       <input
@@ -226,7 +227,7 @@
         on:change={handleChange}
         disabled={!formData.keycloak_enabled}
       />
-      <span>Verify Token Issuer</span>
+      <span>{$t('settings.keycloak.verifyIssuer')}</span>
     </label>
 
     <label class="checkbox-label">
@@ -236,18 +237,18 @@
         on:change={handleChange}
         disabled={!formData.keycloak_enabled}
       />
-      <span>Verify Token Audience</span>
+      <span>{$t('settings.keycloak.verifyAudience')}</span>
     </label>
 
     {#if formData.keycloak_verify_audience}
       <div class="form-group indented">
-        <label for="keycloak_audience">Expected Audience</label>
+        <label for="keycloak_audience">{$t('settings.keycloak.expectedAudience')}</label>
         <input
           id="keycloak_audience"
           type="text"
           bind:value={formData.keycloak_audience}
           on:input={handleChange}
-          placeholder="Leave empty to use client ID"
+          placeholder={$t('settings.keycloak.expectedAudiencePlaceholder')}
           disabled={!formData.keycloak_enabled}
         />
       </div>
@@ -255,10 +256,10 @@
   </div>
 
   <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>Role Mapping</h3>
+    <h3>{$t('settings.keycloak.roleMapping')}</h3>
 
     <div class="form-group">
-      <label for="keycloak_admin_role">Admin Role Name</label>
+      <label for="keycloak_admin_role">{$t('settings.keycloak.adminRoleName')}</label>
       <input
         id="keycloak_admin_role"
         type="text"
@@ -267,7 +268,7 @@
         placeholder="admin"
         disabled={!formData.keycloak_enabled}
       />
-      <span class="help-text">Users with this role in their token will be granted admin privileges</span>
+      <span class="help-text">{$t('settings.keycloak.adminRoleHelp')}</span>
     </div>
   </div>
 
@@ -277,14 +278,14 @@
       on:click={handleTest}
       disabled={!formData.keycloak_enabled || testing}
     >
-      {testing ? 'Testing...' : 'Test Connection'}
+      {testing ? $t('common.testing') : $t('settings.keycloak.testConnection')}
     </button>
     <button
       class="btn btn-primary"
       on:click={handleSave}
       disabled={saving}
     >
-      {saving ? 'Saving...' : 'Save Configuration'}
+      {saving ? $t('common.saving') : $t('settings.keycloak.saveConfiguration')}
     </button>
   </div>
 </div>

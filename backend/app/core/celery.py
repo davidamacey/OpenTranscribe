@@ -62,6 +62,8 @@ celery_app = Celery(
         "app.tasks.rediarize_task",
         "app.tasks.speaker_clustering",
         "app.tasks.auto_labeling",
+        "app.tasks.speaker_attribute_migration_task",
+        "app.tasks.combined_speaker_analysis_task",
     ],
 )
 
@@ -77,15 +79,23 @@ celery_app.conf.update(
     worker_send_task_events=True,  # Enable real-time task events for Flower
     task_send_sent_event=True,  # Fire event when task is dispatched to queue
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
-    # Enable Redis priority queues: lower number = higher priority.
-    # Clustering (priority=0) preempts queued transcription (priority=5).
+    # Enable Redis priority queues: lower number = higher priority (runs first).
+    # Priorities are PER-QUEUE — GPUPriority.X is independent of CPUPriority.X.
+    # Named constants defined in app.core.constants: GPUPriority, CPUPriority, etc.
+    # GPU queue:  0=speaker-reassign  1=embed-extract  3=transcription  4=rediarize
+    #             5=recluster  7=admin-migration-batches
+    # CPU queue:  2=pipeline-critical  4=user-triggered  5=system  6=admin  8=maintenance
+    # NLP queue:  3=user-triggered  5=auto-pipeline  7=admin-batch  9=background
+    # Download:   3=single-url  6=playlist
+    # Embedding:  2=pipeline-critical
+    # Utility:    1=emergency  3=operational  5=routine  7=background  9=dev-tools
     broker_transport_options={
         "priority_steps": list(range(10)),
         "queue_order_strategy": "priority",
     },
     task_routes={
-        # GPU Queue - GPU-intensive AI tasks ONLY (concurrency=1, requires GPU)
-        # Clustering gets priority=0 (highest), transcription/migration get priority=5
+        # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)
+        # See priority comment above for priority scheme
         "transcription.process_file": {"queue": "gpu"},
         "rediarize": {"queue": "gpu"},
         "update_speaker_embedding_on_reassignment": {"queue": "gpu"},
@@ -97,8 +107,6 @@ celery_app.conf.update(
         # apply_async(queue=task_queue) in upload.py / reprocess.py can route it
         # to either "gpu" (local) or "cloud-asr" (cloud provider) at call time.
         # A static task_routes entry would override the per-call queue argument.
-        # Cloud ASR Queue - Cloud API transcription tasks (concurrency configurable)
-        "transcription.process_file_cloud": {"queue": "cloud-asr"},
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
         "download.media_url": {"queue": "download"},
         "download.media_playlist": {"queue": "download"},
@@ -107,6 +115,10 @@ celery_app.conf.update(
         "media.generate_waveform_data": {"queue": "cpu"},
         "analytics.analyze_transcript": {"queue": "cpu"},
         "detect_speaker_attributes": {"queue": "cpu"},
+        "migrate_speaker_attributes": {"queue": "cpu"},
+        "detect_speaker_attributes_batch": {"queue": "gpu"},
+        "analyze_speakers_combined_batch": {"queue": "gpu"},
+        "migrate_speakers_combined": {"queue": "cpu"},
         "system.update_gpu_stats": {"queue": "cpu"},
         "migrate_speaker_embeddings_to_v4": {"queue": "cpu"},
         "migration.normalize_embeddings": {"queue": "cpu"},
@@ -114,11 +126,12 @@ celery_app.conf.update(
         "migrate_thumbnails_to_webp": {"queue": "cpu"},
         "reindex_transcripts": {"queue": "cpu"},
         "search_index_maintenance": {"queue": "cpu"},
+        "opensearch_orphan_cleanup": {"queue": "cpu"},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         "ai.generate_summary": {"queue": "nlp"},
         "ai.identify_speakers": {"queue": "nlp"},
-        "process_speaker_update_background": {"queue": "nlp"},
-        "extract_speaker_embeddings": {"queue": "nlp"},
+        "process_speaker_update_background": {"queue": "cpu"},
+        "extract_speaker_embeddings": {"queue": "gpu"},
         "ai.extract_topics": {"queue": "nlp"},
         "ai.extract_topics_batch": {"queue": "nlp"},
         "ai.group_batch_files": {"queue": "nlp"},
@@ -146,22 +159,27 @@ celery_app.conf.update(
         "periodic-health-check": {
             "task": "system.health_check",
             "schedule": crontab(minute="*/10"),  # Run every 10 minutes
-            "options": {"queue": "utility"},
+            "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
         },
         "search-index-maintenance": {
             "task": "search_index_maintenance",
             "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
-            "options": {"queue": "cpu"},
+            "options": {"queue": "cpu", "priority": 8},  # CPUPriority.MAINTENANCE
+        },
+        "opensearch-orphan-cleanup": {
+            "task": "opensearch_orphan_cleanup",
+            "schedule": crontab(minute=0, hour="3,9,15,21"),  # Every 6h, offset from maintenance
+            "options": {"queue": "cpu", "priority": 8},  # CPUPriority.MAINTENANCE
         },
         "gpu-stats-update": {
             "task": "system.update_gpu_stats",
             "schedule": crontab(minute="*/5"),  # Run every 5 minutes
-            "options": {"queue": "cpu"},
+            "options": {"queue": "cpu", "priority": 5},  # CPUPriority.SYSTEM
         },
         "cleanup-expired-files": {
             "task": "cleanup_expired_files",
             "schedule": crontab(minute=0),  # Every hour on the hour
-            "options": {"queue": "utility"},
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
         },
     },
 )

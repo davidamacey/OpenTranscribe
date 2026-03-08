@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
+  import { t } from '$stores/locale';
   import { axiosInstance } from '$lib/axios';
 
   export let onAcknowledge: () => void = () => {};
@@ -56,23 +57,22 @@
       </div>
 
       <div class="banner-content">
-        <h2>System Use Notification</h2>
+        <h2>{$t('loginBanner.title')}</h2>
         <div class="banner-text">
           {banner.text}
         </div>
 
         <p class="legal-notice">
-          By clicking "I Acknowledge", you consent to the terms above and confirm
-          that you are authorized to access this system.
+          {$t('loginBanner.consentText')}
         </p>
       </div>
 
       <div class="banner-actions">
         <button class="btn-decline" on:click={handleDecline}>
-          Decline
+          {$t('loginBanner.decline')}
         </button>
         <button class="btn-acknowledge" on:click={handleAcknowledge}>
-          I Acknowledge
+          {$t('loginBanner.acknowledge')}
         </button>
       </div>
 

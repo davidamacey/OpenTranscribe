@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
   import type { PKIConfig } from '$lib/api/authConfig';
 
   export let config: Partial<PKIConfig> = {};
@@ -51,8 +52,8 @@
   }
 
   const pkiModes = [
-    { value: 'header', label: 'Header-based (Reverse Proxy)', description: 'Certificate passed via HTTP headers from reverse proxy' },
-    { value: 'mutual_tls', label: 'Mutual TLS', description: 'Direct certificate verification via TLS handshake' }
+    { value: 'header', labelKey: 'settings.pki.modeHeader', descKey: 'settings.pki.modeHeaderDesc' },
+    { value: 'mutual_tls', labelKey: 'settings.pki.modeMutualTls', descKey: 'settings.pki.modeMutualTlsDesc' }
   ];
 </script>
 
@@ -64,17 +65,17 @@
         bind:checked={formData.pki_enabled}
         on:change={handleChange}
       />
-      <span class="toggle-text">Enable PKI/Certificate Authentication</span>
+      <span class="toggle-text">{$t('settings.pki.enable')}</span>
     </label>
   </div>
 
   <div class="warning-box">
-    <strong>Advanced Configuration</strong>
-    <p>PKI authentication requires proper infrastructure setup including certificate management, reverse proxy configuration, and CA certificate distribution. See the documentation for detailed setup instructions.</p>
+    <strong>{$t('settings.pki.advancedConfiguration')}</strong>
+    <p>{$t('settings.pki.advancedConfigurationDesc')}</p>
   </div>
 
   <div class="section" class:disabled={!formData.pki_enabled}>
-    <h3>Authentication Mode</h3>
+    <h3>{$t('settings.pki.authenticationMode')}</h3>
 
     <div class="radio-group">
       {#each pkiModes as mode}
@@ -88,8 +89,8 @@
             disabled={!formData.pki_enabled}
           />
           <div class="radio-content">
-            <span class="radio-title">{mode.label}</span>
-            <span class="radio-description">{mode.description}</span>
+            <span class="radio-title">{$t(mode.labelKey)}</span>
+            <span class="radio-description">{$t(mode.descKey)}</span>
           </div>
         </label>
       {/each}
@@ -97,10 +98,10 @@
   </div>
 
   <div class="section" class:disabled={!formData.pki_enabled}>
-    <h3>Certificate Authority</h3>
+    <h3>{$t('settings.pki.certificateAuthority')}</h3>
 
     <div class="form-group">
-      <label for="pki_ca_cert_path">CA Certificate Path</label>
+      <label for="pki_ca_cert_path">{$t('settings.pki.caCertPath')}</label>
       <input
         id="pki_ca_cert_path"
         type="text"
@@ -109,17 +110,17 @@
         placeholder="/etc/ssl/certs/ca-certificates.crt"
         disabled={!formData.pki_enabled}
       />
-      <span class="help-text">Path to the trusted CA certificate file (PEM format). Can be a CA bundle.</span>
+      <span class="help-text">{$t('settings.pki.caCertPathHelp')}</span>
     </div>
   </div>
 
   {#if formData.pki_mode === 'header'}
     <div class="section" class:disabled={!formData.pki_enabled}>
-      <h3>Header Configuration</h3>
+      <h3>{$t('settings.pki.headerConfiguration')}</h3>
 
       <div class="form-row">
         <div class="form-group">
-          <label for="pki_cert_header">Certificate Header</label>
+          <label for="pki_cert_header">{$t('settings.pki.certHeader')}</label>
           <input
             id="pki_cert_header"
             type="text"
@@ -128,11 +129,11 @@
             placeholder="X-SSL-Client-Cert"
             disabled={!formData.pki_enabled}
           />
-          <span class="help-text">HTTP header containing the client certificate</span>
+          <span class="help-text">{$t('settings.pki.certHeaderHelp')}</span>
         </div>
 
         <div class="form-group">
-          <label for="pki_cert_dn_header">DN Header</label>
+          <label for="pki_cert_dn_header">{$t('settings.pki.dnHeader')}</label>
           <input
             id="pki_cert_dn_header"
             type="text"
@@ -141,12 +142,12 @@
             placeholder="X-SSL-Client-DN"
             disabled={!formData.pki_enabled}
           />
-          <span class="help-text">HTTP header containing the certificate DN</span>
+          <span class="help-text">{$t('settings.pki.dnHeaderHelp')}</span>
         </div>
       </div>
 
       <div class="form-group">
-        <label for="pki_trusted_proxies">Trusted Proxies</label>
+        <label for="pki_trusted_proxies">{$t('settings.pki.trustedProxies')}</label>
         <input
           id="pki_trusted_proxies"
           type="text"
@@ -155,13 +156,13 @@
           placeholder="10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16"
           disabled={!formData.pki_enabled}
         />
-        <span class="help-text">Comma-separated list of trusted proxy IP ranges (CIDR notation)</span>
+        <span class="help-text">{$t('settings.pki.trustedProxiesHelp')}</span>
       </div>
     </div>
   {/if}
 
   <div class="section" class:disabled={!formData.pki_enabled}>
-    <h3>Revocation Checking</h3>
+    <h3>{$t('settings.pki.revocationChecking')}</h3>
 
     <label class="checkbox-label">
       <input
@@ -170,14 +171,14 @@
         on:change={handleChange}
         disabled={!formData.pki_enabled}
       />
-      <span>Enable certificate revocation checking</span>
+      <span>{$t('settings.pki.enableRevocationChecking')}</span>
     </label>
 
     {#if formData.pki_verify_revocation}
       <div class="revocation-options">
         <div class="form-row">
           <div class="form-group">
-            <label for="pki_ocsp_timeout_seconds">OCSP Timeout (seconds)</label>
+            <label for="pki_ocsp_timeout_seconds">{$t('settings.pki.ocspTimeout')}</label>
             <input
               id="pki_ocsp_timeout_seconds"
               type="number"
@@ -190,7 +191,7 @@
           </div>
 
           <div class="form-group">
-            <label for="pki_crl_cache_seconds">CRL Cache Duration (seconds)</label>
+            <label for="pki_crl_cache_seconds">{$t('settings.pki.crlCacheDuration')}</label>
             <input
               id="pki_crl_cache_seconds"
               type="number"
@@ -210,18 +211,18 @@
             on:change={handleChange}
             disabled={!formData.pki_enabled}
           />
-          <span>Soft-fail on revocation check errors</span>
+          <span>{$t('settings.pki.softFail')}</span>
         </label>
-        <span class="help-text indented">When enabled, authentication proceeds if OCSP/CRL servers are unreachable</span>
+        <span class="help-text indented">{$t('settings.pki.softFailHelp')}</span>
       </div>
     {/if}
   </div>
 
   <div class="section" class:disabled={!formData.pki_enabled}>
-    <h3>Authorization</h3>
+    <h3>{$t('settings.pki.authorization')}</h3>
 
     <div class="form-group">
-      <label for="pki_admin_dns">Admin Distinguished Names</label>
+      <label for="pki_admin_dns">{$t('settings.pki.adminDns')}</label>
       <textarea
         id="pki_admin_dns"
         bind:value={formData.pki_admin_dns}
@@ -230,12 +231,12 @@
         rows="3"
         disabled={!formData.pki_enabled}
       ></textarea>
-      <span class="help-text">One DN per line. Users with matching certificate DNs will be granted admin privileges.</span>
+      <span class="help-text">{$t('settings.pki.adminDnsHelp')}</span>
     </div>
   </div>
 
   <div class="section" class:disabled={!formData.pki_enabled}>
-    <h3>Fallback Options</h3>
+    <h3>{$t('settings.pki.fallbackOptions')}</h3>
 
     <label class="checkbox-label">
       <input
@@ -244,9 +245,9 @@
         on:change={handleChange}
         disabled={!formData.pki_enabled}
       />
-      <span>Allow password fallback</span>
+      <span>{$t('settings.pki.allowPasswordFallback')}</span>
     </label>
-    <span class="help-text indented">When enabled, users without certificates can authenticate using username/password</span>
+    <span class="help-text indented">{$t('settings.pki.allowPasswordFallbackHelp')}</span>
   </div>
 
   <div class="actions">
@@ -255,7 +256,7 @@
       on:click={handleSave}
       disabled={saving}
     >
-      {saving ? 'Saving...' : 'Save Configuration'}
+      {saving ? $t('common.saving') : $t('settings.pki.saveConfiguration')}
     </button>
   </div>
 </div>

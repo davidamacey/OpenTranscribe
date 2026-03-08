@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.constants import GPUPriority
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -1387,7 +1388,7 @@ def _handle_outer_exception(
     return {"status": "error", "message": error_msg}
 
 
-@celery_app.task(bind=True, name="transcription.process_file", priority=5)
+@celery_app.task(bind=True, name="transcription.process_file", priority=GPUPriority.USER_IMPORT)
 def transcribe_audio_task(
     self,
     file_uuid: str,
@@ -1410,16 +1411,6 @@ def transcribe_audio_task(
             None = run all tasks. Valid values: 'analytics', 'speaker_llm',
             'summarization', 'topic_extraction', 'search_indexing'.
     """
-    # Gate: defer transcription while speaker embedding migration holds the GPU
-    from app.services.migration_lock_service import migration_lock
-
-    if migration_lock.is_active():
-        logger.info(
-            "Migration lock active — deferring transcription for %s (retry in 60s)",
-            file_uuid,
-        )
-        raise self.retry(countdown=60, max_retries=120)
-
     task_id = self.request.id
     ctx = None
 

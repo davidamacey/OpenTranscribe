@@ -7,6 +7,7 @@
   import LocalAuthSettings from './LocalAuthSettings.svelte';
   import SessionSettings from './SessionSettings.svelte';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
 
   let activeTab = 'local';
   let loading = false;
@@ -14,12 +15,12 @@
   let hasUnsavedChanges = false;
   let backendNotReady = false; // Backend is fully implemented
 
-  const tabs = [
-    { id: 'local', label: 'Local Auth' },
-    { id: 'ldap', label: 'LDAP/AD' },
-    { id: 'keycloak', label: 'OIDC/Keycloak' },
-    { id: 'pki', label: 'PKI/Certificate' },
-    { id: 'session', label: 'Sessions' }
+  $: tabs = [
+    { id: 'local', label: $t('settings.authentication.tab.local') },
+    { id: 'ldap', label: $t('settings.authentication.tab.ldap') },
+    { id: 'keycloak', label: $t('settings.authentication.tab.keycloak') },
+    { id: 'pki', label: $t('settings.authentication.tab.pki') },
+    { id: 'session', label: $t('settings.authentication.tab.session') }
   ];
 
   onMount(async () => {
@@ -57,7 +58,7 @@
       console.log('Loaded configs:', configs);
     } catch (error) {
       console.error('Failed to load auth config:', error);
-      toastStore.error('Failed to load authentication configuration');
+      toastStore.error($t('settings.authentication.loadError'));
     } finally {
       loading = false;
     }
@@ -66,12 +67,12 @@
   async function handleSave(category: string, config: Record<string, any>) {
     try {
       await AuthConfigApi.updateCategory(category, config);
-      toastStore.success(`${category} configuration saved`);
+      toastStore.success($t('settings.authentication.configSaved', { category }));
       hasUnsavedChanges = false;
       await loadConfigs();
     } catch (error) {
       console.error(`Failed to save ${category} config:`, error);
-      toastStore.error(`Failed to save ${category} configuration`);
+      toastStore.error($t('settings.authentication.configSaveFailed', { category }));
     }
   }
 
@@ -86,8 +87,8 @@
       return result;
     } catch (error) {
       console.error(`Connection test for ${category} failed:`, error);
-      toastStore.error('Connection test failed');
-      return { success: false, message: 'Connection test failed' };
+      toastStore.error($t('settings.authentication.connectionTestFailed'));
+      return { success: false, message: $t('settings.authentication.connectionTestFailed') };
     }
   }
 
@@ -98,45 +99,44 @@
 
 <div class="auth-settings">
   <div class="settings-header">
-    <h2>Authentication Configuration</h2>
+    <h2>{$t('settings.authentication.heading')}</h2>
   </div>
 
   {#if backendNotReady}
     <!-- Database-backed configuration UI - Coming Soon -->
     <div class="coming-soon">
       <div class="coming-soon-icon">🔐</div>
-      <h3>Database-Backed Auth Configuration</h3>
-      <p>This feature is coming soon. For now, configure authentication via environment variables:</p>
+      <h3>{$t('settings.authentication.dbBackedTitle')}</h3>
+      <p>{$t('settings.authentication.comingSoonDesc')}</p>
 
       <div class="config-methods">
         <div class="config-method">
-          <h4>LDAP/Active Directory</h4>
+          <h4>{$t('settings.authentication.method.ldap')}</h4>
           <code>LDAP_ENABLED=true</code>
           <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/LDAP_AUTH.md" target="_blank">LDAP_AUTH.md</a></p>
         </div>
 
         <div class="config-method">
-          <h4>Keycloak/OIDC</h4>
+          <h4>{$t('settings.authentication.method.keycloak')}</h4>
           <code>KEYCLOAK_ENABLED=true</code>
           <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/KEYCLOAK_SETUP.md" target="_blank">KEYCLOAK_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
-          <h4>PKI/X.509 Certificates</h4>
+          <h4>{$t('settings.authentication.method.pki')}</h4>
           <code>PKI_ENABLED=true</code>
           <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/PKI_SETUP.md" target="_blank">PKI_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
-          <h4>MFA/TOTP</h4>
+          <h4>{$t('settings.authentication.method.mfa')}</h4>
           <code>MFA_ENABLED=true</code>
           <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/example_env.txt" target="_blank">example_env.txt</a></p>
         </div>
       </div>
 
       <p class="note">
-        <strong>Note:</strong> The backend security fixes (FIPS 140-3, audit logging, session controls) are active.
-        Only the UI configuration is pending.
+        <strong>{$t('settings.authentication.noteLabel')}</strong> {$t('settings.authentication.comingSoonNote')}
       </p>
     </div>
   {:else}
@@ -153,7 +153,7 @@
     </div>
 
     {#if loading}
-      <div class="loading">Loading configuration...</div>
+      <div class="loading">{$t('settings.authentication.loadingConfig')}</div>
     {:else}
       <div class="tab-content">
         {#if activeTab === 'local'}

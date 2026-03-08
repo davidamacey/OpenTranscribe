@@ -21,25 +21,22 @@ sys.path.insert(0, "/app")
 
 
 def main():  # noqa: C901
-    from unittest.mock import MagicMock
-
     from sqlalchemy import create_engine
     from sqlalchemy import func
     from sqlalchemy.orm import sessionmaker
 
     from app.core.config import settings
+    from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.models.media import Speaker
     from app.services.embedding_mode_service import MODE_V4
-    from app.services.minio_service import download_file
+    from app.services.speaker_analysis_models import EmbeddingModelAdapter
+    from app.services.speaker_analysis_models import MultiModelRunner
     from app.services.speaker_embedding_service import get_cached_embedding_service
-    from app.tasks.embedding_migration_v4 import _GPU_MODEL_WORKERS
-    from app.tasks.embedding_migration_v4 import _SEGMENT_IO_WORKERS
-    from app.tasks.embedding_migration_v4 import _gpu_extract_and_write
-    from app.tasks.embedding_migration_v4 import _prepare_file_for_gpu
-    from app.tasks.embedding_migration_v4 import _process_batch_pipelined
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.tasks.embedding_migration_v4 import _embedding_result_writer
+    from app.tasks.migration_pipeline import DEFAULT_IO_WORKERS
+    from app.tasks.migration_pipeline import prepare_file
+    from app.tasks.migration_pipeline import process_batch_pipelined
 
     # Parse args
     sample_size = 10
@@ -67,8 +64,7 @@ def main():  # noqa: C901
     print(f"{'=' * 70}", flush=True)
     print(f"  Total completed files in DB: {total_completed}", flush=True)
     print(f"  Sample size: {len(files)}", flush=True)
-    print(f"  I/O threads: {_SEGMENT_IO_WORKERS}", flush=True)
-    print(f"  GPU model workers: {_GPU_MODEL_WORKERS}", flush=True)
+    print(f"  I/O threads: {DEFAULT_IO_WORKERS}", flush=True)
     print(flush=True)
 
     if not files:
@@ -106,7 +102,7 @@ def main():  # noqa: C901
 
         prep_start = time.time()
         try:
-            prepared = _prepare_file_for_gpu(file_uuid, download_file, get_file_by_uuid, Speaker)
+            prepared = prepare_file(file_uuid)
         except Exception as e:
             print(
                 f"  [{i + 1:>4}/{len(files)}] {file_uuid[:12]}... PREP FAILED: {e}",
@@ -131,7 +127,16 @@ def main():  # noqa: C901
 
         gpu_start = time.time()
         try:
-            extracted = _gpu_extract_and_write(prepared, embedding_service)
+            runner = MultiModelRunner([EmbeddingModelAdapter(embedding_service)])
+            success, fail = process_batch_pipelined(
+                prepared_files=[(file_uuid, prepared)],
+                runner=runner,
+                result_writer=_embedding_result_writer,
+                is_running_check=lambda: True,
+                on_file_success=lambda _: None,
+                on_file_failure=lambda _, __: None,
+                min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION,
+            )
             gpu_time = time.time() - gpu_start
             gpu_times.append(gpu_time)
             total = prep_time + gpu_time
@@ -139,7 +144,7 @@ def main():  # noqa: C901
 
             print(
                 f"  [{i + 1:>4}/{len(files)}] {file_uuid[:12]}... "
-                f"{file_mb:6.0f}MB {n_speakers}spk {extracted}emb "
+                f"{file_mb:6.0f}MB {n_speakers}spk "
                 f"prep={prep_time:.2f}s GPU={gpu_time:.2f}s total={total:.2f}s",
                 flush=True,
             )
@@ -171,17 +176,10 @@ def main():  # noqa: C901
 
     # Phase 2b: Multi-model pipelined benchmark
     print(
-        f"  Phase 2b: Pipelined ({_GPU_MODEL_WORKERS} GPU workers, "
-        f"{_SEGMENT_IO_WORKERS} I/O threads)",
+        f"  Phase 2b: Pipelined ({DEFAULT_IO_WORKERS} I/O threads)",
         flush=True,
     )
     print(f"  {'─' * 66}", flush=True)
-
-    # Stub out migration_lock for benchmark
-    _mig_mod.migration_lock = MagicMock()
-    _mig_mod.migration_lock.is_active.return_value = True
-    _mig_mod.migration_lock.refresh_ttl.return_value = True
-    _mig_mod.migration_progress = MagicMock()
 
     # Re-connect to DB for fresh data
     engine2 = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
@@ -201,7 +199,7 @@ def main():  # noqa: C901
     for file in files2:
         fuuid = str(file.uuid)
         try:
-            prepared = _prepare_file_for_gpu(fuuid, download_file, get_file_by_uuid, Speaker)
+            prepared = prepare_file(fuuid)
             if prepared is not None:
                 prepared_files.append((fuuid, prepared))
             else:
@@ -218,10 +216,17 @@ def main():  # noqa: C901
     )
 
     # Run pipelined extraction
+    runner = MultiModelRunner([EmbeddingModelAdapter(embedding_service)])
+
     pipe_start = time.time()
-    pipe_migrated, pipe_failed = _process_batch_pipelined(
-        prepared_files,
-        embedding_service,
+    pipe_migrated, pipe_failed = process_batch_pipelined(
+        prepared_files=prepared_files,
+        runner=runner,
+        result_writer=_embedding_result_writer,
+        is_running_check=lambda: True,
+        on_file_success=lambda _: None,
+        on_file_failure=lambda _, __: None,
+        min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION,
     )
     pipe_time = time.time() - pipe_start
 
@@ -250,9 +255,7 @@ def main():  # noqa: C901
     print("  Sequential (1 model, per-file pool):", flush=True)
     print(f"    {avg_total_seq:.2f}s/file", flush=True)
     print(flush=True)
-    print(
-        f"  Pipelined ({_GPU_MODEL_WORKERS} models, {_SEGMENT_IO_WORKERS} I/O threads):", flush=True
-    )
+    print(f"  Pipelined ({DEFAULT_IO_WORKERS} I/O threads):", flush=True)
     print(f"    {total_pipe_per_file:.2f}s/file", flush=True)
     print(flush=True)
     print(f"  Speedup: {speedup:.1f}x", flush=True)

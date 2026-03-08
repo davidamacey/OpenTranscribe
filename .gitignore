@@ -264,3 +264,6 @@ GITHUB_OPTIMIZATION_TASKS.md
 
 # PKI test certificates (generated)
 scripts/pki/test-certs/
+
+# Claude Code worktrees
+.claude/worktrees/

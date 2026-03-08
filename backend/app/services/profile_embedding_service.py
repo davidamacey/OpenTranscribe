@@ -13,6 +13,7 @@ The service provides intelligent embedding aggregation that:
 
 import logging
 from datetime import datetime
+from datetime import timezone
 from typing import Any
 
 import numpy as np
@@ -91,7 +92,7 @@ def _process_profile_with_no_speakers(
 ) -> bool:
     """Handle case when profile has no speakers assigned."""
     profile.embedding_count = 0  # type: ignore[assignment]
-    profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
+    profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
     _clear_profile_embedding_from_opensearch(profile_id)
     return True
 
@@ -105,7 +106,7 @@ def _process_profile_with_embeddings(
     averaged_embedding = _calculate_average_embedding(embeddings)
 
     profile.embedding_count = len(embeddings)  # type: ignore[assignment]
-    profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
+    profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
 
     _store_profile_embedding_to_opensearch(
         profile_id=profile_id,
@@ -295,7 +296,7 @@ class ProfileEmbeddingService:
                 logger.warning(f"No speakers assigned to profile {profile_id}")
                 # Clear the profile embedding if no speakers are assigned
                 profile.embedding_count = 0  # type: ignore[assignment]
-                profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
+                profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
                 db.commit()
 
                 # Clear from OpenSearch as well
@@ -333,7 +334,7 @@ class ProfileEmbeddingService:
 
             # Update the profile metadata
             profile.embedding_count = len(embeddings)  # type: ignore[assignment]
-            profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
+            profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
 
             db.commit()
 
@@ -401,7 +402,7 @@ class ProfileEmbeddingService:
             # Update embedding count and timestamp (vectors stored in OpenSearch)
             current_count = int(profile.embedding_count) if profile.embedding_count else 0
             profile.embedding_count = current_count + 1  # type: ignore[assignment]
-            profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
+            profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
             db.commit()
 
             # Store/update embedding in OpenSearch for optimal vector similarity performance

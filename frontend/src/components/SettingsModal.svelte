@@ -18,6 +18,7 @@
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
   import SearchSettings from '$components/settings/SearchSettings.svelte';
   import GroupsSettings from '$components/settings/GroupsSettings.svelte';
+  import DataIntegritySettings from '$components/settings/DataIntegritySettings.svelte';
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
@@ -141,9 +142,9 @@
         items: [
           { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' },
           ...(isSuperAdmin ? [
-            { id: 'account-status' as SettingsSection, label: 'Account Status', icon: 'users' },
+            { id: 'account-status' as SettingsSection, label: $t('settings.accountStatus.navLabel'), icon: 'users' },
             { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' },
-            { id: 'audit-logs' as SettingsSection, label: 'Audit Logs', icon: 'list' }
+            { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list' }
           ] : [])
         ]
       },
@@ -154,6 +155,7 @@
           { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
           { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
           { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
+          { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield' },
           { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' }
         ]
       }
@@ -1412,9 +1414,9 @@
                           <span>{$t('settings.statistics.gpuVram')}</span>
                           {#if gpuCount > 1}
                             <div class="gpu-stepper">
-                              <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex - 1 + gpuCount) % gpuCount} aria-label="Previous GPU">&#8249;</button>
+                              <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex - 1 + gpuCount) % gpuCount} aria-label={$t('settings.statistics.previousGpu')}>&#8249;</button>
                               <span class="gpu-step-label">GPU {currentGpuIndex + 1}/{gpuCount}</span>
-                              <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex + 1) % gpuCount} aria-label="Next GPU">&#8250;</button>
+                              <button class="gpu-step-btn" on:click={() => currentGpuIndex = (currentGpuIndex + 1) % gpuCount} aria-label={$t('settings.statistics.nextGpu')}>&#8250;</button>
                             </div>
                           {/if}
                         </h4>
@@ -1632,6 +1634,13 @@
             </div>
           {/if}
 
+          <!-- Data Integrity Section -->
+          {#if activeSection === 'data-integrity' && isAdmin}
+            <div class="content-section">
+              <DataIntegritySettings />
+            </div>
+          {/if}
+
           <!-- File Retention Section -->
           {#if activeSection === 'retention' && isAdmin}
             <div class="content-section">
@@ -1651,8 +1660,8 @@
           <!-- Account Status Dashboard (Super Admin only) -->
           {#if activeSection === 'account-status' && isSuperAdmin}
             <div class="content-section">
-              <h3 class="section-title">Account Status</h3>
-              <p class="section-description">Overview of user accounts, MFA adoption, and security status.</p>
+              <h3 class="section-title">{$t('settings.accountStatus.sectionTitle')}</h3>
+              <p class="section-description">{$t('settings.accountStatus.sectionDescription')}</p>
               <AccountStatusDashboard />
             </div>
           {/if}
@@ -1660,8 +1669,8 @@
           <!-- Audit Log Viewer (Super Admin only) -->
           {#if activeSection === 'audit-logs' && isSuperAdmin}
             <div class="content-section">
-              <h3 class="section-title">Audit Logs</h3>
-              <p class="section-description">View and export authentication and configuration change logs.</p>
+              <h3 class="section-title">{$t('settings.auditLog.sectionTitle')}</h3>
+              <p class="section-description">{$t('settings.auditLog.sectionDescription')}</p>
               <AuditLogViewer />
             </div>
           {/if}

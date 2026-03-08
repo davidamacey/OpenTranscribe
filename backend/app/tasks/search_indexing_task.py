@@ -5,6 +5,8 @@ import time
 from typing import Any
 
 from app.core.celery import celery_app
+from app.core.constants import EmbeddingPriority
+from app.core.constants import UtilityPriority
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +14,8 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True,
     name="index_transcript_search",
-    queue="cpu",
+    queue="embedding",
+    priority=EmbeddingPriority.PIPELINE_CRITICAL,
     max_retries=3,
     default_retry_delay=30,
 )
@@ -185,6 +188,7 @@ def index_transcript_search_task(  # noqa: C901
 @celery_app.task(
     name="update_file_access_index",
     queue="embedding",
+    priority=UtilityPriority.ROUTINE,
     max_retries=3,
     default_retry_delay=10,
 )
@@ -268,23 +272,12 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
 def _send_indexing_notification(user_id: int, file_id: int, timing: dict[str, Any]) -> None:
     """Send search indexing completion notification via WebSocket."""
     try:
-        import asyncio
-
-        from app.api.websockets import send_notification
+        from app.utils.websocket_notify import send_ws_event
 
         data = {
             "file_id": file_id,
             "timing": timing,
         }
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(send_notification(user_id, "search_indexing_complete", data))
-            else:
-                loop.run_until_complete(
-                    send_notification(user_id, "search_indexing_complete", data)
-                )
-        except RuntimeError:
-            asyncio.run(send_notification(user_id, "search_indexing_complete", data))
+        send_ws_event(user_id, "search_indexing_complete", data)
     except Exception as e:
         logger.debug(f"Failed to send search indexing notification: {e}")

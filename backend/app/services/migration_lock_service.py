@@ -1,11 +1,12 @@
 """
 Redis-based migration lock service.
 
-Gates transcription tasks during speaker embedding migration so the GPU
-is fully available for re-extraction. The lock uses a Redis key with
-SET NX semantics (atomic, prevents double-acquire) and a 4-hour TTL
-as a safety net — if the backend crashes mid-migration, the lock
-auto-expires and transcription resumes.
+Pauses transcription tasks while any GPU migration is running so the GPU
+is fully available for migration processing. Reference-counted — multiple
+migration types can activate simultaneously, transcription resumes when
+ALL migrations complete.
+
+A 4-hour TTL acts as a safety net if the backend crashes mid-migration.
 """
 
 import logging
@@ -21,7 +22,11 @@ _LOCK_TTL_SECONDS = 4 * 60 * 60  # 4 hours
 
 
 class MigrationLockService:
-    """Redis-based lock that pauses transcription during migration."""
+    """Redis-based lock that pauses transcription during GPU migrations.
+
+    Reference-counted: multiple migrations can call activate() and
+    transcription stays paused until the last one calls deactivate().
+    """
 
     def __init__(self, redis_url: str | None = None):
         self._redis_url = redis_url or settings.CELERY_BROKER_URL
@@ -39,59 +44,53 @@ class MigrationLockService:
         return self._client
 
     def activate(self) -> bool:
-        """Acquire the migration lock (SET NX — fails if already held).
+        """Increment the lock reference count. Always succeeds.
 
         Returns:
-            True if lock was acquired, False if already held or Redis unavailable.
+            True if activated, False only if Redis unavailable.
         """
         client = self._redis
         if not client:
             return False
 
-        acquired = client.set(_LOCK_KEY, "1", nx=True, ex=_LOCK_TTL_SECONDS)
-        if acquired:
-            logger.info("Migration lock acquired (TTL=%ds)", _LOCK_TTL_SECONDS)
-        else:
-            logger.warning("Migration lock already held — cannot acquire")
-        return bool(acquired)
+        count = client.incr(_LOCK_KEY)
+        client.expire(_LOCK_KEY, _LOCK_TTL_SECONDS)
+        logger.info("Migration lock activated (ref_count=%d)", count)
+        return True
 
     def deactivate(self) -> bool:
-        """Release the migration lock.
+        """Decrement the lock reference count. Removes key when zero.
 
         Returns:
-            True if the key was deleted, False otherwise.
+            True if lock was fully released (ref_count reached 0).
         """
         client = self._redis
         if not client:
             return False
 
-        deleted = client.delete(_LOCK_KEY)
-        if deleted:
-            logger.info("Migration lock released")
-        return bool(deleted)
+        count = client.decr(_LOCK_KEY)
+        if count <= 0:
+            client.delete(_LOCK_KEY)
+            logger.info("Migration lock released (all migrations complete)")
+            return True
+
+        logger.info("Migration lock decremented (ref_count=%d)", count)
+        return False
 
     def is_active(self) -> bool:
-        """Check whether the migration lock is currently held."""
+        """Check whether any migration is holding the lock."""
         client = self._redis
         if not client:
             return False
-        return bool(client.exists(_LOCK_KEY))
+        val = client.get(_LOCK_KEY)
+        return val is not None and int(val) > 0
 
     def refresh_ttl(self, ttl: int | None = None) -> bool:
-        """Reset the lock TTL (call periodically during long migrations).
-
-        Args:
-            ttl: TTL in seconds. Defaults to the standard 4-hour TTL.
-
-        Returns:
-            True if the TTL was refreshed, False if key missing or error.
-        """
+        """Reset the lock TTL (call periodically during long migrations)."""
         client = self._redis
         if not client:
             return False
-
-        result = client.expire(_LOCK_KEY, ttl or _LOCK_TTL_SECONDS)
-        return bool(result)
+        return bool(client.expire(_LOCK_KEY, ttl or _LOCK_TTL_SECONDS))
 
 
 # Singleton instance

@@ -387,8 +387,8 @@ def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
                     "collection_ids": source.get("collection_ids", []),
                     "media_file_id": source.get("media_file_id"),
                     "segment_count": source.get("segment_count", 1),
-                    "created_at": datetime.datetime.now().isoformat(),
-                    "updated_at": datetime.datetime.now().isoformat(),
+                    "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     "embedding": source["embedding"],
                 }
                 bulk_body.append(doc)
@@ -788,8 +788,8 @@ def add_speaker_embedding_v4(
             "collection_ids": collection_ids or [],
             "media_file_id": media_file_id,
             "segment_count": segment_count,
-            "created_at": datetime.datetime.now().isoformat(),
-            "updated_at": datetime.datetime.now().isoformat(),
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "embedding": embedding,
         }
 
@@ -850,7 +850,7 @@ def store_profile_embedding_v4(
             "user_id": user_id,
             "embedding": embedding,
             "speaker_count": speaker_count,
-            "updated_at": datetime.datetime.now().isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
 
         opensearch_client.index(
@@ -917,7 +917,9 @@ def index_transcript(
             "speakers": speakers,
             "title": title,
             "tags": tags or [],
-            "upload_time": datetime.datetime.now().isoformat(),  # ISO-8601 format
+            "upload_time": datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat(),  # ISO-8601 format
         }
 
         # Only include embedding if provided
@@ -1034,8 +1036,8 @@ def add_speaker_embedding(
             "collection_ids": collection_ids or [],
             "media_file_id": media_file_id,
             "segment_count": segment_count,
-            "created_at": datetime.datetime.now().isoformat(),
-            "updated_at": datetime.datetime.now().isoformat(),
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "embedding": embedding,
         }
 
@@ -1069,8 +1071,8 @@ def add_speaker_embedding(
                         "collection_ids": collection_ids or [],
                         "media_file_id": media_file_id,
                         "segment_count": segment_count,
-                        "created_at": datetime.datetime.now().isoformat(),
-                        "updated_at": datetime.datetime.now().isoformat(),
+                        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         "embedding": embedding,
                     }
                     response = opensearch_client.index(
@@ -1128,8 +1130,8 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
                 "collection_ids": data.get("collection_ids", []),
                 "media_file_id": data.get("media_file_id"),
                 "segment_count": data.get("segment_count", 1),
-                "created_at": datetime.datetime.now().isoformat(),
-                "updated_at": datetime.datetime.now().isoformat(),
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "embedding": data["embedding"],
             }
             bulk_body.append(doc_data)
@@ -1592,7 +1594,7 @@ def update_speaker_collections(
                 "profile_id": profile_id,
                 "profile_uuid": str(profile_uuid) if profile_uuid else None,
                 "collection_ids": collection_ids,
-                "updated_at": datetime.datetime.now().isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
         }
 
@@ -1635,7 +1637,7 @@ def move_speaker_to_profile_collection(
                 "profile_id": target_profile_id,
                 "profile_uuid": str(target_profile_uuid) if target_profile_uuid else None,
                 "collection_ids": target_collection_ids,
-                "updated_at": datetime.datetime.now().isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
         }
 
@@ -1685,7 +1687,7 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
                     if update.get("profile_uuid")
                     else None,
                     "collection_ids": update.get("collection_ids", []),
-                    "updated_at": datetime.datetime.now().isoformat(),
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 }
             }
             bulk_body.append(doc_update)
@@ -1795,16 +1797,24 @@ def merge_speaker_embeddings(
         return
 
     try:
-        # Delete the source speaker document using UUID
+        # Delete the source speaker document from main index
         opensearch_client.delete(
             index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(source_speaker_uuid)
         )
+
+        # Also remove source from v4 staging index if it exists (mid-migration cleanup)
+        import contextlib as _ctx
+
+        v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+        with _ctx.suppress(Exception):
+            if opensearch_client.indices.exists(index=v4_index):
+                opensearch_client.delete(index=v4_index, id=str(source_speaker_uuid))
 
         # Update the target speaker's collections using UUID
         update_body = {
             "doc": {
                 "collection_ids": new_collection_ids,
-                "updated_at": datetime.datetime.now().isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
         }
 
@@ -2028,7 +2038,7 @@ def store_profile_embedding(
             "user_id": user_id,
             "embedding": embedding,
             "speaker_count": speaker_count,
-            "updated_at": datetime.datetime.now().isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
 
         # Use UUID-based prefixed ID to avoid conflicts with speaker documents
@@ -2079,7 +2089,7 @@ def update_profile_embedding(
             "profile_uuid": str(profile_uuid),
             "embedding": embedding,
             "embedding_count": embedding_count,
-            "updated_at": datetime.datetime.now().isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
 
         # Use UUID-based prefixed ID
@@ -2100,31 +2110,40 @@ def update_profile_embedding(
 
 
 def remove_profile_embedding(profile_uuid: str) -> bool:
-    """
-    Remove a profile embedding from OpenSearch
+    """Remove a profile embedding from all speaker indices (main + v4 staging).
+
+    Profiles are stored with doc ID ``profile_{uuid}`` in both the main index
+    and the v4 staging index. Both are cleaned here.
 
     Args:
         profile_uuid: UUID of the speaker profile
 
     Returns:
-        True if successful, False otherwise
+        True if the main index deletion succeeded, False otherwise
     """
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized")
         return False
 
+    doc_id = f"profile_{profile_uuid}"
+    success = False
     try:
-        # Use UUID-based prefixed ID
-        opensearch_client.delete(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, id=f"profile_{profile_uuid}"
-        )
-
-        logger.info(f"Removed profile {profile_uuid} embedding from OpenSearch")
-        return True
-
+        opensearch_client.delete(index=settings.OPENSEARCH_SPEAKER_INDEX, id=doc_id)
+        logger.info(f"Removed profile {profile_uuid} embedding from main index")
+        success = True
     except Exception as e:
-        logger.warning(f"Error removing profile embedding (may not exist): {e}")
-        return False
+        logger.warning(f"Error removing profile embedding from main index (may not exist): {e}")
+
+    # Also clean v4 staging index if it exists
+    try:
+        v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+        if opensearch_client.indices.exists(index=v4_index):
+            opensearch_client.delete(index=v4_index, id=doc_id)
+            logger.debug(f"Removed profile {profile_uuid} from v4 staging index")
+    except Exception:  # nosec B110
+        pass  # Non-fatal
+
+    return success
 
 
 def store_cluster_embedding(
@@ -2164,7 +2183,7 @@ def store_cluster_embedding(
             "cluster_uuid": str(cluster_uuid),
             "user_id": user_id,
             "embedding": embedding,
-            "updated_at": datetime.datetime.now().isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
         if label:
             doc["label"] = label
@@ -2559,28 +2578,40 @@ def get_all_speaker_embeddings(
 
 
 def remove_speaker_embedding(speaker_uuid: str) -> bool:
-    """
-    Remove a speaker embedding from OpenSearch.
+    """Remove a speaker embedding from all speaker indices (main + v4 staging).
+
+    Cleans both the main speaker index (V3 or post-finalization V4) and the
+    v4 staging index if it exists. This prevents orphaned entries when speakers
+    are deleted or merged.
 
     Args:
         speaker_uuid: UUID of the speaker
 
     Returns:
-        True if successful, False otherwise
+        True if the main index deletion succeeded, False otherwise
     """
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized")
         return False
 
+    success = False
     try:
         opensearch_client.delete(index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_uuid))
-
-        logger.info(f"Removed speaker {speaker_uuid} embedding from OpenSearch")
-        return True
-
+        logger.info(f"Removed speaker {speaker_uuid} from main speaker index")
+        success = True
     except Exception as e:
-        logger.warning(f"Error removing speaker embedding (may not exist): {e}")
-        return False
+        logger.warning(f"Error removing speaker embedding from main index (may not exist): {e}")
+
+    # Also clean the v4 staging index if it exists (mid-migration cleanup)
+    try:
+        v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+        if opensearch_client.indices.exists(index=v4_index):
+            opensearch_client.delete(index=v4_index, id=str(speaker_uuid))
+            logger.debug(f"Removed speaker {speaker_uuid} from v4 staging index")
+    except Exception:  # nosec B110
+        pass  # Non-fatal: v4 may not have this speaker yet
+
+    return success
 
 
 def update_speaker_segment_count(speaker_uuid: str, segment_count: int) -> bool:
@@ -2602,7 +2633,7 @@ def update_speaker_segment_count(speaker_uuid: str, segment_count: int) -> bool:
         update_body = {
             "doc": {
                 "segment_count": segment_count,
-                "updated_at": datetime.datetime.now().isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
         }
 
@@ -2637,7 +2668,7 @@ def update_speaker_display_name(speaker_uuid: str, display_name: str | None):
         update_body = {
             "doc": {
                 "display_name": display_name,
-                "updated_at": datetime.datetime.now().isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
         }
 
@@ -2681,7 +2712,7 @@ def update_speaker_profile(
                 "profile_id": profile_id,
                 "profile_uuid": str(profile_uuid) if profile_uuid else None,
                 "verified": verified,
-                "updated_at": datetime.datetime.now().isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
         }
 
@@ -2812,7 +2843,7 @@ def update_cluster_embedding(
             "user_id": user_id,
             "embedding": embedding,
             "label": label if label is not None else existing_label,
-            "updated_at": datetime.datetime.now().isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
 
         opensearch_client.index(

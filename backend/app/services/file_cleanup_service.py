@@ -2,6 +2,7 @@
 File cleanup service for recovering stuck files and maintaining system health.
 """
 
+import contextlib
 import logging
 from datetime import datetime
 from datetime import timedelta
@@ -334,6 +335,60 @@ class FileCleanupService:
 cleanup_service = FileCleanupService()
 
 
+def _cleanup_opensearch_for_file(file: "MediaFile", file_uuid: str) -> None:
+    """Remove all OpenSearch documents associated with a media file.
+
+    Covers: speakers (v3), speakers_v4, transcripts, transcript_chunks,
+    transcript_summaries. Each step is non-fatal.
+    """
+    # Speaker embeddings (v3)
+    with contextlib.suppress(Exception):
+        from app.services.opensearch_service import remove_speaker_embedding
+
+        for speaker in list(file.speakers):
+            remove_speaker_embedding(str(speaker.uuid))
+
+    # Speaker embeddings (v4)
+    with contextlib.suppress(Exception):
+        from app.services.opensearch_service import opensearch_client
+        from app.services.opensearch_service import settings as os_settings
+
+        if opensearch_client:
+            v4_index = f"{os_settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+            if opensearch_client.indices.exists(index=v4_index):
+                for speaker in list(file.speakers):
+                    with contextlib.suppress(Exception):
+                        opensearch_client.delete(index=v4_index, id=str(speaker.uuid))
+
+    # Transcript document
+    with contextlib.suppress(Exception):
+        from app.services.opensearch_service import opensearch_client
+        from app.services.opensearch_service import settings as os_settings
+
+        if opensearch_client:
+            opensearch_client.delete(index=os_settings.OPENSEARCH_TRANSCRIPT_INDEX, id=file_uuid)
+
+    # Transcript chunks
+    with contextlib.suppress(Exception):
+        from app.services.search.indexing_service import TranscriptIndexingService
+
+        TranscriptIndexingService().delete_transcript_chunks(file_uuid)
+
+    # Transcript summaries
+    with contextlib.suppress(Exception):
+        from app.services.opensearch_service import opensearch_client
+        from app.services.opensearch_service import settings as os_settings
+
+        if opensearch_client:
+            summary_index = os_settings.OPENSEARCH_SUMMARY_INDEX
+            if opensearch_client.indices.exists(index=summary_index):
+                opensearch_client.delete_by_query(
+                    index=summary_index,
+                    body={"query": {"term": {"file_id": int(file.id)}}},
+                    refresh=True,
+                )
+
+
 def auto_delete_media_file(db: Session, file: MediaFile) -> dict:
     """Perform full cleanup of a MediaFile and all associated external data.
 
@@ -372,42 +427,8 @@ def auto_delete_media_file(db: Session, file: MediaFile) -> dict:
                         f"(non-fatal): {minio_err}"
                     )
 
-        # Step 2: Delete per-file speaker embeddings from OpenSearch.
-        try:
-            from app.services.opensearch_service import remove_speaker_embedding
-
-            for speaker in list(file.speakers):
-                remove_speaker_embedding(str(speaker.uuid))
-        except Exception as spk_err:
-            logger.warning(
-                f"auto_delete_media_file: error removing speaker embeddings for file "
-                f"{file_uuid} (non-fatal): {spk_err}"
-            )
-
-        # Step 3: Delete transcript document from OpenSearch (ignore 404).
-        try:
-            from app.services.opensearch_service import opensearch_client
-            from app.services.opensearch_service import settings as os_settings
-
-            if opensearch_client:
-                try:
-                    opensearch_client.delete(
-                        index=os_settings.OPENSEARCH_TRANSCRIPT_INDEX,
-                        id=file_uuid,
-                    )
-                    logger.info(
-                        f"auto_delete_media_file: deleted transcript {file_uuid} from OpenSearch"
-                    )
-                except Exception as os_err:
-                    logger.warning(
-                        f"auto_delete_media_file: could not delete transcript {file_uuid} "
-                        f"from OpenSearch (non-fatal): {os_err}"
-                    )
-        except Exception as os_import_err:
-            logger.warning(
-                f"auto_delete_media_file: OpenSearch cleanup skipped for file {file_uuid}: "
-                f"{os_import_err}"
-            )
+        # Step 2: Delete all OpenSearch data for this file.
+        _cleanup_opensearch_for_file(file, file_uuid)
 
         # Step 4: Delete from database — cascade removes all child rows.
         owner_id = int(file.user_id)

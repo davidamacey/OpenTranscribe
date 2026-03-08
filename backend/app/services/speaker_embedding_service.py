@@ -9,6 +9,7 @@ import torch
 from pyannote.audio import Inference
 
 from app.core.config import settings
+from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.services.embedding_mode_service import EmbeddingMode
 from app.services.embedding_mode_service import EmbeddingModeService
 from app.utils.hardware_detection import detect_hardware
@@ -214,9 +215,8 @@ class SpeakerEmbeddingService:
     ) -> Optional[torch.Tensor]:
         """Load only a specific segment of audio using ffmpeg seeking.
 
-        Uses -ss before -i for fast input seeking (demuxer-level seek),
-        and -vn to skip video entirely. Only decodes the needed audio
-        portion — orders of magnitude faster than decoding a full file.
+        Delegates to audio_segment_utils.extract_audio_segment_np() and
+        wraps the result as a torch tensor for PyAnnote compatibility.
 
         Args:
             audio_source: Local file path or HTTP/presigned URL.
@@ -227,41 +227,12 @@ class SpeakerEmbeddingService:
         Returns:
             Waveform tensor [1, samples] or None on failure.
         """
-        import subprocess
+        from app.services.audio_segment_utils import extract_audio_segment_np
 
-        cmd = [
-            "ffmpeg",
-            "-ss",
-            str(start),  # Seek BEFORE input (fast demuxer seek)
-            "-i",
-            audio_source,
-            "-t",
-            str(duration),  # Only decode this duration
-            "-vn",  # Skip video stream entirely
-            "-f",
-            "f32le",
-            "-acodec",
-            "pcm_f32le",
-            "-ac",
-            "1",
-            "-ar",
-            str(target_sr),
-            "-v",
-            "quiet",
-            "-",
-        ]
-        try:
-            proc = subprocess.run(  # noqa: S603  # nosec B603
-                cmd,
-                capture_output=True,
-                timeout=30,
-            )
-            if proc.returncode == 0 and len(proc.stdout) > 0:
-                audio = np.frombuffer(proc.stdout, dtype=np.float32).copy()
-                return torch.from_numpy(audio).unsqueeze(0)
-        except Exception as e:
-            logger.debug(f"Segment extraction failed: {e}")
-        return None
+        audio_np = extract_audio_segment_np(audio_source, start, duration, target_sr)
+        if audio_np is None:
+            return None
+        return torch.from_numpy(audio_np).unsqueeze(0)
 
     def extract_embedding_from_segment(
         self,
@@ -356,8 +327,11 @@ class SpeakerEmbeddingService:
         segments: list[dict[str, Any]],
         speaker_mapping: dict[str, int],
     ) -> dict[int, list[np.ndarray]]:
-        """
-        Extract embeddings for all speaker segments in a transcription.
+        """Extract embeddings for all speaker segments in a transcription.
+
+        Adjacent segments for each speaker (gap <= 0.5s) are merged into
+        continuous speaking sections before selecting the top 5 longest.
+        This gives the embedding model longer, more representative audio.
 
         Args:
             audio_path: Path to the audio file
@@ -367,38 +341,21 @@ class SpeakerEmbeddingService:
         Returns:
             Dictionary mapping speaker IDs to lists of embeddings
         """
+        from app.services.audio_segment_utils import group_segments_by_speaker
+        from app.services.audio_segment_utils import merge_adjacent_segments
+        from app.services.audio_segment_utils import select_top_segments
+
         speaker_embeddings: dict[int, list[np.ndarray]] = {}
-        speaker_segments: dict[int, list[dict[str, Any]]] = {}  # Collect segments per speaker
+        grouped = group_segments_by_speaker(segments, speaker_mapping)
 
-        # First, collect all segments for each speaker
-        for segment in segments:
-            speaker_label = segment.get("speaker")
-            if not speaker_label:
-                continue
-
-            speaker_id = speaker_mapping.get(speaker_label)
-            if not speaker_id:
-                continue
-
-            # Only process segments that are long enough (minimum 0.5 seconds)
-            duration = segment["end"] - segment["start"]
-            if duration < 0.5:
-                continue
-
-            if speaker_id not in speaker_segments:
-                speaker_segments[speaker_id] = []
-            speaker_segments[speaker_id].append(segment)
-
-        # Now extract embeddings for each speaker, using their longest segments
-        for speaker_id, speaker_segs in speaker_segments.items():
-            # Sort segments by duration (longest first)
-            speaker_segs.sort(key=lambda x: x["end"] - x["start"], reverse=True)
-
-            # Use up to 5 longest segments for this speaker (to avoid too much processing)
-            selected_segments = speaker_segs[:5]
+        for speaker_id, speaker_segs in grouped.items():
+            merged = merge_adjacent_segments(speaker_segs)
+            selected = select_top_segments(
+                merged, min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION, max_segments=5
+            )
 
             embeddings = []
-            for segment in selected_segments:
+            for segment in selected:
                 embedding = self.extract_embedding_from_file(
                     audio_path, {"start": segment["start"], "end": segment["end"]}
                 )
@@ -520,16 +477,20 @@ class SpeakerEmbeddingService:
 # ============================================================================
 
 _cached_embedding_service: Optional[SpeakerEmbeddingService] = None
-_cache_lock = None  # Lazy-initialized threading lock
+_cache_lock = None  # Lazy-initialized threading lock (reentrant)
 
 
 def _get_cache_lock():
-    """Get or create the cache lock (lazy initialization for fork safety)."""
+    """Get or create the cache lock (lazy initialization for fork safety).
+
+    Uses RLock (reentrant) because get_cached_embedding_service() calls
+    clear_embedding_cache() while already holding the lock.
+    """
     global _cache_lock
     if _cache_lock is None:
         import threading
 
-        _cache_lock = threading.Lock()
+        _cache_lock = threading.RLock()
     return _cache_lock
 
 

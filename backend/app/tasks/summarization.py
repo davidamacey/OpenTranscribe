@@ -1,19 +1,18 @@
 import asyncio
-import json
 import logging
 import time
 from typing import Any
 
-import redis
 from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
-from app.core.config import settings
-from app.db.base import SessionLocal
+from app.core.constants import NLPPriority
+from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.llm_service import LLMService
 from app.services.opensearch_summary_service import OpenSearchSummaryService
+from app.utils.websocket_notify import send_ws_event
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -84,8 +83,9 @@ def _handle_force_regeneration(media_file: MediaFile, db: Session) -> None:
     # Clear OpenSearch summary if it exists
     if media_file.summary_opensearch_id:
         try:
-            OpenSearchSummaryService()
-            logger.info(f"Clearing OpenSearch document {media_file.summary_opensearch_id}")
+            summary_service = OpenSearchSummaryService()
+            asyncio.run(summary_service.delete_summary(str(media_file.summary_opensearch_id)))
+            logger.info(f"Cleared OpenSearch document {media_file.summary_opensearch_id}")
         except Exception as e:
             logger.warning(f"Could not clear OpenSearch summary: {e}")
 
@@ -181,12 +181,7 @@ def _store_summary_to_opensearch(
     summary_service = OpenSearchSummaryService()
 
     # Get the latest version number for proper versioning
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    max_version = loop.run_until_complete(
-        summary_service.get_max_version(file_id, int(media_file.user_id))
-    )
-    loop.close()
+    max_version = asyncio.run(summary_service.get_max_version(file_id, int(media_file.user_id)))
 
     # Make a copy for OpenSearch indexing with tracking fields
     opensearch_data = summary_data.copy()
@@ -201,10 +196,7 @@ def _store_summary_to_opensearch(
     )
 
     # Index in OpenSearch
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    document_id = loop.run_until_complete(summary_service.index_summary(opensearch_data))
-    loop.close()
+    document_id = asyncio.run(summary_service.index_summary(opensearch_data))
 
     return document_id
 
@@ -321,9 +313,6 @@ def send_summary_notification(
         True if notification was sent successfully, False otherwise
     """
     try:
-        # Create Redis client
-        redis_client = redis.from_url(settings.REDIS_URL)
-
         # Get file metadata
         from app.tasks.transcription.notifications import get_file_metadata
 
@@ -346,18 +335,7 @@ def send_summary_notification(
         if status == "completed" and summary_opensearch_id:
             notification_data["summary_opensearch_id"] = summary_opensearch_id
 
-        notification = {
-            "user_id": user_id,
-            "type": "summarization_status",
-            "data": notification_data,
-        }
-
-        # Publish to Redis
-        redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(
-            f"Published summary notification via Redis for user {user_id}, file {file_id}: {status}"
-        )
-        return True
+        return send_ws_event(user_id, "summarization_status", notification_data)
 
     except Exception as e:
         logger.error(f"Failed to send summary notification via Redis for file {file_id}: {e}")
@@ -557,7 +535,7 @@ def _handle_task_error(
     return {"status": "error", "message": error_msg}
 
 
-@celery_app.task(bind=True, name="ai.generate_summary")
+@celery_app.task(bind=True, name="ai.generate_summary", priority=NLPPriority.USER_TRIGGERED)
 def summarize_transcript_task(
     self,
     file_uuid: str,
@@ -579,100 +557,99 @@ def summarize_transcript_task(
     from app.utils.uuid_helpers import get_file_by_uuid
 
     task_id = self.request.id
-    db = SessionLocal()
     media_file: MediaFile | None = None
     file_id: int | None = None
 
-    try:
-        media_file = get_file_by_uuid(db, file_uuid)
-        if not media_file:
-            raise ValueError(f"Media file with UUID {file_uuid} not found")
+    with session_scope() as db:
+        try:
+            media_file = get_file_by_uuid(db, file_uuid)
+            if not media_file:
+                raise ValueError(f"Media file with UUID {file_uuid} not found")
 
-        file_id = int(media_file.id)
-        create_task_record(db, task_id, int(media_file.user_id), file_id, "summarization")
-        update_task_status(db, task_id, "in_progress", progress=0.1)
+            file_id = int(media_file.id)
+            create_task_record(db, task_id, int(media_file.user_id), file_id, "summarization")
+            update_task_status(db, task_id, "in_progress", progress=0.1)
 
-        if force_regenerate:
-            _handle_force_regeneration(media_file, db)
+            if force_regenerate:
+                _handle_force_regeneration(media_file, db)
 
-        media_file.summary_status = "processing"  # type: ignore[assignment]
-        db.commit()
+            media_file.summary_status = "processing"  # type: ignore[assignment]
+            db.commit()
 
-        action = "regeneration" if force_regenerate else "generation"
-        send_summary_notification(
-            int(media_file.user_id), file_id, "processing", f"AI summary {action} started", 10
-        )
+            action = "regeneration" if force_regenerate else "generation"
+            send_summary_notification(
+                int(media_file.user_id), file_id, "processing", f"AI summary {action} started", 10
+            )
 
-        # Get and validate transcript segments
-        transcript_segments = (
-            db.query(TranscriptSegment)
-            .filter(TranscriptSegment.media_file_id == file_id)
-            .order_by(TranscriptSegment.start_time)
-            .all()
-        )
-        if not transcript_segments:
-            raise ValueError(f"No transcript segments found for file {file_id}")
+            # Get and validate transcript segments
+            transcript_segments = (
+                db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .order_by(TranscriptSegment.start_time)
+                .all()
+            )
+            if not transcript_segments:
+                raise ValueError(f"No transcript segments found for file {file_id}")
 
-        full_transcript, speaker_stats = _build_transcript_and_stats(transcript_segments)
+            full_transcript, speaker_stats = _build_transcript_and_stats(transcript_segments)
 
-        update_task_status(db, task_id, "in_progress", progress=0.3)
-        send_summary_notification(
-            int(media_file.user_id), file_id, "processing", "Analyzing speakers and content", 30
-        )
+            update_task_status(db, task_id, "in_progress", progress=0.3)
+            send_summary_notification(
+                int(media_file.user_id), file_id, "processing", "Analyzing speakers and content", 30
+            )
 
-        logger.info(
-            f"Generating LLM summary for file {str(media_file.filename)} "
-            f"(length: {len(full_transcript)} chars)"
-        )
-        send_summary_notification(
-            int(media_file.user_id), file_id, "processing", "Generating AI summary with LLM", 50
-        )
+            logger.info(
+                f"Generating LLM summary for file {str(media_file.filename)} "
+                f"(length: {len(full_transcript)} chars)"
+            )
+            send_summary_notification(
+                int(media_file.user_id), file_id, "processing", "Generating AI summary with LLM", 50
+            )
 
-        start_time = time.time()
-        summary_data = _generate_llm_summary(
-            media_file, file_id, full_transcript, speaker_stats, task_id, db, prompt_uuid
-        )
+            start_time = time.time()
+            summary_data = _generate_llm_summary(
+                media_file, file_id, full_transcript, speaker_stats, task_id, db, prompt_uuid
+            )
 
-        if summary_data is None:
-            return _handle_no_llm_configured(media_file, file_id, task_id, db)
+            if summary_data is None:
+                return _handle_no_llm_configured(media_file, file_id, task_id, db)
 
-        update_task_status(db, task_id, "in_progress", progress=0.7)
-        media_file.summary_data = summary_data  # type: ignore[assignment]
-        media_file.summary_schema_version = 1  # type: ignore[assignment]
+            update_task_status(db, task_id, "in_progress", progress=0.7)
+            media_file.summary_data = summary_data  # type: ignore[assignment]
+            media_file.summary_schema_version = 1  # type: ignore[assignment]
 
-        _finalize_summary_storage(summary_data, media_file, file_id, db)
+            _finalize_summary_storage(summary_data, media_file, file_id, db)
 
-        logger.info("=== Summarization Task Completed Successfully ===")
-        logger.info(f"Total processing time: {int((time.time() - start_time) * 1000)}ms")
+            logger.info("=== Summarization Task Completed Successfully ===")
+            logger.info(f"Total processing time: {int((time.time() - start_time) * 1000)}ms")
 
-        # Get summary_data for logging (with type handling)
-        summary_data_value = media_file.summary_data
-        if summary_data_value and isinstance(summary_data_value, dict):
-            logger.info(f"Final summary data keys: {list(summary_data_value.keys())}")
-        else:
-            logger.info("Final summary data keys: None")
+            # Get summary_data for logging (with type handling)
+            summary_data_value = media_file.summary_data
+            if summary_data_value and isinstance(summary_data_value, dict):
+                logger.info(f"Final summary data keys: {list(summary_data_value.keys())}")
+            else:
+                logger.info("Final summary data keys: None")
 
-        logger.info(f"Summary status: {str(media_file.summary_status)}")
+            logger.info(f"Summary status: {str(media_file.summary_status)}")
 
-        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-        logger.info(
-            f"Successfully generated comprehensive summary for file {str(media_file.filename)}"
-        )
+            update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            logger.info(
+                f"Successfully generated comprehensive summary for file {str(media_file.filename)}"
+            )
 
-        return {
-            "status": "success",
-            "file_id": file_id,
-            "summary_data": {
-                "bluf": summary_data.get("bluf", ""),
-                "speakers_analyzed": len(speaker_stats),
-                "processing_time_ms": summary_data["metadata"].get("processing_time_ms"),
-                "opensearch_document_id": getattr(media_file, "summary_opensearch_id", None),
-            },
-        }
+            return {
+                "status": "success",
+                "file_id": file_id,
+                "summary_data": {
+                    "bluf": summary_data.get("bluf", ""),
+                    "speakers_analyzed": len(speaker_stats),
+                    "processing_time_ms": summary_data["metadata"].get("processing_time_ms"),
+                    "opensearch_document_id": getattr(media_file, "summary_opensearch_id", None),
+                },
+            }
 
-    except Exception as e:
-        # file_id might be None if error occurred before it was set
-        return _handle_task_error(e, media_file, file_id if file_id is not None else 0, task_id, db)
-
-    finally:
-        db.close()
+        except Exception as e:
+            # file_id might be None if error occurred before it was set
+            return _handle_task_error(
+                e, media_file, file_id if file_id is not None else 0, task_id, db
+            )

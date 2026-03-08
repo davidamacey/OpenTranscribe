@@ -159,15 +159,6 @@ def start_transcription_task(
         db: Optional database session used to resolve the active ASR provider
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        # Check if migration lock is active — tasks will self-retry via the gate
-        from app.services.migration_lock_service import migration_lock
-
-        if migration_lock.is_active():
-            logger.info(
-                f"Migration lock active — file {file_id} will be queued and "
-                "processed automatically after migration completes"
-            )
-
         # Determine which queue to use based on the user's active ASR config
         task_queue = "gpu"
         if user_id is not None and db is not None:

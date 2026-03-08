@@ -31,6 +31,10 @@ export type NotificationType =
   | 'clustering_progress'
   | 'clustering_complete'
   | 'clustering_file_complete'
+  | 'attribute_migration_progress'
+  | 'attribute_migration_complete'
+  | 'data_integrity_progress'
+  | 'data_integrity_complete'
   | 'cache_invalidate'
   | 'collection_shared'
   | 'collection_share_revoked'
@@ -95,6 +99,10 @@ const ADMIN_TASK_PROGRESS_IDS: Record<string, string> = {
   migration_complete: 'admin_migration',
   clustering_progress: 'admin_clustering',
   clustering_complete: 'admin_clustering',
+  attribute_migration_progress: 'admin_attribute_migration',
+  attribute_migration_complete: 'admin_attribute_migration',
+  data_integrity_progress: 'admin_data_integrity',
+  data_integrity_complete: 'admin_data_integrity',
 };
 
 // Admin task completion types
@@ -103,6 +111,8 @@ const ADMIN_COMPLETION_TYPES = new Set([
   'reindex_stopped',
   'migration_complete',
   'clustering_complete',
+  'attribute_migration_complete',
+  'data_integrity_complete',
 ]);
 
 // Load notifications from localStorage if available
@@ -292,6 +302,38 @@ function createWebSocketStore() {
               // Embedding migration complete — dispatch event for EmbeddingMigrationSettings
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('migration-complete', { detail: data.data }));
+              }
+              // Fall through to progressive notification handler
+            } else if (data.type === 'attribute_migration_progress') {
+              // Speaker attribute migration progress
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('attribute-migration-progress', { detail: data.data })
+                );
+              }
+              // Fall through to progressive notification handler
+            } else if (data.type === 'attribute_migration_complete') {
+              // Speaker attribute migration complete
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('attribute-migration-complete', { detail: data.data })
+                );
+              }
+              // Fall through to progressive notification handler
+            } else if (data.type === 'data_integrity_progress') {
+              // Data integrity progress — dispatch event for DataIntegritySettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('data-integrity-progress', { detail: data.data })
+                );
+              }
+              // Fall through to progressive notification handler
+            } else if (data.type === 'data_integrity_complete') {
+              // Data integrity complete — dispatch event for DataIntegritySettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('data-integrity-complete', { detail: data.data })
+                );
               }
               // Fall through to progressive notification handler
             } else if (data.type === 'cache_invalidate') {
@@ -486,6 +528,20 @@ function createWebSocketStore() {
                   const tot = data.data.total_steps ?? 0;
                   currentStep =
                     status === 'completed' ? 'Clustering complete' : `Step ${step} of ${tot}`;
+                } else if (data.type.startsWith('attribute_migration')) {
+                  const proc = data.data.processed_files ?? 0;
+                  const tot = data.data.total_files ?? 0;
+                  currentStep =
+                    status === 'completed'
+                      ? `Processed ${proc} files`
+                      : `Processed ${proc} of ${tot} files`;
+                } else if (data.type.startsWith('data_integrity')) {
+                  const proc = data.data.processed_files ?? data.data.processed ?? 0;
+                  const tot = data.data.total_files ?? data.data.total ?? 0;
+                  currentStep =
+                    status === 'completed'
+                      ? `Checked ${proc} files`
+                      : `Checked ${proc} of ${tot} files`;
                 }
               }
               if (!currentStep) currentStep = 'Processing...';
@@ -778,9 +834,15 @@ function createWebSocketStore() {
       case 'migration_progress':
       case 'migration_complete':
         return translate('notifications.embeddingMigration');
+      case 'attribute_migration_progress':
+      case 'attribute_migration_complete':
+        return translate('notifications.speakerAttributeMigration');
       case 'clustering_progress':
       case 'clustering_complete':
         return translate('notifications.speakerClustering');
+      case 'data_integrity_progress':
+      case 'data_integrity_complete':
+        return translate('notifications.dataIntegrity');
       default:
         return translate('notifications.notification');
     }
@@ -894,8 +956,10 @@ function createWebSocketStore() {
       const typeMap: Record<string, string> = {
         reindex: 'reindex_progress',
         migration: 'migration_progress',
+        attribute_migration: 'attribute_migration_progress',
         clustering: 'clustering_progress',
         auto_label: 'auto_label_status',
+        data_integrity: 'data_integrity_progress',
       };
 
       for (const task of activeTasks) {
@@ -913,8 +977,10 @@ function createWebSocketStore() {
           const eventMap: Record<string, string> = {
             reindex: 'reindex-progress',
             migration: 'migration-progress',
+            attribute_migration: 'attribute-migration-progress',
             clustering: 'clustering-progress',
             auto_label: 'auto-label-status',
+            data_integrity: 'data-integrity-progress',
           };
           const eventName = eventMap[task.task_type];
           if (eventName) {

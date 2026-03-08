@@ -634,7 +634,7 @@ async def retry_file_processing(
         for task in old_tasks:
             task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
             task.error_message = "Task marked as failed for retry"  # type: ignore[assignment]
-            task.completed_at = datetime.now()  # type: ignore[assignment]
+            task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
 
         db.commit()
 

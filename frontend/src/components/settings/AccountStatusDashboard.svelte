@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { AdminApi, type AccountStatusReport } from '$lib/api/admin';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
 
   let report: AccountStatusReport | null = null;
   let loading = false;
@@ -17,7 +18,7 @@
       report = await AdminApi.getAccountStatusReport();
     } catch (error) {
       console.error('Failed to load account status report:', error);
-      toastStore.error('Failed to load account status report');
+      toastStore.error($t('settings.accountStatus.loadError'));
     } finally {
       loading = false;
     }
@@ -30,54 +31,53 @@
 </script>
 
 <div class="account-status-dashboard">
-  <h2>Account Status Overview</h2>
+  <h2>{$t('settings.accountStatus.overview')}</h2>
 
   {#if backendNotReady}
     <div class="coming-soon">
       <div class="coming-soon-icon">📊</div>
-      <h3>Account Status Dashboard</h3>
-      <p>This feature is coming soon. The backend endpoints for account status reporting are not yet implemented.</p>
+      <h3>{$t('settings.accountStatus.dashboard')}</h3>
+      <p>{$t('settings.accountStatus.comingSoonDesc')}</p>
       <p class="note">
-        <strong>Note:</strong> User management is available in the Users section.
-        Account status reporting will provide aggregated statistics about user accounts.
+        <strong>{$t('settings.accountStatus.noteLabel')}</strong> {$t('settings.accountStatus.comingSoonNote')}
       </p>
     </div>
   {:else if loading}
-    <div class="loading">Loading account status...</div>
+    <div class="loading">{$t('settings.accountStatus.loadingStatus')}</div>
   {:else if report}
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-value">{report.total_users}</div>
-        <div class="stat-label">Total Users</div>
+        <div class="stat-label">{$t('settings.accountStatus.totalUsers')}</div>
       </div>
 
       <div class="stat-card success">
         <div class="stat-value">{report.active_users}</div>
-        <div class="stat-label">Active Users</div>
+        <div class="stat-label">{$t('settings.accountStatus.activeUsers')}</div>
         <div class="stat-percentage">{getPercentage(report.active_users, report.total_users)}%</div>
       </div>
 
       <div class="stat-card warning">
         <div class="stat-value">{report.inactive_users}</div>
-        <div class="stat-label">Inactive Users</div>
+        <div class="stat-label">{$t('settings.accountStatus.inactiveUsers')}</div>
         <div class="stat-percentage">{getPercentage(report.inactive_users, report.total_users)}%</div>
       </div>
 
       <div class="stat-card info">
         <div class="stat-value">{report.mfa_enabled_users}</div>
-        <div class="stat-label">MFA Enabled</div>
+        <div class="stat-label">{$t('settings.accountStatus.mfaEnabled')}</div>
         <div class="stat-percentage">{getPercentage(report.mfa_enabled_users, report.total_users)}%</div>
       </div>
 
       <div class="stat-card danger">
         <div class="stat-value">{report.password_expired_users}</div>
-        <div class="stat-label">Password Expired</div>
+        <div class="stat-label">{$t('settings.accountStatus.passwordExpired')}</div>
         <div class="stat-percentage">{getPercentage(report.password_expired_users, report.total_users)}%</div>
       </div>
     </div>
 
     <div class="progress-section">
-      <h3>MFA Adoption</h3>
+      <h3>{$t('settings.accountStatus.mfaAdoption')}</h3>
       <div class="progress-bar">
         <div
           class="progress-fill"
@@ -85,17 +85,17 @@
         ></div>
       </div>
       <p class="progress-text">
-        {report.mfa_enabled_users} of {report.total_users} users have MFA enabled
+        {$t('settings.accountStatus.mfaProgress', { enabled: report.mfa_enabled_users, total: report.total_users })}
       </p>
     </div>
 
     <div class="actions">
       <button class="btn-primary" on:click={loadReport}>
-        Refresh
+        {$t('settings.accountStatus.refresh')}
       </button>
     </div>
   {:else}
-    <div class="error">Failed to load account status report</div>
+    <div class="error">{$t('settings.accountStatus.loadError')}</div>
   {/if}
 </div>
 

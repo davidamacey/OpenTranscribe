@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { AdminApi, type AuditLogEntry } from '$lib/api/admin';
   import { toastStore } from '$stores/toast';
+  import { t, locale } from '$stores/locale';
 
   let auditLogs: AuditLogEntry[] = [];
   let loading = false;
@@ -13,24 +14,25 @@
     outcome: ''
   };
 
-  const eventTypes = [
-    { value: 'auth.login.success', label: 'Login Success' },
-    { value: 'auth.login.failure', label: 'Login Failure' },
-    { value: 'auth.logout', label: 'Logout' },
-    { value: 'auth.mfa.setup', label: 'MFA Setup' },
-    { value: 'auth.mfa.verify', label: 'MFA Verify' },
-    { value: 'auth.mfa.disable', label: 'MFA Disable' },
-    { value: 'auth.password.change', label: 'Password Change' },
-    { value: 'auth.account.lockout', label: 'Account Lockout' },
-    { value: 'auth.account.unlock', label: 'Account Unlock' },
-    { value: 'auth.token.refresh', label: 'Token Refresh' },
-    { value: 'auth.session.created', label: 'Session Created' },
-    { value: 'admin.user.create', label: 'User Create' },
-    { value: 'admin.user.update', label: 'User Update' },
-    { value: 'admin.user.delete', label: 'User Delete' },
-    { value: 'admin.role.change', label: 'Role Change' },
-    { value: 'admin.settings.change', label: 'Settings Change' }
+  const eventTypeKeys: { value: string; key: string }[] = [
+    { value: 'auth.login.success', key: 'settings.auditLog.events.loginSuccess' },
+    { value: 'auth.login.failure', key: 'settings.auditLog.events.loginFailure' },
+    { value: 'auth.logout', key: 'settings.auditLog.events.logout' },
+    { value: 'auth.mfa.setup', key: 'settings.auditLog.events.mfaSetup' },
+    { value: 'auth.mfa.verify', key: 'settings.auditLog.events.mfaVerify' },
+    { value: 'auth.mfa.disable', key: 'settings.auditLog.events.mfaDisable' },
+    { value: 'auth.password.change', key: 'settings.auditLog.events.passwordChange' },
+    { value: 'auth.account.lockout', key: 'settings.auditLog.events.accountLockout' },
+    { value: 'auth.account.unlock', key: 'settings.auditLog.events.accountUnlock' },
+    { value: 'auth.token.refresh', key: 'settings.auditLog.events.tokenRefresh' },
+    { value: 'auth.session.created', key: 'settings.auditLog.events.sessionCreated' },
+    { value: 'admin.user.create', key: 'settings.auditLog.events.userCreate' },
+    { value: 'admin.user.update', key: 'settings.auditLog.events.userUpdate' },
+    { value: 'admin.user.delete', key: 'settings.auditLog.events.userDelete' },
+    { value: 'admin.role.change', key: 'settings.auditLog.events.roleChange' },
+    { value: 'admin.settings.change', key: 'settings.auditLog.events.settingsChange' }
   ];
+  $: eventTypes = eventTypeKeys.map(et => ({ value: et.value, label: $t(et.key) }));
 
   onMount(async () => {
     await loadAuditLogs();
@@ -48,7 +50,7 @@
       });
     } catch (error) {
       console.error('Failed to load audit logs:', error);
-      toastStore.error('Failed to load audit logs');
+      toastStore.error($t('settings.auditLog.loadError'));
     } finally {
       loading = false;
     }
@@ -67,18 +69,19 @@
       a.download = `audit-logs-${new Date().toISOString().split('T')[0]}.${format}`;
       a.click();
       URL.revokeObjectURL(url);
-      toastStore.success(`Audit logs exported as ${format.toUpperCase()}`);
+      toastStore.success($t('settings.auditLog.exportSuccess', { format: format.toUpperCase() }));
     } catch (error) {
       console.error('Failed to export audit logs:', error);
-      toastStore.error('Failed to export audit logs');
+      toastStore.error($t('settings.auditLog.exportError'));
     }
   }
 
   function formatDateTime(dateString: string): string {
     const date = new Date(dateString);
-    // Compact format: MM/DD HH:MM:SS
-    return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }) +
-           ' ' + date.toLocaleTimeString('en-US', { hour12: false });
+    // Compact format using current locale: MM/DD HH:MM:SS
+    const currentLocale = $locale || 'en';
+    return date.toLocaleDateString(currentLocale, { month: '2-digit', day: '2-digit' }) +
+           ' ' + date.toLocaleTimeString(currentLocale, { hour12: false });
   }
 
   function getOutcomeClass(outcome: string): string {
@@ -118,42 +121,41 @@
   {#if backendNotReady}
     <div class="coming-soon">
       <div class="coming-soon-icon">📋</div>
-      <h3>Audit Log Viewer</h3>
-      <p>This feature is coming soon. The backend endpoints for audit log querying are not yet implemented.</p>
+      <h3>{$t('settings.auditLog.viewerTitle')}</h3>
+      <p>{$t('settings.auditLog.comingSoonDesc')}</p>
       <p class="note">
-        <strong>Note:</strong> Authentication events are being logged to the database and OpenSearch.
-        The admin UI for viewing and exporting logs is pending backend API implementation.
+        <strong>{$t('settings.auditLog.noteLabel')}</strong> {$t('settings.auditLog.comingSoonNote')}
       </p>
     </div>
   {:else}
     <div class="filters">
       <div class="filter-row">
         <label>
-          <span class="label-text">Start</span>
+          <span class="label-text">{$t('settings.auditLog.startDate')}</span>
           <input type="date" bind:value={filters.startDate} />
         </label>
         <label>
-          <span class="label-text">End</span>
+          <span class="label-text">{$t('settings.auditLog.endDate')}</span>
           <input type="date" bind:value={filters.endDate} />
         </label>
         <label>
-          <span class="label-text">Event</span>
+          <span class="label-text">{$t('settings.auditLog.event')}</span>
           <select bind:value={filters.eventType}>
-            <option value="">All</option>
+            <option value="">{$t('settings.auditLog.all')}</option>
             {#each eventTypes as type}
               <option value={type.value}>{type.label}</option>
             {/each}
           </select>
         </label>
         <label>
-          <span class="label-text">Outcome</span>
+          <span class="label-text">{$t('settings.auditLog.outcome')}</span>
           <select bind:value={filters.outcome}>
-            <option value="">All</option>
-            <option value="success">Success</option>
-            <option value="failure">Failure</option>
+            <option value="">{$t('settings.auditLog.all')}</option>
+            <option value="success">{$t('settings.auditLog.success')}</option>
+            <option value="failure">{$t('settings.auditLog.failure')}</option>
           </select>
         </label>
-        <button class="btn-apply" on:click={loadAuditLogs}>Apply</button>
+        <button class="btn-apply" on:click={loadAuditLogs}>{$t('settings.auditLog.apply')}</button>
         <div class="export-actions">
           <button class="btn-secondary" on:click={() => exportLogs('csv')}>CSV</button>
           <button class="btn-secondary" on:click={() => exportLogs('json')}>JSON</button>
@@ -162,17 +164,17 @@
     </div>
 
     {#if loading}
-      <div class="loading">Loading...</div>
+      <div class="loading">{$t('settings.auditLog.loadingShort')}</div>
     {:else}
       <div class="audit-table-container">
         <table class="audit-table">
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Event</th>
-              <th>User</th>
-              <th>Status</th>
-              <th>IP</th>
+              <th>{$t('settings.auditLog.time')}</th>
+              <th>{$t('settings.auditLog.event')}</th>
+              <th>{$t('settings.auditLog.user')}</th>
+              <th>{$t('settings.auditLog.status')}</th>
+              <th>{$t('settings.auditLog.ip')}</th>
               <th></th>
             </tr>
           </thead>
@@ -184,7 +186,7 @@
                 <td>{event.username || '-'}</td>
                 <td>
                   <span class="outcome {getOutcomeClass(event.outcome)}">
-                    {event.outcome?.toLowerCase() === 'success' ? 'OK' : 'FAIL'}
+                    {event.outcome?.toLowerCase() === 'success' ? $t('settings.auditLog.statusOk') : $t('settings.auditLog.statusFail')}
                   </span>
                 </td>
                 <td>{event.source_ip}</td>
@@ -199,7 +201,7 @@
         </table>
       </div>
       {#if auditLogs.length === 0}
-        <div class="loading">No audit logs found</div>
+        <div class="loading">{$t('settings.auditLog.noLogs')}</div>
       {/if}
     {/if}
   {/if}
@@ -215,12 +217,12 @@
     tabindex="-1"
     role="dialog"
     aria-modal="true"
-    aria-label="Event Details"
+    aria-label={$t('settings.auditLog.eventDetails')}
   >
     <div class="details-modal">
       <div class="details-modal-header">
-        <h3>Event Details</h3>
-        <button class="details-modal-close" on:click={closeDetails} aria-label="Close">
+        <h3>{$t('settings.auditLog.eventDetails')}</h3>
+        <button class="details-modal-close" on:click={closeDetails} aria-label={$t('settings.auditLog.close')}>
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>

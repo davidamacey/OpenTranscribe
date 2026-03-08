@@ -12,13 +12,14 @@ from zoneinfo import ZoneInfo
 from celery import shared_task
 
 from app.core.celery import celery_app
+from app.core.constants import UtilityPriority
 from app.db.session_utils import session_scope
 from app.services.file_cleanup_service import cleanup_service
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, name="cleanup.run_periodic_cleanup")
+@shared_task(bind=True, name="cleanup.run_periodic_cleanup", priority=UtilityPriority.ROUTINE)
 def run_periodic_cleanup(self):
     """
     Periodic task to clean up stuck files and maintain system health.
@@ -58,7 +59,7 @@ def run_periodic_cleanup(self):
         raise self.retry(countdown=3600, max_retries=3) from e  # Retry in 1 hour
 
 
-@shared_task(bind=True, name="cleanup.deep_cleanup")
+@shared_task(bind=True, name="cleanup.deep_cleanup", priority=UtilityPriority.BACKGROUND)
 def run_deep_cleanup(self, dry_run: bool = False):
     """
     Deep cleanup task for removing orphaned files (admin-triggered).
@@ -90,7 +91,7 @@ def run_deep_cleanup(self, dry_run: bool = False):
         raise
 
 
-@shared_task(bind=True, name="cleanup.health_check")
+@shared_task(bind=True, name="cleanup.health_check", priority=UtilityPriority.OPERATIONAL)
 def system_health_check(self):
     """
     Generate a system health report.
@@ -122,7 +123,7 @@ def system_health_check(self):
         raise
 
 
-@shared_task(bind=True, name="cleanup.emergency_recovery")
+@shared_task(bind=True, name="cleanup.emergency_recovery", priority=UtilityPriority.EMERGENCY)
 def emergency_file_recovery(self, file_uuids: list):
     """
     Emergency recovery task for specific files (admin-triggered).
@@ -178,7 +179,7 @@ def emergency_file_recovery(self, file_uuids: list):
         raise
 
 
-@celery_app.task(name="cleanup_expired_files", queue="utility")
+@celery_app.task(name="cleanup_expired_files", queue="utility", priority=UtilityPriority.ROUTINE)
 def cleanup_expired_files(force: bool = False):
     """
     Delete media files that have exceeded the configured retention window.
@@ -247,7 +248,7 @@ def cleanup_expired_files(force: bool = False):
                         )
 
             # Build the age cutoff in UTC
-            cutoff = datetime.utcnow() - timedelta(days=config["retention_days"])
+            cutoff = datetime.now(timezone.utc) - timedelta(days=config["retention_days"])
 
             # Determine which statuses are eligible for deletion
             eligible_statuses = [FileStatus.COMPLETED.value]

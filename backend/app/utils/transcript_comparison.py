@@ -9,6 +9,7 @@ quality beyond acceptable thresholds.
 import json
 import logging
 from datetime import datetime
+from datetime import timezone
 
 import numpy as np
 
@@ -42,7 +43,7 @@ def export_baseline(db, file_id: int, output_path: str) -> dict:
 
     baseline = {
         "file_id": file_id,
-        "exported_at": datetime.utcnow().isoformat(),
+        "exported_at": datetime.now(timezone.utc).isoformat(),
         "segment_count": len(segments),
         "speaker_count": len(speakers),
         "segments": [

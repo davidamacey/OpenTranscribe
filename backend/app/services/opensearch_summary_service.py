@@ -134,8 +134,8 @@ class OpenSearchSummaryService:
             doc["summary_version"] = summary_version
             doc["provider"] = provider
             doc["model"] = model
-            doc["created_at"] = datetime.datetime.now().isoformat()
-            doc["updated_at"] = datetime.datetime.now().isoformat()
+            doc["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            doc["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             # Index the document
             self.client.index(
@@ -478,7 +478,7 @@ class OpenSearchSummaryService:
 
         try:
             # Add updated timestamp
-            updates["updated_at"] = datetime.datetime.now().isoformat()
+            updates["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             self.client.update(
                 index=self.index_name,

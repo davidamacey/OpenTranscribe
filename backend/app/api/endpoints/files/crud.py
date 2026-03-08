@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 from datetime import datetime
@@ -517,55 +518,81 @@ def update_media_file(
     return db_file
 
 
+def _delete_speaker_embeddings_from_index(
+    client: Any, index_name: str, speaker_uuids: list[str], file_id: int
+) -> None:
+    """Delete speaker embedding documents from a single OpenSearch index."""
+    if not client.indices.exists(index=index_name):
+        return
+    deleted = 0
+    for speaker_uuid in speaker_uuids:
+        with contextlib.suppress(Exception):
+            client.delete(index=index_name, id=speaker_uuid)
+            deleted += 1
+    if deleted:
+        logger.info(
+            f"Deleted {deleted}/{len(speaker_uuids)} speaker embeddings "
+            f"from {index_name} for file {file_id}"
+        )
+
+
 def _cleanup_opensearch_data(db: Session, file_id: int, file_uuid: str) -> None:
-    """Clean up OpenSearch data for a file being deleted."""
+    """Clean up OpenSearch data for a file being deleted.
+
+    Cleans: speakers (v3), speakers_v4, transcripts, transcript_chunks,
+    transcript_summaries. Each step is non-fatal — errors are logged and
+    do not prevent subsequent cleanup steps.
+    """
     try:
-        # Get all speakers for this file before deletion
+        from app.services.opensearch_service import opensearch_client
+        from app.services.opensearch_service import settings
+
         speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
-        speaker_uuids = [str(speaker.uuid) for speaker in speakers]  # Use UUIDs for OpenSearch
+        speaker_uuids = [str(speaker.uuid) for speaker in speakers]
 
+        if not opensearch_client:
+            logger.warning("OpenSearch client not available for cleanup")
+            return
+
+        # Delete speaker embeddings from v3 and v4 indices
         if speaker_uuids:
-            # Delete speaker embeddings from OpenSearch
-            from app.services.opensearch_service import opensearch_client
-            from app.services.opensearch_service import settings
+            for idx in [
+                settings.OPENSEARCH_SPEAKER_INDEX,
+                f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4",
+            ]:
+                with contextlib.suppress(Exception):
+                    _delete_speaker_embeddings_from_index(
+                        opensearch_client, idx, speaker_uuids, file_id
+                    )
 
-            if opensearch_client:
-                deleted_count = 0
-                for speaker_uuid in speaker_uuids:
-                    try:
-                        opensearch_client.delete(
-                            index=settings.OPENSEARCH_SPEAKER_INDEX,
-                            id=speaker_uuid,  # Use UUID
-                        )
-                        deleted_count += 1
-                    except Exception as e:
-                        logger.warning(
-                            f"Error deleting speaker {speaker_uuid} from OpenSearch: {e}"
-                        )
+        # Delete transcript document
+        with contextlib.suppress(Exception):
+            opensearch_client.delete(index=settings.OPENSEARCH_TRANSCRIPT_INDEX, id=str(file_uuid))
+            logger.info(f"Deleted transcript for file {file_uuid} from OpenSearch")
 
-                logger.info(
-                    f"Deleted {deleted_count}/{len(speaker_uuids)} speaker embeddings from OpenSearch for file {file_id}"
+        # Delete transcript chunks
+        with contextlib.suppress(Exception):
+            from app.services.search.indexing_service import TranscriptIndexingService
+
+            chunks_deleted = TranscriptIndexingService().delete_transcript_chunks(str(file_uuid))
+            if chunks_deleted:
+                logger.info(f"Deleted {chunks_deleted} transcript chunks for file {file_uuid}")
+
+        # Delete transcript summaries
+        with contextlib.suppress(Exception):
+            summary_index = settings.OPENSEARCH_SUMMARY_INDEX
+            if opensearch_client.indices.exists(index=summary_index):
+                resp = opensearch_client.delete_by_query(
+                    index=summary_index,
+                    body={"query": {"term": {"file_id": str(file_id)}}},
+                    refresh=True,
                 )
-            else:
-                logger.warning("OpenSearch client not available for cleanup")
-
-        # Delete transcript from OpenSearch (using file UUID as document ID)
-        try:
-            from app.services.opensearch_service import opensearch_client
-            from app.services.opensearch_service import settings
-
-            if opensearch_client:
-                opensearch_client.delete(
-                    index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
-                    id=str(file_uuid),  # Use UUID as document ID
-                )
-                logger.info(f"Deleted transcript for file {file_uuid} from OpenSearch")
-        except Exception as e:
-            logger.warning(f"Error deleting transcript from OpenSearch: {e}")
+                summary_deleted = resp.get("deleted", 0)
+                if summary_deleted:
+                    logger.info(f"Deleted {summary_deleted} summaries for file {file_id}")
 
     except Exception as e:
         logger.warning(f"Error cleaning up OpenSearch data for file {file_id}: {e}")
-        # Don't fail deletion if OpenSearch cleanup fails
 
 
 def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bool = False) -> None:

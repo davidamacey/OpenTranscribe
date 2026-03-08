@@ -28,6 +28,7 @@ Classes:
 
 import logging
 from datetime import datetime
+from datetime import timezone
 
 from sqlalchemy.orm import Session
 
@@ -78,13 +79,9 @@ class AnalyticsService:
                 logger.warning(f"No transcript segments found for media file {media_file_id}")
                 return OverallAnalytics()
 
-            # Get speakers for mapping
-            speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file_id).all()
-            speaker_mapping = AnalyticsService._create_speaker_mapping(speakers)
-
             # Compute analytics
             analytics = AnalyticsService._compute_from_segments(
-                segments, speaker_mapping, float(media_file.duration or 0)
+                segments, float(media_file.duration or 0)
             )
 
             logger.info(
@@ -128,7 +125,7 @@ class AnalyticsService:
 
     @staticmethod
     def _compute_from_segments(
-        segments: list[TranscriptSegment], speaker_mapping: dict[str, str], total_duration: float
+        segments: list[TranscriptSegment], total_duration: float
     ) -> OverallAnalytics:
         """Compute comprehensive analytics from transcript segments.
 
@@ -138,7 +135,6 @@ class AnalyticsService:
 
         Args:
             segments: List of TranscriptSegment objects ordered by start_time.
-            speaker_mapping: Dictionary mapping speaker labels to display names.
             total_duration: Total duration of the media file in seconds.
 
         Returns:
@@ -246,35 +242,6 @@ class AnalyticsService:
             return "Unknown"
 
     @staticmethod
-    def _get_segment_speaker(segment: TranscriptSegment, speaker_mapping: dict[str, str]) -> str:
-        """Get the display name for a transcript segment speaker.
-
-        This method resolves the best available display name for a speaker,
-        prioritizing display_name over original name and using the speaker
-        mapping for consistency.
-
-        Args:
-            segment: TranscriptSegment object with optional speaker relationship.
-            speaker_mapping: Dictionary mapping speaker labels to display names.
-
-        Returns:
-            Speaker display name. Returns "Unknown" if no speaker information
-            is available.
-
-        Priority order:
-            1. segment.speaker.display_name (if available)
-            2. Mapped name from speaker_mapping using segment.speaker.name
-            3. segment.speaker.name (fallback)
-            4. "Unknown" (if no speaker information)
-        """
-        if segment.speaker and segment.speaker.display_name:
-            return str(segment.speaker.display_name)
-        elif segment.speaker and segment.speaker.name:
-            return speaker_mapping.get(str(segment.speaker.name), str(segment.speaker.name))
-        else:
-            return "Unknown"
-
-    @staticmethod
     def save_analytics(db: Session, media_file_id: int, analytics: OverallAnalytics) -> bool:
         """Save computed analytics to the database.
 
@@ -310,14 +277,14 @@ class AnalyticsService:
             if existing_analytics:
                 # Update existing analytics
                 existing_analytics.overall_analytics = analytics_data  # type: ignore[assignment]
-                existing_analytics.computed_at = datetime.utcnow()  # type: ignore[assignment]
+                existing_analytics.computed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 existing_analytics.version = "1.0"  # type: ignore[assignment]
             else:
                 # Create new analytics record
                 new_analytics = Analytics(
                     media_file_id=media_file_id,
                     overall_analytics=analytics_data,
-                    computed_at=datetime.utcnow(),
+                    computed_at=datetime.now(timezone.utc),
                     version="1.0",
                 )
                 db.add(new_analytics)

@@ -16,6 +16,73 @@ import os as _os
 _logger = logging.getLogger(__name__)
 
 # =============================================================================
+# Celery Task Queue Priorities
+# =============================================================================
+# Priorities are PER-QUEUE and independent of each other.
+# A GPUPriority.INTERACTIVE=0 has no relation to CPUPriority.PIPELINE_CRITICAL=2.
+# Scale: 0 (highest — runs first) to 9 (lowest — runs last).
+# Configured via broker_transport_options: priority_steps=list(range(10)).
+
+
+class GPUPriority:
+    """GPU queue (concurrency=1). Controls what runs next when the worker is free.
+    Interactive UI actions must preempt queued long-running jobs.
+    """
+
+    INTERACTIVE = 0  # User action awaiting instant feedback (~5s), e.g. speaker drag
+    NEAR_REALTIME = 1  # User action with response in <30s, e.g. manual embedding re-extract
+    USER_IMPORT = 3  # User-submitted transcription/import (~5-60min)
+    USER_REDIARIZ = 4  # User-triggered re-diarization of an existing file (~5-30min)
+    USER_RECLUSTER = 5  # User-triggered full speaker re-clustering (~5-15min)
+    ADMIN_MIGRATION = 7  # Admin bulk migration batches (~1-5min/batch); yields to user work
+
+
+class CPUPriority:
+    """CPU queue (concurrency=8). Controls ordering when all workers are busy."""
+
+    PIPELINE_CRITICAL = 2  # Completes the import pipeline the user is watching
+    #                        e.g. waveform, thumbnail, post-transcription clustering
+    USER_TRIGGERED = 4  # Explicit user action outside the import pipeline
+    SYSTEM = 5  # System monitoring and stats collection
+    ADMIN_BATCH = 6  # Admin bulk operations and data migrations
+    MAINTENANCE = 8  # Scheduled background maintenance (search, cleanup)
+
+
+class NLPPriority:
+    """NLP queue (concurrency=4). LLM API calls and AI enrichment tasks."""
+
+    USER_TRIGGERED = 3  # User explicitly requested (summarize, identify speakers)
+    AUTO_PIPELINE = 5  # Automatically triggered after transcription completes
+    ADMIN_BATCH = 7  # Admin batch operations
+    BACKGROUND = 9  # Background retroactive enrichment (no user waiting)
+
+
+class DownloadPriority:
+    """Download queue (concurrency=3). Network I/O for media downloads."""
+
+    SINGLE_URL = 3  # Single URL — user watching progress bar
+    PLAYLIST = 6  # Playlist — bulk download, less urgent per individual item
+
+
+class EmbeddingPriority:
+    """Embedding queue (concurrency=1). OpenSearch neural indexing.
+    Single-worker queue — priority controls backlog ordering.
+    """
+
+    PIPELINE_CRITICAL = 2  # Post-import indexing — makes new content searchable
+
+
+class UtilityPriority:
+    """Utility queue (concurrency=8). Lightweight maintenance and system tasks."""
+
+    EMERGENCY = 1  # System recovery, critical operations
+    OPERATIONAL = 3  # Health checks, monitoring
+    ROUTINE = 5  # Periodic cleanup, access tracking
+    BACKGROUND = 7  # Migration finalization, status checks
+    DEV_TOOLS = 9  # Development and testing utilities (baseline export etc.)
+
+
+# =============================================================================
 # Dynamic imports for language support
 # =============================================================================
 
@@ -192,6 +259,18 @@ NOTIFICATION_TYPE_CLUSTERING_PROGRESS = "clustering_progress"
 NOTIFICATION_TYPE_CLUSTERING_COMPLETE = "clustering_complete"
 NOTIFICATION_TYPE_CLUSTERING_FILE_COMPLETE = "clustering_file_complete"
 
+# Speaker attribute migration notification types
+NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_PROGRESS = "attribute_migration_progress"
+NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_COMPLETE = "attribute_migration_complete"
+
+# Combined speaker migration notification types
+NOTIFICATION_TYPE_COMBINED_MIGRATION_PROGRESS = "combined_speaker_migration_progress"
+NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE = "combined_speaker_migration_complete"
+
+# Data integrity / orphan cleanup notification types
+NOTIFICATION_TYPE_DATA_INTEGRITY_PROGRESS = "data_integrity_progress"
+NOTIFICATION_TYPE_DATA_INTEGRITY_COMPLETE = "data_integrity_complete"
+
 # Progress tracking intervals
 PROGRESS_UPDATE_INTERVAL = 1000  # milliseconds
 DOWNLOAD_CHECK_INTERVAL = 1000  # milliseconds
@@ -248,6 +327,13 @@ TOKEN_ESTIMATION_BUFFER = 1.1  # 10% buffer for safety
 DEFAULT_CHUNK_SIZE = 16384  # 16KB default chunk size
 VIDEO_CHUNK_SIZE = 65536  # 64KB for video streaming
 AUDIO_CHUNK_SIZE = 8192  # 8KB for audio streaming
+
+# Speaker analysis pipeline segment duration thresholds
+# After merging adjacent segments, only sections above these thresholds are sent to the model.
+SPEAKER_SEGMENT_MIN_DURATION = 1.0  # Standard minimum — skip segments shorter than this
+SPEAKER_SHORT_SEGMENT_MIN_DURATION = (
+    0.5  # Fallback for speakers whose total merged time never reaches 1s
+)
 
 # Transcription settings defaults
 DEFAULT_TRANSCRIPTION_MIN_SPEAKERS = 1

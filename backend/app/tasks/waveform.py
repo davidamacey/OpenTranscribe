@@ -10,6 +10,7 @@ import os
 import tempfile
 
 from app.core.celery import celery_app
+from app.core.constants import CPUPriority
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
@@ -77,6 +78,7 @@ def _cleanup_temp_file(temp_file_path: str | None) -> None:
     bind=True,
     max_retries=3,
     default_retry_delay=60,
+    priority=CPUPriority.PIPELINE_CRITICAL,
 )
 def generate_waveform_task(self, file_id: int, file_uuid: str):
     """

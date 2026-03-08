@@ -103,8 +103,8 @@ class TestMigrationLockLive:
         assert lock.activate() is True
         assert lock.is_active() is True
 
-        # Second activate should fail (NX semantics)
-        assert lock.activate() is False
+        # Second activate increments the ref count (INCR semantics)
+        assert lock.activate() is True
 
         assert lock.deactivate() is True
         assert lock.is_active() is False
@@ -165,16 +165,13 @@ class TestPrepareFileForGpuLive:
         if not completed_files:
             pytest.skip("No completed files in database")
 
-        from app.models.media import Speaker
-        from app.services.minio_service import download_file
-        from app.tasks.embedding_migration_v4 import _prepare_file_for_gpu
-        from app.utils.uuid_helpers import get_file_by_uuid
+        from app.tasks.migration_pipeline import prepare_file
 
         file = completed_files[0]
         file_uuid = str(file.uuid)
 
         start = time.time()
-        prepared = _prepare_file_for_gpu(file_uuid, download_file, get_file_by_uuid, Speaker)
+        prepared = prepare_file(file_uuid)
         elapsed = time.time() - start
 
         if prepared is None:
@@ -202,19 +199,20 @@ class TestThroughputBenchmark:
         if not completed_files:
             pytest.skip("No completed files in database")
 
-        from app.models.media import Speaker
+        from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
         from app.services.embedding_mode_service import MODE_V4
-        from app.services.minio_service import download_file
+        from app.services.speaker_analysis_models import EmbeddingModelAdapter
+        from app.services.speaker_analysis_models import MultiModelRunner
         from app.services.speaker_embedding_service import get_cached_embedding_service
-        from app.tasks.embedding_migration_v4 import _gpu_extract_and_write
-        from app.tasks.embedding_migration_v4 import _prepare_file_for_gpu
-        from app.utils.uuid_helpers import get_file_by_uuid
+        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.migration_pipeline import prepare_file
+        from app.tasks.migration_pipeline import process_batch_pipelined
 
         sample_size = int(os.environ.get("MIGRATION_TEST_SAMPLE", "10"))
         sample = completed_files[:sample_size]
 
         print(f"\n{'=' * 70}")
-        print("  V3→V4 Migration Throughput Benchmark")
+        print("  V3->V4 Migration Throughput Benchmark")
         print(f"  Sample size: {len(sample)} files")
         print(f"{'=' * 70}")
 
@@ -225,10 +223,10 @@ class TestThroughputBenchmark:
         model_time = time.time() - model_start
         print(f"    Model load: {model_time:.1f}s")
 
-        # Phase 2: Process files and measure each phase
+        # Phase 2: Prepare files and measure I/O
         io_times = []
-        gpu_times = []
         speaker_counts = []
+        prepared_files = []
         skipped = 0
 
         for i, file in enumerate(sample):
@@ -237,9 +235,7 @@ class TestThroughputBenchmark:
             # I/O phase: download + DB query
             io_start = time.time()
             try:
-                prepared = _prepare_file_for_gpu(
-                    file_uuid, download_file, get_file_by_uuid, Speaker
-                )
+                prepared = prepare_file(file_uuid)
             except Exception as e:
                 print(f"    [{i + 1}/{len(sample)}] {file_uuid}: I/O FAILED - {e}")
                 continue
@@ -252,38 +248,43 @@ class TestThroughputBenchmark:
 
             io_times.append(io_time)
             speaker_counts.append(len(prepared.speakers))
+            prepared_files.append((file_uuid, prepared))
+            print(
+                f"    [{i + 1}/{len(sample)}] {file_uuid}: "
+                f"{len(prepared.speakers)} speakers, I/O={io_time:.2f}s"
+            )
 
-            # GPU phase: extract embeddings (no OpenSearch write in benchmark)
-            gpu_start = time.time()
-            try:
-                count = _gpu_extract_and_write(prepared, embedding_service)
-                gpu_time = time.time() - gpu_start
-                gpu_times.append(gpu_time)
-                total = io_time + gpu_time
-                print(
-                    f"    [{i + 1}/{len(sample)}] {file_uuid}: "
-                    f"{len(prepared.speakers)} speakers, "
-                    f"I/O={io_time:.2f}s GPU={gpu_time:.2f}s total={total:.2f}s"
-                )
-            except Exception as e:
-                print(f"    [{i + 1}/{len(sample)}] {file_uuid}: GPU FAILED - {e}")
+        # Phase 3: Process all prepared files through the pipeline
+        if not prepared_files:
+            print("  No files were prepared successfully.")
+            return
+
+        runner = MultiModelRunner([EmbeddingModelAdapter(embedding_service)])
+
+        gpu_start = time.time()
+        success_count, fail_count = process_batch_pipelined(
+            prepared_files=prepared_files,
+            runner=runner,
+            result_writer=_embedding_result_writer,
+            is_running_check=lambda: True,
+            on_file_success=lambda _: None,
+            on_file_failure=lambda _, __: None,
+            min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION,
+        )
+        gpu_time = time.time() - gpu_start
 
         # Summary
         print(f"\n{'=' * 70}")
         print("  Results")
         print(f"{'=' * 70}")
 
-        processed = len(gpu_times)
-        if processed == 0:
-            print("  No files were processed successfully.")
-            return
-
+        processed = len(prepared_files)
         avg_io = sum(io_times) / len(io_times)
-        avg_gpu = sum(gpu_times) / len(gpu_times)
+        avg_gpu = gpu_time / processed
         avg_total = avg_io + avg_gpu
         avg_speakers = sum(speaker_counts) / len(speaker_counts)
 
-        print(f"  Files processed: {processed}")
+        print(f"  Files processed: {processed} ({success_count} succeeded, {fail_count} failed)")
         print(f"  Files skipped (no speakers): {skipped}")
         print(f"  Avg speakers/file: {avg_speakers:.1f}")
         print()
