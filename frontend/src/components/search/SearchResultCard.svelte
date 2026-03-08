@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { SearchHit, SearchOccurrence as SearchOccurrenceType } from '$stores/search';
   import { t } from '$stores/locale';
+  import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import SearchOccurrence from './SearchOccurrence.svelte';
 
   export let hit: SearchHit;
@@ -78,7 +79,10 @@
 <article class="result-card">
   <div class="result-header">
     <div class="result-header-top">
-      <a href="/files/{hit.file_uuid}" class="result-title">
+      <a href="/files/{hit.file_uuid}" class="result-title"
+        on:mouseenter={() => prefetchFileDetails(hit.file_uuid)}
+        on:mouseleave={cancelPrefetch}
+      >
         {#if hit.content_type?.startsWith('video/')}
           <svg class="media-type-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="23 7 16 12 23 17 23 7"></polygon>

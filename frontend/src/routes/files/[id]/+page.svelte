@@ -893,6 +893,10 @@
 
         await axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
 
+        // Refresh speakers to get updated profile data from GET endpoint
+        // This ensures speaker.profile.name is current before the next edit
+        await loadSpeakers();
+
         // Show success feedback with appropriate message
         const successMessage = action === 'update_profile'
           ? $t('speakerProfile.updatedGlobally', { name: newName })
@@ -2218,6 +2222,14 @@
                 // Clear processing step on failure
                 currentProcessingStep = '';
               }
+            }
+
+            // Handle cache invalidation (e.g., auto-label applied tags/collections)
+            if (latestNotification.type === 'cache_invalidate'
+                && latestNotification.data?.scope === 'files'
+                && latestNotification.data?.file_id === fileId) {
+              fetchFileDetails();
+              loadAISuggestions();
             }
 
           } else {

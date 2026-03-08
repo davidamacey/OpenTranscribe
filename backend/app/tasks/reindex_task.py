@@ -8,7 +8,6 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
-from app.core.constants import NOTIFICATION_TYPE_REINDEX_STOPPED
 from app.core.constants import CPUPriority
 from app.core.redis import get_redis
 from app.utils.websocket_notify import send_ws_event
@@ -346,6 +345,32 @@ def _clear_cancellation_flag(user_id: int) -> None:
         logger.warning(f"Could not clear cancellation flag: {e}")
 
 
+_REINDEX_STATE_KEY = "reindex_state:{user_id}"
+_REINDEX_UUIDS_KEY = "reindex_uuids:{user_id}"
+
+
+def _send_reindex_progress(redis_client: Any, user_id: int) -> None:
+    """Read global progress from Redis and send a WebSocket notification."""
+    state = redis_client.hgetall(_REINDEX_STATE_KEY.format(user_id=user_id))
+    if not state:
+        return
+    indexed = int(state.get(b"indexed", state.get("indexed", 0)))
+    total = int(state.get(b"total", state.get("total", 0)))
+    failed = int(state.get(b"failed", state.get("failed", 0)))
+    progress_pct = int((indexed / total) * 100) if total > 0 else 0
+    send_ws_event(
+        user_id,
+        NOTIFICATION_TYPE_REINDEX_PROGRESS,
+        {
+            "indexed_files": indexed,
+            "total_files": total,
+            "failed_files": failed,
+            "progress": progress_pct,
+            "message": f"Indexed {indexed} of {total} files",
+        },
+    )
+
+
 @celery_app.task(
     bind=True, name="reindex_transcripts", queue="cpu", priority=CPUPriority.MAINTENANCE
 )
@@ -355,38 +380,27 @@ def reindex_transcripts_task(
     file_uuids: list[str] | None = None,
     model_id: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Re-index existing transcripts with chunk-level embeddings.
+    """Coordinator: dispatch parallel batch workers for re-indexing.
 
-    Uses keyset (cursor) pagination to avoid loading all MediaFile
-    ORM objects into memory at once. Each page gets its own DB session.
-
-    Process:
-    1. If model_id is provided, switch to that model and recreate the index
-    2. Count total files to re-index
-    3. Page through files in batches of 50:
-       a. Load one page of files from DB
-       b. For each file: extract metadata, chunk, embed, bulk index
-       c. Send progress via WebSocket
-       d. Periodically refresh the index for search freshness
-    4. Final refresh and cache clear
-    5. Return summary stats
+    Handles model switch, index recreation, bulk mode setup, then
+    partitions file IDs into worker_count groups and dispatches
+    reindex_batch_task for each. The last finishing worker handles
+    cleanup, orphan removal, and completion notification.
 
     Args:
         user_id: ID of the user triggering the re-index.
-        file_uuids: Optional list of specific file UUIDs to re-index. None = all.
-        model_id: Optional embedding model ID to switch to before re-indexing.
+        file_uuids: Optional list of specific file UUIDs to re-index.
+        model_id: Optional embedding model ID to switch to.
 
     Returns:
-        Dict with indexing stats.
+        Dict with dispatch status.
     """
     from app.db.session_utils import session_scope
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.services.search.indexing_service import TranscriptIndexingService
 
     task_id = self.request.id
-    logger.info(f"Re-index task {task_id} started for user {user_id}")
+    logger.info(f"Re-index coordinator {task_id} started for user {user_id}")
     _clear_cancellation_flag(user_id)
 
     if model_id:
@@ -404,21 +418,8 @@ def reindex_transcripts_task(
     # Recreate stale index if schema version has changed
     _check_and_recreate_stale_index()
 
-    indexing_service = TranscriptIndexingService()
-    stats: dict[str, Any] = {
-        "total_files": 0,
-        "indexed_files": 0,
-        "failed_files": 0,
-        "total_chunks": 0,
-        "skipped_files": 0,
-    }
-
-    page_size = 50
-    files_since_refresh = 0
-
     try:
-        # Step 1: Snapshot file IDs to ensure consistent count throughout reindex.
-        # This prevents count drift from files completing/deleting mid-reindex.
+        # Snapshot file IDs
         with session_scope() as db:
             id_query = db.query(MediaFile.id).filter(
                 MediaFile.user_id == user_id,
@@ -429,153 +430,218 @@ def reindex_transcripts_task(
             all_file_ids = [int(row[0]) for row in id_query.order_by(MediaFile.id).all()]
 
         total_files = len(all_file_ids)
-        stats["total_files"] = total_files
-
         if total_files == 0:
             logger.info(f"No files to re-index for user {user_id}")
-            return stats
+            return {"total_files": 0}
 
-        logger.info(f"Re-indexing {total_files} files for user {user_id}")
-
-        # Initialize progress tracker for ETA calculation
+        # Initialize progress tracker
         from app.services.progress_tracker import ProgressTracker
-        from app.services.progress_tracker import emit_progress_notification
 
         tracker = ProgressTracker(task_type="reindex", user_id=user_id, total=total_files)
         tracker.start(message="Starting re-index...")
 
-        # Safety: restore normal refresh_interval in case a previous reindex was killed
+        # Safety: restore normal mode, then set bulk mode
         _restore_normal_mode()
-
-        # Step 2: Disable auto-refresh during bulk ingestion
         _set_bulk_indexing_mode()
 
-        # Track indexed file UUIDs for post-reindex orphan cleanup
-        indexed_file_uuids: set[str] = set()
+        # Set up Redis state for worker coordination
+        redis = get_redis()
+        worker_count = settings.REINDEX_PARALLEL_WORKERS
+        state_key = _REINDEX_STATE_KEY.format(user_id=user_id)
+        uuids_key = _REINDEX_UUIDS_KEY.format(user_id=user_id)
 
-        try:
-            # Step 3: Page through snapshotted file IDs in batches
-            global_index = 0
+        redis.delete(state_key, uuids_key)
+        redis.hset(
+            state_key,
+            mapping={
+                "total": total_files,
+                "indexed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "chunks": 0,
+                "workers_done": 0,
+                "worker_count": worker_count,
+            },
+        )
+        redis.expire(state_key, 86400)  # 24h TTL
 
-            for batch_start in range(0, total_files, page_size):
-                batch_ids = all_file_ids[batch_start : batch_start + page_size]
+        # Partition file IDs into worker_count groups
+        partitions: list[list[int]] = [[] for _ in range(worker_count)]
+        for i, file_id in enumerate(all_file_ids):
+            partitions[i % worker_count].append(file_id)
 
-                with session_scope() as db:
-                    page_files = (
-                        db.query(MediaFile)
-                        .filter(MediaFile.id.in_(batch_ids))
-                        .order_by(MediaFile.id)
-                        .all()
-                    )
+        # Dispatch batch workers (skip empty partitions)
+        dispatched = 0
+        for partition in partitions:
+            if partition:
+                reindex_batch_task.apply_async(
+                    args=[partition, user_id],
+                    priority=CPUPriority.MAINTENANCE,
+                )
+                dispatched += 1
 
-                    for media_file in page_files:
-                        file_uuid = str(media_file.uuid)
-                        global_index += 1
-
-                        # Check for user-requested cancellation
-                        if _is_cancellation_requested(user_id):
-                            logger.info(
-                                f"Re-index task {task_id} cancelled by user after "
-                                f"{stats['indexed_files']}/{total_files} files"
-                            )
-                            stats["cancelled"] = True
-                            tracker.complete(message="Re-indexing stopped by user")
-                            send_ws_event(
-                                user_id,
-                                NOTIFICATION_TYPE_REINDEX_STOPPED,
-                                {
-                                    "stats": stats,
-                                    "reason": "cancelled_by_user",
-                                },
-                            )
-                            _clear_cancellation_flag(user_id)
-                            return stats
-
-                        try:
-                            metadata = _extract_file_metadata(db, media_file)
-                            if metadata is None:
-                                stats["skipped_files"] += 1
-                                continue
-
-                            chunk_count = indexing_service.reindex_transcript(
-                                file_id=metadata["file_id"],
-                                file_uuid=metadata["file_uuid"],
-                                user_id=user_id,
-                                segments=metadata["segments"],
-                                title=metadata["title"],
-                                speakers=metadata["speakers"],
-                                tags=metadata["tags"],
-                                upload_time=metadata["upload_time"],
-                                language=metadata["language"],
-                                content_type=metadata["content_type"],
-                                duration=metadata["duration"],
-                                file_size=metadata["file_size"],
-                                collection_ids=metadata["collection_ids"],
-                                accessible_user_ids=metadata.get("accessible_user_ids"),
-                            )
-
-                            stats["indexed_files"] += 1
-                            stats["total_chunks"] += chunk_count
-                            files_since_refresh += 1
-                            indexed_file_uuids.add(metadata["file_uuid"])
-
-                            # Send progress notification with ETA
-                            emit_progress_notification(
-                                tracker=tracker,
-                                processed=global_index,
-                                user_id=user_id,
-                                notification_type=NOTIFICATION_TYPE_REINDEX_PROGRESS,
-                                extra_data={
-                                    "indexed_files": stats["indexed_files"],
-                                    "total_files": total_files,
-                                },
-                                message=f"Indexed {stats['indexed_files']} of {total_files} files",
-                            )
-
-                            logger.debug(
-                                f"Re-indexed file {file_uuid}: "
-                                f"{chunk_count} chunks ({global_index}/{total_files})"
-                            )
-
-                            # Periodic refresh to keep search results fresh
-                            files_since_refresh = _periodic_refresh(files_since_refresh)
-
-                        except Exception as e:
-                            logger.error(f"Error re-indexing file {file_uuid}: {e}")
-                            stats["failed_files"] += 1
-        finally:
-            _restore_normal_mode()
-
-        _refresh_index_and_clear_cache()
-        _force_merge_after_reindex()
-
-        # Step 4: Post-reindex orphan cleanup — remove chunks for deleted files
-        if indexed_file_uuids:
-            orphan_cleaned = _cleanup_orphaned_chunks(user_id, indexed_file_uuids)
-            if orphan_cleaned > 0:
-                stats["orphan_chunks_cleaned"] = orphan_cleaned
-                logger.info(f"Cleaned {orphan_cleaned} orphaned chunk documents for user {user_id}")
-
-        # Mark progress as completed
-        tracker.complete(message="Re-indexing complete")
-
-        # Send completion notification
-        send_ws_event(user_id, NOTIFICATION_TYPE_REINDEX_COMPLETE, {"stats": stats})
+        # Update worker_count to actual dispatched count
+        if dispatched != worker_count:
+            redis.hset(state_key, "worker_count", dispatched)
 
         logger.info(
-            f"Re-index task {task_id} completed: "
-            f"{stats['indexed_files']}/{stats['total_files']} files, "
-            f"{stats['total_chunks']} chunks, "
-            f"{stats['failed_files']} failures"
+            f"Re-index coordinator dispatched {dispatched} workers "
+            f"for {total_files} files (user {user_id})"
         )
-        return stats
+        return {"status": "dispatched", "total_files": total_files, "workers": dispatched}
 
     except Exception as e:
-        logger.error(f"Re-index task {task_id} failed: {e}")
-        stats["error"] = str(e)
+        logger.error(f"Re-index coordinator failed: {e}")
         with contextlib.suppress(Exception):
-            tracker.fail(message=f"Re-index failed: {e}")
-        return stats
+            _restore_normal_mode()
+        return {"error": str(e)}
+
+
+@celery_app.task(name="reindex_batch", queue="cpu", priority=CPUPriority.MAINTENANCE)
+def reindex_batch_task(
+    file_ids: list[int],
+    user_id: int,
+) -> dict[str, Any]:
+    """Process a partition of files for re-indexing.
+
+    Each worker indexes its assigned files and updates Redis state
+    atomically. The last worker to finish handles cleanup.
+    """
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+    from app.services.search.indexing_service import TranscriptIndexingService
+
+    indexing_service = TranscriptIndexingService()
+    redis = get_redis()
+    state_key = _REINDEX_STATE_KEY.format(user_id=user_id)
+    uuids_key = _REINDEX_UUIDS_KEY.format(user_id=user_id)
+
+    local_stats = {"indexed": 0, "failed": 0, "skipped": 0, "chunks": 0}
+    cancelled = False
+    page_size = 50
+
+    for batch_start in range(0, len(file_ids), page_size):
+        if cancelled:
+            break
+        batch_ids = file_ids[batch_start : batch_start + page_size]
+
+        with session_scope() as db:
+            page_files = (
+                db.query(MediaFile).filter(MediaFile.id.in_(batch_ids)).order_by(MediaFile.id).all()
+            )
+
+            for media_file in page_files:
+                # Check cancellation between files
+                if _is_cancellation_requested(user_id):
+                    logger.info(f"Reindex batch cancelled for user {user_id}")
+                    cancelled = True
+                    break
+
+                file_uuid = str(media_file.uuid)
+                try:
+                    metadata = _extract_file_metadata(db, media_file)
+                    if metadata is None:
+                        local_stats["skipped"] += 1
+                        continue
+
+                    chunk_count = indexing_service.reindex_transcript(
+                        file_id=metadata["file_id"],
+                        file_uuid=metadata["file_uuid"],
+                        user_id=user_id,
+                        segments=metadata["segments"],
+                        title=metadata["title"],
+                        speakers=metadata["speakers"],
+                        tags=metadata["tags"],
+                        upload_time=metadata["upload_time"],
+                        language=metadata["language"],
+                        content_type=metadata["content_type"],
+                        duration=metadata["duration"],
+                        file_size=metadata["file_size"],
+                        collection_ids=metadata["collection_ids"],
+                        accessible_user_ids=metadata.get("accessible_user_ids"),
+                    )
+
+                    local_stats["indexed"] += 1
+                    local_stats["chunks"] += chunk_count
+
+                    # Track indexed UUID for orphan cleanup
+                    redis.sadd(uuids_key, file_uuid)
+
+                    # Update global progress atomically
+                    redis.hincrby(state_key, "indexed", 1)
+                    redis.hincrby(state_key, "chunks", chunk_count)
+
+                    # Send progress notification
+                    _send_reindex_progress(redis, user_id)
+
+                except Exception as e:
+                    logger.error(f"Error re-indexing file {file_uuid}: {e}")
+                    local_stats["failed"] += 1
+                    redis.hincrby(state_key, "failed", 1)
+
+    # Update skipped count
+    if local_stats["skipped"]:
+        redis.hincrby(state_key, "skipped", local_stats["skipped"])
+
+    # Mark this worker as done
+    workers_done = redis.hincrby(state_key, "workers_done", 1)
+    worker_count = int(redis.hget(state_key, "worker_count") or 1)
+
+    # Last worker handles cleanup
+    if workers_done >= worker_count:
+        _handle_reindex_completion(redis, user_id, state_key, uuids_key)
+
+    return local_stats
+
+
+def _handle_reindex_completion(
+    redis_client: Any, user_id: int, state_key: str, uuids_key: str
+) -> None:
+    """Final cleanup after all reindex workers complete."""
+    _restore_normal_mode()
+    _refresh_index_and_clear_cache()
+    _force_merge_after_reindex()
+
+    # Orphan cleanup
+    indexed_uuids = redis_client.smembers(uuids_key)
+    if indexed_uuids:
+        # Redis returns bytes or strings depending on decode_responses
+        uuid_set = {u.decode() if isinstance(u, bytes) else u for u in indexed_uuids}
+        orphan_cleaned = _cleanup_orphaned_chunks(user_id, uuid_set)
+        if orphan_cleaned > 0:
+            logger.info(f"Cleaned {orphan_cleaned} orphaned chunks for user {user_id}")
+
+    # Read final stats
+    state = redis_client.hgetall(state_key)
+    indexed = int(state.get(b"indexed", state.get("indexed", 0)))
+    total = int(state.get(b"total", state.get("total", 0)))
+    failed = int(state.get(b"failed", state.get("failed", 0)))
+    chunks = int(state.get(b"chunks", state.get("chunks", 0)))
+
+    # Complete progress tracker
+    with contextlib.suppress(Exception):
+        from app.services.progress_tracker import ProgressTracker
+
+        tracker = ProgressTracker(task_type="reindex", user_id=user_id, total=total)
+        tracker.complete(message="Re-indexing complete")
+
+    # Send completion notification
+    stats = {
+        "total_files": total,
+        "indexed_files": indexed,
+        "failed_files": failed,
+        "total_chunks": chunks,
+    }
+    send_ws_event(user_id, NOTIFICATION_TYPE_REINDEX_COMPLETE, {"stats": stats})
+
+    # Cleanup Redis keys
+    redis_client.delete(state_key, uuids_key)
+    _clear_cancellation_flag(user_id)
+
+    logger.info(
+        f"Re-index complete for user {user_id}: "
+        f"{indexed}/{total} files, {chunks} chunks, {failed} failures"
+    )
 
 
 def _cleanup_orphaned_chunks(user_id: int, indexed_file_uuids: set[str]) -> int:

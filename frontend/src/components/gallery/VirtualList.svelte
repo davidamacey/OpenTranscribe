@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { galleryStore } from '$stores/gallery';
   import { t } from '$stores/locale';
+  import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import type { MediaFile } from '$lib/types/media';
 
   export let items: MediaFile[] = [];
@@ -194,6 +195,8 @@
           href={isSelecting ? '#' : `/files/${file.uuid}`}
           class="file-list-link"
           on:click={(e) => handleRowClick(file, e)}
+          on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid)}
+          on:mouseleave={cancelPrefetch}
         >
           <!-- Type Icon -->
           <div class="list-cell list-cell-type">

@@ -4,6 +4,7 @@
   import { cachedThumbnail } from '$lib/thumbnailCache';
   import { galleryStore } from '$stores/gallery';
   import { t } from '$stores/locale';
+  import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import type { MediaFile } from '$lib/types/media';
 
   export let items: MediaFile[] = [];
@@ -222,6 +223,8 @@
             href={isSelecting ? '#' : `/files/${file.uuid}`}
             class="file-card-link"
             on:click={(e) => handleCardClick(file, e)}
+            on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid)}
+            on:mouseleave={cancelPrefetch}
           >
             <div class="file-content">
               {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
