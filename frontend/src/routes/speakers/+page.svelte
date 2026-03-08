@@ -900,19 +900,24 @@
                     autofocus />
                 {:else}
                   <div class="profile-name">{profile.name || $t('speakers.profiles.unnamed')}</div>
+                  {#if profile.is_shared}
+                    <span class="shared-badge" title={profile.owner_name ? $t('speakers.profiles.sharedBy', { name: profile.owner_name }) : $t('speakers.profiles.shared')}>{$t('speakers.profiles.shared')}</span>
+                  {/if}
                 {/if}
                 <div class="profile-actions">
-                  <button class="icon-btn" on:click={() => startEditProfile(profile)} title={$t('speakers.profiles.edit')}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                    </svg>
-                  </button>
-                  <button class="icon-btn danger" on:click={() => confirmDeleteProfile(profile.uuid)} title={$t('speakers.profiles.deleteBtn')}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  </button>
+                  {#if !profile.is_shared}
+                    <button class="icon-btn" on:click={() => startEditProfile(profile)} title={$t('speakers.profiles.edit')}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                      </svg>
+                    </button>
+                    <button class="icon-btn danger" on:click={() => confirmDeleteProfile(profile.uuid)} title={$t('speakers.profiles.deleteBtn')}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                  {/if}
                 </div>
               </div>
               {#if profile.description}
@@ -1925,5 +1930,22 @@
   .preview-close:hover {
     color: var(--text-color);
     background: var(--button-hover, var(--background-color));
+  }
+
+  .shared-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--accent-light, #e0e7ff);
+    color: var(--accent, #4f46e5);
+    margin-left: 6px;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  :global(.dark) .shared-badge {
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
   }
 </style>

@@ -286,10 +286,20 @@ def _process_speaker_embeddings(
 
     matching_start = time.perf_counter()
     with session_scope() as db:
+        # Compute accessible profiles for cross-user matching via shared collections
+        from app.services.permission_service import PermissionService
+
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, ctx.user_id)
+
         matching_service = SpeakerMatchingService(db, embedding_service)
         logger.info(f"Starting speaker matching for {len(speaker_mapping)} speakers")
         speaker_results = matching_service.process_speaker_segments(
-            audio_file_path, ctx.file_id, ctx.user_id, processed_segments, speaker_mapping
+            audio_file_path,
+            ctx.file_id,
+            ctx.user_id,
+            processed_segments,
+            speaker_mapping,
+            accessible_profile_ids=accessible_ids,
         )
         matching_elapsed = time.perf_counter() - matching_start
         logger.info(
@@ -345,6 +355,11 @@ def _process_speaker_embeddings_native(
 
     matching_start = time.perf_counter()
     with session_scope() as db:
+        # Compute accessible profiles for cross-user matching via shared collections
+        from app.services.permission_service import PermissionService
+
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, ctx.user_id)
+
         matching_service = SpeakerMatchingService(db, embedding_service=None)
         logger.info(
             f"Starting native speaker matching for {len(db_embeddings)} speakers "
@@ -354,6 +369,7 @@ def _process_speaker_embeddings_native(
             media_file_id=ctx.file_id,
             user_id=ctx.user_id,
             native_embeddings=db_embeddings,
+            accessible_profile_ids=accessible_ids,
         )
         matching_elapsed = time.perf_counter() - matching_start
         logger.info(

@@ -100,4 +100,6 @@ export interface SpeakerProfile {
   created_at: string;
   updated_at: string;
   avatar_url?: string | null;
+  is_shared?: boolean;
+  owner_name?: string | null;
 }

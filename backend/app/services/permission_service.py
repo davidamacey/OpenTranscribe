@@ -20,6 +20,8 @@ from app.models.group import UserGroupMember
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
+from app.models.media import Speaker
+from app.models.media import SpeakerProfile
 from app.models.sharing import CollectionShare
 
 logger = logging.getLogger(__name__)
@@ -308,3 +310,83 @@ class PermissionService:
                     user_ids.add(uid)
 
         return list(user_ids)
+
+    @staticmethod
+    def get_accessible_profile_ids(db: Session, user_id: int) -> set[int]:
+        """Return profile IDs the user can access (own + shared via collections).
+
+        Union of:
+        - Profiles owned by the user
+        - Profiles linked to speakers in files in collections shared with the user
+        """
+        user_group_ids = (
+            select(UserGroupMember.group_id)
+            .where(UserGroupMember.user_id == user_id)
+            .scalar_subquery()
+        )
+
+        # Own profiles
+        owned = db.query(SpeakerProfile.id).filter(SpeakerProfile.user_id == user_id).all()
+
+        # Shared profiles via collection chain
+        shared = (
+            db.query(SpeakerProfile.id)
+            .join(Speaker, Speaker.profile_id == SpeakerProfile.id)
+            .join(MediaFile, MediaFile.id == Speaker.media_file_id)
+            .join(CollectionMember, CollectionMember.media_file_id == MediaFile.id)
+            .join(
+                CollectionShare,
+                CollectionShare.collection_id == CollectionMember.collection_id,
+            )
+            .filter(
+                or_(
+                    CollectionShare.target_user_id == user_id,
+                    CollectionShare.target_group_id.in_(user_group_ids),
+                )
+            )
+            .distinct()
+            .all()
+        )
+
+        return {row[0] for row in owned} | {row[0] for row in shared}
+
+    @staticmethod
+    def get_accessible_profile_ids_with_source(db: Session, user_id: int) -> list[tuple[int, bool]]:
+        """Return (profile_id, is_own) tuples for accessible profiles.
+
+        Used by API endpoints to label shared vs owned profiles.
+        """
+        user_group_ids = (
+            select(UserGroupMember.group_id)
+            .where(UserGroupMember.user_id == user_id)
+            .scalar_subquery()
+        )
+
+        owned_ids = set(
+            row[0]
+            for row in db.query(SpeakerProfile.id).filter(SpeakerProfile.user_id == user_id).all()
+        )
+
+        shared_ids = set(
+            row[0]
+            for row in db.query(SpeakerProfile.id)
+            .join(Speaker, Speaker.profile_id == SpeakerProfile.id)
+            .join(MediaFile, MediaFile.id == Speaker.media_file_id)
+            .join(CollectionMember, CollectionMember.media_file_id == MediaFile.id)
+            .join(
+                CollectionShare,
+                CollectionShare.collection_id == CollectionMember.collection_id,
+            )
+            .filter(
+                or_(
+                    CollectionShare.target_user_id == user_id,
+                    CollectionShare.target_group_id.in_(user_group_ids),
+                )
+            )
+            .distinct()
+            .all()
+        )
+
+        result = [(pid, True) for pid in owned_ids]
+        result.extend((pid, False) for pid in shared_ids - owned_ids)
+        return result

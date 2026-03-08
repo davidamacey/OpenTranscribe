@@ -20,6 +20,7 @@ from app.models.media import SpeakerCollectionMember
 from app.models.media import SpeakerProfile
 from app.models.user import User
 from app.services.opensearch_service import update_speaker_collections
+from app.services.permission_service import PermissionService
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
@@ -37,9 +38,22 @@ def list_speaker_profiles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """List all speaker profiles for the current user."""
+    """List all speaker profiles for the current user, including shared profiles."""
     try:
-        query = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id)
+        # Admins see all profiles; regular users see own + shared
+        is_admin = getattr(current_user, "is_admin", False)
+        if is_admin:
+            query = db.query(SpeakerProfile)
+            owned_ids: set[int] = set()  # Will compute below for is_shared flag
+        else:
+            accessible = PermissionService.get_accessible_profile_ids_with_source(
+                db, int(current_user.id)
+            )
+            if not accessible:
+                return []
+            accessible_ids = [pid for pid, _ in accessible]
+            owned_ids = {pid for pid, is_own in accessible if is_own}
+            query = db.query(SpeakerProfile).filter(SpeakerProfile.id.in_(accessible_ids))
 
         if collection_uuid:
             # Filter by collection - convert UUID to ID
@@ -58,25 +72,47 @@ def list_speaker_profiles(
 
         profiles = query.all()
 
+        # For admin, compute owned_ids to mark is_shared correctly
+        if is_admin:
+            owned_ids = {
+                row[0]
+                for row in db.query(SpeakerProfile.id)
+                .filter(SpeakerProfile.user_id == current_user.id)
+                .all()
+            }
+
+        # Pre-fetch owner names for shared profiles
+        owner_user_ids = {
+            int(p.user_id) for p in profiles if int(p.user_id) != int(current_user.id)
+        }
+        owner_names: dict[int, str] = {}
+        if owner_user_ids:
+            owners = db.query(User).filter(User.id.in_(owner_user_ids)).all()
+            for owner in owners:
+                owner_names[int(owner.id)] = owner.full_name or owner.email or f"User {owner.id}"
+
         from sqlalchemy import func as sa_func
 
         result = []
         for profile in profiles:
+            profile_id = int(profile.id)
+            is_shared = profile_id not in owned_ids
+
             # Count unique media files where this profile's speakers appear
             media_count = (
                 db.query(sa_func.count(sa_func.distinct(Speaker.media_file_id)))
-                .filter(Speaker.profile_id == profile.id)
+                .filter(Speaker.profile_id == profile_id)
                 .scalar()
             ) or 0
 
             # Count speaker instances (one per media file where profile appears)
-            instance_count = db.query(Speaker).filter(Speaker.profile_id == profile.id).count()
+            instance_count = db.query(Speaker).filter(Speaker.profile_id == profile_id).count()
 
             # Get the most common predicted_gender from profile speakers
             gender_row = (
                 db.query(Speaker.predicted_gender, sa_func.count().label("cnt"))
                 .filter(
-                    Speaker.profile_id == profile.id,
+                    Speaker.profile_id == profile_id,
                     Speaker.predicted_gender.isnot(None),
                 )
                 .group_by(Speaker.predicted_gender)
@@ -104,6 +140,8 @@ def list_speaker_profiles(
                     "media_count": media_count,
                     "predicted_gender": gender_row[0] if gender_row else None,
                     "avatar_url": avatar_url,
+                    "is_shared": is_shared,
+                    "owner_name": owner_names.get(int(profile.user_id)) if is_shared else None,
                 }
             )
 
@@ -228,17 +266,21 @@ def assign_speaker_to_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Assign a speaker instance to a profile."""
+    """Assign a speaker instance to a profile (own or shared)."""
     try:
-        # Verify speaker exists and belongs to user
+        # Verify speaker exists and user has file-level access
         speaker = get_speaker_by_uuid(db, speaker_uuid)
-        if speaker.user_id != current_user.id:
+        file_perm = PermissionService.get_file_permission(
+            db, int(speaker.media_file_id), int(current_user.id)
+        )
+        if not file_perm:
             raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
         speaker_id = speaker.id
 
-        # Verify profile exists and belongs to user
+        # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        if profile.user_id != current_user.id:
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
+        if int(profile.id) not in accessible_ids:
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
@@ -275,7 +317,11 @@ def assign_speaker_to_profile(
 
 
 def _get_embedding_suggestions(
-    db: Session, speaker_id: int, current_user: User, threshold: float
+    db: Session,
+    speaker_id: int,
+    current_user: User,
+    threshold: float,
+    accessible_profile_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
     """Get profile suggestions based on voice embeddings."""
     from app.core.constants import SPEAKER_CONFIDENCE_HIGH
@@ -295,7 +341,11 @@ def _get_embedding_suggestions(
     speaker_embedding = get_speaker_embedding(str(speaker.uuid))
     if speaker_embedding:
         profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-            db, speaker_embedding, int(current_user.id), threshold=threshold
+            db,
+            speaker_embedding,
+            int(current_user.id),
+            threshold=threshold,
+            accessible_profile_ids=accessible_profile_ids,
         )
 
         for match in profile_matches:
@@ -333,7 +383,12 @@ def _get_embedding_suggestions(
     return suggestions
 
 
-def _get_llm_suggestions(db: Session, speaker: Speaker, current_user: User) -> list[dict[str, Any]]:
+def _get_llm_suggestions(
+    db: Session,
+    speaker: Speaker,
+    current_user: User,
+    accessible_profile_ids: set[int] | None = None,
+) -> list[dict[str, Any]]:
     """Get profile suggestions based on LLM analysis."""
     from app.services.speaker_matching_service import SpeakerMatchingService
 
@@ -343,15 +398,15 @@ def _get_llm_suggestions(db: Session, speaker: Speaker, current_user: User) -> l
         and speaker.confidence
         and speaker.suggestion_source == "llm_analysis"
     ):
-        # Check if suggested_name matches any existing profiles
-        suggested_profile = (
-            db.query(SpeakerProfile)
-            .filter(
-                SpeakerProfile.user_id == current_user.id,
-                SpeakerProfile.name.ilike(f"%{speaker.suggested_name}%"),
-            )
-            .first()
+        # Check if suggested_name matches any accessible profiles
+        profile_query = db.query(SpeakerProfile).filter(
+            SpeakerProfile.name.ilike(f"%{speaker.suggested_name}%"),
         )
+        if accessible_profile_ids is not None:
+            profile_query = profile_query.filter(SpeakerProfile.id.in_(accessible_profile_ids))
+        else:
+            profile_query = profile_query.filter(SpeakerProfile.user_id == current_user.id)
+        suggested_profile = profile_query.first()
 
         matching_service = SpeakerMatchingService(db, None)  # type: ignore[arg-type]
         confidence_level = matching_service.get_confidence_level(float(speaker.confidence))
@@ -398,9 +453,12 @@ def get_speaker_profile_suggestions(
 ):
     """Get profile suggestions for a speaker based on both embeddings and LLM analysis."""
     try:
-        # Verify speaker exists and belongs to user
+        # Verify speaker exists and user has file-level access
         speaker = get_speaker_by_uuid(db, speaker_uuid)
-        if speaker.user_id != current_user.id:
+        file_perm = PermissionService.get_file_permission(
+            db, int(speaker.media_file_id), int(current_user.id)
+        )
+        if not file_perm:
             raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
         speaker_id = speaker.id
 
@@ -413,10 +471,23 @@ def get_speaker_profile_suggestions(
         if not media_file:
             return []
 
+        # Compute accessible profiles for cross-user matching
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
+
         # Get suggestions from different sources
         suggestions: list[dict[str, Any]] = []
-        suggestions.extend(_get_embedding_suggestions(db, int(speaker_id), current_user, threshold))
-        suggestions.extend(_get_llm_suggestions(db, speaker, current_user))
+        suggestions.extend(
+            _get_embedding_suggestions(
+                db,
+                int(speaker_id),
+                current_user,
+                threshold,
+                accessible_profile_ids=accessible_ids,
+            )
+        )
+        suggestions.extend(
+            _get_llm_suggestions(db, speaker, current_user, accessible_profile_ids=accessible_ids)
+        )
 
         # Sort suggestions by confidence (highest first) and source priority
         def sort_key(suggestion):
@@ -441,9 +512,10 @@ def get_speaker_profile_occurrences(
 ):
     """Get all media files where a speaker profile appears."""
     try:
-        # Verify profile exists and belongs to user
+        # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        if profile.user_id != current_user.id:
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
+        if int(profile.id) not in accessible_ids:
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 

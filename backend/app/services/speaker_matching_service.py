@@ -53,7 +53,10 @@ class SpeakerMatchingService:
             return "low"
 
     def match_speaker_to_known_speakers(
-        self, embedding: np.ndarray, user_id: int
+        self,
+        embedding: np.ndarray,
+        user_id: int,
+        accessible_profile_ids: set[int] | None = None,
     ) -> dict[str, Any] | None:
         """
         Match a speaker embedding to known speakers, prioritizing profile embeddings
@@ -62,12 +65,16 @@ class SpeakerMatchingService:
         Args:
             embedding: Speaker embedding vector
             user_id: User ID
+            accessible_profile_ids: Optional set of profile IDs to search within
+                (for shared profile scope). If None, filters by user_id.
 
         Returns:
             Dictionary with speaker info and confidence, or None
         """
         # First, try to match against profile embeddings for better accuracy
-        profile_match = self.match_speaker_to_profiles(embedding, user_id)
+        profile_match = self.match_speaker_to_profiles(
+            embedding, user_id, accessible_profile_ids=accessible_profile_ids
+        )
 
         if profile_match and profile_match["confidence"] >= ConfidenceLevel.MEDIUM:
             return profile_match
@@ -109,7 +116,10 @@ class SpeakerMatchingService:
         }
 
     def match_speaker_to_profiles(
-        self, embedding: np.ndarray, user_id: int
+        self,
+        embedding: np.ndarray,
+        user_id: int,
+        accessible_profile_ids: set[int] | None = None,
     ) -> dict[str, Any] | None:
         """
         Match a speaker embedding against consolidated profile embeddings.
@@ -118,6 +128,8 @@ class SpeakerMatchingService:
         Args:
             embedding: Speaker embedding vector
             user_id: User ID
+            accessible_profile_ids: Optional set of profile IDs to search within
+                (for shared profile scope). If None, filters by user_id.
 
         Returns:
             Dictionary with profile match info and confidence, or None
@@ -127,7 +139,11 @@ class SpeakerMatchingService:
 
             # Get profile matches using the ProfileEmbeddingService
             profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-                self.db, embedding.tolist(), user_id, threshold=ConfidenceLevel.LOW
+                self.db,
+                embedding.tolist(),
+                user_id,
+                threshold=ConfidenceLevel.LOW,
+                accessible_profile_ids=accessible_profile_ids,
             )
 
             if not profile_matches:
@@ -137,15 +153,25 @@ class SpeakerMatchingService:
             best_match = profile_matches[0]
             confidence = best_match["similarity"]
 
-            # Get the profile from database to verify it exists
-            profile = (
-                self.db.query(SpeakerProfile)
-                .filter(
-                    SpeakerProfile.id == best_match["profile_id"],
-                    SpeakerProfile.user_id == user_id,
+            # Verify profile exists and is accessible
+            if accessible_profile_ids is not None:
+                profile = (
+                    self.db.query(SpeakerProfile)
+                    .filter(
+                        SpeakerProfile.id == best_match["profile_id"],
+                        SpeakerProfile.id.in_(accessible_profile_ids),
+                    )
+                    .first()
                 )
-                .first()
-            )
+            else:
+                profile = (
+                    self.db.query(SpeakerProfile)
+                    .filter(
+                        SpeakerProfile.id == best_match["profile_id"],
+                        SpeakerProfile.user_id == user_id,
+                    )
+                    .first()
+                )
 
             if not profile:
                 return None
@@ -406,6 +432,7 @@ class SpeakerMatchingService:
         user_id: int,
         segments: list[dict[str, Any]],
         speaker_mapping: dict[str, int],
+        accessible_profile_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Process speaker segments and match to profiles.
@@ -416,6 +443,7 @@ class SpeakerMatchingService:
             user_id: User ID
             segments: Transcript segments
             speaker_mapping: Mapping of speaker labels to IDs
+            accessible_profile_ids: Optional set of accessible profile IDs for shared matching
 
         Returns:
             List of speaker match results
@@ -430,7 +458,13 @@ class SpeakerMatchingService:
         results = []
 
         for speaker_id, embeddings in speaker_embeddings.items():
-            result = self._process_single_speaker(speaker_id, embeddings, user_id, media_file_id)
+            result = self._process_single_speaker(
+                speaker_id,
+                embeddings,
+                user_id,
+                media_file_id,
+                accessible_profile_ids=accessible_profile_ids,
+            )
             if result:
                 results.append(result)
 
@@ -442,6 +476,7 @@ class SpeakerMatchingService:
         media_file_id: int,
         user_id: int,
         native_embeddings: dict[int, np.ndarray],
+        accessible_profile_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Process pre-computed native speaker embeddings (from PyAnnote centroids).
 
@@ -452,13 +487,20 @@ class SpeakerMatchingService:
             media_file_id: Media file ID.
             user_id: User ID.
             native_embeddings: Mapping of speaker DB ID -> L2-normalized embedding.
+            accessible_profile_ids: Optional set of accessible profile IDs for shared matching.
 
         Returns:
             List of speaker match results.
         """
         results = []
         for speaker_id, embedding in native_embeddings.items():
-            result = self._process_single_speaker(speaker_id, [embedding], user_id, media_file_id)
+            result = self._process_single_speaker(
+                speaker_id,
+                [embedding],
+                user_id,
+                media_file_id,
+                accessible_profile_ids=accessible_profile_ids,
+            )
             if result:
                 results.append(result)
 
@@ -466,7 +508,12 @@ class SpeakerMatchingService:
         return results
 
     def _process_single_speaker(
-        self, speaker_id: int, embeddings: list[np.ndarray], user_id: int, media_file_id: int
+        self,
+        speaker_id: int,
+        embeddings: list[np.ndarray],
+        user_id: int,
+        media_file_id: int,
+        accessible_profile_ids: set[int] | None = None,
     ) -> dict[str, Any] | None:
         """
         Process a single speaker's embeddings and find matches.
@@ -510,7 +557,9 @@ class SpeakerMatchingService:
             return None
 
         # Try to match to known speakers with display names
-        match = self.match_speaker_to_known_speakers(aggregated_embedding, user_id)
+        match = self.match_speaker_to_known_speakers(
+            aggregated_embedding, user_id, accessible_profile_ids=accessible_profile_ids
+        )
 
         if match:
             return self._handle_speaker_match(

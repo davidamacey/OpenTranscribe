@@ -735,13 +735,23 @@ def extract_speaker_embeddings_task(
                 )
 
                 try:
+                    # Compute accessible profiles for cross-user matching
+                    from app.services.permission_service import PermissionService
+
+                    accessible_ids = PermissionService.get_accessible_profile_ids(db, user_id)
+
                     matching_service = SpeakerMatchingService(db, embedding_service)
                     logger.info(
                         f"Starting speaker matching for {len(speaker_mapping)} speakers in file {file_id}"
                     )
 
                     speaker_results = matching_service.process_speaker_segments(
-                        audio_file_path, file_id, user_id, processed_segments, speaker_mapping
+                        audio_file_path,
+                        file_id,
+                        user_id,
+                        processed_segments,
+                        speaker_mapping,
+                        accessible_profile_ids=accessible_ids,
                     )
 
                     update_task_status(db, task_id, "in_progress", progress=0.9)

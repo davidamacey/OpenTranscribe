@@ -23,6 +23,7 @@ from app.models.user import User
 from app.schemas.media import Speaker as SpeakerSchema
 from app.schemas.media import SpeakerUpdate
 from app.services.opensearch_service import update_speaker_display_name
+from app.services.permission_service import PermissionService
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.uuid_helpers import get_speaker_by_uuid
 
@@ -919,7 +920,10 @@ def get_speaker_cross_media_occurrences(
     """
     try:
         speaker = get_speaker_by_uuid(db, speaker_uuid)
-        if speaker.user_id != current_user.id:
+        file_perm = PermissionService.get_file_permission(
+            db, int(speaker.media_file_id), int(current_user.id)
+        )
+        if not file_perm:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
         if speaker.profile_id:
@@ -958,7 +962,10 @@ def verify_speaker_identification(
     """
     try:
         speaker = get_speaker_by_uuid(db, speaker_uuid)
-        if speaker.user_id != current_user.id:
+        file_perm = PermissionService.get_file_permission(
+            db, int(speaker.media_file_id), int(current_user.id)
+        )
+        if not file_perm:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
         profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
@@ -1055,8 +1062,11 @@ def get_speaker(
     """
     speaker = get_speaker_by_uuid(db, speaker_uuid)
 
-    # Verify ownership
-    if speaker.user_id != current_user.id:
+    # Verify file-level access (own or shared via collection)
+    file_perm = PermissionService.get_file_permission(
+        db, int(speaker.media_file_id), int(current_user.id)
+    )
+    if not file_perm:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     # Add computed status fields
@@ -1489,12 +1499,13 @@ def _accept_speaker_profile_match(
     speaker: Speaker, speaker_id: int, profile_id: int, current_user: User, db: Session
 ) -> dict[str, Any]:
     """Handle acceptance of a speaker profile match."""
-    # Verify profile exists
+    # Verify profile exists and is accessible (own or shared)
+    accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
     profile = (
         db.query(SpeakerProfile)
         .filter(
             SpeakerProfile.id == profile_id,
-            SpeakerProfile.user_id == current_user.id,
+            SpeakerProfile.id.in_(accessible_ids),
         )
         .first()
     )
@@ -1626,14 +1637,15 @@ def _create_new_speaker_profile(
 def _resolve_profile_uuid_to_id(
     profile_uuid: str | None, current_user: User, db: Session
 ) -> int | None:
-    """Convert profile UUID to internal ID if provided, validating ownership."""
+    """Convert profile UUID to internal ID if provided, validating access."""
     if not profile_uuid:
         return None
 
     from app.utils.uuid_helpers import get_speaker_profile_by_uuid
 
     profile = get_speaker_profile_by_uuid(db, profile_uuid)
-    if profile.user_id != current_user.id:
+    accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
+    if int(profile.id) not in accessible_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
     return int(profile.id)
 

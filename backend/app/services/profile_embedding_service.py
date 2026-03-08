@@ -148,10 +148,18 @@ def _check_profiles_exist_in_opensearch(
     opensearch_client: Any,
     index_name: str,
     user_id: int,
+    accessible_profile_ids: set[int] | None = None,
 ) -> bool:
-    """Check if any profile documents exist for the user in OpenSearch."""
+    """Check if any profile documents exist for the user/scope in OpenSearch."""
     from app.services.opensearch_service import _is_index_corruption_error
     from app.services.opensearch_service import _repair_index
+
+    # Build filter based on scope
+    user_filter: dict[str, Any]
+    if accessible_profile_ids is not None:
+        user_filter = {"terms": {"profile_id": list(accessible_profile_ids)}}
+    else:
+        user_filter = {"term": {"user_id": user_id}}
 
     profile_check_query = {
         "size": 1,
@@ -159,7 +167,7 @@ def _check_profiles_exist_in_opensearch(
             "bool": {
                 "filter": [
                     {"term": {"document_type": "profile"}},
-                    {"term": {"user_id": user_id}},
+                    user_filter,
                 ]
             }
         },
@@ -168,7 +176,7 @@ def _check_profiles_exist_in_opensearch(
     try:
         profile_check = opensearch_client.search(index=index_name, body=profile_check_query)
         if profile_check["hits"]["total"]["value"] == 0:
-            logger.info(f"No profile documents found for user {user_id}, skipping KNN search")
+            logger.info(f"No profile documents found for user/scope {user_id}, skipping KNN search")
             return False
     except Exception as e:
         if _is_index_corruption_error(e):
@@ -179,7 +187,9 @@ def _check_profiles_exist_in_opensearch(
                         index=index_name, body=profile_check_query
                     )
                     if profile_check["hits"]["total"]["value"] == 0:
-                        logger.info(f"No profile documents found for user {user_id} after repair")
+                        logger.info(
+                            f"No profile documents found for user/scope {user_id} after repair"
+                        )
                         return False
                     return True
                 except Exception as retry_err:
@@ -195,15 +205,22 @@ def _execute_knn_search(
     embedding: list[float],
     user_id: int,
     threshold: float,
+    accessible_profile_ids: set[int] | None = None,
 ) -> list[dict]:
     """Execute KNN search and return matches above threshold."""
     from app.services.opensearch_service import _is_index_corruption_error
     from app.services.opensearch_service import _repair_index
 
-    filters = [
-        {"term": {"document_type": "profile"}},
-        {"term": {"user_id": user_id}},
-    ]
+    if accessible_profile_ids is not None:
+        filters = [
+            {"term": {"document_type": "profile"}},
+            {"terms": {"profile_id": list(accessible_profile_ids)}},
+        ]
+    else:
+        filters = [
+            {"term": {"document_type": "profile"}},
+            {"term": {"user_id": user_id}},
+        ]
 
     query = {
         "size": 25,
@@ -590,7 +607,11 @@ class ProfileEmbeddingService:
 
     @staticmethod
     def calculate_profile_similarity(
-        db: Session, embedding: list[float], user_id: int, threshold: float = 0.7
+        db: Session,
+        embedding: list[float],
+        user_id: int,
+        threshold: float = 0.7,
+        accessible_profile_ids: set[int] | None = None,
     ) -> list[dict]:
         """
         Find speaker profiles using OpenSearch native kNN search for optimal performance.
@@ -603,6 +624,8 @@ class ProfileEmbeddingService:
             embedding: The embedding to compare against
             user_id: User ID to filter profiles
             threshold: Minimum similarity threshold
+            accessible_profile_ids: Optional set of profile IDs to search within
+                (for shared profile scope). If None, filters by user_id.
 
         Returns:
             List of matching profiles with similarity scores
@@ -615,7 +638,10 @@ class ProfileEmbeddingService:
                 return []
 
             if not _check_profiles_exist_in_opensearch(
-                opensearch_client, settings.OPENSEARCH_SPEAKER_INDEX, user_id
+                opensearch_client,
+                settings.OPENSEARCH_SPEAKER_INDEX,
+                user_id,
+                accessible_profile_ids=accessible_profile_ids,
             ):
                 return []
 
@@ -625,6 +651,7 @@ class ProfileEmbeddingService:
                 embedding,
                 user_id,
                 threshold,
+                accessible_profile_ids=accessible_profile_ids,
             )
 
             logger.info(

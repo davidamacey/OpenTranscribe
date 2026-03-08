@@ -1292,6 +1292,7 @@ def find_matching_speaker(
     threshold: float = 0.5,
     collection_ids: list[int] | None = None,
     exclude_speaker_ids: list[int] | None = None,
+    accessible_user_ids: list[int] | None = None,
 ) -> dict[str, Any] | None:
     """
     Find a matching speaker for a given embedding with confidence score
@@ -1302,6 +1303,8 @@ def find_matching_speaker(
         threshold: Minimum similarity threshold (0-1) for matching
         collection_ids: Optional list of collection IDs to search within
         exclude_speaker_ids: Optional list of speaker IDs to exclude
+        accessible_user_ids: Optional list of user IDs to search within
+            (for shared profile scope). If None, filters by user_id.
 
     Returns:
         Dictionary with speaker info and confidence if a match is found, None otherwise
@@ -1314,8 +1317,12 @@ def find_matching_speaker(
         # Ensure indices exist before searching
         ensure_indices_exist()
 
-        # Build filter conditions
-        filters: list[dict[str, Any]] = [{"term": {"user_id": user_id}}]
+        # Build filter conditions - use accessible user IDs for shared profile scope
+        filters: list[dict[str, Any]]
+        if accessible_user_ids:
+            filters = [{"terms": {"user_id": accessible_user_ids}}]
+        else:
+            filters = [{"term": {"user_id": user_id}}]
 
         # Add collection filter if specified
         if collection_ids:

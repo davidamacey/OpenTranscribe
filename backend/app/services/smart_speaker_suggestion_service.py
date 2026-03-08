@@ -64,9 +64,14 @@ def _determine_confidence_level(confidence: float, embedding_count: int = 1) -> 
         )
 
 
-def _check_opensearch_profiles_exist(opensearch_client: Any, settings: Any, user_id: int) -> bool:
+def _check_opensearch_profiles_exist(
+    opensearch_client: Any,
+    settings: Any,
+    user_id: int,
+    accessible_profile_ids: set[int] | None = None,
+) -> bool:
     """
-    Check if any profile documents exist for the user in OpenSearch.
+    Check if any profile documents exist for the user/scope in OpenSearch.
 
     Returns False if index doesn't exist or no profiles found, True otherwise.
     """
@@ -74,13 +79,19 @@ def _check_opensearch_profiles_exist(opensearch_client: Any, settings: Any, user
         logger.info("Speakers index does not exist yet, skipping profile suggestion search")
         return False
 
+    user_filter: dict[str, Any]
+    if accessible_profile_ids is not None:
+        user_filter = {"terms": {"profile_id": list(accessible_profile_ids)}}
+    else:
+        user_filter = {"term": {"user_id": user_id}}
+
     profile_check_query = {
         "size": 1,
         "query": {
             "bool": {
                 "filter": [
                     {"term": {"document_type": "profile"}},
-                    {"term": {"user_id": user_id}},
+                    user_filter,
                 ]
             }
         },
@@ -102,17 +113,28 @@ def _check_opensearch_profiles_exist(opensearch_client: Any, settings: Any, user
 
 
 def _execute_profile_knn_search(
-    opensearch_client: Any, settings: Any, embedding: np.ndarray, user_id: int, threshold: float
+    opensearch_client: Any,
+    settings: Any,
+    embedding: np.ndarray,
+    user_id: int,
+    threshold: float,
+    accessible_profile_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Execute kNN search for profile matches and return filtered results.
 
     Returns list of profile match dictionaries with similarity scores.
     """
-    must_filters = [
-        {"term": {"document_type": "profile"}},
-        {"term": {"user_id": user_id}},
-    ]
+    if accessible_profile_ids is not None:
+        must_filters = [
+            {"term": {"document_type": "profile"}},
+            {"terms": {"profile_id": list(accessible_profile_ids)}},
+        ]
+    else:
+        must_filters = [
+            {"term": {"document_type": "profile"}},
+            {"term": {"user_id": user_id}},
+        ]
 
     query = {
         "size": 10,
@@ -213,6 +235,7 @@ class SmartSpeakerSuggestionService:
         db: Session,
         confidence_threshold: float = 0.5,
         max_suggestions: int = 10,
+        accessible_profile_ids: set[int] | None = None,
     ) -> list[ConsolidatedSuggestion]:
         """
         Generate two types of speaker suggestions: LLM and Profile.
@@ -269,7 +292,11 @@ class SmartSpeakerSuggestionService:
 
         # Step 2: Profile suggestions (speaker-to-profile matching)
         profile_suggestions = SmartSpeakerSuggestionService._get_profile_suggestions_optimized(
-            embedding_array, user_id, db, confidence_threshold
+            embedding_array,
+            user_id,
+            db,
+            confidence_threshold,
+            accessible_profile_ids=accessible_profile_ids,
         )
         suggestions.extend(profile_suggestions)
 
@@ -313,7 +340,11 @@ class SmartSpeakerSuggestionService:
 
     @staticmethod
     def _get_profile_suggestions_optimized(
-        embedding: np.ndarray, user_id: int, db: Session, threshold: float
+        embedding: np.ndarray,
+        user_id: int,
+        db: Session,
+        threshold: float,
+        accessible_profile_ids: set[int] | None = None,
     ) -> list[ConsolidatedSuggestion]:
         """Get suggestions from speaker profiles using OpenSearch native similarity."""
         try:
@@ -325,13 +356,23 @@ class SmartSpeakerSuggestionService:
                 return []
 
             # Check if profiles exist to avoid KNN query on empty sets
-            if not _check_opensearch_profiles_exist(opensearch_client, settings, user_id):
+            if not _check_opensearch_profiles_exist(
+                opensearch_client,
+                settings,
+                user_id,
+                accessible_profile_ids=accessible_profile_ids,
+            ):
                 return []
 
             # Execute kNN search for profile matches
             try:
                 opensearch_matches = _execute_profile_knn_search(
-                    opensearch_client, settings, embedding, user_id, threshold
+                    opensearch_client,
+                    settings,
+                    embedding,
+                    user_id,
+                    threshold,
+                    accessible_profile_ids=accessible_profile_ids,
                 )
             except Exception as e:
                 logger.error(
@@ -352,12 +393,20 @@ class SmartSpeakerSuggestionService:
             logger.error(f"Error in optimized profile suggestions: {e}")
             # Fallback to original method
             return SmartSpeakerSuggestionService._get_profile_suggestions(
-                embedding, user_id, db, threshold
+                embedding,
+                user_id,
+                db,
+                threshold,
+                accessible_profile_ids=accessible_profile_ids,
             )
 
     @staticmethod
     def _get_profile_suggestions(
-        embedding: np.ndarray, user_id: int, db: Session, threshold: float
+        embedding: np.ndarray,
+        user_id: int,
+        db: Session,
+        threshold: float,
+        accessible_profile_ids: set[int] | None = None,
     ) -> list[ConsolidatedSuggestion]:
         """Get suggestions from speaker profiles"""
         suggestions = []
@@ -365,7 +414,11 @@ class SmartSpeakerSuggestionService:
         try:
             # Use ProfileEmbeddingService to find matching profiles
             profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-                db, embedding.tolist(), user_id, threshold=threshold
+                db,
+                embedding.tolist(),
+                user_id,
+                threshold=threshold,
+                accessible_profile_ids=accessible_profile_ids,
             )
 
             for match in profile_matches:
