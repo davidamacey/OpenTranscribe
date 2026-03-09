@@ -242,7 +242,7 @@ class TaskRecoveryService:
 
         For files that failed during YouTube download (have source_url but no
         storage_path), dispatches process_youtube_url_task. For files that have
-        been downloaded, dispatches transcribe_audio_task.
+        been downloaded, dispatches the 3-stage transcription pipeline.
 
         Args:
             media_file_id: ID of the media file to retry
@@ -268,22 +268,23 @@ class TaskRecoveryService:
                 if source_url and not storage_path:
                     from app.tasks.youtube_processing import process_youtube_url_task
 
-                    result = process_youtube_url_task.delay(
+                    yt_result = process_youtube_url_task.delay(
                         url=source_url,
                         user_id=user_id,
                         file_uuid=file_uuid,
                     )
+                    task_id = yt_result.id if yt_result else None
                 else:
-                    from app.tasks.transcription import transcribe_audio_task
+                    from app.tasks.transcription import dispatch_transcription_pipeline
 
-                    result = transcribe_audio_task.delay(file_uuid)
+                    task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
 
             # Validate dispatch succeeded
-            if not result or not result.id:
+            if not task_id:
                 logger.error(f"Celery dispatch returned no task ID for file {media_file_id}")
                 return False
 
-            logger.info(f"Scheduled retry for file {media_file_id}, task ID: {result.id}")
+            logger.info(f"Scheduled retry for file {media_file_id}, task ID: {task_id}")
             return True
 
         except Exception as e:

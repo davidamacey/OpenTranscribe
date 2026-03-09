@@ -17,7 +17,7 @@ from app.models.user import User
 from app.schemas.media import TranscriptSegmentUpdate
 from app.tasks.analytics import analyze_transcript_task
 from app.tasks.summarization import summarize_transcript_task
-from app.tasks.transcription import transcribe_audio_task
+from app.tasks.transcription import dispatch_transcription_pipeline
 from app.utils.auth_decorators import AuthorizationHelper
 from app.utils.error_handlers import ErrorHandler
 
@@ -53,10 +53,10 @@ class TranscriptionService:
 
             # Start transcription task
             file_uuid = str(file_obj.uuid)
-            task = transcribe_audio_task.delay(file_uuid)
+            task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
 
             return {
-                "task_id": task.id,
+                "task_id": task_id,
                 "file_id": file_id,
                 "status": "started",
                 "message": "Transcription task started",

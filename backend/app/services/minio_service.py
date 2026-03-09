@@ -99,6 +99,11 @@ def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
         raise Exception(f"Error downloading file: {e}") from e
 
 
+def download_file_to_path(object_name: str, file_path: str) -> None:
+    """Download a file from MinIO directly to a local path (no memory copy)."""
+    minio_client.fget_object(settings.MEDIA_BUCKET_NAME, object_name, file_path)
+
+
 def _get_object_total_length(object_name: str, logger) -> int | None:
     """
     Get the total size of an object in MinIO.
@@ -369,6 +374,55 @@ def delete_file(object_name: str):
         minio_client.remove_object(bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name)
     except S3Error as e:
         raise Exception(f"Error deleting file: {e}") from e
+
+
+TEMP_PREPROCESS_PREFIX = "temp/preprocess"
+
+
+def upload_temp_audio(file_uuid: str, local_path: str) -> str:
+    """Upload preprocessed audio.wav to MinIO temp storage for cross-worker transfer."""
+    logger = logging.getLogger(__name__)
+    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    file_size = os.path.getsize(local_path)
+    with open(local_path, "rb") as f:
+        minio_client.put_object(
+            settings.MEDIA_BUCKET_NAME,
+            object_name,
+            f,
+            file_size,
+            content_type="audio/wav",
+        )
+    logger.info(f"Uploaded temp audio ({file_size / (1024 * 1024):.1f}MB) to {object_name}")
+    return object_name
+
+
+def download_temp_audio(file_uuid: str, local_path: str) -> None:
+    """Download preprocessed audio.wav from MinIO temp storage."""
+    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    minio_client.fget_object(settings.MEDIA_BUCKET_NAME, object_name, local_path)
+
+
+def cleanup_temp_audio(file_uuid: str) -> None:
+    """Remove preprocessed audio from MinIO temp storage (best-effort)."""
+    logger = logging.getLogger(__name__)
+    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    try:
+        minio_client.remove_object(settings.MEDIA_BUCKET_NAME, object_name)
+        logger.info(f"Cleaned up temp audio: {object_name}")
+    except Exception as e:
+        logger.debug(f"Temp audio cleanup failed (non-fatal): {e}")
+
+
+def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
+    """Get a presigned URL for server-to-server access (no hostname rewriting)."""
+    delta = datetime.timedelta(seconds=expires)
+    return str(
+        minio_client.presigned_get_object(
+            bucket_name=settings.MEDIA_BUCKET_NAME,
+            object_name=object_name,
+            expires=delta,
+        )
+    )
 
 
 class MinIOService:

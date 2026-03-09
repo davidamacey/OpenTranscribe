@@ -14,7 +14,6 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file
-from app.tasks.transcription import transcribe_audio_task
 from app.tasks.waveform import generate_waveform_task
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
@@ -145,9 +144,8 @@ def start_transcription_task(
     """
     Start the background transcription and waveform generation tasks in parallel.
 
-    Routes the transcription task to the appropriate queue based on the user's active
-    ASR provider configuration: cloud providers use the 'cloud-asr' queue while the
-    local GPU provider uses the 'gpu' queue.
+    The transcription pipeline auto-resolves the correct queue based on the user's
+    active ASR provider (cloud-asr for cloud providers, gpu for local).
 
     Args:
         file_id: Database ID of the media file
@@ -155,44 +153,25 @@ def start_transcription_task(
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
-        user_id: Optional user ID used to resolve the active ASR provider
-        db: Optional database session used to resolve the active ASR provider
+        user_id: Unused (kept for backward compatibility)
+        db: Unused (kept for backward compatibility)
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        # Determine which queue to use based on the user's active ASR config
-        task_queue = "gpu"
-        if user_id is not None and db is not None:
-            try:
-                from app.services.asr.factory import ASRProviderFactory
+        # Dispatch 3-stage pipeline chain: CPU preprocess → GPU transcribe → CPU postprocess
+        # Queue routing is auto-resolved inside dispatch_transcription_pipeline
+        from app.tasks.transcription import dispatch_transcription_pipeline
 
-                provider = ASRProviderFactory.create_for_user(user_id, db)
-                if provider.provider_name != "local":
-                    task_queue = "cloud-asr"
-                    logger.info(
-                        f"Routing transcription for file {file_id} to 'cloud-asr' queue "
-                        f"(provider: {provider.provider_name})"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to resolve ASR provider for user {user_id}, "
-                    f"defaulting to 'gpu' queue: {e}"
-                )
-
-        # Launch transcription task on the resolved queue with speaker parameters
-        transcribe_audio_task.apply_async(
-            args=[file_uuid],
-            kwargs={
-                "min_speakers": min_speakers,
-                "max_speakers": max_speakers,
-                "num_speakers": num_speakers,
-            },
-            queue=task_queue,
+        task_id = dispatch_transcription_pipeline(
+            file_uuid=file_uuid,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
         )
         # Launch CPU waveform generation task in parallel
         generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
         logger.info(
             f"Started parallel tasks for file {file_id}: "
-            f"transcription ({task_queue}) and waveform (CPU)"
+            f"pipeline chain (task_id={task_id}) and waveform (CPU)"
         )
     else:
         logger.info("Skipping Celery task in test environment")

@@ -1722,6 +1722,7 @@
     justify-content: center;
     z-index: 1100;
     animation: fadeIn 0.2s ease-out;
+    overscroll-behavior: contain;
   }
 
   @keyframes fadeIn {
@@ -1871,6 +1872,7 @@
     flex: 1;
     overflow-y: auto;
     padding: 1.5rem;
+    overscroll-behavior: contain;
   }
 
   .content-section {

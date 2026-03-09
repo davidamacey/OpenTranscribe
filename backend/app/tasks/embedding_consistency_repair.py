@@ -44,9 +44,15 @@ def _v3_result_writer(
     results_by_model: dict,
     target_uuids: set[str],
 ) -> int:
-    """Write extracted embeddings to the v3 main speaker index."""
+    """Write extracted embeddings to the v3 concrete speaker index.
+
+    IMPORTANT: Writes directly to 'speakers_v3' (not the alias), because
+    the alias may point to speakers_v4 post-finalization.  Writing 512-dim
+    v3 embeddings to a 256-dim v4 index would fail with a dimension mismatch.
+    """
     import numpy as np
 
+    from app.core.constants import get_speaker_index_v3
     from app.services.opensearch_service import add_speaker_embedding
 
     embedding_results = results_by_model.get("embedding", [])
@@ -78,6 +84,7 @@ def _v3_result_writer(
             if norm > 0:
                 aggregated = aggregated / norm
 
+        # Write to concrete v3 index, not the alias
         result = add_speaker_embedding(
             speaker_id=speaker.id,
             speaker_uuid=speaker.uuid,
@@ -86,6 +93,7 @@ def _v3_result_writer(
             embedding=aggregated.tolist(),
             media_file_id=prepared.media_file_id,
             segment_count=len(embs),
+            target_index=get_speaker_index_v3(),
         )
         if result is not None:
             written += 1
@@ -181,7 +189,7 @@ def _update_repair_progress(
                 pipe.unwatch()
                 return None
 
-            progress = json.loads(str(raw_val))
+            progress = json.loads(raw_val)
             progress["processed_files"] = progress.get("processed_files", 0) + 1
             progress["repaired"] = progress.get("repaired", 0) + repaired_count
 
@@ -204,7 +212,7 @@ def _update_repair_progress(
         fallback_raw = r.get(_REDIS_PROGRESS_KEY)
         if not fallback_raw:
             return None
-        progress = json.loads(str(fallback_raw))
+        progress = json.loads(fallback_raw)
         processed = progress.get("processed_files", 0)
 
     # Use ProgressTracker for ETA + queue status integration
@@ -248,6 +256,8 @@ def _run_repair_phase(
     file_written: dict[str, int],
     is_running_check,
     batch_index: int,
+    on_file_done=None,
+    on_file_fail=None,
 ) -> int:
     """Run a single repair phase (v3 or v4) using the migration pipeline."""
     from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
@@ -273,6 +283,12 @@ def _run_repair_phase(
 
         def on_success(fuuid: str) -> None:
             file_written[fuuid] = file_written.get(fuuid, 0) + last_write_count
+            if on_file_done:
+                on_file_done(fuuid)
+
+        def on_failure(fuuid: str, _err) -> None:
+            if on_file_fail:
+                on_file_fail(fuuid)
 
         success, _ = process_batch_pipelined(
             prepared_files=files_with_speakers,
@@ -280,7 +296,7 @@ def _run_repair_phase(
             result_writer=writer,
             is_running_check=is_running_check,
             on_file_success=on_success,
-            on_file_failure=lambda fuuid, _: None,
+            on_file_failure=on_failure,
             min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION,
         )
         return success
@@ -362,11 +378,39 @@ def speaker_embedding_consistency_repair_batch_task(
         return {"status": "no_files", "batch_index": batch_index}
 
     file_written: dict[str, int] = {}
+    # Track which files have already had progress emitted (avoid double-counting)
+    progress_emitted: set[str] = set()
 
     def is_running():
         return bool(r.exists(_REDIS_LOCK_KEY))
 
-    # Phase 2: V3 repair
+    def _on_file_complete(fuuid: str) -> None:
+        """Emit progress notification when a file finishes a repair phase."""
+        if fuuid in progress_emitted:
+            return  # Already counted this file
+        progress_emitted.add(fuuid)
+        count = file_written.get(fuuid, 0)
+        _update_repair_progress(
+            total_files,
+            success=count > 0,
+            file_uuid=fuuid if count == 0 else None,
+            repaired_count=count,
+            user_id=notify_user_id,
+        )
+
+    def _on_file_failed(fuuid: str) -> None:
+        """Emit progress notification for a failed file."""
+        if fuuid in progress_emitted:
+            return
+        progress_emitted.add(fuuid)
+        _update_repair_progress(
+            total_files,
+            success=False,
+            file_uuid=fuuid,
+            user_id=notify_user_id,
+        )
+
+    # Phase 2: V3 repair (always emit progress — if V4 phase fails, V3 is the only signal)
     v3_repaired = 0
     if need_v3:
         v3_repaired = _run_repair_phase(
@@ -377,6 +421,8 @@ def speaker_embedding_consistency_repair_batch_task(
             file_written,
             is_running,
             batch_index,
+            on_file_done=_on_file_complete,
+            on_file_fail=_on_file_failed,
         )
 
     # Phase 3: V4 repair
@@ -390,17 +436,8 @@ def speaker_embedding_consistency_repair_batch_task(
             file_written,
             is_running,
             batch_index,
-        )
-
-    # Update progress per file — count actual embeddings written, not files
-    for fuuid, _ in files_with_speakers:
-        count = file_written.get(fuuid, 0)
-        _update_repair_progress(
-            total_files,
-            success=count > 0,
-            file_uuid=fuuid if count == 0 else None,
-            repaired_count=count,
-            user_id=notify_user_id,
+            on_file_done=_on_file_complete,
+            on_file_fail=_on_file_failed,
         )
 
     _check_repair_completion(total_files, user_id=notify_user_id)

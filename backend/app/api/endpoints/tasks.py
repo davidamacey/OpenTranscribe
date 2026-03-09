@@ -313,13 +313,12 @@ async def recover_all_stuck_tasks(
                     # Schedule a retry in the background for each recovered task
                     async def retry_transcription(file_uuid):
                         try:
-                            # Import here to avoid circular imports
-                            from app.tasks.transcription import transcribe_audio_task
+                            from app.tasks.transcription import dispatch_transcription_pipeline
 
-                            result = transcribe_audio_task.delay(file_uuid)
+                            task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
                             logger.info(
                                 f"Retrying transcription for file {file_uuid}, "
-                                f"new task ID: {result.id}"
+                                f"new task ID: {task_id}"
                             )
                         except Exception as e:
                             logger.error(f"Error retrying transcription: {e}")
@@ -488,12 +487,11 @@ async def recover_task(
 
                 async def retry_transcription():
                     try:
-                        # Import here to avoid circular imports
-                        from app.tasks.transcription import transcribe_audio_task
+                        from app.tasks.transcription import dispatch_transcription_pipeline
 
-                        result = transcribe_audio_task.delay(file_uuid)
+                        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
                         logger.info(
-                            f"Retrying transcription for file {file_uuid}, new task ID: {result.id}"
+                            f"Retrying transcription for file {file_uuid}, new task ID: {task_id}"
                         )
                     except Exception as e:
                         logger.error(f"Error retrying transcription: {e}")
@@ -641,11 +639,10 @@ async def retry_file_processing(
         # Schedule a new transcription in the background
         async def start_new_transcription():
             try:
-                # Import here to avoid circular imports
-                from app.tasks.transcription import transcribe_audio_task
+                from app.tasks.transcription import dispatch_transcription_pipeline
 
-                result = transcribe_audio_task.delay(file_uuid)
-                logger.info(f"Started new transcription for file {file_id}, task ID: {result.id}")
+                task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+                logger.info(f"Started new transcription for file {file_id}, task ID: {task_id}")
             except Exception as e:
                 logger.error(f"Error starting new transcription: {e}")
 

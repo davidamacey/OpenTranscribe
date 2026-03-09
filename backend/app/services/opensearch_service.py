@@ -1,3 +1,4 @@
+import contextlib
 import datetime
 import logging
 import time
@@ -8,9 +9,11 @@ from opensearchpy import OpenSearch
 from opensearchpy import RequestsHttpConnection
 
 from app.core.config import settings
+from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
 from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
 from app.core.constants import get_speaker_index
+from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v4
 
 # Setup logging
@@ -91,6 +94,291 @@ def get_opensearch_client() -> "OpenSearch | None":
         return None
 
 
+def _is_alias(name: str) -> bool:
+    """Check if a name is an alias (not a concrete index)."""
+    if not opensearch_client:
+        return False
+    try:
+        return bool(opensearch_client.indices.exists_alias(name=name))
+    except Exception:
+        return False
+
+
+def _get_alias_target(alias_name: str) -> str | None:
+    """Get the concrete index an alias points to. Returns None if not an alias."""
+    if not opensearch_client:
+        return None
+    try:
+        result = opensearch_client.indices.get_alias(name=alias_name)
+        # result is {concrete_index_name: {aliases: {alias_name: {}}}}
+        indices = list(result.keys())
+        return indices[0] if indices else None
+    except Exception:
+        return None
+
+
+def get_active_versioned_index() -> str:
+    """Get the concrete versioned index name that the 'speakers' alias points to.
+
+    Returns the alias target (e.g. 'speakers_v3' or 'speakers_v4'), or
+    falls back to get_speaker_index() if aliases haven't been set up yet.
+    """
+    alias_name = get_speaker_index()
+    target = _get_alias_target(alias_name)
+    if target:
+        return target
+    # Fallback: alias not set up yet (pre-migration state)
+    return alias_name
+
+
+def get_write_index() -> str:
+    """Get the correct index to write speaker embeddings to based on current mode.
+
+    Writes always target the concrete versioned index, never the alias.
+    This ensures we write to the correct dimension index.
+    """
+    from app.services.embedding_mode_service import EmbeddingModeService
+
+    mode = EmbeddingModeService.get_current_mode()
+    if mode == "v3":
+        return get_speaker_index_v3()
+    return get_speaker_index_v4()
+
+
+def migrate_to_alias_based_indices() -> dict[str, Any]:
+    """One-time migration: convert concrete 'speakers' index to alias-based scheme.
+
+    For 0.3.3 users who have 'speakers' as a concrete v3 index:
+    1. Rename 'speakers' → 'speakers_v3' (via reindex + delete, since OS has no rename)
+    2. Create alias 'speakers' → 'speakers_v3'
+
+    For post-finalization users who have 'speakers' as a concrete v4 index:
+    1. Rename 'speakers' → 'speakers_v4'
+    2. Create alias 'speakers' → 'speakers_v4'
+
+    For users who already have the alias: no-op.
+    For fresh installs: create 'speakers_v4' + alias.
+
+    Returns dict with migration status details.
+    """
+    from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
+    from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+    from app.core.constants import get_speaker_index_v3_backup
+
+    if not opensearch_client:
+        return {"status": "skipped", "reason": "no_client"}
+
+    alias_name = get_speaker_index()  # "speakers"
+    v3_index = get_speaker_index_v3()  # "speakers_v3"
+    v4_index = get_speaker_index_v4()  # "speakers_v4"
+    v3_backup = get_speaker_index_v3_backup()  # "speakers_v3_backup"
+
+    # Already migrated: alias exists
+    if _is_alias(alias_name):
+        target = _get_alias_target(alias_name)
+        logger.info(f"Speaker index alias already set up: {alias_name} → {target}")
+        return {"status": "already_migrated", "alias_target": target}
+
+    # Check if 'speakers' exists as a concrete index
+    concrete_exists = False
+    with contextlib.suppress(Exception):
+        concrete_exists = opensearch_client.indices.exists(index=alias_name)
+
+    if not concrete_exists:
+        # Fresh install OR the index was deleted. Check for versioned indices.
+        v3_exists = _safe_index_exists(v3_index)
+        v4_exists = _safe_index_exists(v4_index)
+        backup_exists = _safe_index_exists(v3_backup)
+
+        if v3_exists or v4_exists:
+            # Versioned indices exist but no alias — create alias to whichever exists
+            target = v4_index if v4_exists else v3_index
+            opensearch_client.indices.put_alias(index=target, name=alias_name)
+            logger.info(f"Created alias {alias_name} → {target} (found existing versioned index)")
+            return {"status": "alias_created", "alias_target": target}
+
+        if backup_exists:
+            # Only the v3 backup exists — rename it to speakers_v3 and alias
+            _reindex_and_alias(v3_backup, v3_index, alias_name)
+            logger.info(f"Restored from backup: {v3_backup} → {v3_index}, alias {alias_name}")
+            return {"status": "restored_from_backup", "alias_target": v3_index}
+
+        # Truly fresh install — will be handled by ensure_indices_exist()
+        return {"status": "fresh_install"}
+
+    # 'speakers' is a concrete index — need to detect its dimension and rename
+    dimension = _get_index_embedding_dimension(alias_name)
+    doc_count = 0
+    with contextlib.suppress(Exception):
+        doc_count = opensearch_client.count(index=alias_name)["count"]
+
+    if dimension == PYANNOTE_EMBEDDING_DIMENSION_V3 or dimension == 512:
+        target_index = v3_index
+        mode_label = "v3"
+    elif dimension == PYANNOTE_EMBEDDING_DIMENSION_V4 or dimension == 256:
+        target_index = v4_index
+        mode_label = "v4"
+    elif doc_count == 0:
+        # Empty index with unknown dimension — delete and let ensure_indices_exist handle it
+        opensearch_client.indices.delete(index=alias_name)
+        logger.info(f"Deleted empty concrete '{alias_name}' index (no dimension detected)")
+        return {"status": "deleted_empty"}
+    else:
+        # Unknown dimension with data — default to v3 to be safe
+        target_index = v3_index
+        mode_label = "v3 (fallback)"
+
+    # Check if the target versioned index already exists
+    if _safe_index_exists(target_index):
+        # Both concrete 'speakers' and versioned index exist — check which has more data
+        target_count = 0
+        with contextlib.suppress(Exception):
+            target_count = opensearch_client.count(index=target_index)["count"]
+
+        if target_count >= doc_count:
+            # Versioned index has more/equal data — just delete concrete and alias
+            opensearch_client.indices.delete(index=alias_name)
+            opensearch_client.indices.put_alias(index=target_index, name=alias_name)
+            logger.info(
+                f"Alias migration: deleted concrete '{alias_name}' ({doc_count} docs), "
+                f"aliased to existing '{target_index}' ({target_count} docs)"
+            )
+            return {"status": "migrated", "alias_target": target_index, "mode": mode_label}
+        else:
+            # Concrete has more data — reindex concrete into versioned, then alias
+            logger.info(
+                f"Concrete '{alias_name}' has more data ({doc_count}) than "
+                f"'{target_index}' ({target_count}), merging"
+            )
+            opensearch_client.indices.delete(index=target_index)
+            _reindex_and_alias(alias_name, target_index, alias_name)
+            return {"status": "migrated_merged", "alias_target": target_index, "mode": mode_label}
+    else:
+        # Simple case: rename concrete → versioned, create alias
+        _reindex_and_alias(alias_name, target_index, alias_name)
+        logger.info(
+            f"Alias migration: '{alias_name}' ({doc_count} docs, {mode_label}) "
+            f"→ '{target_index}', alias created"
+        )
+        return {"status": "migrated", "alias_target": target_index, "mode": mode_label}
+
+
+def _safe_index_exists(index_name: str) -> bool:
+    """Check if an index exists, returning False on any error."""
+    if not opensearch_client:
+        return False
+    try:
+        return bool(opensearch_client.indices.exists(index=index_name))
+    except Exception:
+        return False
+
+
+def _get_index_embedding_dimension(index_name: str) -> int | None:
+    """Get the knn_vector dimension from an index's mapping."""
+    if not opensearch_client:
+        return None
+    try:
+        mapping = opensearch_client.indices.get_mapping(index=index_name)
+        props = mapping.get(index_name, {}).get("mappings", {}).get("properties", {})
+        emb = props.get("embedding", {})
+        dim = emb.get("dimension")
+        return int(dim) if dim is not None else None
+    except Exception:
+        return None
+
+
+def _reindex_and_alias(source_index: str, target_index: str, alias_name: str) -> None:
+    """Reindex source → target, delete source, create alias on target.
+
+    This is used to "rename" a concrete index since OpenSearch has no
+    native rename operation.
+    """
+    if not opensearch_client:
+        return
+
+    # Copy the mapping from source to create target with correct settings
+    try:
+        source_mapping = opensearch_client.indices.get(index=source_index)
+        source_settings = source_mapping[source_index].get("settings", {}).get("index", {})
+        source_mappings = source_mapping[source_index].get("mappings", {})
+
+        # Build target index config from source (strip read-only settings)
+        target_config: dict[str, Any] = {
+            "settings": {
+                "index": {
+                    "number_of_shards": source_settings.get("number_of_shards", 1),
+                    "number_of_replicas": source_settings.get("number_of_replicas", 0),
+                }
+            },
+            "mappings": source_mappings,
+        }
+        # Preserve knn setting if present
+        if source_settings.get("knn") == "true" or source_settings.get("knn") is True:
+            target_config["settings"]["index"]["knn"] = True
+
+        opensearch_client.indices.create(index=target_index, body=target_config)
+    except Exception as e:
+        logger.warning(f"Could not create target from source mapping: {e}. Trying plain reindex.")
+
+    # Reindex data
+    opensearch_client.reindex(
+        body={"source": {"index": source_index}, "dest": {"index": target_index}},
+        wait_for_completion=True,
+    )
+
+    # Verify
+    source_count = opensearch_client.count(index=source_index)["count"]
+    target_count = opensearch_client.count(index=target_index)["count"]
+    if target_count < source_count * 0.95:
+        raise RuntimeError(
+            f"Reindex verification failed: {source_index} has {source_count} docs "
+            f"but {target_index} only has {target_count}"
+        )
+
+    # Delete source and create alias
+    opensearch_client.indices.delete(index=source_index)
+    opensearch_client.indices.put_alias(index=target_index, name=alias_name)
+
+    logger.info(
+        f"Reindexed {source_index} → {target_index} ({target_count} docs), "
+        f"alias '{alias_name}' created"
+    )
+
+
+def swap_speaker_alias(new_target: str) -> dict[str, Any]:
+    """Atomically swap the 'speakers' alias to point to a new index.
+
+    Uses the OpenSearch aliases API for an atomic swap — no downtime,
+    no data copying. This is the correct way to "finalize" a migration.
+
+    Args:
+        new_target: The versioned index name to point the alias to.
+
+    Returns:
+        Dict with old_target and new_target.
+    """
+    if not opensearch_client:
+        return {"status": "error", "reason": "no_client"}
+
+    alias_name = get_speaker_index()
+    old_target = _get_alias_target(alias_name)
+
+    actions: list[dict] = []
+
+    # Remove alias from old target (if any)
+    if old_target:
+        actions.append({"remove": {"index": old_target, "alias": alias_name}})
+
+    # Add alias to new target
+    actions.append({"add": {"index": new_target, "alias": alias_name}})
+
+    opensearch_client.indices.update_aliases(body={"actions": actions})
+    invalidate_active_speaker_index_cache()
+
+    logger.info(f"Swapped speaker alias: {alias_name} → {new_target} (was: {old_target})")
+    return {"status": "success", "old_target": old_target, "new_target": new_target}
+
+
 def get_speaker_embedding_dimension() -> int:
     """
     Get the speaker embedding dimension from the existing index, or default to v4 for new installs.
@@ -105,17 +393,12 @@ def get_speaker_embedding_dimension() -> int:
 
 
 def get_active_speaker_index() -> str:
-    """Return the index that currently holds the majority of speaker embeddings.
+    """Return the index to use for speaker embedding reads/searches.
 
-    During v4 migration, new transcriptions write to 'speakers_v4' while
-    the bulk of existing embeddings remain in 'speakers' (v3).  Only after
-    finalization does 'speakers_v4' get swapped into 'speakers'.
-
-    Logic: use whichever index has more documents.  This correctly handles:
-      - v3 mode (no migration): speakers has data, v4 doesn't exist → speakers
-      - v4 pre-finalization: speakers (v3) has bulk data, v4 has few → speakers
-      - v4 post-finalization: v4 swapped into speakers, v4 deleted → speakers
-      - Fresh v4 install (no v3 data): speakers empty, v4 has data → v4
+    With the alias-based scheme, this always returns the 'speakers' alias
+    which resolves to the correct versioned index. During v4 migration
+    (before finalization), it checks if v4 has more data and returns that
+    instead, since the alias still points to v3.
 
     Results are cached for 30s to avoid hundreds of round-trips during
     batch re-clustering.
@@ -128,31 +411,37 @@ def get_active_speaker_index() -> str:
         if now - cached_at < _ACTIVE_INDEX_CACHE_TTL:
             return cached_index
 
+    main_index = get_speaker_index()  # alias or concrete
     v4_index = get_speaker_index_v4()
-    main_index = get_speaker_index()
 
     if not opensearch_client:
         return main_index
 
     result = main_index
     try:
+        # If alias is set up, check if v4 staging has more data (pre-finalization)
         main_count = 0
         v4_count = 0
 
-        if opensearch_client.indices.exists(index=main_index):
+        # Count through alias (resolves to active versioned index)
+        with contextlib.suppress(Exception):
             main_count = opensearch_client.count(index=main_index)["count"]
 
-        if opensearch_client.indices.exists(index=v4_index):
-            v4_count = opensearch_client.count(index=v4_index)["count"]
+        if _safe_index_exists(v4_index):
+            # Only check v4 if it's NOT the alias target (i.e., during pre-finalization)
+            alias_target = _get_alias_target(main_index)
+            if alias_target != v4_index:
+                with contextlib.suppress(Exception):
+                    v4_count = opensearch_client.count(index=v4_index)["count"]
 
-        if v4_count > main_count:
-            logger.debug(
-                "Using v4 index '%s' (%d docs > %d in main)",
-                v4_index,
-                v4_count,
-                main_count,
-            )
-            result = v4_index
+                if v4_count > main_count:
+                    logger.debug(
+                        "Using v4 index '%s' (%d docs > %d in main)",
+                        v4_index,
+                        v4_count,
+                        main_count,
+                    )
+                    result = v4_index
 
     except Exception as e:
         logger.debug("Error detecting active speaker index: %s", e)
@@ -170,19 +459,46 @@ def invalidate_active_speaker_index_cache() -> None:
 def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
     """Attempt to repair a corrupted OpenSearch index.
 
-    Tries close/reopen first (fixes stale file handles on HNSW vector segments),
-    then falls back to force merge if close/reopen is insufficient. As a last
-    resort for kNN speaker indices, rebuilds from PostgreSQL data.
+    Strategy 0: Detect wrong mapping type (e.g. embedding stored as float
+    instead of knn_vector due to dynamic mapping). Requires delete + recreate.
+
+    Then tries close/reopen (fixes stale file handles on HNSW vector segments),
+    force merge, and finally full rebuild from PostgreSQL data.
 
     Args:
         index_name: Name of the index to repair.
-        db: Optional SQLAlchemy session for DB-based rebuild (Strategy 3).
+        db: Optional SQLAlchemy session for DB-based rebuild.
 
     Returns:
         True if the index was successfully repaired.
     """
     if not opensearch_client:
         return False
+
+    # Strategy 0: Detect wrong mapping type on speaker index embedding field.
+    # If the index was auto-created by OpenSearch with dynamic mapping, the
+    # embedding field will be "float" instead of "knn_vector". Close/reopen
+    # and force-merge cannot fix this — the index must be deleted and recreated.
+    if index_name == get_speaker_index():
+        try:
+            mapping = opensearch_client.indices.get_mapping(index=index_name)
+            properties = mapping.get(index_name, {}).get("mappings", {}).get("properties", {})
+            emb_type = properties.get("embedding", {}).get("type", "")
+            if emb_type and emb_type != "knn_vector":
+                logger.warning(
+                    f"Speaker index '{index_name}' has embedding type '{emb_type}' "
+                    f"instead of 'knn_vector'. Deleting and recreating with correct mapping."
+                )
+                doc_count = opensearch_client.count(index=index_name).get("count", 0)
+                opensearch_client.indices.delete(index=index_name)
+                logger.info(f"Deleted broken index {index_name} ({doc_count} docs)")
+                # Recreate with correct mapping
+                ensure_indices_exist()
+                invalidate_active_speaker_index_cache()
+                logger.info(f"Recreated index {index_name} with knn_vector mapping")
+                return True
+        except Exception as e:
+            logger.warning(f"Wrong-mapping detection/fix failed for {index_name}: {e}")
 
     # Strategy 1: Close and reopen to force re-acquisition of file handles
     try:
@@ -485,7 +801,7 @@ def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
 
 
 def _is_index_corruption_error(error: Exception) -> bool:
-    """Check if an exception indicates OpenSearch index corruption."""
+    """Check if an exception indicates OpenSearch index corruption or wrong mapping."""
     error_str = str(error).lower()
     return any(
         indicator in error_str
@@ -494,6 +810,7 @@ def _is_index_corruption_error(error: Exception) -> bool:
             "search_phase_execution_exception",
             "already_closed",
             "no_shard_available",
+            "not knn_vector type",
         ]
     )
 
@@ -501,10 +818,10 @@ def _is_index_corruption_error(error: Exception) -> bool:
 def check_and_repair_indices() -> list[str]:
     """Check OpenSearch indices health and auto-repair corrupted shards.
 
-    Runs a simple match_all query (size=0) against each index. If a 503 or
-    search_phase_execution_exception is returned (typically caused by corrupted
-    Lucene HNSW vector segment files after unclean shutdowns), the index is
-    closed and reopened to force OpenSearch to re-open all segment file handles.
+    Checks:
+    1. Query health: match_all query succeeds (catches 503, corrupted segments)
+    2. Mapping correctness: speaker index embedding field is knn_vector, not float
+       (catches dynamic mapping auto-creation with wrong type)
 
     Returns:
         List of index names that were repaired (empty if all healthy).
@@ -524,6 +841,27 @@ def check_and_repair_indices() -> list[str]:
     for index_name in indices:
         if not opensearch_client.indices.exists(index=index_name):
             continue
+
+        # Check 1: Mapping correctness for speaker indices
+        if index_name in (get_speaker_index(), v4_index):
+            try:
+                mapping = opensearch_client.indices.get_mapping(index=index_name)
+                properties = mapping.get(index_name, {}).get("mappings", {}).get("properties", {})
+                emb_type = properties.get("embedding", {}).get("type", "")
+                if emb_type and emb_type != "knn_vector":
+                    logger.warning(
+                        f"Index {index_name} has wrong embedding type '{emb_type}' "
+                        f"(expected knn_vector), triggering repair..."
+                    )
+                    if _repair_index(index_name):
+                        repaired.append(index_name)
+                    else:
+                        logger.error(f"Index {index_name} mapping repair failed")
+                    continue  # Skip query check — already handled
+            except Exception as e:
+                logger.warning(f"Mapping check failed for {index_name}: {e}")
+
+        # Check 2: Query health
         try:
             opensearch_client.search(index=index_name, body={"query": {"match_all": {}}, "size": 0})
             logger.info(f"Index health check passed: {index_name}")
@@ -540,9 +878,59 @@ def check_and_repair_indices() -> list[str]:
     return repaired
 
 
+def _ensure_versioned_speaker_index(index_name: str, dimension: int) -> None:
+    """Create a versioned speaker index if it doesn't exist."""
+    if not opensearch_client:
+        return
+    try:
+        if opensearch_client.indices.exists(index=index_name):
+            return
+        config = {
+            "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0, "knn": True}},
+            "mappings": {
+                "properties": {
+                    "document_type": {"type": "keyword"},
+                    "speaker_id": {"type": "integer"},
+                    "speaker_uuid": {"type": "keyword"},
+                    "profile_id": {"type": "integer"},
+                    "profile_uuid": {"type": "keyword"},
+                    "profile_name": {"type": "keyword"},
+                    "user_id": {"type": "integer"},
+                    "name": {"type": "keyword"},
+                    "display_name": {"type": "keyword"},
+                    "collection_ids": {"type": "integer"},
+                    "media_file_id": {"type": "integer"},
+                    "segment_count": {"type": "integer"},
+                    "speaker_count": {"type": "integer"},
+                    "created_at": {"type": "date"},
+                    "updated_at": {"type": "date"},
+                    "embedding": {
+                        "type": "knn_vector",
+                        "dimension": dimension,
+                        "method": {
+                            "name": "hnsw",
+                            "space_type": "cosinesimil",
+                            "engine": "lucene",
+                            "parameters": {"ef_construction": 128, "m": 24},
+                        },
+                    },
+                }
+            },
+        }
+        opensearch_client.indices.create(index=index_name, body=config)
+        logger.info(f"Created versioned speaker index: {index_name} (dim={dimension})")
+    except Exception as e:
+        logger.error(f"Error creating speaker index {index_name}: {e}")
+
+
 def ensure_indices_exist():
     """
-    Ensure the transcript and speaker indices exist, creating them if necessary
+    Ensure the transcript and speaker indices exist, creating them if necessary.
+
+    For speaker indices, uses an alias-based scheme:
+    - speakers_v3: concrete index with 512-dim embeddings
+    - speakers_v4: concrete index with 256-dim embeddings
+    - speakers: alias pointing to whichever is active
     """
     if not settings.OPENSEARCH_ENABLED:
         return
@@ -582,49 +970,73 @@ def ensure_indices_exist():
 
             logger.info(f"Created transcript index: {settings.OPENSEARCH_TRANSCRIPT_INDEX}")
 
-        # Create speaker index if it doesn't exist
-        if not opensearch_client.indices.exists(index=get_speaker_index()):
-            speaker_index_config = {
-                "settings": {
-                    "index": {
-                        "number_of_shards": 1,
-                        "number_of_replicas": 0,
-                        "knn": True,
-                    }
-                },
-                "mappings": {
-                    "properties": {
-                        "speaker_id": {"type": "integer"},
-                        "speaker_uuid": {"type": "keyword"},
-                        "profile_id": {"type": "integer"},
-                        "profile_uuid": {"type": "keyword"},
-                        "user_id": {"type": "integer"},
-                        "name": {"type": "keyword"},
-                        "collection_ids": {"type": "integer"},  # Array of collection IDs
-                        "media_file_id": {"type": "integer"},  # Source media file
-                        "segment_count": {"type": "integer"},  # Number of segments used
-                        "created_at": {"type": "date"},
-                        "updated_at": {"type": "date"},
-                        "embedding": {
-                            "type": "knn_vector",
-                            "dimension": get_speaker_embedding_dimension(),  # Dynamic based on mode
-                            "method": {
-                                "name": "hnsw",
-                                "space_type": "cosinesimil",
-                                "engine": "lucene",  # Use lucene engine for better filtering
-                                "parameters": {
-                                    "ef_construction": 128,
-                                    "m": 24,
+        # Migrate concrete 'speakers' index to alias-based scheme (0.3.3 upgrade)
+        migration_result = migrate_to_alias_based_indices()
+        if migration_result.get("status") not in ("already_migrated", "skipped"):
+            logger.info(f"Speaker index alias migration: {migration_result}")
+
+        # Ensure the versioned speaker indices exist
+        from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
+
+        v3_index = get_speaker_index_v3()
+        _ensure_versioned_speaker_index(v3_index, PYANNOTE_EMBEDDING_DIMENSION_V3)
+        _ensure_versioned_speaker_index(get_speaker_index_v4(), PYANNOTE_EMBEDDING_DIMENSION_V4)
+
+        # Restore v3 data from legacy backup if speakers_v3 is empty
+        from app.core.constants import get_speaker_index_v3_backup
+
+        v3_backup = get_speaker_index_v3_backup()
+        if _safe_index_exists(v3_backup) and _safe_index_exists(v3_index):
+            v3_count = 0
+            with contextlib.suppress(Exception):
+                v3_count = opensearch_client.count(index=v3_index)["count"]
+            if v3_count == 0:
+                backup_count = 0
+                with contextlib.suppress(Exception):
+                    backup_count = opensearch_client.count(index=v3_backup)["count"]
+                if backup_count > 0:
+                    try:
+                        # Filter: only reindex docs with valid embeddings that
+                        # match the v3 dimension (512). Docs with null embeddings
+                        # or wrong dimensions would fail knn_vector parsing.
+                        result = opensearch_client.reindex(
+                            body={
+                                "source": {
+                                    "index": v3_backup,
+                                    "query": {
+                                        "bool": {
+                                            "must": [{"exists": {"field": "embedding"}}],
+                                            "must_not": [{"term": {"embedding": []}}],
+                                        }
+                                    },
                                 },
+                                "dest": {"index": v3_index},
                             },
-                        },
-                    }
-                },
-            }
+                            wait_for_completion=True,
+                        )
+                        restored = result.get("created", 0) + result.get("updated", 0)
+                        failures = len(result.get("failures", []))
+                        logger.info(
+                            f"Restored {restored} docs from '{v3_backup}' → '{v3_index}' "
+                            f"({failures} failures, backup had {backup_count} docs)"
+                        )
+                        if failures > 0:
+                            # Log first few failures for debugging
+                            for f in result.get("failures", [])[:3]:
+                                logger.warning(
+                                    f"Reindex failure: {f.get('cause', {}).get('reason', f)}"
+                                )
+                    except Exception as e:
+                        logger.warning(f"Failed to restore v3 backup: {e}")
 
-            opensearch_client.indices.create(index=get_speaker_index(), body=speaker_index_config)
-
-            logger.info(f"Created speaker index: {get_speaker_index()}")
+        # Ensure the 'speakers' alias exists pointing to something
+        alias_name = get_speaker_index()
+        if not _is_alias(alias_name) and not _safe_index_exists(alias_name):
+            # Default to v4 for fresh installs
+            target = get_speaker_index_v4()
+            if _safe_index_exists(target):
+                opensearch_client.indices.put_alias(index=target, name=alias_name)
+                logger.info(f"Created default alias: {alias_name} → {target}")
 
     except ConnectionError as e:
         logger.error(f"Connection error creating indices: {e}")
@@ -772,8 +1184,17 @@ def add_speaker_embedding_v4(
             logger.error(f"Cannot index speaker {speaker_uuid}: invalid embedding format")
             return
 
+        # Dimension safety check: v4 index expects 256-dim embeddings
+        emb_len = len(embedding)
+        if emb_len != PYANNOTE_EMBEDDING_DIMENSION_V4:
+            logger.error(
+                f"Cannot index speaker {speaker_uuid} to v4: dimension mismatch "
+                f"{emb_len} != {PYANNOTE_EMBEDDING_DIMENSION_V4}"
+            )
+            return
+
         logger.info(
-            f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) to v4 index with embedding length: {len(embedding)}"
+            f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) to v4 index with embedding length: {emb_len}"
         )
 
         # Prepare document
@@ -987,6 +1408,7 @@ def add_speaker_embedding(
     media_file_id: int | None = None,
     segment_count: int = 1,
     display_name: str | None = None,
+    target_index: str | None = None,
 ):
     """
     Add a speaker embedding to OpenSearch with collection support
@@ -1003,10 +1425,14 @@ def add_speaker_embedding(
         media_file_id: Optional source media file ID
         segment_count: Number of segments used to create embedding
         display_name: Optional display name for the speaker
+        target_index: Optional override index name (e.g. 'speakers_v3').
+            Defaults to the 'speakers' alias when None.
     """
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping speaker embedding")
         return
+
+    index_name = target_index or get_speaker_index()
 
     try:
         ensure_indices_exist()
@@ -1020,8 +1446,18 @@ def add_speaker_embedding(
             logger.error(f"Cannot index speaker {speaker_uuid}: invalid embedding format")
             return
 
+        # Dimension safety check: prevent writing wrong-dimension vectors
+        emb_len = len(embedding)
+        if emb_len not in (PYANNOTE_EMBEDDING_DIMENSION_V3, PYANNOTE_EMBEDDING_DIMENSION_V4):
+            logger.error(
+                f"Cannot index speaker {speaker_uuid}: unexpected embedding dimension "
+                f"{emb_len} (expected {PYANNOTE_EMBEDDING_DIMENSION_V3} or "
+                f"{PYANNOTE_EMBEDDING_DIMENSION_V4})"
+            )
+            return
+
         logger.info(
-            f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) with embedding length: {len(embedding)}"
+            f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) with embedding length: {emb_len}"
         )
 
         # Prepare document
@@ -1043,13 +1479,14 @@ def add_speaker_embedding(
 
         # Index the document using UUID as document ID
         response = opensearch_client.index(
-            index=get_speaker_index(),
+            index=index_name,
             body=doc,
             id=str(speaker_uuid),  # Use speaker_uuid as document ID
         )
 
         logger.info(
-            f"Indexed speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {response}"
+            f"Indexed speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}) "
+            f"to {index_name}: {response}"
         )
         return response
 
@@ -1063,7 +1500,7 @@ def add_speaker_embedding(
             _time.sleep(0.5)
             try:
                 response = opensearch_client.index(
-                    index=get_speaker_index(),
+                    index=index_name,
                     body=doc,
                     id=str(speaker_uuid),
                 )
@@ -1079,7 +1516,7 @@ def add_speaker_embedding(
             logger.warning(
                 f"Index corruption detected indexing speaker {speaker_uuid}, attempting repair..."
             )
-            if _repair_index(get_speaker_index()):
+            if _repair_index(index_name):
                 try:
                     doc = {
                         "speaker_id": speaker_id,
@@ -1097,7 +1534,7 @@ def add_speaker_embedding(
                         "embedding": embedding,
                     }
                     response = opensearch_client.index(
-                        index=get_speaker_index(),
+                        index=index_name,
                         body=doc,
                         id=str(speaker_uuid),
                     )
@@ -2645,21 +3082,20 @@ def remove_speaker_embedding(speaker_uuid: str) -> bool:
         return False
 
     success = False
-    try:
-        opensearch_client.delete(index=get_speaker_index(), id=str(speaker_uuid))
-        logger.info(f"Removed speaker {speaker_uuid} from main speaker index")
-        success = True
-    except Exception as e:
-        logger.warning(f"Error removing speaker embedding from main index (may not exist): {e}")
 
-    # Also clean the v4 staging index if it exists (mid-migration cleanup)
-    try:
-        v4_index = get_speaker_index_v4()
-        if opensearch_client.indices.exists(index=v4_index):
-            opensearch_client.delete(index=v4_index, id=str(speaker_uuid))
-            logger.debug(f"Removed speaker {speaker_uuid} from v4 staging index")
-    except Exception:  # nosec B110
-        pass  # Non-fatal: v4 may not have this speaker yet
+    # Delete from all speaker indices (v3, v4, and alias target)
+    indices_to_clean = {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}
+    for idx in indices_to_clean:
+        try:
+            if _safe_index_exists(idx) or _is_alias(idx):
+                opensearch_client.delete(index=idx, id=str(speaker_uuid))
+                logger.debug(f"Removed speaker {speaker_uuid} from {idx}")
+                success = True
+        except Exception:  # nosec B110
+            pass  # Non-fatal: speaker may not exist in this index
+
+    if success:
+        logger.info(f"Removed speaker {speaker_uuid} from speaker indices")
 
     return success
 

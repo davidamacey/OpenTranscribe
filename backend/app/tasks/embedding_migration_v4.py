@@ -29,6 +29,7 @@ from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import UtilityPriority
 from app.core.constants import get_speaker_index
+from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v3_backup
 from app.core.constants import get_speaker_index_v4
 from app.db.session_utils import session_scope
@@ -61,6 +62,7 @@ def get_migration_status() -> dict:
         return {"status": "error", "message": "OpenSearch not available"}
 
     current_mode = EmbeddingModeService.detect_mode()
+    v3_index = get_speaker_index_v3()
     v4_index = get_speaker_index_v4()
     backup_index = get_speaker_index_v3_backup()
     v4_exists = client.indices.exists(index=v4_index)
@@ -68,37 +70,33 @@ def get_migration_status() -> dict:
     # Count only speaker documents (exclude profile_ and cluster_ documents
     # which share the same index but have a document_type field)
     speaker_only_query = {"query": {"bool": {"must_not": {"exists": {"field": "document_type"}}}}}
-    main_index = get_speaker_index()
+
+    # Query concrete versioned indices directly (not through alias)
     try:
-        v3_count = (
-            client.count(index=main_index, body=speaker_only_query)["count"]
-            if client.indices.exists(index=main_index)
+        v3_document_count = (
+            client.count(index=v3_index, body=speaker_only_query)["count"]
+            if client.indices.exists(index=v3_index)
             else 0
         )
-        v4_count = (
+    except Exception:
+        v3_document_count = 0
+
+    try:
+        v4_document_count = (
             client.count(index=v4_index, body=speaker_only_query)["count"] if v4_exists else 0
         )
     except Exception:
-        v3_count = 0
-        v4_count = 0
+        v4_document_count = 0
 
-    # After finalization, v4 data lives in the main index. The _v4 staging
-    # index may still exist (empty) or be deleted. When mode is v4, the main
-    # index contains v4 embeddings — report its count as v4_document_count.
-    # Also show the v3 backup count so users can see their archived data.
-    if current_mode == "v4" and v4_count == 0:
-        v4_document_count = v3_count
-        # Show v3 backup count if it exists
-        v3_backup_count = 0
+    # If v3 concrete index is empty, check the legacy backup
+    if v3_document_count == 0:
         try:
             if client.indices.exists(index=backup_index):
-                v3_backup_count = client.count(index=backup_index, body=speaker_only_query)["count"]
-        except Exception:  # noqa: S110  # nosec B110 - backup index check is non-critical
+                v3_document_count = client.count(index=backup_index, body=speaker_only_query)[
+                    "count"
+                ]
+        except Exception:  # noqa: S110  # nosec B110 — backup index check is non-critical
             pass
-        v3_document_count = v3_backup_count
-    else:
-        v4_document_count = v4_count
-        v3_document_count = v3_count
 
     return {
         "current_mode": current_mode,
@@ -788,7 +786,6 @@ def finalize_v4_migration_task(self, user_id: int = 1):
         return {"status": "error", "message": "OpenSearch not available"}
 
     v4_index = get_speaker_index_v4()
-    backup_index = get_speaker_index_v3_backup()
     main_index = get_speaker_index()
 
     try:
@@ -803,9 +800,17 @@ def finalize_v4_migration_task(self, user_id: int = 1):
         if v4_count == 0:
             return {"status": "error", "message": "V4 index is empty"}
 
+        # Get v3 count for validation (resolve alias if needed)
+        from app.services.opensearch_service import get_active_versioned_index
+        from app.services.opensearch_service import swap_speaker_alias
+
+        v3_index = get_active_versioned_index()  # e.g. "speakers_v3" or "speakers"
+        import contextlib
+
         v3_count = 0
-        if client.indices.exists(index=main_index):
-            v3_count = client.count(index=main_index)["count"]
+        with contextlib.suppress(Exception):
+            if client.indices.exists(index=v3_index):
+                v3_count = client.count(index=v3_index)["count"]
 
         # Count validation: v4 should have at least 50% of v3 docs
         if v3_count > 0 and v4_count < v3_count * 0.5:
@@ -818,56 +823,26 @@ def finalize_v4_migration_task(self, user_id: int = 1):
                 ),
             }
 
-        # ---- Backup v3 ----
-        if client.indices.exists(index=main_index):
-            if client.indices.exists(index=backup_index):
-                client.indices.delete(index=backup_index)
-
-            client.reindex(
-                body={
-                    "source": {"index": main_index},
-                    "dest": {"index": backup_index},
-                },
-                wait_for_completion=True,
-            )
-            logger.info(f"Created backup: {backup_index}")
-
-        # ---- Swap ----
-        client.indices.delete(index=main_index, ignore=[404])
-
-        client.reindex(
-            body={
-                "source": {"index": v4_index},
-                "dest": {"index": main_index},
-            },
-            wait_for_completion=True,
-        )
-
-        # ---- Post-swap verification ----
-        client.indices.flush(index=main_index, wait_if_ongoing=True)
-        new_main_count = client.count(index=main_index)["count"]
-
-        if new_main_count < v4_count * 0.95:
-            logger.error(
-                f"Post-swap count mismatch: main={new_main_count}, v4={v4_count}. "
-                "Keeping v4 index for manual inspection."
-            )
+        # ---- Swap alias (atomic, no data copy) ----
+        # The 'speakers' alias now points to speakers_v4 instead of speakers_v3.
+        # speakers_v3 is preserved automatically as the backup — no separate
+        # backup index needed since we never delete or move data.
+        swap_result = swap_speaker_alias(v4_index)
+        if swap_result.get("status") != "success":
             return {
                 "status": "error",
-                "message": (
-                    f"Post-swap verification failed: main has {new_main_count} "
-                    f"but v4 had {v4_count} docs. V4 index preserved."
-                ),
+                "message": f"Alias swap failed: {swap_result}",
             }
 
-        # ---- Cleanup ----
-        client.indices.delete(index=v4_index, ignore=[404])
-
-        logger.info(f"V4 migration finalized successfully: {new_main_count} docs in main index")
+        logger.info(
+            f"V4 migration finalized: alias '{main_index}' → '{v4_index}' "
+            f"({v4_count} docs). V3 data preserved in '{v3_index}'."
+        )
         result = {
             "status": "success",
             "message": "Migration complete",
-            "v4_documents": new_main_count,
+            "v4_documents": v4_count,
+            "v3_preserved_in": v3_index,
         }
         send_ws_event(user_id, NOTIFICATION_TYPE_MIGRATION_FINALIZED, result)
         return result

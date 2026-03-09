@@ -1010,6 +1010,7 @@
     justify-content: center;
     z-index: 1200;
     animation: fadeIn 0.2s ease-out;
+    overscroll-behavior: contain;
   }
 
   @keyframes fadeIn {

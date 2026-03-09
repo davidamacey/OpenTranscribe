@@ -88,6 +88,7 @@
     align-items: center;
     justify-content: center;
     z-index: 1000;
+    overscroll-behavior: contain;
   }
 
   .modal-container {
@@ -150,6 +151,7 @@
     padding: 1.5rem;
     overflow-y: auto;
     flex: 1;
+    overscroll-behavior: contain;
   }
 
   .modal-footer {

@@ -148,21 +148,33 @@ OPENSEARCH_MAX_RESULT_WINDOW = 50000
 
 
 def get_speaker_index() -> str:
-    """Get the base (v3) speaker index name."""
+    """Get the speaker index alias name.
+
+    This is an OpenSearch alias that points to whichever versioned index
+    is currently active (speakers_v3 or speakers_v4). All reads should
+    go through this alias. Writes should target the versioned index directly.
+    """
     from app.core.config import settings
 
     return settings.OPENSEARCH_SPEAKER_INDEX
 
 
+def get_speaker_index_v3() -> str:
+    """Get the v3 speaker embedding index name (512-dim, pyannote/embedding)."""
+    from app.core.config import settings
+
+    return f"{settings.OPENSEARCH_SPEAKER_INDEX}_v3"
+
+
 def get_speaker_index_v4() -> str:
-    """Get the v4 speaker embedding index name."""
+    """Get the v4 speaker embedding index name (256-dim, WeSpeaker)."""
     from app.core.config import settings
 
     return f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
 
 
 def get_speaker_index_v3_backup() -> str:
-    """Get the v3 backup speaker index name."""
+    """Get the legacy v3 backup index name (from pre-alias migrations)."""
     from app.core.config import settings
 
     return f"{settings.OPENSEARCH_SPEAKER_INDEX}_v3_backup"

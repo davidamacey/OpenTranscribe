@@ -64,9 +64,9 @@ def extract_audio_from_video(  # noqa: C901
         if progress_callback:
             progress_callback(0.2, "Processing video file...")
 
-        ffmpeg.input(video_path).output(output_path, acodec="pcm_s16le", ar="16000", ac=1).run(
-            quiet=True, overwrite_output=True
-        )
+        ffmpeg.input(video_path).output(
+            output_path, acodec="pcm_s16le", ar="16000", ac=1, vn=None
+        ).run(quiet=True, overwrite_output=True)
 
         if progress_callback:
             progress_callback(0.8, "Verifying extracted audio...")

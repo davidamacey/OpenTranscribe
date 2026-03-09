@@ -49,17 +49,35 @@ class TranscriptionPipeline:
         profiler = VRAMProfiler()
         hw = detect_hardware()
 
-        # Step 1: Load audio
+        # Steps 1+2: Load audio and ensure model is warm in parallel
         self._report(progress_callback, 0.42, "Loading audio")
+        import threading
+
         from app.transcription.audio import load_audio
 
-        audio = load_audio(audio_file_path)
+        audio_result: list = [None]
+        audio_error: list = [None]
 
-        # Step 2: Transcribe with BatchedInferencePipeline + word_timestamps
+        def _load_audio():
+            try:
+                audio_result[0] = load_audio(audio_file_path)
+            except Exception as e:
+                audio_error[0] = e
+
+        # Start audio loading in background while ensuring model is warm
+        audio_thread = threading.Thread(target=_load_audio, name="audio-load", daemon=True)
+        audio_thread.start()
+        transcriber = self.manager.get_transcriber(self.config)
+        audio_thread.join()
+
+        if audio_error[0]:
+            raise audio_error[0]
+        audio = audio_result[0]
+
+        # Transcribe
         self._report(progress_callback, 0.43, "Running AI transcription")
         step_start = time.perf_counter()
         with profiler.step("transcription"):
-            transcriber = self.manager.get_transcriber(self.config)
             transcript = transcriber.transcribe(audio)
         logger.info(
             f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
@@ -69,11 +87,20 @@ class TranscriptionPipeline:
             logger.warning("Transcription produced no segments")
             return transcript
 
-        # Step 3: Release transcriber VRAM for sequential mode
+        # Step 3: Load diarizer — skip transcriber release if VRAM allows both
         self._report(progress_callback, 0.52, "Preparing speaker analysis")
         hw.log_vram_usage("after transcription, before diarizer load")
-        self.manager.release_transcriber()
-        hw.log_vram_usage("after transcriber release")
+        total_vram_mb = self._get_total_vram_mb()
+        if total_vram_mb >= 16_000:
+            # Enough VRAM: keep transcriber warm for next task (saves ~4.7s)
+            logger.info(
+                "Keeping transcriber loaded (%dMB VRAM total, both models fit)",
+                total_vram_mb,
+            )
+        else:
+            # Small GPU: release transcriber first to free VRAM for diarizer
+            self.manager.release_transcriber()
+            hw.log_vram_usage("after transcriber release")
 
         # Step 4: Diarize with PyAnnote v4
         self._report(progress_callback, 0.55, "Analyzing speaker patterns")
@@ -198,6 +225,18 @@ class TranscriptionPipeline:
         with open(path, "w") as f:
             json.dump(result, f, indent=2, default=str)
         logger.info(f"Saved {name}.json ({len(result.get('segments', []))} segments)")
+
+    @staticmethod
+    def _get_total_vram_mb() -> int:
+        """Return total GPU VRAM in MB, or 0 if no GPU."""
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return int(torch.cuda.get_device_properties(0).total_mem / (1024**2))
+        except Exception as e:
+            logger.debug("Could not detect VRAM: %s", e)
+        return 0
 
     @staticmethod
     def _report(

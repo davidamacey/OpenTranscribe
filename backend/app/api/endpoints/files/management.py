@@ -21,7 +21,7 @@ from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.user import User
 from app.tasks.summarization import summarize_transcript_task
-from app.tasks.transcription import transcribe_audio_task
+from app.tasks.transcription import dispatch_transcription_pipeline
 from app.utils.task_utils import cancel_active_task
 from app.utils.task_utils import check_for_stuck_files
 from app.utils.task_utils import is_file_safe_to_delete
@@ -252,12 +252,12 @@ async def retry_file_processing(
         import os
 
         if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-            task = transcribe_audio_task.delay(file_uuid)
-            logger.info(f"Started retry task {task.id} for file {file_id}")
+            task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+            logger.info(f"Started retry task {task_id} for file {file_id}")
             return {
                 "message": "File retry initiated successfully",
                 "file_id": str(db_file.uuid),  # Use UUID for frontend
-                "task_id": task.id,
+                "task_id": task_id,
                 "retry_attempt": db_file.retry_count,
             }
         else:
@@ -425,8 +425,8 @@ def _handle_retry_action(
         )
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        task = transcribe_audio_task.delay(file_uuid)
-        message = f"Retry started (task: {task.id})"
+        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        message = f"Retry started (task: {task_id})"
     else:
         message = "Retry prepared (test mode)"
 
@@ -526,8 +526,8 @@ def _handle_reprocess_action(
         )
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        task = transcribe_audio_task.delay(file_uuid)
-        message = f"Reprocessing started (task: {task.id})"
+        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        message = f"Reprocessing started (task: {task_id})"
     else:
         message = "Reprocessing prepared (test mode)"
 

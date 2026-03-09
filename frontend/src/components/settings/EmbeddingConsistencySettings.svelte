@@ -11,7 +11,7 @@
   let loading = true;
   let error = '';
   let lastRun: { timestamp: number; status: string; repaired?: number; unrepairable?: number; failed_files?: string[]; total_files?: number; duration_seconds: number; v3_missing?: number; v4_missing?: number; total_pg_speakers?: number } | null = null;
-  let counts: { total_pg_speakers: number; v3_indexed: number; v3_missing: number; v3_unrepairable?: number; v3_no_segments?: number; v3_orphans?: number; v4_exists: boolean; v4_missing: number } | null = null;
+  let counts: { total_pg_speakers: number; v3_indexed: number; v3_missing: number; unrepairable?: number; no_segments?: number; orphans?: number; v4_exists: boolean; v4_indexed?: number; v4_missing: number } | null = null;
   let loadingCounts = false;
 
   // Progress tracking
@@ -19,6 +19,7 @@
   let totalFiles = 0;
   let repaired = 0;
   let failedFiles: string[] = [];
+  let etaSeconds: number | null = null;
 
   interface ConsistencyProgress {
     total_files: number;
@@ -47,6 +48,7 @@
     totalFiles = data.total_files || 0;
     repaired = data.repaired || 0;
     failedFiles = data.failed_files || [];
+    etaSeconds = (data as unknown as Record<string, unknown>).eta_seconds as number | null;
   }
 
   function handleBundledStatus(event: CustomEvent<{ running: boolean; progress: ConsistencyProgress | null; last_run: typeof lastRun }>) {
@@ -69,13 +71,16 @@
     running = false;
     processedFiles = 0;
     totalFiles = 0;
+    etaSeconds = null;
 
     if (data.status === 'completed') {
       toastStore.success($t('settings.embeddingConsistency.repairComplete'));
       loadStatus();
+      loadCounts();
     } else if (data.status === 'stopped') {
       toastStore.info($t('settings.embeddingConsistency.repairStopped'));
       loadStatus();
+      loadCounts();
     } else if (data.status === 'error') {
       toastStore.error($t('settings.embeddingConsistency.repairFailed'));
     }
@@ -140,6 +145,7 @@
     totalFiles = 0;
     repaired = 0;
     failedFiles = [];
+    etaSeconds = null;
 
     try {
       const response = await fetch('/api/admin/embedding-consistency/repair', {
@@ -261,25 +267,29 @@
             <span class="count-label">{$t('settings.embeddingConsistency.v3Missing')}</span>
             <span class="count-value">{counts.v3_missing}</span>
           </div>
-          {#if counts.v3_unrepairable && counts.v3_unrepairable > 0}
+          {#if counts.unrepairable && counts.unrepairable > 0}
             <div class="counts-row unrepairable">
-              <span class="count-label">{$t('settings.embeddingConsistency.v3Unrepairable')}</span>
-              <span class="count-value">{counts.v3_unrepairable}</span>
+              <span class="count-label">{$t('settings.embeddingConsistency.unrepairable')}</span>
+              <span class="count-value">{counts.unrepairable}</span>
             </div>
           {/if}
-          {#if counts.v3_no_segments && counts.v3_no_segments > 0}
+          {#if counts.no_segments && counts.no_segments > 0}
             <div class="counts-row info-row">
-              <span class="count-label">{$t('settings.embeddingConsistency.v3NoSegments')}</span>
-              <span class="count-value">{counts.v3_no_segments}</span>
+              <span class="count-label">{$t('settings.embeddingConsistency.noSegments')}</span>
+              <span class="count-value">{counts.no_segments}</span>
             </div>
           {/if}
-          {#if counts.v3_orphans && counts.v3_orphans > 0}
+          {#if counts.orphans && counts.orphans > 0}
             <div class="counts-row has-missing">
-              <span class="count-label">{$t('settings.embeddingConsistency.v3Orphans')}</span>
-              <span class="count-value">{counts.v3_orphans}</span>
+              <span class="count-label">{$t('settings.embeddingConsistency.orphans')}</span>
+              <span class="count-value">{counts.orphans}</span>
             </div>
           {/if}
           {#if counts.v4_exists}
+            <div class="counts-row">
+              <span class="count-label">{$t('settings.embeddingConsistency.v4Indexed')}</span>
+              <span class="count-value">{counts.v4_indexed ?? 0}</span>
+            </div>
             <div class="counts-row" class:has-missing={counts.v4_missing > 0}>
               <span class="count-label">{$t('settings.embeddingConsistency.v4Missing')}</span>
               <span class="count-value">{counts.v4_missing}</span>
@@ -329,6 +339,9 @@
             <span class="progress-percent">
               {processedFiles}/{totalFiles}
               ({Math.round((processedFiles / totalFiles) * 100)}%)
+              {#if etaSeconds != null && etaSeconds > 0}
+                — ETA {formatDuration(etaSeconds)}
+              {/if}
             </span>
           </div>
           <div class="progress-bar-container">

@@ -1,15 +1,26 @@
 """
 Transcription module for OpenTranscribe.
 
-This module contains the transcription pipeline split into modular components:
-- core.py: Main transcription task orchestrator
-- metadata_extractor.py: Media metadata extraction utilities
+Pipeline tasks (3-stage Celery chain for maximum GPU utilization):
+- preprocess.py: CPU task — download, FFmpeg audio extraction, MinIO temp staging
+- core.py: GPU task — Whisper transcription + PyAnnote diarization + DB save
+- postprocess.py: CPU task — speaker embeddings, search indexing, downstream dispatch
+- dispatch.py: Chain orchestration and batch dispatch
+
+Shared utilities:
 - audio_processor.py: Audio file processing and conversion
+- metadata_extractor.py: Media metadata extraction utilities
 - speaker_processor.py: Speaker diarization and management
 - storage.py: Database storage utilities
 - notifications.py: WebSocket notification utilities
 """
 
 from .core import transcribe_audio_task
+from .dispatch import dispatch_batch_transcription
+from .dispatch import dispatch_transcription_pipeline
 
-__all__ = ["transcribe_audio_task"]
+__all__ = [
+    "transcribe_audio_task",
+    "dispatch_transcription_pipeline",
+    "dispatch_batch_transcription",
+]

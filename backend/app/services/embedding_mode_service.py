@@ -6,6 +6,7 @@ speaker embeddings, ensuring backward compatibility for existing installations w
 defaulting to v4 for new installations.
 """
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING
 from typing import Literal
@@ -121,17 +122,26 @@ class EmbeddingModeService:
         try:
             index_name = get_speaker_index()
 
+            # If 'speakers' is an alias, resolve to the concrete index for mapping check
+            resolved_index = index_name
+            with contextlib.suppress(Exception):
+                from app.services.opensearch_service import _get_alias_target
+
+                target = _get_alias_target(index_name)
+                if target:
+                    resolved_index = target
+
             # Check if the speaker index exists
-            if not client.indices.exists(index=index_name):
+            if not client.indices.exists(index=resolved_index):
                 logger.info(
-                    f"Speaker index '{index_name}' does not exist, "
+                    f"Speaker index '{resolved_index}' does not exist, "
                     "new installation detected, using v4 mode"
                 )
                 cls._cached_mode = MODE_V4
                 return cls._cached_mode
 
             # Try to get dimension from index mapping first
-            dimension = cls._get_dimension_from_mapping(client, index_name)
+            dimension = cls._get_dimension_from_mapping(client, resolved_index)
             if dimension is not None:
                 mode = cls._dimension_to_mode(dimension, "index mapping")
                 cls._cached_mode = mode if mode is not None else MODE_V4

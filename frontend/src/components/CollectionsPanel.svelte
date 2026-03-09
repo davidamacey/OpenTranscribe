@@ -1121,6 +1121,7 @@
     justify-content: center;
     z-index: 1200;
     padding: 1rem;
+    overscroll-behavior: contain;
   }
 
   .modal-container {

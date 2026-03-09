@@ -40,6 +40,9 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         "app.tasks.transcription",
+        "app.tasks.transcription.preprocess",
+        "app.tasks.transcription.postprocess",
+        "app.tasks.transcription.dispatch",
         "app.tasks.waveform",
         "app.tasks.waveform_generation",
         "app.tasks.summarization",
@@ -103,6 +106,12 @@ celery_app.conf.update(
         # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)
         # See priority comment above for priority scheme
         "transcription.process_file": {"queue": "gpu"},
+        # Pipeline chain tasks (3-stage: CPU preprocess → GPU transcribe → CPU postprocess)
+        # NOTE: "transcription.gpu_transcribe" is intentionally NOT listed here so
+        # dispatch.py can route it to either "gpu" or "cloud-asr" at call time.
+        "transcription.preprocess": {"queue": "cpu"},
+        "transcription.postprocess": {"queue": "cpu"},
+        "transcription.pipeline_error": {"queue": "utility"},
         "rediarize": {"queue": "gpu"},
         "update_speaker_embedding_on_reassignment": {"queue": "gpu"},
         "extract_v4_embeddings": {"queue": "gpu"},

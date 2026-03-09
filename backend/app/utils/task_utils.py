@@ -374,10 +374,10 @@ def _start_transcription_task(file_uuid: str, file_id: int, task_description: st
     import os
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        from app.tasks.transcription import transcribe_audio_task
+        from app.tasks.transcription import dispatch_transcription_pipeline
 
-        task = transcribe_audio_task.delay(file_uuid)
-        logger.info(f"Started recovery task {task.id} for {task_description} file {file_id}")
+        task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+        logger.info(f"Started recovery task {task_id} for {task_description} file {file_id}")
 
 
 def _recover_pending_file(db: Session, media_file: MediaFile) -> bool:

@@ -27,6 +27,7 @@ from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_PROGRESS
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import get_speaker_index
+from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v4
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
@@ -38,7 +39,7 @@ _REDIS_LOCK_KEY = "embedding_consistency_running"
 _REDIS_LAST_RUN_KEY = "embedding_consistency_last_run"
 _REDIS_PROGRESS_KEY = "embedding_consistency_progress"
 _REDIS_BATCH_IDS_KEY = "embedding_consistency:batch_task_ids"
-_LOCK_TTL = 900  # 15 minutes
+_LOCK_TTL = 7200  # 2 hours — must outlast the longest possible repair run
 _BATCH_SIZE = 25
 
 
@@ -226,49 +227,62 @@ def get_embedding_consistency_counts() -> dict[str, Any]:
     # Also get ALL speaker UUIDs (for orphan detection)
     all_pg_uuids = _get_all_pg_speaker_uuids()
 
-    v3_index = get_speaker_index()
+    # Query the concrete versioned indices (not the alias) for consistency checks
+    v3_index = get_speaker_index_v3()
     v4_index = get_speaker_index_v4()
-
-    os_v3 = _get_opensearch_speaker_uuids(v3_index)
-    if os_v3 is None:
-        return {"error": "opensearch_query_failed", "total_pg_speakers": len(pg_uuids)}
-    missing_v3 = pg_uuids - os_v3
-
-    # Speakers in OS that are valid PG speakers but have no segments
-    # (not orphans — they exist in PG, just have empty segment lists)
-    os_no_segments = (os_v3 & all_pg_uuids) - pg_uuids
-
-    # True orphans: in OS but not in PG at all
-    os_orphans = os_v3 - all_pg_uuids
 
     from app.services.embedding_mode_service import EmbeddingModeService
     from app.services.opensearch_service import get_opensearch_client
 
     client = get_opensearch_client()
     current_mode = EmbeddingModeService.get_current_mode()
+
+    # Query the active main index (alias resolves to correct versioned index)
+    main_index = get_speaker_index()
+    os_main = _get_opensearch_speaker_uuids(main_index)
+    if os_main is None:
+        return {"error": "opensearch_query_failed", "total_pg_speakers": len(pg_uuids)}
+    missing_main = pg_uuids - os_main
+
+    # Also query v3 concrete index directly if it exists and is different from alias target
+    os_v3: set[str] = set()
+    if client and client.indices.exists(index=v3_index):
+        os_v3 = _get_opensearch_speaker_uuids(v3_index) or set()
+
+    # Speakers in OS that are valid PG speakers but have no segments
+    os_no_segments = (os_main & all_pg_uuids) - pg_uuids
+
+    # True orphans: in OS but not in PG at all
+    os_orphans = os_main - all_pg_uuids
+
     v4_active = current_mode == "v4"
     v4_exists = v4_active and bool(client and client.indices.exists(index=v4_index))
 
+    os_v4: set[str] = set()
     missing_v4_set: set[str] = set()
     if v4_exists:
-        os_v4 = _get_opensearch_speaker_uuids(v4_index)
-        if os_v4 is None:
+        _os_v4_result = _get_opensearch_speaker_uuids(v4_index)
+        if _os_v4_result is None:
             logger.warning("Cannot query OpenSearch v4 index — reporting v3 data only")
-            os_v4 = set()
+        else:
+            os_v4 = _os_v4_result
         missing_v4_set = pg_uuids - os_v4
 
     # Identify unrepairable speakers (segments too short for embedding extraction)
-    # Filter both v3 and v4 consistently
-    all_missing = missing_v3 | missing_v4_set
+    # Filter both main (v3/v4 alias target) and v4 staging consistently
+    all_missing = missing_main | missing_v4_set
     unrepairable = _filter_unrepairable_speakers(all_missing)
 
     return {
         "total_pg_speakers": len(pg_uuids),
-        "v3_indexed": len(os_v3 & pg_uuids),  # Only count speakers that have segments
-        "v3_missing": len(missing_v3 - unrepairable),
-        "v3_unrepairable": len(unrepairable),
-        "v3_no_segments": len(os_no_segments),
-        "v3_orphans": len(os_orphans),
+        "mode": current_mode,
+        "main_indexed": len(os_main & pg_uuids),
+        "main_missing": len(missing_main - unrepairable),
+        "v3_indexed": len(os_v3 & pg_uuids) if os_v3 else 0,
+        "v4_indexed": len(os_v4 & pg_uuids),
+        "unrepairable": len(unrepairable),
+        "no_segments": len(os_no_segments),
+        "orphans": len(os_orphans),
         "v4_exists": v4_exists,
         "v4_missing": len(missing_v4_set - unrepairable),
     }
@@ -322,29 +336,29 @@ def speaker_embedding_consistency_check_task(
 
     start_time = time.time()
     try:
-        # Phase 1: Detection (lightweight — two set comparisons)
+        # Phase 1: Detection (lightweight — set comparisons against concrete indices)
         pg_speakers = _get_pg_speaker_uuids_with_segments()
         pg_uuids = set(pg_speakers.keys())
         all_pg_uuids = _get_all_pg_speaker_uuids()
 
-        v3_index = get_speaker_index()
-        os_v3 = _get_opensearch_speaker_uuids(v3_index)
-        if os_v3 is None:
-            r.delete(_REDIS_LOCK_KEY)
-            logger.error("Cannot query OpenSearch v3 index — skipping consistency check")
-            return {"status": "skipped", "reason": "opensearch_query_failed"}
-        missing_v3 = pg_uuids - os_v3
-
-        # Only check v4 if the system is actively using v4 mode (migration complete).
-        # If the v4 index exists but mode is still v3, the migration is in-progress
-        # or pending — the consistency checker should not interfere.
-        v4_index = get_speaker_index_v4()
         from app.services.embedding_mode_service import EmbeddingModeService
         from app.services.opensearch_service import get_opensearch_client
         from app.services.opensearch_service import remove_speaker_embedding
 
         client = get_opensearch_client()
         current_mode = EmbeddingModeService.get_current_mode()
+
+        # Query the main alias (resolves to the active versioned index)
+        main_index = get_speaker_index()
+        os_main = _get_opensearch_speaker_uuids(main_index)
+        if os_main is None:
+            r.delete(_REDIS_LOCK_KEY)
+            logger.error("Cannot query main speaker index — skipping consistency check")
+            return {"status": "skipped", "reason": "opensearch_query_failed"}
+        missing_v3 = pg_uuids - os_main
+
+        # Check v4 if the system is actively using v4 mode
+        v4_index = get_speaker_index_v4()
         v4_active = current_mode == "v4"
         v4_exists = v4_active and bool(client and client.indices.exists(index=v4_index))
         missing_v4: set[str] = set()
@@ -361,7 +375,7 @@ def speaker_embedding_consistency_check_task(
         # Phase 1b: Cleanup stale OS entries (speakers indexed but no longer
         # have segments, or don't exist in PG at all). This is CPU-only work.
         # Check both v3 and v4 indices. remove_speaker_embedding() deletes from both.
-        os_all = os_v3 | os_v4
+        os_all = os_main | os_v4
         stale_uuids = (os_all - pg_uuids) & all_pg_uuids  # In OS, in PG, but no segments
         orphan_uuids = os_all - all_pg_uuids  # In OS but not in PG at all
         cleanup_uuids = stale_uuids | orphan_uuids

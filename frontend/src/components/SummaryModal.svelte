@@ -482,24 +482,35 @@
             on:nextMatch={cycleToNextMatch}
             on:previousMatch={cycleToPreviousMatch}
           />
-
-          <SummaryDisplay
+          <div class="summary-scroll-area">
+            <SummaryDisplay
+              {summary}
+              {searchQuery}
+              {currentMatchIndex}
+            />
+            <SummaryActions
+              {summary}
+              {generating}
+              {llmAvailable}
+              {canRetry}
+              {summaryStatus}
+              on:generateSummary={generateSummary}
+              on:retrySummary={retryFailedSummary}
+              on:regenerateWithPrompt={regenerateWithPrompt}
+            />
+          </div>
+        {:else}
+          <SummaryActions
             {summary}
-            {searchQuery}
-            {currentMatchIndex}
+            {generating}
+            {llmAvailable}
+            {canRetry}
+            {summaryStatus}
+            on:generateSummary={generateSummary}
+            on:retrySummary={retryFailedSummary}
+            on:regenerateWithPrompt={regenerateWithPrompt}
           />
         {/if}
-
-        <SummaryActions
-          {summary}
-          {generating}
-          {llmAvailable}
-          {canRetry}
-          {summaryStatus}
-          on:generateSummary={generateSummary}
-          on:retrySummary={retryFailedSummary}
-          on:regenerateWithPrompt={regenerateWithPrompt}
-        />
       {/if}
 </BaseModal>
 </div>
@@ -508,6 +519,15 @@
   /* Zero out BaseModal body padding for full-bleed layout matching TranscriptModal */
   .summary-modal-wrapper :global(.modal-body) {
     padding: 0 !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .summary-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
   }
 
   .modal-title {

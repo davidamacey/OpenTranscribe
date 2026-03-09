@@ -599,6 +599,9 @@
   /* Override BaseModal body padding for full-bleed transcript layout */
   .transcript-modal-wrapper :global(.modal-body) {
     padding: 0 !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .search-section {

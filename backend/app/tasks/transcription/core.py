@@ -814,16 +814,142 @@ def _run_speaker_embeddings_with_retry(
                 logger.error(f"Speaker embedding failed after {max_retries + 1} attempts: {e}")
 
 
+def _run_post_gpu_background(
+    ctx: TranscriptionContext,
+    result: dict,
+    audio_file_path: str,
+    processed_segments: list,
+    speaker_mapping: dict,
+    downstream_tasks: list[str] | None,
+) -> None:
+    """Run CPU-bound post-processing in a background thread.
+
+    This includes speaker embeddings, search indexing, and downstream task
+    dispatch. Runs off the GPU worker thread so the next GPU task can start
+    immediately.
+
+    All errors are caught and logged — failures here do not affect the
+    transcription result (segments are already saved to DB).
+    """
+    import time
+
+    bg_start = time.perf_counter()
+    logger.info(f"Background post-processing started for file {ctx.file_id}")
+
+    try:
+        # Speaker embeddings (native path uses OpenSearch, no GPU)
+        send_progress_notification(
+            ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification"
+        )
+        _run_speaker_embeddings_with_retry(
+            ctx, result, audio_file_path, processed_segments, speaker_mapping
+        )
+
+        # Store native centroids in v4 staging index (fire-and-forget)
+        native_embeddings_for_v4 = result.get("native_speaker_embeddings")
+        if native_embeddings_for_v4 and not _should_use_native_embeddings(result):
+            try:
+                _store_native_centroids_in_v4_staging(
+                    ctx, native_embeddings_for_v4, speaker_mapping
+                )
+            except Exception as e:
+                logger.warning(f"v4 staging: Error (non-fatal): {e}")
+
+        with session_scope() as db:
+            update_task_status(db, ctx.task_id, "in_progress", progress=0.85)
+
+        # Index in search (dispatches as separate Celery task)
+        send_progress_notification(ctx.user_id, ctx.file_id, 0.85, "Dispatching search indexing")
+        try:
+            _index_transcript_in_search(ctx, processed_segments)
+        except Exception as e:
+            logger.warning(f"Error dispatching search indexing: {e}")
+
+        # Finalize
+        send_progress_notification(ctx.user_id, ctx.file_id, 0.95, "Finalizing transcription")
+        with session_scope() as db:
+            update_task_status(db, ctx.task_id, "completed", progress=1.0, completed=True)
+            # Note: media_file.status is already set to COMPLETED by
+            # update_media_file_transcription_status in the critical path
+
+        send_completion_notification(ctx.user_id, ctx.file_id)
+
+        logger.info(
+            f"Transcription completed successfully for file {ctx.file_id}, "
+            "triggering automatic summarization"
+        )
+        trigger_automatic_summarization(ctx.file_id, ctx.file_uuid, tasks_to_run=downstream_tasks)
+
+        # Dispatch speaker attribute detection (fire-and-forget, CPU queue)
+        speaker_llm_explicit = downstream_tasks is not None and "speaker_llm" in downstream_tasks
+        if not speaker_llm_explicit:
+            try:
+                from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
+                from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
+
+                if _is_speaker_attribute_detection_enabled(ctx.user_id):
+                    detect_speaker_attributes_task.delay(str(ctx.file_uuid), ctx.user_id)
+                    logger.info(f"Dispatched speaker attribute detection for {ctx.file_uuid}")
+            except Exception as e:
+                logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
+
+        # Speaker clustering
+        if not downstream_tasks or "speaker_clustering" not in downstream_tasks:
+            try:
+                from app.tasks.speaker_clustering import cluster_speakers_for_file
+
+                cluster_speakers_for_file.delay(str(ctx.file_uuid), ctx.user_id)
+                logger.info(f"Dispatched speaker clustering for {ctx.file_uuid}")
+            except Exception as e:
+                logger.warning(f"Failed to dispatch speaker clustering: {e}")
+
+    except Exception as e:
+        logger.error(f"Background post-processing error for file {ctx.file_id}: {e}")
+        # Try to mark task as failed if background processing crashes
+        try:
+            with session_scope() as db:
+                update_task_status(
+                    db,
+                    ctx.task_id,
+                    "failed",
+                    error_message=f"Post-processing error: {e}",
+                    completed=True,
+                )
+        except Exception as status_err:
+            logger.warning(f"Failed to update task status after bg error: {status_err}")
+
+    elapsed = time.perf_counter() - bg_start
+    logger.info(
+        f"TIMING: background post-processing completed in {elapsed:.3f}s for file {ctx.file_id}"
+    )
+
+
 def _process_transcription_result(
     ctx: TranscriptionContext,
     result: dict,
     audio_file_path: str,
     downstream_tasks: list[str] | None = None,
 ) -> dict:
-    """Process successful transcription result including speakers, indexing, and finalization."""
+    """Process successful transcription result including speakers, indexing, and finalization.
+
+    Critical path (blocks GPU worker):
+      - Extract speakers, create mappings, process segments
+      - Save transcript segments to database
+      - Release GPU memory
+
+    Background thread (GPU worker freed for next task):
+      - Speaker embedding matching (OpenSearch, CPU-bound)
+      - Search indexing dispatch
+      - Downstream task dispatch (summarization, clustering, etc.)
+    """
+    import threading
     import time
 
     from app.utils.hardware_detection import detect_hardware
+
+    post_start = time.perf_counter()
+
+    # --- Critical path: must complete before GPU worker returns ---
 
     # Process speakers and segments
     send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
@@ -856,7 +982,6 @@ def _process_transcription_result(
         step_start = time.perf_counter()
         logger.info(f"Marking {len(overlap_regions)} overlap regions for file {ctx.file_id}")
         processed_segments = mark_overlapping_segments(processed_segments, overlap_regions)
-        # Note: mark_overlapping_segments has its own internal timing log
     elif not enable_overlap and overlap_regions:
         logger.info("Overlap marking disabled by ENABLE_OVERLAP_DETECTION=false")
 
@@ -881,10 +1006,9 @@ def _process_transcription_result(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.75)
 
-    # Save to database
+    # Save to database (must complete before returning)
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
     step_start = time.perf_counter()
-    # Determine model info for tracking
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
     diarization_model = "pyannote/speaker-diarization-3.1"
     try:
@@ -908,82 +1032,36 @@ def _process_transcription_result(
             asr_model=result.get("asr_model"),
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
-    # Note: save_transcript_segments has its own internal timing log
 
-    # Speaker embeddings - choose native (PyAnnote centroids) or traditional path
-    # Retry up to 2 times with short backoff to handle transient OpenSearch failures
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification")
-    step_start = time.perf_counter()
-    _run_speaker_embeddings_with_retry(
-        ctx, result, audio_file_path, processed_segments, speaker_mapping
-    )
-    # Note: embedding processing functions have their own internal timing logs
-
-    # Store native centroids in v4 staging index (fire-and-forget).
-    # Only when the traditional v3 path was used but native centroids exist —
-    # this pre-populates the v4 index for future migration.
-    native_embeddings_for_v4 = result.get("native_speaker_embeddings")
-    if native_embeddings_for_v4 and not _should_use_native_embeddings(result):
-        try:
-            _store_native_centroids_in_v4_staging(ctx, native_embeddings_for_v4, speaker_mapping)
-        except Exception as e:
-            logger.warning(f"v4 staging: Error (non-fatal): {e}")
-
-    # Force GPU memory cleanup before OpenSearch indexing
+    # Release GPU memory so next task can start loading models
     hardware_config = detect_hardware()
     hardware_config.optimize_memory_usage()
-    logger.info("GPU memory cleanup checkpoint completed")
 
-    with session_scope() as db:
-        update_task_status(db, ctx.task_id, "in_progress", progress=0.85)
-
-    # Index in search (dispatched as separate Celery task)
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.85, "Dispatching search indexing")
-    try:
-        _index_transcript_in_search(ctx, processed_segments)
-    except Exception as e:
-        logger.warning(f"Error dispatching search indexing: {e}")
-
-    # Finalize
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.95, "Finalizing transcription")
-    with session_scope() as db:
-        update_task_status(db, ctx.task_id, "completed", progress=1.0, completed=True)
-
-    send_completion_notification(ctx.user_id, ctx.file_id)
-
+    critical_elapsed = time.perf_counter() - post_start
     logger.info(
-        f"Transcription completed successfully for file {ctx.file_id}, triggering automatic summarization"
+        f"TIMING: critical post-processing completed in {critical_elapsed:.3f}s "
+        f"for file {ctx.file_id} (GPU worker now free)"
     )
-    trigger_automatic_summarization(ctx.file_id, ctx.file_uuid, tasks_to_run=downstream_tasks)
 
-    # Dispatch speaker attribute detection (fire-and-forget, CPU queue).
-    # When speaker_llm is explicitly in downstream_tasks, it's dispatched directly
-    # by trigger_automatic_summarization — skip attribute detection chain to avoid
-    # double dispatch of speaker_llm.
-    speaker_llm_explicit = downstream_tasks is not None and "speaker_llm" in downstream_tasks
-    if not speaker_llm_explicit:
-        try:
-            from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
-
-            if _is_speaker_attribute_detection_enabled(ctx.user_id):
-                from app.tasks.speaker_attribute_task import detect_speaker_attributes_task
-
-                detect_speaker_attributes_task.delay(str(ctx.file_uuid), ctx.user_id)
-                logger.info(f"Dispatched speaker attribute detection for {ctx.file_uuid}")
-        except Exception as e:
-            logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
-
-    # --- Speaker clustering ---
-    # Only dispatch if this is the normal pipeline (not selective reprocessing,
-    # which dispatches these from trigger_automatic_summarization)
-    if not downstream_tasks or "speaker_clustering" not in downstream_tasks:
-        try:
-            from app.tasks.speaker_clustering import cluster_speakers_for_file
-
-            cluster_speakers_for_file.delay(str(ctx.file_uuid), ctx.user_id)
-            logger.info(f"Dispatched speaker clustering for {ctx.file_uuid}")
-        except Exception as e:
-            logger.warning(f"Failed to dispatch speaker clustering: {e}")
+    # --- Background: speaker embeddings, indexing, dispatch ---
+    # Run in a daemon thread so the GPU worker returns immediately.
+    bg_thread = threading.Thread(
+        target=_run_post_gpu_background,
+        args=(
+            ctx,
+            result,
+            audio_file_path,
+            processed_segments,
+            speaker_mapping,
+            downstream_tasks,
+        ),
+        name=f"post-gpu-{ctx.file_id}",
+        daemon=True,
+    )
+    bg_thread.start()
+    logger.info(
+        f"Started background post-processing thread for file {ctx.file_id}, GPU worker returning"
+    )
 
     return {"status": "success", "file_id": ctx.file_id, "segments": len(processed_segments)}
 
@@ -1172,6 +1250,19 @@ def _extract_metadata_if_available(temp_file_path: str, ctx: TranscriptionContex
             db.commit()
 
 
+def _download_and_extract_metadata(
+    storage_path: str, temp_file_path: str, ctx: TranscriptionContext
+) -> None:
+    """Download file from MinIO and extract metadata (for video presigned URL path)."""
+    try:
+        from app.services.minio_service import download_file_to_path
+
+        download_file_to_path(storage_path, temp_file_path)
+        _extract_metadata_if_available(temp_file_path, ctx)
+    except Exception as e:
+        logger.warning(f"Metadata extraction failed for file {ctx.file_id}: {e}")
+
+
 def _convert_asr_result_to_segments(result, media_file_id: int) -> list[dict]:
     """
     Convert an ASRResult from a cloud provider to the segment dict format used by storage.
@@ -1316,36 +1407,63 @@ def _process_file_in_temp_dir(
     max_speakers: int | None,
     num_speakers: int | None,
     downstream_tasks: list[str] | None = None,
+    minio_url: str | None = None,
 ) -> dict:
     """Process the transcription pipeline within a temporary directory."""
-    # Save downloaded file
-    temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
-    with open(temp_file_path, "wb") as f:
-        f.write(file_data.read())
+    import threading
 
-    # Extract metadata (non-critical)
-    try:
-        _extract_metadata_if_available(temp_file_path, ctx)
-    except Exception as e:
-        logger.warning(f"Error extracting media metadata: {e}")
-
-    # Prepare audio for transcription
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.25)
 
     # Create progress callback for audio extraction phase (25% to 38% of overall progress)
     def audio_extraction_progress_callback(stage_progress: float, message: str) -> None:
-        # Map 0-1 stage progress to 0.25-0.38 overall progress
         overall_progress = 0.25 + (stage_progress * 0.13)
         send_progress_notification(ctx.user_id, ctx.file_id, overall_progress, message)
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.25, "Starting audio preparation")
-    audio_file_path = prepare_audio_for_transcription(
-        temp_file_path,
-        ctx.content_type,
-        temp_dir,
-        progress_callback=audio_extraction_progress_callback,
-    )
+    if minio_url:
+        # Video file: FFmpeg reads directly from MinIO presigned URL
+        # No need to download full video — just extract the audio stream
+        send_progress_notification(ctx.user_id, ctx.file_id, 0.25, "Extracting audio from video")
+        temp_audio_path = os.path.join(temp_dir, "audio.wav")
+        from .audio_processor import extract_audio_from_video
+
+        extract_audio_from_video(minio_url, temp_audio_path, audio_extraction_progress_callback)
+        audio_file_path = temp_audio_path
+
+        # Download file in background for metadata extraction only
+        temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
+        metadata_thread = threading.Thread(
+            target=_download_and_extract_metadata,
+            args=(ctx.file_path, temp_file_path, ctx),
+            name=f"metadata-{ctx.file_id}",
+            daemon=True,
+        )
+        metadata_thread.start()
+    else:
+        # Audio file: use downloaded data
+        temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
+        with open(temp_file_path, "wb") as f:
+            f.write(file_data.read())
+
+        # Run metadata extraction in background thread
+        metadata_thread = threading.Thread(
+            target=_extract_metadata_if_available,
+            args=(temp_file_path, ctx),
+            name=f"metadata-{ctx.file_id}",
+            daemon=True,
+        )
+        metadata_thread.start()
+
+        send_progress_notification(ctx.user_id, ctx.file_id, 0.25, "Starting audio preparation")
+        audio_file_path = prepare_audio_for_transcription(
+            temp_file_path,
+            ctx.content_type,
+            temp_dir,
+            progress_callback=audio_extraction_progress_callback,
+        )
+
+    # Ensure metadata extraction completed (typically finishes well before audio extraction)
+    metadata_thread.join(timeout=30)
 
     # Check whether the user has a cloud ASR provider configured.
     # If so, route to the cloud pipeline; otherwise fall through to the local WhisperX pipeline.
@@ -1471,10 +1589,22 @@ def transcribe_audio_task(
             create_task_record(db, task_id, ctx.user_id, ctx.file_id, "transcription")
             update_task_status(db, task_id, "in_progress", progress=0.1)
 
-        # Download file from MinIO
-        logger.info(f"Downloading file {ctx.file_path}")
-        file_data, _, _ = download_file(ctx.file_path)
         file_ext = get_audio_file_extension(ctx.content_type, ctx.file_name)
+        is_video = ctx.content_type.startswith("video/")
+
+        # For video files: stream audio directly from MinIO via presigned URL
+        # (avoids downloading full video through Python — FFmpeg reads MinIO directly)
+        # For audio files: download normally (small, fast)
+        if is_video:
+            from app.services.minio_service import get_file_url
+
+            logger.info(f"Generating presigned URL for direct FFmpeg access: {ctx.file_path}")
+            minio_url = get_file_url(ctx.file_path, expires=3600)
+            file_data = None
+        else:
+            logger.info(f"Downloading audio file {ctx.file_path}")
+            file_data, _, _ = download_file(ctx.file_path)
+            minio_url = None
 
         # Process in temporary directory
         try:
@@ -1488,6 +1618,7 @@ def transcribe_audio_task(
                     max_speakers,
                     num_speakers,
                     downstream_tasks,
+                    minio_url=minio_url,
                 )
         except PermissionError as e:
             logger.error(f"PyAnnote model access error: {str(e)}")
@@ -1499,3 +1630,205 @@ def transcribe_audio_task(
 
     except Exception as e:
         return _handle_outer_exception(ctx, task_id, e)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline chain: GPU-only task (Stage 2 of 3)
+# Receives preprocess result from CPU task, runs Whisper + PyAnnote on GPU,
+# saves segments to DB, returns context for CPU postprocess task.
+# ---------------------------------------------------------------------------
+
+
+def _process_and_save_critical(
+    ctx: TranscriptionContext,
+    result: dict,
+    preprocess_context: dict,
+) -> dict:
+    """Process speakers, save transcript to DB, release GPU. Returns chain context."""
+    from app.utils.hardware_detection import detect_hardware
+
+    post_start = time.perf_counter()
+
+    # Process speakers and segments
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
+    unique_speakers = extract_unique_speakers(result["segments"])
+
+    with session_scope() as db:
+        speaker_mapping = create_speaker_mapping(db, ctx.user_id, ctx.file_id, unique_speakers)
+        update_task_status(db, ctx.task_id, "in_progress", progress=0.72)
+
+    processed_segments = process_segments_with_speakers(result["segments"], speaker_mapping)
+
+    # Mark overlapping segments
+    enable_overlap = os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower() == "true"
+    overlap_info = result.get("overlap_info", {})
+    overlap_regions = overlap_info.get("regions", [])
+    if enable_overlap and overlap_regions:
+        processed_segments = mark_overlapping_segments(processed_segments, overlap_regions)
+
+    # Garbage cleanup
+    with session_scope() as db:
+        from app.services import system_settings_service
+
+        garbage_config = system_settings_service.get_garbage_cleanup_config(db)
+    if garbage_config["garbage_cleanup_enabled"]:
+        processed_segments, _ = clean_garbage_words(
+            processed_segments, garbage_config["max_word_length"]
+        )
+
+    # Save to database
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
+    whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
+    diarization_model = "pyannote/speaker-diarization-3.1"
+    try:
+        from app.services.embedding_mode_service import EmbeddingModeService
+
+        embedding_mode = EmbeddingModeService.get_current_mode()
+    except Exception:
+        embedding_mode = None
+
+    with session_scope() as db:
+        save_transcript_segments(db, ctx.file_id, processed_segments)
+        update_media_file_transcription_status(
+            db,
+            ctx.file_id,
+            processed_segments,
+            result.get("language", "en"),
+            whisper_model=whisper_model,
+            diarization_model=diarization_model,
+            embedding_mode=embedding_mode,
+            asr_provider=result.get("asr_provider"),
+            asr_model=result.get("asr_model"),
+        )
+        update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
+
+    # Release GPU memory
+    hardware_config = detect_hardware()
+    hardware_config.optimize_memory_usage()
+
+    elapsed = time.perf_counter() - post_start
+    logger.info(
+        f"TIMING: critical path completed in {elapsed:.3f}s for file {ctx.file_id} "
+        "(GPU worker now free)"
+    )
+
+    # Serialize native embeddings for JSON chain transfer
+    native_embeddings_serialized = None
+    use_native = False
+    native_embs = result.get("native_speaker_embeddings")
+    if native_embs:
+        use_native = _should_use_native_embeddings(result)
+        native_embeddings_serialized = {
+            label: emb.tolist() if hasattr(emb, "tolist") else list(emb)
+            for label, emb in native_embs.items()
+        }
+
+    return {
+        "status": "success",
+        "file_uuid": ctx.file_uuid,
+        "file_id": ctx.file_id,
+        "user_id": ctx.user_id,
+        "task_id": ctx.task_id,
+        "language": result.get("language", "en"),
+        "segment_count": len(processed_segments),
+        "speaker_mapping": speaker_mapping,
+        "native_embeddings": native_embeddings_serialized,
+        "use_native_embeddings": use_native,
+        "downstream_tasks": preprocess_context.get("downstream_tasks"),
+        "audio_temp_path": preprocess_context.get("audio_temp_path"),
+    }
+
+
+@celery_app.task(
+    bind=True,
+    name="transcription.gpu_transcribe",
+    priority=GPUPriority.USER_IMPORT,
+    acks_late=True,
+)
+def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
+    """GPU-only: Whisper transcription + PyAnnote diarization + save to DB.
+
+    Stage 2 of the 3-stage pipeline chain. Receives context from
+    preprocess_for_transcription (CPU), runs AI models on GPU, saves
+    segments to DB, returns context for finalize_transcription (CPU).
+    """
+    task_id = preprocess_context["task_id"]
+    file_uuid = preprocess_context["file_uuid"]
+    file_id = preprocess_context["file_id"]
+    user_id = preprocess_context["user_id"]
+
+    ctx = TranscriptionContext(
+        task_id=task_id,
+        file_id=file_id,
+        file_uuid=file_uuid,
+        user_id=user_id,
+        file_path=preprocess_context["storage_path"],
+        file_name=preprocess_context["file_name"],
+        content_type=preprocess_context["content_type"],
+    )
+
+    try:
+        from app.services.minio_service import download_temp_audio
+
+        with session_scope() as db:
+            update_task_status(db, task_id, "in_progress", progress=0.22)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Download preprocessed audio from MinIO temp
+            step_start = time.perf_counter()
+            local_audio_path = os.path.join(temp_dir, "audio.wav")
+            download_temp_audio(file_uuid, local_audio_path)
+            logger.info(
+                f"TIMING: audio download from temp completed in "
+                f"{time.perf_counter() - step_start:.3f}s"
+            )
+
+            send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
+
+            # Check for cloud ASR provider
+            try:
+                from app.services.asr.factory import ASRProviderFactory
+
+                with session_scope() as db:
+                    provider = ASRProviderFactory.create_for_user(user_id, db)
+            except Exception:
+                provider = None
+
+            if provider is not None and provider.provider_name != "local":
+                result = _run_cloud_asr_pipeline(
+                    ctx,
+                    local_audio_path,
+                    preprocess_context.get("min_speakers"),
+                    preprocess_context.get("max_speakers"),
+                    preprocess_context.get("num_speakers"),
+                    provider=provider,
+                )
+            else:
+                result = _run_transcription_pipeline(
+                    ctx,
+                    local_audio_path,
+                    preprocess_context.get("min_speakers"),
+                    preprocess_context.get("max_speakers"),
+                    preprocess_context.get("num_speakers"),
+                    source_language=preprocess_context.get("source_language"),
+                    translate_to_english=preprocess_context.get("translate_to_english"),
+                )
+
+            # Validate result
+            validation_error = _validate_transcription_result(result, ctx, task_id)
+            if validation_error:
+                return {
+                    "status": "error",
+                    "file_uuid": file_uuid,
+                    "file_id": file_id,
+                    "task_id": task_id,
+                }
+
+            # Process speakers, save to DB, release GPU
+            return _process_and_save_critical(ctx, result, preprocess_context)
+
+    except Exception as e:
+        logger.error(f"GPU transcription failed for file {file_uuid}: {e}")
+        error_message = _get_user_friendly_error_message(str(e))
+        _handle_transcription_failure(ctx, task_id, error_message, "gpu_processing_error")
+        raise
