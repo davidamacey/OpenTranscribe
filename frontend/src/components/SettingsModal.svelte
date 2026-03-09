@@ -13,6 +13,7 @@
   import TranscriptionSettings from '$components/settings/TranscriptionSettings.svelte';
   import OrganizationContextSettings from '$components/settings/OrganizationContextSettings.svelte';
   import DownloadSettings from '$components/settings/DownloadSettings.svelte';
+  import MediaSourcesSettings from '$components/settings/MediaSourcesSettings.svelte';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
@@ -35,6 +36,7 @@
 
   // Import i18n
   import { t } from '$stores/locale';
+  import Spinner from './ui/Spinner.svelte';
 
   // Modal state
   let modalElement: HTMLElement;
@@ -184,7 +186,8 @@
       items: [
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' }
+        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' },
+        ...(isAdmin ? [{ id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' }] : [])
       ]
     }
   ];
@@ -1112,6 +1115,15 @@
             </div>
           {/if}
 
+          <!-- Media Sources Settings Section (Admin) -->
+          {#if activeSection === 'media-sources'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.mediaSources.title')}</h3>
+              <p class="section-description">{$t('settings.mediaSources.description')}</p>
+              <MediaSourcesSettings />
+            </div>
+          {/if}
+
           <!-- AI Prompts Section -->
           {#if activeSection === 'ai-prompts'}
             <div class="content-section">
@@ -1213,7 +1225,7 @@
 
               {#if statsLoading}
                 <div class="loading-state">
-                  <div class="spinner"></div>
+                  <Spinner size="large" />
                   <p>{$t('settings.statistics.loadingMessage')}</p>
                 </div>
               {:else}
@@ -1514,7 +1526,7 @@
 
               {#if taskHealthLoading}
                 <div class="loading-state">
-                  <div class="spinner"></div>
+                  <Spinner size="large" />
                   <p>{$t('settings.taskHealth.loadingMessage')}</p>
                 </div>
               {:else if taskHealthData}
@@ -2154,20 +2166,6 @@
   .loading-state p {
     margin: 0;
     font-size: 0.8125rem;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-bottom: 12px;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .stats-grid {

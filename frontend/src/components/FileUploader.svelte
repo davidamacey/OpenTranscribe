@@ -39,6 +39,7 @@
 
   // Import i18n for translations
   import { t } from '../stores/locale';
+  import Spinner from './ui/Spinner.svelte';
 
   // Derived stores for additional recording state
   $: recordedBlob = $recordingStore.recordedBlob;
@@ -2336,7 +2337,7 @@
             </div>
           {:else}
             <div class="download-options-loading">
-              <span class="download-spinner"></span>
+              <Spinner size="small" />
               {$t('common.loading')}
             </div>
           {/if}
@@ -2382,6 +2383,16 @@
           <p class="supported-platforms-list">{$t('uploader.supportedPlatformsList')}</p>
           <p class="platform-limitations">{$t('uploader.platformLimitations')}</p>
         </details>
+        <div class="url-disclaimer">
+          <div class="url-disclaimer-icon" title={$t('uploader.urlDisclaimerFull')}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+              <path d="M12 9v4"/>
+              <path d="m12 17 .01 0"/>
+            </svg>
+          </div>
+          <p class="url-disclaimer-text">{$t('uploader.urlDisclaimerShort')}</p>
+        </div>
       </div>
     </div>
   {:else}
@@ -2829,6 +2840,35 @@
 
   :global(.dark) .platform-limitations {
     background-color: rgba(245, 158, 11, 0.15);
+  }
+
+  .url-disclaimer {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background-color: rgba(245, 158, 11, 0.08);
+    border-radius: 6px;
+    border-left: 3px solid var(--warning-color, #f59e0b);
+  }
+
+  .url-disclaimer-icon {
+    flex-shrink: 0;
+    color: var(--warning-color, #f59e0b);
+    margin-top: 1px;
+    cursor: help;
+  }
+
+  .url-disclaimer-text {
+    margin: 0;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    color: var(--text-secondary);
+  }
+
+  :global(.dark) .url-disclaimer {
+    background-color: rgba(245, 158, 11, 0.12);
   }
 
   .selected-file {
@@ -4484,16 +4524,4 @@
     color: var(--text-secondary, #6b7280);
   }
 
-  .download-spinner {
-    width: 0.875rem;
-    height: 0.875rem;
-    border: 2px solid var(--border-color, #e5e7eb);
-    border-top-color: var(--primary-color, #3b82f6);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
 </style>

@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { fade, slide } from 'svelte/transition';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import BaseModal from './ui/BaseModal.svelte';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
@@ -332,67 +333,34 @@
 </div>
 
 <!-- New Profile Modal -->
-{#if showNewProfileModal}
-  <div
-    class="modal-backdrop"
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-    transition:fade
-    on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
-    on:keydown={(e) => e.key === 'Escape' && (showNewProfileModal = false, newProfileName = '')}
-  >
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="modal-container" role="document" on:click|stopPropagation on:keydown={(e) => e.key === 'Escape' && (showNewProfileModal = false, newProfileName = '')}>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 class="modal-title">
-            {$t('speakerVerification.createNewSpeakerProfile')}
-          </h3>
-          <button
-            class="modal-close-button"
-            aria-label="{$t('speakerVerification.closeModal')}"
-            on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+<BaseModal isOpen={showNewProfileModal} title={$t('speakerVerification.createNewSpeakerProfile')} onClose={() => { showNewProfileModal = false; newProfileName = ''; }} maxWidth="500px">
+  <label for="profileName" class="input-label">
+    {$t('speakerVerification.profileName')}
+  </label>
+  <input
+    id="profileName"
+    type="text"
+    bind:value={newProfileName}
+    placeholder="{$t('speakerVerification.enterSpeakerName')}"
+    class="profile-name-input"
+  />
 
-        <div class="modal-body">
-          <label for="profileName" class="input-label">
-            {$t('speakerVerification.profileName')}
-          </label>
-          <input
-            id="profileName"
-            type="text"
-            bind:value={newProfileName}
-            placeholder="{$t('speakerVerification.enterSpeakerName')}"
-            class="profile-name-input"
-          />
-        </div>
-
-        <div class="modal-footer">
-          <button
-            on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
-            class="modal-button cancel-button"
-          >
-            {$t('speakerVerification.cancel')}
-          </button>
-          <button
-            on:click={handleCreateNewProfile}
-            disabled={!newProfileName.trim()}
-            class="modal-button confirm-button"
-          >
-            {$t('speakerVerification.createProfile')}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}
+  <svelte:fragment slot="footer">
+    <button
+      on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
+      class="modal-button cancel-button"
+    >
+      {$t('speakerVerification.cancel')}
+    </button>
+    <button
+      on:click={handleCreateNewProfile}
+      disabled={!newProfileName.trim()}
+      class="modal-button confirm-button"
+    >
+      {$t('speakerVerification.createProfile')}
+    </button>
+  </svelte:fragment>
+</BaseModal>
 
 <!-- Confirmation Modal -->
 {#if showConfirmModal}
@@ -713,73 +681,7 @@
     background: color-mix(in srgb, var(--error-color) 85%, black);
   }
 
-  /* Modal styles */
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--modal-backdrop);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
-  }
-
-  .modal-container {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    max-width: 500px;
-    width: 100%;
-    overflow: hidden;
-    box-shadow: var(--dropdown-shadow);
-  }
-
-  .modal-content {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-title {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .modal-close-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: color 0.2s ease;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .modal-close-button:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-  }
-
-  .modal-body {
-    padding: 1.5rem;
-  }
-
+  /* Modal-specific styles */
   .input-label {
     display: block;
     font-size: 0.875rem;
@@ -803,14 +705,6 @@
     outline: none;
     border-color: var(--input-focus-border);
     box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
-  }
-
-  .modal-footer {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem 1.5rem;
-    justify-content: flex-end;
-    border-top: 1px solid var(--border-color);
   }
 
   .modal-button {

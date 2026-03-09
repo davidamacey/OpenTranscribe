@@ -13,6 +13,7 @@
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import Spinner from './ui/Spinner.svelte';
 
   // Helper function to translate speaker input placeholder
   function translatePlaceholder(placeholder: string | undefined, speakerName: string): string {
@@ -768,7 +769,7 @@
           >
             {#if loadingMoreSegments}
               <div class="loading-more-indicator">
-                <span class="loading-spinner"></span>
+                <Spinner size="small" />
                 <span>{$t('transcript.loadingMoreSegments')}</span>
               </div>
             {/if}
@@ -782,7 +783,7 @@
             <span class="segments-count">{$t('transcript.segmentsLoaded', { loaded: loadedSegments, total: totalSegments })}</span>
             {#if loadingMoreSegments}
               <span class="loading-indicator">
-                <span class="loading-spinner-small"></span>
+                <Spinner size="small" />
                 {$t('common.loading')}
               </span>
             {/if}
@@ -1319,15 +1320,6 @@
     font-size: 14px;
   }
 
-  .loading-more-indicator .loading-spinner {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
   /* Segments loaded info bar */
   .segments-loaded-info {
     display: flex;
@@ -1349,19 +1341,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-
-  .loading-spinner-small {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .transcript-column {

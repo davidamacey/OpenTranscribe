@@ -9,6 +9,8 @@
   import SpeakerInboxItem from '$components/speakers/SpeakerInboxItem.svelte';
   import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import { browser } from '$app/environment';
+  import Spinner from '../../components/ui/Spinner.svelte';
+  import EmptyState from '../../components/ui/EmptyState.svelte';
 
   // Dynamic import: Plyr is browser-only (breaks SSR on page refresh)
   let PlyrMiniPlayer: typeof import('$components/PlyrMiniPlayer.svelte').default | null = null;
@@ -833,15 +835,13 @@
       {#if loadingClusters}
         <div class="loading">{$t('speakers.loadingClusters')}</div>
       {:else if clusters.length === 0}
-        <div class="empty-state">
-          <div class="empty-icon">
+        <EmptyState title={$t('speakers.clusters.emptyTitle')} description={$t('speakers.clusters.emptyDesc')} padding="60px 20px">
+          <svelte:fragment slot="icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <circle cx="12" cy="12" r="10" /><path d="M8 12h8" /><path d="M12 8v8" />
             </svg>
-          </div>
-          <p class="empty-title">{$t('speakers.clusters.emptyTitle')}</p>
-          <p class="empty-desc">{$t('speakers.clusters.emptyDesc')}</p>
-        </div>
+          </svelte:fragment>
+        </EmptyState>
       {:else}
         {#if mergeMode}
           <div class="merge-banner">
@@ -995,15 +995,13 @@
       {#if loadingProfiles}
         <div class="loading">{$t('speakers.loadingProfiles')}</div>
       {:else if profiles.length === 0}
-        <div class="empty-state">
-          <div class="empty-icon">
+        <EmptyState title={$t('speakers.profiles.emptyTitle')} description={$t('speakers.profiles.emptyDesc')} padding="60px 20px">
+          <svelte:fragment slot="icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
             </svg>
-          </div>
-          <p class="empty-title">{$t('speakers.profiles.emptyTitle')}</p>
-          <p class="empty-desc">{$t('speakers.profiles.emptyDesc')}</p>
-        </div>
+          </svelte:fragment>
+        </EmptyState>
       {:else}
         <div class="profile-list">
           {#each profiles as profile (profile.uuid)}
@@ -1013,7 +1011,7 @@
                 <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div class="profile-avatar-wrapper" on:click|stopPropagation={() => { if (!avatarUploading.has(profile.uuid)) { const el = document.getElementById('avatar-input-' + profile.uuid); el?.click(); } }} title={$t('speakers.tooltip.uploadAvatar')}>
                   {#if avatarUploading.has(profile.uuid)}
-                    <div class="avatar-spinner"><div class="spinner"></div></div>
+                    <div class="avatar-spinner"><Spinner size="small" /></div>
                   {:else if profile.avatar_url}
                     <img class="profile-avatar" src={profile.avatar_url} alt={profile.name} />
                     <div class="avatar-overlay">
@@ -1102,15 +1100,13 @@
       {#if loadingInbox}
         <div class="loading">{$t('speakers.loadingInbox')}</div>
       {:else if inboxItems.length === 0}
-        <div class="empty-state">
-          <div class="empty-icon success">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <EmptyState title={$t('speakers.inbox.emptyTitle')} description={profiles.length > 0 ? $t('speakers.inbox.emptyAllVerified') : $t('speakers.inbox.emptyNoProfiles')} padding="60px 20px">
+          <svelte:fragment slot="icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--success-color, #059669); opacity: 0.7;">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
             </svg>
-          </div>
-          <p class="empty-title">{$t('speakers.inbox.emptyTitle')}</p>
-          <p class="empty-desc">{profiles.length > 0 ? $t('speakers.inbox.emptyAllVerified') : $t('speakers.inbox.emptyNoProfiles')}</p>
-        </div>
+          </svelte:fragment>
+        </EmptyState>
       {:else}
         <div class="inbox-list">
           {#each inboxItems as item, idx (item.speaker_uuid)}
@@ -1404,40 +1400,6 @@
     color: var(--text-secondary);
   }
 
-  .empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--text-secondary);
-  }
-
-  .empty-icon {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 16px;
-    color: var(--text-secondary);
-    opacity: 0.5;
-  }
-
-  .empty-icon.success {
-    color: var(--success-color, #059669);
-    opacity: 0.7;
-  }
-
-  .empty-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-color);
-    margin: 0 0 8px;
-  }
-
-  .empty-desc {
-    font-size: 14px;
-    color: var(--text-secondary);
-    margin: 0;
-    max-width: 400px;
-    margin: 0 auto;
-  }
-
   .cluster-list {
     display: flex;
     flex-direction: column;
@@ -1611,19 +1573,6 @@
     align-items: center;
     justify-content: center;
     background: color-mix(in srgb, var(--primary-color, #3b82f6) 20%, transparent);
-  }
-
-  .avatar-spinner .spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--border-color, #e5e7eb);
-    border-top-color: var(--primary-color, #3b82f6);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .profile-header {

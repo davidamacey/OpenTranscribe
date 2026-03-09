@@ -9,6 +9,7 @@ worker / API server.
 Out of scope (they use separate Redis databases or async clients):
 - ``auth/rate_limit.py`` / ``auth/lockout.py`` (Redis db != 0)
 - ``redis_cache_service.py`` (db=1)
+- ``youtube_rate_limiter.py`` (db=1)
 - ``video_processing_service.py`` (async)
 - ``api/websockets.py`` (async subscriber)
 """

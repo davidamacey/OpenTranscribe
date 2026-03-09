@@ -24,6 +24,7 @@ from typing import Optional
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.core.constants import get_speaker_index
 from app.models.media import Speaker
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.profile_embedding_service import ProfileEmbeddingService
@@ -66,7 +67,6 @@ def _determine_confidence_level(confidence: float, embedding_count: int = 1) -> 
 
 def _check_opensearch_profiles_exist(
     opensearch_client: Any,
-    settings: Any,
     user_id: int,
     accessible_profile_ids: set[int] | None = None,
 ) -> bool:
@@ -75,7 +75,7 @@ def _check_opensearch_profiles_exist(
 
     Returns False if index doesn't exist or no profiles found, True otherwise.
     """
-    if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
+    if not opensearch_client.indices.exists(index=get_speaker_index()):
         logger.info("Speakers index does not exist yet, skipping profile suggestion search")
         return False
 
@@ -99,7 +99,7 @@ def _check_opensearch_profiles_exist(
 
     try:
         profile_check = opensearch_client.search(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, body=profile_check_query
+            index=get_speaker_index(), body=profile_check_query
         )
         if profile_check["hits"]["total"]["value"] == 0:
             logger.info(
@@ -114,7 +114,6 @@ def _check_opensearch_profiles_exist(
 
 def _execute_profile_knn_search(
     opensearch_client: Any,
-    settings: Any,
     embedding: np.ndarray,
     user_id: int,
     threshold: float,
@@ -149,7 +148,7 @@ def _execute_profile_knn_search(
         },
     }
 
-    response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+    response = opensearch_client.search(index=get_speaker_index(), body=query)
     matches = []
 
     for hit in response["hits"]["hits"]:
@@ -349,7 +348,6 @@ class SmartSpeakerSuggestionService:
         """Get suggestions from speaker profiles using OpenSearch native similarity."""
         try:
             from app.services.opensearch_service import opensearch_client
-            from app.services.opensearch_service import settings
 
             if not opensearch_client:
                 logger.warning("OpenSearch client not initialized for profile suggestions")
@@ -358,7 +356,6 @@ class SmartSpeakerSuggestionService:
             # Check if profiles exist to avoid KNN query on empty sets
             if not _check_opensearch_profiles_exist(
                 opensearch_client,
-                settings,
                 user_id,
                 accessible_profile_ids=accessible_profile_ids,
             ):
@@ -368,7 +365,6 @@ class SmartSpeakerSuggestionService:
             try:
                 opensearch_matches = _execute_profile_knn_search(
                     opensearch_client,
-                    settings,
                     embedding,
                     user_id,
                     threshold,

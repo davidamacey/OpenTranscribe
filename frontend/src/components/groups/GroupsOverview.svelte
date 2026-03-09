@@ -9,6 +9,8 @@
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import GroupDetailPanel from './GroupDetailPanel.svelte';
   import GroupCreateModal from './GroupCreateModal.svelte';
+  import Spinner from '../ui/Spinner.svelte';
+  import EmptyState from '../ui/EmptyState.svelte';
 
   let selectedGroup: GroupDetail | null = null;
   let showCreateModal = false;
@@ -123,7 +125,7 @@
 
     {#if $groupsStore.loading}
       <div class="loading-state">
-        <div class="spinner"></div>
+        <Spinner size="medium" />
         <p>{$t('groups.loading')}</p>
       </div>
     {:else if $groupsStore.error}
@@ -132,16 +134,16 @@
         <button class="btn-retry" on:click={loadGroups}>{$t('groups.retry')}</button>
       </div>
     {:else if $groupsStore.groups.length === 0}
-      <div class="empty-state">
-        <svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-          <circle cx="9" cy="7" r="4"></circle>
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-        </svg>
-        <p class="empty-title">{$t('groups.emptyTitle')}</p>
-        <p class="empty-description">{$t('groups.emptyDescription')}</p>
-      </div>
+      <EmptyState title={$t('groups.emptyTitle')} description={$t('groups.emptyDescription')} padding="2.5rem 1rem">
+        <svelte:fragment slot="icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+        </svelte:fragment>
+      </EmptyState>
     {:else}
       <!-- Search -->
       {#if $groupsStore.groups.length > 0}
@@ -294,19 +296,6 @@
     margin: 0;
   }
 
-  .spinner {
-    width: 24px;
-    height: 24px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
   .error-state {
     text-align: center;
     padding: 1.5rem 0;
@@ -333,36 +322,6 @@
   .btn-retry:hover {
     background: var(--primary-color);
     color: white;
-  }
-
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 2.5rem 1rem;
-    text-align: center;
-  }
-
-  .empty-icon {
-    color: var(--text-secondary);
-    opacity: 0.4;
-    margin-bottom: 0.5rem;
-  }
-
-  .empty-title {
-    margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .empty-description {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    max-width: 320px;
-    line-height: 1.5;
   }
 
   .search-wrapper {

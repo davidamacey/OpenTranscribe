@@ -146,6 +146,28 @@ LLM_DEFAULT_TIMEOUT = 60
 OPENSEARCH_DEFAULT_SIZE = 20
 OPENSEARCH_MAX_RESULT_WINDOW = 50000
 
+
+def get_speaker_index() -> str:
+    """Get the base (v3) speaker index name."""
+    from app.core.config import settings
+
+    return settings.OPENSEARCH_SPEAKER_INDEX
+
+
+def get_speaker_index_v4() -> str:
+    """Get the v4 speaker embedding index name."""
+    from app.core.config import settings
+
+    return f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+
+
+def get_speaker_index_v3_backup() -> str:
+    """Get the v3 backup speaker index name."""
+    from app.core.config import settings
+
+    return f"{settings.OPENSEARCH_SPEAKER_INDEX}_v3_backup"
+
+
 # Search & RAG constants
 SEARCH_DEFAULT_PAGE_SIZE = 20
 SEARCH_MAX_PAGE_SIZE = 100

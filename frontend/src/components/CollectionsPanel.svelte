@@ -10,6 +10,8 @@
   import ShareCollectionModal from './sharing/ShareCollectionModal.svelte';
   import { SharingApi } from '$lib/api/sharing';
   import type { SharedCollection } from '$lib/types/groups';
+  import Spinner from './ui/Spinner.svelte';
+  import EmptyState from './ui/EmptyState.svelte';
 
   // Props
   export let selectedMediaIds: string[] = [];  // UUIDs
@@ -346,14 +348,11 @@
 
   {#if loading}
     <div class="loading">
-      <div class="spinner"></div>
+      <Spinner size="large" />
       {$t('collectionsPanel.loading')}
     </div>
   {:else if collections.length === 0 && sharedCollections.length === 0}
-    <div class="empty-state">
-      <p>{$t('collectionsPanel.noCollectionsYet')}</p>
-      <p class="hint">{$t('collectionsPanel.createFirstHint')}</p>
-    </div>
+    <EmptyState title={$t('collectionsPanel.noCollectionsYet')} description={$t('collectionsPanel.createFirstHint')} padding="40px 20px" />
   {:else}
     <div class="collections-list">
       {#if searchQuery && filteredCollections.length === 0 && filteredSharedCollections.length === 0}
@@ -582,7 +581,7 @@
                 disabled={creating || !newCollectionName.trim()}
               >
                 {#if creating}
-                  <div class="spinner-mini"></div>
+                  <Spinner size="small" />
                   {$t('collectionsPanel.creating')}
                 {:else}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -699,7 +698,7 @@
                 disabled={updating || !editCollectionName.trim()}
               >
                 {#if updating}
-                  <div class="spinner-mini"></div>
+                  <Spinner size="small" />
                   {$t('collectionsPanel.updating')}
                 {:else}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -884,35 +883,6 @@
     justify-content: center;
     padding: 40px;
     color: var(--text-secondary);
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-bottom: 12px;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--text-secondary);
-  }
-
-  .empty-state p {
-    margin: 0 0 8px 0;
-  }
-
-  .hint {
-    font-size: 14px;
-    opacity: 0.8;
   }
 
   .collections-list {
@@ -1314,21 +1284,6 @@
     opacity: 0.6;
     cursor: not-allowed;
   }
-
-  .spinner-mini {
-    width: 16px;
-    height: 16px;
-    border: 2px solid transparent;
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
 
   /* Dark mode adjustments */
   :global([data-theme='dark']) .modal-backdrop {

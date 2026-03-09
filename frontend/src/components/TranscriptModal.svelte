@@ -5,6 +5,8 @@
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import Spinner from './ui/Spinner.svelte';
+  import BaseModal from './ui/BaseModal.svelte';
 
   export let fileId: number;
   export let fileName: string = '';
@@ -64,15 +66,6 @@
   } else {
     totalMatches = 0;
     currentMatchIndex = 0;
-  }
-
-  // Handle body scroll prevention when modal opens/closes
-  $: {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
   }
 
   function countMatches(query: string, text: string): number {
@@ -135,12 +128,6 @@
     }, 50);
   }
 
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      dispatch('close');
-    }
-  }
-
   function handleSearchKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       searchQuery = '';
@@ -153,18 +140,8 @@
     }
   }
 
-  function handleBackdropClick() {
+  function handleClose() {
     dispatch('close');
-  }
-
-  function handleCloseButton(event: Event) {
-    event.preventDefault();
-    event.stopPropagation();
-    dispatch('close');
-  }
-
-  function handleModalClick(event: Event) {
-    event.stopPropagation();
   }
 
   function handleCopy() {
@@ -276,32 +253,10 @@
   });
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
-
-{#if isOpen}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="modal-backdrop"
-    role="presentation"
-    on:click={handleBackdropClick}
-    on:keydown={handleKeydown}
-  >
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <!-- svelte-ignore a11y_interactive_supports_focus -->
-    <div
-      class="modal-container"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-title"
-      on:click={handleModalClick}
-      on:keydown={handleKeydown}
-    >
-      <div class="modal-header">
-        <h2 class="modal-title" id="modal-title">{$t('transcriptModal.title', { fileName })}</h2>
+<div class="transcript-modal-wrapper">
+<BaseModal {isOpen} maxWidth="1200px" onClose={handleClose}>
+      <svelte:fragment slot="header">
+        <h2 class="modal-title">{$t('transcriptModal.title', { fileName })}</h2>
         <div class="header-actions">
           {#if consolidatedTranscript}
             <button
@@ -325,13 +280,8 @@
               {/if}
             </button>
           {/if}
-          <button class="close-button" on:click={handleCloseButton} aria-label={$t('transcriptModal.closeModal')} title={$t('transcriptModal.closeModalEsc')}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-          </button>
         </div>
-      </div>
+      </svelte:fragment>
 
       <!-- Search Section -->
       {#if displaySegments.length > 0}
@@ -417,7 +367,7 @@
         >
           {#if loading}
             <div class="loading-container">
-              <div class="spinner"></div>
+              <Spinner size="large" />
               <p>{$t('transcriptModal.loading')}</p>
             </div>
           {:else if error}
@@ -487,7 +437,7 @@
                 >
                   {#if loadingMoreSegments}
                     <div class="loading-more-indicator">
-                      <span class="loading-spinner"></span>
+                      <Spinner size="small" />
                       <span>{$t('transcriptModal.loadingMore')}</span>
                     </div>
                   {/if}
@@ -517,43 +467,16 @@
             <span class="segments-count">{$t('transcript.speakerSegmentsOfTotal', { loaded: displaySegments.length, total: totalSpeakerSegments || displaySegments.length })}</span>
             {#if loadingMoreSegments}
               <span class="segments-detail">
-                <span class="loading-spinner-small"></span>
+                <Spinner size="small" />
               </span>
             {/if}
           </div>
         {/if}
       </div>
-    </div>
-  </div>
-{/if}
+</BaseModal>
+</div>
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
-  }
-
-  .modal-container {
-    background-color: var(--bg-primary);
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-    width: 100%;
-    max-width: 1200px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
   .modal-content-wrapper {
     flex: 1;
     display: flex;
@@ -598,15 +521,6 @@
     font-size: 14px;
   }
 
-  .loading-more-indicator .loading-spinner {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
   /* Segments loaded info bar */
   .segments-loaded-info {
     display: flex;
@@ -630,25 +544,6 @@
     align-items: center;
     gap: 6px;
     color: var(--text-muted);
-  }
-
-  .loading-spinner-small {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-    background-color: var(--bg-secondary);
-    flex-shrink: 0;
   }
 
   .header-actions {
@@ -701,33 +596,13 @@
     white-space: nowrap;
   }
 
-  .close-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-secondary);
-    padding: 0.5rem;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 32px;
-    min-height: 32px;
-  }
-
-  .close-button:hover {
-    background-color: var(--hover-bg);
-    color: var(--text-primary);
-  }
-
-  .close-button:active {
-    transform: scale(0.95);
+  /* Override BaseModal body padding for full-bleed transcript layout */
+  .transcript-modal-wrapper :global(.modal-body) {
+    padding: 0 !important;
   }
 
   .search-section {
-    padding: 1rem 1.5rem;
+    padding: 0.75rem 1.5rem;
     border-bottom: 1px solid var(--border-color);
     background-color: var(--bg-secondary);
     flex-shrink: 0;
@@ -924,15 +799,6 @@
     text-align: left;
   }
 
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top: 3px solid var(--primary-color);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
   .error-icon {
     font-size: 2rem;
     flex-shrink: 0;
@@ -974,10 +840,6 @@
   .no-transcript p {
     margin: 0;
     color: var(--text-secondary);
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   /* Search highlighting */
@@ -1061,19 +923,6 @@
   }
 
   @media (max-width: 768px) {
-    .modal-backdrop {
-      padding: 0;
-    }
-
-    .modal-container {
-      border-radius: 0;
-      max-height: 100vh;
-    }
-
-    .modal-header {
-      padding: 1rem;
-    }
-
     .modal-title {
       font-size: 1.25rem;
     }

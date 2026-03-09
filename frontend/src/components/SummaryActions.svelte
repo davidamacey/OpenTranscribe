@@ -4,6 +4,7 @@
   import type { SummaryData } from '$lib/types/summary';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import Spinner from './ui/Spinner.svelte';
 
   export let summary: SummaryData | null;
   export let generating: boolean = false;
@@ -50,7 +51,7 @@
       disabled={generating}
     >
       {#if generating}
-        <div class="spinner"></div>
+        <Spinner size="small" color="currentColor" />
         {$t('summary.generatingSummary')}
       {:else}
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -66,7 +67,7 @@
       disabled={generating}
     >
       {#if generating}
-        <div class="spinner"></div>
+        <Spinner size="small" color="currentColor" />
         {$t('summary.retrying')}
       {:else}
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -100,7 +101,7 @@
         title={$t('summary.regenerateWithPromptTooltip')}
       >
         {#if generating}
-          <div class="spinner"></div>
+          <Spinner size="small" color="currentColor" />
           {$t('summary.regenerating')}
         {:else}
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -201,19 +202,6 @@
   .prompt-select:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   @media (max-width: 768px) {

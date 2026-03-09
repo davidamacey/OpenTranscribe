@@ -8,6 +8,7 @@ export type ProtectedMediaField = {
 
 export type ProtectedMediaAuthConfig = {
   hosts: string[];
+  hosts_with_stored_credentials?: string[];
   auth_type: string;
   fields: ProtectedMediaField[];
 };

@@ -21,7 +21,6 @@ import json
 import logging
 
 from app.core.celery import celery_app
-from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_FINALIZED
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_PROGRESS
@@ -29,6 +28,9 @@ from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.core.constants import UtilityPriority
+from app.core.constants import get_speaker_index
+from app.core.constants import get_speaker_index_v3_backup
+from app.core.constants import get_speaker_index_v4
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -59,17 +61,18 @@ def get_migration_status() -> dict:
         return {"status": "error", "message": "OpenSearch not available"}
 
     current_mode = EmbeddingModeService.detect_mode()
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
-    backup_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v3_backup"
+    v4_index = get_speaker_index_v4()
+    backup_index = get_speaker_index_v3_backup()
     v4_exists = client.indices.exists(index=v4_index)
 
     # Count only speaker documents (exclude profile_ and cluster_ documents
     # which share the same index but have a document_type field)
     speaker_only_query = {"query": {"bool": {"must_not": {"exists": {"field": "document_type"}}}}}
+    main_index = get_speaker_index()
     try:
         v3_count = (
-            client.count(index=settings.OPENSEARCH_SPEAKER_INDEX, body=speaker_only_query)["count"]
-            if client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX)
+            client.count(index=main_index, body=speaker_only_query)["count"]
+            if client.indices.exists(index=main_index)
             else 0
         )
         v4_count = (
@@ -104,7 +107,7 @@ def get_migration_status() -> dict:
         "v4_document_count": v4_document_count,
         "migration_needed": current_mode == "v3",
         "migration_complete": current_mode == "v4"
-        and not client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX + "_v3_backup"),
+        and not client.indices.exists(index=get_speaker_index_v3_backup()),
         "transcription_paused": False,
     }
 
@@ -131,7 +134,7 @@ def _clear_v4_index() -> None:
         logger.warning("OpenSearch not available — cannot clear v4 index")
         return
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    v4_index = get_speaker_index_v4()
     if not client.indices.exists(index=v4_index):
         logger.info("v4 index does not exist — nothing to clear")
         return
@@ -197,7 +200,7 @@ def _get_already_migrated_file_ids() -> set[int]:
     if not client:
         return set()
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    v4_index = get_speaker_index_v4()
     if not client.indices.exists(index=v4_index):
         return set()
 
@@ -281,7 +284,7 @@ def _bulk_write_v4_embeddings(speaker_docs: list[dict]) -> int:
         logger.error("OpenSearch client unavailable for bulk write")
         return 0
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    v4_index = get_speaker_index_v4()
     bulk_body: list[dict] = []
     for doc in speaker_docs:
         doc_id = doc.pop("_id")
@@ -784,9 +787,9 @@ def finalize_v4_migration_task(self, user_id: int = 1):
     if not client:
         return {"status": "error", "message": "OpenSearch not available"}
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
-    backup_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v3_backup"
-    main_index = settings.OPENSEARCH_SPEAKER_INDEX
+    v4_index = get_speaker_index_v4()
+    backup_index = get_speaker_index_v3_backup()
+    main_index = get_speaker_index()
 
     try:
         # ---- Pre-flight checks ----

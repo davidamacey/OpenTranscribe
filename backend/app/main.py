@@ -7,11 +7,17 @@ from contextlib import suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
+from starlette.responses import JSONResponse
 
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
+from app.core.exceptions import AuthenticationError
+from app.core.exceptions import LLMServiceError
+from app.core.exceptions import OpenTranscribeError
+from app.core.exceptions import SearchIndexError
+from app.core.exceptions import StorageError
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
@@ -562,6 +568,26 @@ app.add_middleware(AuditMiddleware)
 
 # CSRF protection for cookie-based authentication (C2 security hardening)
 app.add_middleware(CSRFMiddleware)
+
+
+# Global handler for the application exception hierarchy.
+# Maps domain-specific exceptions to appropriate HTTP status codes so that
+# any ``OpenTranscribeError`` raised in endpoint code is automatically
+# serialised as a structured JSON response.
+@app.exception_handler(OpenTranscribeError)
+async def handle_app_error(request, exc: OpenTranscribeError):
+    status_map = {
+        AuthenticationError: 401,
+        StorageError: 503,
+        SearchIndexError: 503,
+        LLMServiceError: 502,
+    }
+    status = status_map.get(type(exc), 500)
+    return JSONResponse(
+        status_code=status,
+        content={"detail": exc.message},
+    )
+
 
 # Include the API router
 app.include_router(api_router, prefix=settings.API_PREFIX)

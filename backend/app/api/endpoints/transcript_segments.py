@@ -16,6 +16,7 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
+from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -260,16 +261,6 @@ def update_segment_speaker(
     )
 
     # Format the response with speaker details
-    def format_timestamp(seconds: float) -> str:
-        """Format seconds as MM:SS or H:MM:SS"""
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        if minutes >= 60:
-            hours = minutes // 60
-            minutes = minutes % 60
-            return f"{hours}:{minutes:02d}:{secs:02d}"
-        return f"{minutes}:{secs:02d}"
-
     response_data = TranscriptSegmentSchema(
         uuid=segment.uuid,  # type: ignore[arg-type]
         media_file_id=media_file.uuid,  # type: ignore[arg-type]

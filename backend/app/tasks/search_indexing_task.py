@@ -272,12 +272,12 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
 def _send_indexing_notification(user_id: int, file_id: int, timing: dict[str, Any]) -> None:
     """Send search indexing completion notification via WebSocket."""
     try:
-        from app.utils.websocket_notify import send_ws_event
+        from app.services.notification_service import send_task_notification
 
-        data = {
-            "file_id": file_id,
-            "timing": timing,
-        }
-        send_ws_event(user_id, "search_indexing_complete", data)
+        send_task_notification(
+            user_id,
+            "search_indexing_complete",
+            extra={"file_id": file_id, "timing": timing},
+        )
     except Exception as e:
         logger.debug(f"Failed to send search indexing notification: {e}")

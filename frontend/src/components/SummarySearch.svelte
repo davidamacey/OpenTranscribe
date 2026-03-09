@@ -123,7 +123,7 @@
 
   .search-input-container {
     position: relative;
-    padding: 1rem;
+    padding: 0.75rem 1.5rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -136,7 +136,7 @@
 
   .search-input {
     flex: 1;
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background-color: var(--bg-primary);

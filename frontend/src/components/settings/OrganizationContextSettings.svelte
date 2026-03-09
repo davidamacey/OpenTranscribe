@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import {
     getOrganizationContext,
     updateOrganizationContext,
@@ -109,7 +110,7 @@
 <div class="org-context-settings">
   {#if loading}
     <div class="loading-state">
-      <div class="spinner"></div>
+      <Spinner size="large" />
       <p>{$t('settings.orgContext.loading')}</p>
     </div>
   {:else}
@@ -192,7 +193,7 @@
           disabled={saving || !settingsChanged}
         >
           {#if saving}
-            <span class="button-spinner"></span>
+            <Spinner size="small" color="white" />
             {$t('common.saving')}
           {:else}
             {$t('common.saveSettings')}
@@ -237,19 +238,6 @@
     padding: 3rem;
     gap: 1rem;
     color: var(--text-secondary);
-  }
-
-  .spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .settings-form {
@@ -453,15 +441,6 @@
   .btn-secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .button-spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
   }
 
   .info-box {

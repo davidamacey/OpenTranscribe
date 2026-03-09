@@ -10,12 +10,11 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Literal
 
-from app.core.config import settings
-
 if TYPE_CHECKING:
     from opensearchpy import OpenSearch
 from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
 from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.constants import get_speaker_index
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +119,7 @@ class EmbeddingModeService:
             return cls._cached_mode
 
         try:
-            index_name = settings.OPENSEARCH_SPEAKER_INDEX
+            index_name = get_speaker_index()
 
             # Check if the speaker index exists
             if not client.indices.exists(index=index_name):

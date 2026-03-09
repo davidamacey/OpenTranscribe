@@ -5,6 +5,8 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getInitials } from '$lib/utils/formatting';
+  import { createDebouncedHandler } from '$lib/utils/debounce';
+  import Spinner from '../ui/Spinner.svelte';
 
   export let groupUuid: string;
   export let existingMemberUuids: string[] = [];
@@ -18,10 +20,10 @@
   let isSearching = false;
   let addingUserUuid: string | null = null;
   let selectedRole: 'admin' | 'member' = 'member';
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const debouncedSearch = createDebouncedHandler(() => performSearch(), 300);
 
   onDestroy(() => {
-    if (debounceTimer) clearTimeout(debounceTimer);
+    debouncedSearch.cleanup();
   });
 
   $: filteredResults = searchResults.filter(
@@ -29,16 +31,14 @@
   );
 
   function handleSearchInput() {
-    if (debounceTimer) clearTimeout(debounceTimer);
+    debouncedSearch.cleanup();
 
     if (searchQuery.trim().length < 2) {
       searchResults = [];
       return;
     }
 
-    debounceTimer = setTimeout(async () => {
-      await performSearch();
-    }, 300);
+    debouncedSearch.trigger();
   }
 
   async function performSearch() {
@@ -99,7 +99,7 @@
         on:input={handleSearchInput}
       />
       {#if isSearching}
-        <span class="search-spinner"></span>
+        <Spinner size="small" />
       {/if}
     </div>
 
@@ -132,7 +132,7 @@
               {/if}
             </div>
             {#if addingUserUuid === user.uuid}
-              <span class="adding-spinner"></span>
+              <Spinner size="small" />
             {/if}
           </button>
         </li>
@@ -206,21 +206,6 @@
   .search-input::placeholder {
     color: var(--text-secondary);
     opacity: 0.7;
-  }
-
-  .search-spinner {
-    position: absolute;
-    right: 0.625rem;
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .role-picker {
@@ -314,16 +299,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .adding-spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    flex-shrink: 0;
   }
 
   .no-results {

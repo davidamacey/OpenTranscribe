@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from '$stores/locale';
+  import BaseModal from '../ui/BaseModal.svelte';
 
   export let isOpen = false;
   export let section = 'performance';
@@ -7,18 +8,6 @@
 
   function close() {
     isOpen = false;
-  }
-
-  function handleBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      close();
-    }
-  }
-
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      close();
-    }
   }
 
   function formatTime(seconds: number): string {
@@ -47,28 +36,7 @@
   };
 </script>
 
-{#if isOpen}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="modal-backdrop no-backdrop"
-    on:click={handleBackdropClick}
-    on:keydown={handleKeydown}
-    tabindex="-1"
-    role="dialog"
-    aria-modal="true"
-  >
-    <div class="modal-container">
-      <div class="modal-header">
-        <h2 class="modal-title">{$t('settings.statistics.processingDetails')}</h2>
-        <button class="modal-close" on:click={close} aria-label="Close">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-
-      <div class="modal-body">
+<BaseModal {isOpen} title={$t('settings.statistics.processingDetails')} onClose={close} maxWidth="600px" zIndex={1200}>
         <!-- Tab navigation -->
         <div class="detail-tabs">
           <button class="tab" class:active={section === 'performance'} on:click={() => section = 'performance'}>
@@ -219,88 +187,9 @@
             {/if}
           </div>
         {/if}
-      </div>
-    </div>
-  </div>
-{/if}
+</BaseModal>
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1200;
-    padding: 1rem;
-  }
-
-  .modal-backdrop.no-backdrop {
-    background: transparent !important;
-  }
-
-  .modal-container {
-    background: var(--card-background, var(--background-color));
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    max-width: 600px;
-    width: 100%;
-    max-height: 80vh;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    animation: slideIn 0.2s ease-out;
-  }
-
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(-20px) scale(0.95); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-title {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .modal-close {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.375rem;
-    color: var(--text-secondary);
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.2s, background 0.2s;
-  }
-
-  .modal-close:hover {
-    color: var(--text-color);
-    background: var(--button-hover, rgba(0, 0, 0, 0.05));
-  }
-
-  .modal-body {
-    padding: 1.25rem 1.5rem;
-    overflow-y: auto;
-    flex: 1;
-  }
-
   .detail-tabs {
     display: flex;
     gap: 0.25rem;
@@ -428,25 +317,7 @@
     font-style: italic;
   }
 
-  :global([data-theme='dark']) .modal-backdrop {
-    background: var(--modal-backdrop, rgba(0, 0, 0, 0.7));
-  }
-
-  :global([data-theme='dark']) .modal-container {
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-  }
-
-  :global([data-theme='dark']) .modal-close:hover {
-    background: var(--button-hover, rgba(255, 255, 255, 0.1));
-  }
-
   @media (max-width: 480px) {
-    .modal-container {
-      max-width: none;
-      margin: 0.5rem;
-      max-height: 90vh;
-    }
-
     .detail-tabs {
       overflow-x: auto;
     }
@@ -457,7 +328,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .modal-container { animation: none; }
     .detail-section { animation: none; }
   }
 </style>

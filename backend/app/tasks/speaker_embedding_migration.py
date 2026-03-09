@@ -15,8 +15,8 @@ from typing import Any
 import numpy as np
 
 from app.core.celery import celery_app
-from app.core.config import settings
 from app.core.constants import CPUPriority
+from app.core.constants import get_speaker_index
 from app.services.opensearch_service import get_opensearch_client
 
 logger = logging.getLogger(__name__)
@@ -252,7 +252,7 @@ def _run_normalize_embeddings(batch_size: int) -> dict[str, Any]:
 
     # Collect all indices that may hold embeddings
     indices_to_scan: set[str] = set()
-    indices_to_scan.add(settings.OPENSEARCH_SPEAKER_INDEX)
+    indices_to_scan.add(get_speaker_index())
     try:
         from app.services.opensearch_service import get_active_speaker_index
 

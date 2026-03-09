@@ -11,20 +11,9 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward compat
 from app.schemas.base import UUIDBaseSchema
 from app.schemas.user import UserBrief
-
-
-class FileStatus(str, Enum):
-    PENDING = "pending"
-    QUEUED = "queued"
-    DOWNLOADING = "downloading"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    ERROR = "error"
-    CANCELLING = "cancelling"
-    CANCELLED = "cancelled"
-    ORPHANED = "orphaned"
 
 
 class TaskStatus(str, Enum):

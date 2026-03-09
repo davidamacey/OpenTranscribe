@@ -2,6 +2,7 @@ import { writable, derived, get, type Writable } from 'svelte/store';
 import * as authStore from './auth';
 import { downloadStore } from './downloads';
 import { t } from '$stores/locale';
+import { generateId } from '$lib/utils/ids';
 
 // Define notification types
 export type NotificationType =
@@ -169,13 +170,6 @@ function createWebSocketStore() {
 
   // Keep track of reconnect timeout
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  // Generate notification ID
-  const generateId = () => {
-    return (
-      Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-    );
-  };
 
   // Get current state without subscribing
   const getState = (): WebSocketState => {
@@ -633,7 +627,7 @@ function createWebSocketStore() {
                 } else {
                   // Create new progressive notification
                   const notification: Notification = {
-                    id: generateId(),
+                    id: generateId('ws'),
                     progressId,
                     type: data.type as NotificationType,
                     title: getNotificationTitle(data.type),
@@ -660,7 +654,7 @@ function createWebSocketStore() {
             } else if (isSilentType) {
               // Create a silent notification for gallery updates only
               const notification: Notification = {
-                id: generateId(),
+                id: generateId('ws'),
                 type: data.type as NotificationType,
                 title: getNotificationTitle(data.type),
                 message: data.data.message || 'Gallery update',
@@ -680,7 +674,7 @@ function createWebSocketStore() {
             } else {
               // Create a regular notification for other non-progressive types
               const notification: Notification = {
-                id: generateId(),
+                id: generateId('ws'),
                 type: data.type as NotificationType,
                 title: getNotificationTitle(data.type),
                 message: data.data.message || 'No message provided',
@@ -894,7 +888,7 @@ function createWebSocketStore() {
     update((state: WebSocketState) => {
       const newNotification: Notification = {
         ...notification,
-        id: generateId(),
+        id: generateId('ws'),
         timestamp: new Date(),
         read: false,
       };
@@ -957,7 +951,7 @@ function createWebSocketStore() {
             if (!exists) {
               const regenerated: Notification = {
                 ...notification,
-                id: generateId(),
+                id: generateId('ws'),
                 timestamp: new Date(),
                 read: false,
               };
@@ -1051,7 +1045,7 @@ function createWebSocketStore() {
           const existingIndex = s.notifications.findIndex((n) => n.progressId === progressId);
 
           const notificationData: Notification = {
-            id: existingIndex !== -1 ? s.notifications[existingIndex].id : generateId(),
+            id: existingIndex !== -1 ? s.notifications[existingIndex].id : generateId('ws'),
             progressId,
             type: notificationType as NotificationType,
             title: getNotificationTitle(notificationType),

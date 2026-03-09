@@ -5,6 +5,7 @@ Provides a clean interface for getting and setting system configuration
 with type conversion and caching support.
 """
 
+import json
 import logging
 from typing import Any
 
@@ -389,3 +390,57 @@ def update_retention_config(
         _set_settings_batch(db, updates)
 
     return get_retention_config(db)
+
+
+# ---------------------------------------------------------------------------
+# Protected Media Sources Configuration
+# ---------------------------------------------------------------------------
+# Stores media source hosts, credentials, and provider type in DB.
+# Replaces the old MEDIACMS_ALLOWED_HOSTS env variable approach.
+# ---------------------------------------------------------------------------
+
+
+def get_media_sources(db: Session) -> list[dict]:
+    """Get all configured protected media sources.
+
+    Each source is stored as a JSON object with:
+    - id: unique identifier (auto-generated)
+    - hostname: the host that triggers this provider
+    - provider_type: "mediacms" (extensible to future providers)
+    - username: stored credential username (may be empty)
+    - password: stored credential password (may be empty)
+    - verify_ssl: whether to verify SSL certificates
+    - label: optional display name
+    """
+    raw = get_setting(db, "media_sources.list")
+    if not raw:
+        return []
+    try:
+        sources = json.loads(raw)
+        return sources if isinstance(sources, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def set_media_sources(db: Session, sources: list[dict]) -> list[dict]:
+    """Replace the full list of protected media sources."""
+    set_setting(
+        db,
+        "media_sources.list",
+        json.dumps(sources),
+        "Protected media sources configuration (hosts, credentials, providers)",
+    )
+    return sources
+
+
+def get_media_source_hosts(db: Session) -> set[str]:
+    """Return set of configured hostnames from DB media sources."""
+    return {s["hostname"] for s in get_media_sources(db) if s.get("hostname")}
+
+
+def get_media_source_for_host(db: Session, hostname: str) -> dict | None:
+    """Look up media source config for a specific hostname."""
+    for source in get_media_sources(db):
+        if source.get("hostname") == hostname:
+            return source
+    return None

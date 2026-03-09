@@ -859,11 +859,6 @@
     transform: translateY(0);
   }
 
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
   button:disabled {
     opacity: 0.6;
     cursor: not-allowed;

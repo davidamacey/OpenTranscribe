@@ -12,6 +12,7 @@
   } from '../stores/uploads';
   import { t } from '../stores/locale';
   import UploadProgress from './UploadProgress.svelte';
+  import EmptyState from './ui/EmptyState.svelte';
 
   // Component state
   let isDragging = false;
@@ -242,14 +243,15 @@
         </div>
 
         {#if $uploadCount === 0}
-          <div class="empty-state">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-            <p>{$t('upload.noUploads')}</p>
-          </div>
+          <EmptyState title={$t('upload.noUploads')} padding="32px 16px">
+            <svelte:fragment slot="icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </svelte:fragment>
+          </EmptyState>
         {/if}
       </div>
     {/if}
@@ -459,23 +461,6 @@
     background: var(--text-primary);
   }
 
-  /* Empty State */
-  .empty-state {
-    text-align: center;
-    padding: 32px 16px;
-    color: var(--text-secondary);
-  }
-
-  .empty-state svg {
-    margin-bottom: 8px;
-    opacity: 0.5;
-  }
-
-  .empty-state p {
-    margin: 0;
-    font-size: 0.875rem;
-  }
-
   /* Animations */
 
   @keyframes pulse {
@@ -515,10 +500,6 @@
 
   :global(.dark) .progress-bar {
     background: var(--border-color);
-  }
-
-  :global(.dark) .empty-state {
-    color: var(--text-secondary);
   }
 
   /* Mobile adjustments */

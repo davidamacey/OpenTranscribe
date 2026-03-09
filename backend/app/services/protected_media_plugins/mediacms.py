@@ -1,10 +1,12 @@
 """MediacmsProvider plugin for protected media downloads.
 
-Handles password-protected MediaCMS installations configured via environment.
+Handles password-protected MediaCMS installations configured via database
+settings (Admin UI) or environment variables (legacy fallback).
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Callable
@@ -19,29 +21,71 @@ from fastapi import HTTPException
 
 from app.services.protected_media_providers import ProtectedMediaProvider
 
+logger = logging.getLogger(__name__)
+
 
 class MediacmsProvider(ProtectedMediaProvider):
     """ProtectedMediaProvider for MediaCMS-based sites.
 
-    Hostnames are configured via the MEDIACMS_ALLOWED_HOSTS environment
-    variable (comma-separated list, e.g. "media.example.com,mediacms.internal").
+    Hostnames are configured via the Admin UI (stored in database) or via the
+    legacy MEDIACMS_ALLOWED_HOSTS environment variable (comma-separated list).
 
-    SSL verification can be disabled for development environments with self-signed
-    certificates by setting MEDIACMS_VERIFY_SSL=false.
+    SSL verification can be overridden per-host in the Admin UI or globally
+    via MEDIACMS_VERIFY_SSL=false (env).
     """
+
+    def _get_db_sources(self) -> list[dict]:
+        """Load MediaCMS sources from database settings."""
+        try:
+            from app.db.base import SessionLocal
+            from app.services.system_settings_service import get_media_sources
+
+            db = SessionLocal()
+            try:
+                sources = get_media_sources(db)
+                return [s for s in sources if s.get("provider_type") == "mediacms"]
+            finally:
+                db.close()
+        except Exception:
+            return []
 
     @property
     def allowed_hosts(self) -> set[str]:
+        hosts: set[str] = set()
+        # DB sources (primary)
+        for s in self._get_db_sources():
+            h = s.get("hostname", "").strip()
+            if h:
+                hosts.add(h)
+        # Env fallback (legacy)
         raw = os.getenv("MEDIACMS_ALLOWED_HOSTS", "")
-        return {h.strip() for h in raw.split(",") if h.strip()}
+        for h in raw.split(","):
+            h = h.strip()
+            if h:
+                hosts.add(h)
+        return hosts
+
+    def _get_verify_ssl_for_host(self, hostname: str) -> bool:
+        """Get SSL verification setting for a specific host."""
+        for s in self._get_db_sources():
+            if s.get("hostname") == hostname:
+                return bool(s.get("verify_ssl", True))
+        # Env fallback
+        return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
+
+    def _get_stored_credentials(self, hostname: str) -> tuple[str | None, str | None]:
+        """Get stored credentials for a specific host from DB."""
+        for s in self._get_db_sources():
+            if s.get("hostname") == hostname:
+                username = s.get("username") or None
+                password = s.get("password") or None
+                if username and password:
+                    return username, password
+        return None, None
 
     @property
     def verify_ssl(self) -> bool:
-        """Check if SSL verification should be enabled for MediaCMS requests.
-
-        Returns True by default for security. Set MEDIACMS_VERIFY_SSL=false
-        to disable for development environments with self-signed certificates.
-        """
+        """Global SSL verification fallback (used when host is unknown)."""
         return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
     def can_handle(self, url: str) -> bool:
@@ -114,16 +158,28 @@ class MediacmsProvider(ProtectedMediaProvider):
         media_user = username
         media_pass = password
 
+        # Fall back to stored credentials if none provided in request
+        if not media_user or not media_pass:
+            parsed = urlparse(url)
+            stored_user, stored_pass = self._get_stored_credentials(parsed.netloc)
+            if not media_user:
+                media_user = stored_user
+            if not media_pass:
+                media_pass = stored_pass
+
         if not media_user or not media_pass:
             raise HTTPException(
-                status_code=500,
+                status_code=400,
                 detail=(
-                    "Credentials for protected media are not configured. "
-                    "Either provide media_username/media_password in the request."
+                    "Credentials for this media source are not configured. "
+                    "Either provide credentials in the request or configure "
+                    "them in Admin Settings > Media Sources."
                 ),
             )
 
         friendly_token, base_url = self._get_token_and_base_url(url)
+        parsed = urlparse(url)
+        host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc)
         auth_payload = {"username": media_user, "password": media_pass}
 
         try:
@@ -131,7 +187,7 @@ class MediacmsProvider(ProtectedMediaProvider):
                 url=f"{base_url}/api/v1/login",
                 data=auth_payload,
                 timeout=30,
-                verify=self.verify_ssl,
+                verify=host_verify_ssl,
             )
             login_resp.raise_for_status()
             token_data = login_resp.json()
@@ -150,7 +206,7 @@ class MediacmsProvider(ProtectedMediaProvider):
                 url=f"{base_url}/api/v1/media/{friendly_token}",
                 headers=headers,
                 timeout=30,
-                verify=self.verify_ssl,
+                verify=host_verify_ssl,
             )
             info_resp.raise_for_status()
             info = info_resp.json()
@@ -171,13 +227,22 @@ class MediacmsProvider(ProtectedMediaProvider):
     def get_public_auth_config(self) -> dict[str, Any]:
         """Expose public auth configuration for this provider.
 
-        Currently uses username/password for all configured hosts.
+        Returns host list with auth requirements. Hosts with stored
+        credentials indicate that credentials are optional (pre-configured).
         """
         hosts = sorted(self.allowed_hosts)
         if not hosts:
             return {}
+
+        # Check which hosts have stored credentials
+        db_sources = self._get_db_sources()
+        hosts_with_creds = {
+            s["hostname"] for s in db_sources if s.get("username") and s.get("password")
+        }
+
         return {
             "hosts": hosts,
+            "hosts_with_stored_credentials": sorted(hosts_with_creds),
             "auth_type": "user_password",
             "fields": [
                 {
@@ -254,13 +319,15 @@ class MediacmsProvider(ProtectedMediaProvider):
             )
 
         download_url = f"{base_url}{original_media_url}"
+        parsed = urlparse(url)
+        host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc)
 
         try:
             if progress_callback:
                 progress_callback(20, "Downloading media from authenticated source...")
 
             with requests.get(
-                download_url, stream=True, timeout=300, verify=self.verify_ssl
+                download_url, stream=True, timeout=300, verify=host_verify_ssl
             ) as resp:
                 resp.raise_for_status()
                 total_bytes = int(resp.headers.get("Content-Length", "0")) or None

@@ -6,6 +6,7 @@
   import { websocketStore } from '../stores/websocket';
   import { notifications, showNotificationsPanel, markAllAsRead as markAllNotificationsAsRead } from '../stores/notifications';
   import { t } from '$stores/locale';
+  import EmptyState from './ui/EmptyState.svelte';
 
 
   // Subscribe to the showNotificationsPanel store
@@ -287,16 +288,14 @@
     <!-- Notifications List -->
     <div class="notifications-content">
       {#if $websocketStore.notifications.filter(n => !n.silent).length === 0}
-        <div class="empty-state">
-          <div class="empty-icon">
+        <EmptyState title={$t('notifications.empty')} description={$t('notifications.allCaughtUp')}>
+          <svelte:fragment slot="icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
-          </div>
-          <p class="empty-title">{$t('notifications.empty')}</p>
-          <p class="empty-subtitle">{$t('notifications.allCaughtUp')}</p>
-        </div>
+          </svelte:fragment>
+        </EmptyState>
       {:else}
         <div class="notifications-list">
           {#each $websocketStore.notifications.filter(n => !n.silent) as notification (notification.id)}
@@ -551,35 +550,6 @@
   .notifications-list {
     display: flex;
     flex-direction: column;
-  }
-
-  /* Empty State */
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 48px 24px;
-    text-align: center;
-  }
-
-  .empty-icon {
-    margin-bottom: 16px;
-    color: var(--text-secondary);
-    opacity: 0.6;
-  }
-
-  .empty-title {
-    margin: 0 0 4px 0;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .empty-subtitle {
-    margin: 0;
-    font-size: 13px;
-    color: var(--text-secondary);
   }
 
   /* Notification Items */

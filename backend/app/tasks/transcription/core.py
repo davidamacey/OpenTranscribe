@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import GPUPriority
+from app.core.constants import get_speaker_index_v4
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -427,7 +428,7 @@ def _collect_v4_profile_embeddings(
         client = get_opensearch_client()
         if not client:
             raise RuntimeError("OpenSearch client unavailable")
-        v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+        v4_index = get_speaker_index_v4()
         resp = client.search(
             index=v4_index,
             body={

@@ -7,12 +7,12 @@ is configured for the user.
 """
 
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
 from app.services.topic_extraction_service import TopicExtractionService
-from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
@@ -24,41 +24,21 @@ def send_topic_extraction_notification(
     message: str,
     suggestion_id: str | None = None,
 ) -> bool:
-    """
-    Send AI suggestion extraction status notification via Redis pub/sub.
+    """Send AI suggestion extraction status notification via WebSocket."""
+    from app.services.notification_service import send_task_notification
 
-    Args:
-        user_id: User ID
-        file_id: File ID
-        status: Extraction status ('processing', 'completed', 'failed')
-        message: Status message
-        suggestion_id: TopicSuggestion UUID (when completed)
+    extra: dict[str, Any] = {}
+    if status == "completed" and suggestion_id:
+        extra["suggestion_id"] = suggestion_id
 
-    Returns:
-        True if notification was sent successfully
-    """
-    try:
-        # Get file metadata
-        from app.tasks.transcription.notifications import get_file_metadata
-
-        file_metadata = get_file_metadata(file_id)
-
-        # Prepare notification data
-        notification_data = {
-            "file_id": file_metadata.get("file_uuid"),  # Use UUID
-            "status": status,
-            "message": message,
-            "filename": file_metadata["filename"],
-        }
-
-        if status == "completed" and suggestion_id:
-            notification_data["suggestion_id"] = suggestion_id
-
-        return send_ws_event(user_id, "topic_extraction_status", notification_data)
-
-    except Exception as e:
-        logger.error(f"Failed to send topic extraction notification for file {file_id}: {e}")
-        return False
+    return send_task_notification(
+        user_id,
+        "topic_extraction_status",
+        status=status,
+        message=message,
+        file_id=file_id,
+        extra=extra,
+    )
 
 
 @celery_app.task(bind=True, name="ai.extract_topics", priority=NLPPriority.AUTO_PIPELINE)
@@ -276,9 +256,17 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
         "details": [],
     }
 
+    # Dispatch each file as a separate Celery task so multiple workers
+    # can process them in parallel instead of running sequentially in
+    # this single worker.
+    async_results = []
     for file_uuid in file_uuids:
+        async_result = extract_topics_task.delay(file_uuid, force_regenerate)
+        async_results.append((file_uuid, async_result))
+
+    for file_uuid, async_result in async_results:
         try:
-            result = extract_topics_task(file_uuid, force_regenerate)
+            result = async_result.get(timeout=600)  # 10 min per file
 
             if result["status"] == "completed":
                 results["completed"] = int(results["completed"]) + 1  # type: ignore[arg-type]

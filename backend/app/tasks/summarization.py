@@ -12,66 +12,11 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.llm_service import LLMService
 from app.services.opensearch_summary_service import OpenSearchSummaryService
-from app.utils.websocket_notify import send_ws_event
+from app.utils.transcript_builders import build_transcript_and_stats
+from app.utils.user_settings_helpers import get_user_llm_output_language
 
 # Setup logging
 logger = logging.getLogger(__name__)
-
-
-def _get_speaker_name(segment: TranscriptSegment) -> str:
-    """Get the best available speaker name from a segment."""
-    if not segment.speaker:
-        return "Unknown Speaker"
-
-    speaker = segment.speaker
-    # Use display_name if verified, otherwise use suggested_name or fallback to original name
-    if speaker.display_name and speaker.verified:
-        return str(speaker.display_name)
-    if speaker.suggested_name and speaker.confidence and speaker.confidence >= 0.75:
-        return f"{speaker.suggested_name} (suggested)"
-    return str(speaker.name)  # Original diarization label
-
-
-def _build_transcript_and_stats(
-    transcript_segments: list[TranscriptSegment],
-) -> tuple[str, dict[str, Any]]:
-    """Build full transcript text and speaker statistics from segments."""
-    full_transcript = ""
-    current_speaker: str | None = None
-    speaker_stats: dict[str, Any] = {}
-
-    for segment in transcript_segments:
-        speaker_name = _get_speaker_name(segment)
-
-        # Track speaker statistics
-        segment_duration = segment.end_time - segment.start_time
-        if speaker_name not in speaker_stats:
-            speaker_stats[speaker_name] = {
-                "total_time": 0,
-                "segment_count": 0,
-                "word_count": 0,
-            }
-        speaker_stats[speaker_name]["total_time"] += segment_duration
-        speaker_stats[speaker_name]["segment_count"] += 1
-        speaker_stats[speaker_name]["word_count"] += len(segment.text.split())
-
-        # Add speaker name if speaker changes
-        if speaker_name != current_speaker:
-            full_transcript += f"\n\n{speaker_name}: "
-            current_speaker = speaker_name
-        else:
-            full_transcript += " "
-
-        # Add segment text with timestamp for reference
-        timestamp = f"[{int(segment.start_time // 60):02d}:{int(segment.start_time % 60):02d}]"
-        full_transcript += f"{timestamp} {segment.text}"
-
-    # Calculate speaker percentages
-    total_time = sum(stats["total_time"] for stats in speaker_stats.values())
-    for stats in speaker_stats.values():
-        stats["percentage"] = (stats["total_time"] / total_time * 100) if total_time > 0 else 0
-
-    return full_transcript, speaker_stats
 
 
 def _handle_force_regeneration(media_file: MediaFile, db: Session) -> None:
@@ -297,77 +242,24 @@ def send_summary_notification(
     summary_data: dict[str, Any] | str | None = None,
     summary_opensearch_id: str | None = None,
 ) -> bool:
-    """
-    Send summary status notification via Redis pub/sub from synchronous context (like Celery worker).
+    """Send summary status notification via WebSocket."""
+    from app.services.notification_service import send_task_notification
 
-    Args:
-        user_id: User ID
-        file_id: File ID
-        status: Summary status ('processing', 'completed', 'failed')
-        message: Status message
-        progress: Progress percentage
-        summary_data: Summary content (included when status is 'completed')
-        summary_opensearch_id: OpenSearch document ID (included when status is 'completed')
+    extra: dict[str, Any] = {}
+    if status == "completed" and summary_data:
+        extra["summary"] = summary_data
+    if status == "completed" and summary_opensearch_id:
+        extra["summary_opensearch_id"] = summary_opensearch_id
 
-    Returns:
-        True if notification was sent successfully, False otherwise
-    """
-    try:
-        # Get file metadata
-        from app.tasks.transcription.notifications import get_file_metadata
-
-        file_metadata = get_file_metadata(file_id)
-
-        # Prepare notification data
-        notification_data = {
-            "file_id": file_metadata.get("file_uuid"),  # Use UUID from metadata
-            "status": status,
-            "message": message,
-            "progress": progress,
-            "filename": file_metadata["filename"],
-            "content_type": file_metadata["content_type"],
-            "file_size": file_metadata["file_size"],
-        }
-
-        # Include summary data when status is completed
-        if status == "completed" and summary_data:
-            notification_data["summary"] = summary_data
-        if status == "completed" and summary_opensearch_id:
-            notification_data["summary_opensearch_id"] = summary_opensearch_id
-
-        return send_ws_event(user_id, "summarization_status", notification_data)
-
-    except Exception as e:
-        logger.error(f"Failed to send summary notification via Redis for file {file_id}: {e}")
-        return False
-
-
-def _get_user_llm_output_language(db: Session, user_id: int) -> str:
-    """
-    Retrieve user's LLM output language setting from the database.
-
-    Args:
-        db: Database session
-        user_id: ID of the user
-
-    Returns:
-        LLM output language code (default: "en")
-    """
-    from app import models
-    from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
-
-    setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "transcription_llm_output_language",
-        )
-        .first()
+    return send_task_notification(
+        user_id,
+        "summarization_status",
+        status=status,
+        message=message,
+        file_id=file_id,
+        progress=progress,
+        extra=extra,
     )
-
-    if setting:
-        return str(setting.setting_value)
-    return DEFAULT_LLM_OUTPUT_LANGUAGE
 
 
 def _get_organization_context(db: Session, user_id: int) -> str:
@@ -449,7 +341,7 @@ def _generate_llm_summary(
     # Get user's LLM output language preference
     output_language = "en"
     if media_file.user_id:
-        output_language = _get_user_llm_output_language(db, int(media_file.user_id))
+        output_language = get_user_llm_output_language(db, int(media_file.user_id))
     logger.info(f"LLM output language: {output_language}")
 
     # Get user's organization context if configured
@@ -591,7 +483,7 @@ def summarize_transcript_task(
             if not transcript_segments:
                 raise ValueError(f"No transcript segments found for file {file_id}")
 
-            full_transcript, speaker_stats = _build_transcript_and_stats(transcript_segments)
+            full_transcript, speaker_stats = build_transcript_and_stats(transcript_segments)
 
             update_task_status(db, task_id, "in_progress", progress=0.3)
             send_summary_notification(

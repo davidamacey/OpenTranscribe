@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { fade, scale } from 'svelte/transition';
-  import { onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
-  import axiosInstance from '$lib/axios';
+  import axios from 'axios';
+  import BaseModal from './ui/BaseModal.svelte';
 
   export let showModal = false;
   let appVersion = '';
@@ -11,21 +10,9 @@
     showModal = false;
   }
 
-  function handleBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      closeModal();
-    }
-  }
-
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      closeModal();
-    }
-  }
-
   async function fetchVersion() {
     try {
-      const res = await axiosInstance.get('/health');
+      const res = await axios.get('/health');
       appVersion = res.data?.version || '';
     } catch {
       appVersion = '';
@@ -36,90 +23,26 @@
     fetchVersion();
   }
 
-  // Disable scroll when modal is open
-  $: if (typeof window !== 'undefined') {
-    if (showModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-  }
-
-  // Focus management action
-  function focusOnMount(node: HTMLElement) {
-    node.focus();
-    return {
-      destroy() {
-        // Cleanup if needed
-      }
-    };
-  }
-
-  // Cleanup on component destroy
-  onDestroy(() => {
-    if (typeof window !== 'undefined') {
-      document.body.style.overflow = '';
-    }
-  });
 </script>
 
-{#if showModal}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="modal-backdrop"
-    role="dialog"
-    aria-modal="true"
-    tabindex="0"
-    transition:fade={{ duration: 400 }}
-    on:click={handleBackdropClick}
-    on:keydown={handleKeydown}
-  >
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-event-handlers -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div
-      class="modal-container"
-      role="dialog"
-      aria-labelledby="about-modal-title"
-      aria-modal="true"
-      tabindex="-1"
-      transition:scale={{ duration: 350, start: 0.9 }}
-      on:click|stopPropagation
-      on:keydown|stopPropagation
-      use:focusOnMount
-    >
-      <div class="modal-content">
-        <div class="modal-header">
-          <div>
-            <h2 id="about-modal-title">{$t('about.title')}</h2>
-            <div class="header-version">
-              {#if appVersion}
-                <span class="header-version-number">OpenTranscribe {appVersion}</span>
-                <span class="header-version-sep">&middot;</span>
-              {/if}
-              <span class="header-version-tagline">{$t('about.version')}</span>
-            </div>
-          </div>
-          <button
-            class="modal-close"
-            on:click={closeModal}
-            aria-label={$t('about.closeDialog')}
-            title={$t('about.closeDialog')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+<div class="about-modal-wrapper">
+<BaseModal isOpen={showModal} onClose={closeModal} maxWidth="800px">
+  <svelte:fragment slot="header">
+    <div class="header-title-group">
+      <h2 class="modal-title">{$t('about.title')}</h2>
+      <div class="header-version">
+        {#if appVersion}
+          <span class="header-version-number">{appVersion}</span>
+          <span class="header-version-sep">&middot;</span>
+        {/if}
+        <span class="header-version-tagline">{$t('about.version')}</span>
+      </div>
+    </div>
+  </svelte:fragment>
 
-        <div class="modal-body">
-          <div class="about-content">
-            <section class="intro-section">
-              <p class="subtitle">{$t('about.subtitle')}</p>
+  <div class="about-content">
+    <section class="intro-section">
+      <p class="subtitle">{$t('about.subtitle')}</p>
               <p class="description">
                 {$t('about.description')}
               </p>
@@ -275,6 +198,12 @@
                       </svg>
                       pyannote-audio - Speaker diarization toolkit
                     </a>
+                    <a href="https://huggingface.co/prithivMLmods/Common-Voice-Gender-Detection" target="_blank" rel="noopener noreferrer" class="credit-link">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+                      </svg>
+                      Common-Voice-Gender-Detection - Wav2Vec2 gender classification
+                    </a>
                   </div>
                 </div>
 
@@ -349,81 +278,30 @@
                 {$t('about.gratefulMessage')}
                 <a href="https://github.com/openai/whisper" target="_blank" rel="noopener noreferrer" class="inline-link">OpenAI Whisper</a>
                 {$t('about.whisperFoundation')}
+                <a href="https://github.com/pyannote/pyannote-audio" target="_blank" rel="noopener noreferrer" class="inline-link">pyannote-audio</a>
+                {$t('about.pyannoteFoundation')}
               </p>
             </section>
 
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
-{/if}
+</BaseModal>
+</div>
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    padding: 1rem;
-  }
-
-  .modal-container {
-    background: var(--surface-color);
-    border-radius: 12px;
-    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
-    max-width: 800px;
-    width: 100%;
-    max-height: 90vh;
+  .header-title-group {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    gap: 0.25rem;
   }
 
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem 2rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-header h2 {
-    color: var(--primary-color);
-    font-size: 1.5rem;
-    font-weight: 600;
+  .modal-title {
     margin: 0;
+    font-size: 1.25rem;
+    color: var(--text-primary, #1a1a1a);
   }
 
-  .modal-close {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-color);
-    padding: 0.25rem;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .modal-close:hover {
-    background: var(--hover-color);
-    color: var(--error-color);
-  }
-
-  .modal-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 2rem;
-    max-height: calc(90vh - 100px); /* Reserve space for header */
+  .about-modal-wrapper :global(.modal-body) {
+    padding: 2rem !important;
   }
 
   .about-content {
@@ -527,25 +405,24 @@
   .header-version {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    margin-top: 0.25rem;
+    gap: 0.5rem;
   }
 
   .header-version-number {
-    color: var(--text-secondary);
-    font-size: 0.75rem;
+    color: var(--text-color, var(--text-primary, #1a1a1a));
+    font-size: 0.9rem;
     font-weight: 500;
   }
 
   .header-version-sep {
     color: var(--text-secondary);
     opacity: 0.5;
-    font-size: 0.75rem;
+    font-size: 0.9rem;
   }
 
   .header-version-tagline {
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: 0.9rem;
   }
 
   /* Credits Section Styles */
@@ -630,19 +507,6 @@
 
   /* Mobile responsive */
   @media (max-width: 768px) {
-    .modal-backdrop {
-      padding: 0.5rem;
-    }
-
-    .modal-header {
-      padding: 1rem 1.5rem;
-    }
-
-    .modal-body {
-      padding: 1.5rem;
-      max-height: calc(100vh - 120px); /* Adjusted for mobile */
-    }
-
     .features-grid {
       grid-template-columns: 1fr;
       gap: 1rem;

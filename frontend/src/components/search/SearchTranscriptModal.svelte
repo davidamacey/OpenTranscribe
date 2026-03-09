@@ -4,6 +4,8 @@
   import { translateSpeakerLabel } from '$lib/i18n';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import Spinner from '../ui/Spinner.svelte';
+  import BaseModal from '../ui/BaseModal.svelte';
   import type { SearchOccurrence } from '$stores/search';
 
   export let isOpen: boolean = false;
@@ -605,15 +607,6 @@
     }
   }
 
-  // Prevent body scroll when open
-  $: {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-  }
-
   onDestroy(() => {
     if (infiniteScrollObserver) {
       infiniteScrollObserver.disconnect();
@@ -730,9 +723,7 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (!isOpen) return;
-    if (event.key === 'Escape') {
-      dispatch('close');
-    } else if (event.key === 'Enter') {
+    if (event.key === 'Enter') {
       event.preventDefault();
       if (event.shiftKey) {
         prevMatch();
@@ -742,12 +733,8 @@
     }
   }
 
-  function handleBackdropClick() {
+  function handleClose() {
     dispatch('close');
-  }
-
-  function handleModalClick(event: Event) {
-    event.stopPropagation();
   }
 
   function formatTimestamp(seconds: number): string {
@@ -763,21 +750,9 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-{#if isOpen}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-backdrop" on:click={handleBackdropClick}>
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <div
-      class="modal-container"
-      role="dialog"
-      aria-modal="true"
-      tabindex="-1"
-      on:click={handleModalClick}
-    >
-      <!-- Header -->
-      <div class="modal-header">
+<div class="search-transcript-modal-wrapper">
+<BaseModal {isOpen} maxWidth="1200px" zIndex={1050} onClose={handleClose}>
+      <svelte:fragment slot="header">
         <div class="header-left">
           <h2 class="modal-title">{$t('searchTranscript.title', { fileName })}</h2>
           <div class="match-legend">
@@ -791,17 +766,7 @@
             </span>
           </div>
         </div>
-        <button
-          class="close-button"
-          on:click={() => dispatch('close')}
-          title={$t('searchTranscript.close')}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
+      </svelte:fragment>
 
       <!-- Navigation Bar -->
       {#if totalMatches > 0}
@@ -810,7 +775,7 @@
           <div class="nav-controls">
             <span class="nav-count">
               {#if navigatingToMatch}
-                <span class="nav-loading-spinner"></span>
+                <Spinner size="small" />
                 {$t('searchTranscript.loadingMatch')}
               {:else}
                 {$t('searchTranscript.matchCount', { current: currentMatchIdx + 1, total: totalMatches })}
@@ -850,7 +815,7 @@
         <div class="modal-content" bind:this={contentElement} on:scroll={handleContentScroll}>
           {#if loading}
             <div class="state-container">
-              <div class="spinner"></div>
+              <Spinner size="large" />
               <p>{$t('searchTranscript.loading')}</p>
             </div>
           {:else if error}
@@ -889,7 +854,7 @@
                 <div class="infinite-scroll-sentinel" bind:this={infiniteScrollSentinel}>
                   {#if loadingMoreSegments}
                     <div class="loading-more-indicator">
-                      <span class="loading-spinner-small"></span>
+                      <Spinner size="small" />
                       <span>Loading more...</span>
                     </div>
                   {/if}
@@ -905,53 +870,16 @@
             <span class="segments-count">{$t('transcript.speakerSegmentsOfTotal', { loaded: groupedSegments.length, total: totalSpeakerSegmentCount || groupedSegments.length })}</span>
             {#if loadingMoreSegments}
               <span class="segments-detail">
-                <span class="loading-spinner-small"></span>
+                <Spinner size="small" />
               </span>
             {/if}
           </div>
         {/if}
       </div>
-    </div>
-  </div>
-{/if}
+</BaseModal>
+</div>
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1050;
-    padding: 1rem;
-  }
-
-  .modal-container {
-    background-color: var(--bg-primary);
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-    width: 100%;
-    max-width: 1200px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-    background-color: var(--bg-secondary);
-    flex-shrink: 0;
-  }
-
   .header-left {
     flex: 1;
     min-width: 0;
@@ -997,23 +925,9 @@
     border: 1px solid rgba(251, 146, 60, 0.8);
   }
 
-  .close-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-secondary);
-    padding: 0.5rem;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .close-button:hover {
-    background-color: var(--hover-bg);
-    color: var(--text-primary);
+  /* Override BaseModal body padding for full-bleed layout */
+  .search-transcript-modal-wrapper :global(.modal-body) {
+    padding: 0 !important;
   }
 
   /* Navigation Bar */
@@ -1070,23 +984,6 @@
     color: var(--text-primary);
   }
 
-  .nav-loading-spinner {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-    margin-right: 0.5rem;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   /* Content wrapper for progress bar + scroll area + info bar */
   .modal-content-wrapper {
     flex: 1;
@@ -1121,20 +1018,6 @@
     font-size: 0.8125rem;
     color: var(--text-secondary);
     margin-top: 0.5rem;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top: 3px solid var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-bottom: 1rem;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   /* Transcript segments */
@@ -1345,16 +1228,6 @@
     font-size: 0.8125rem;
   }
 
-  .loading-spinner-small {
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border: 2px solid var(--border-color, #e5e7eb);
-    border-top-color: var(--primary-color, #4f46e5);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
   .segments-loaded-info {
     display: flex;
     align-items: center;
@@ -1380,19 +1253,6 @@
   }
 
   @media (max-width: 768px) {
-    .modal-backdrop {
-      padding: 0;
-    }
-
-    .modal-container {
-      border-radius: 0;
-      max-height: 100vh;
-    }
-
-    .modal-header {
-      padding: 1rem;
-    }
-
     .modal-title {
       font-size: 1.1rem;
     }

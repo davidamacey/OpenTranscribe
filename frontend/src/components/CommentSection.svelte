@@ -6,6 +6,7 @@
   import { authStore } from '../stores/auth';
   import TruncatedText from './TruncatedText.svelte';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import EmptyState from './ui/EmptyState.svelte';
   import { toastStore } from '../stores/toast';
   import { t } from '../stores/locale';
 
@@ -521,9 +522,7 @@
         <p>{$t('comments.loading')}</p>
       </div>
     {:else if comments.length === 0}
-      <div class="empty-state">
-        <p>{$t('comments.noCommentsYet')}</p>
-      </div>
+      <EmptyState title={$t('comments.noCommentsYet')} padding="1rem" />
     {:else}
       {#each comments as comment (comment.uuid)}
         <div class="comment-item" transition:slide={{duration: 300}}>
@@ -1030,7 +1029,7 @@
     padding: 0;
   }
 
-  .loading-state, .empty-state {
+  .loading-state {
     padding: 1rem;
     text-align: center;
     color: var(--text-light);

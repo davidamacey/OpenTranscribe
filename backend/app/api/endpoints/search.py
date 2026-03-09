@@ -17,6 +17,8 @@ from app.core.config import settings
 from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
+from app.core.constants import get_speaker_index
+from app.core.constants import get_speaker_index_v4
 from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
@@ -556,9 +558,9 @@ def get_index_health(
     from app.services.opensearch_service import opensearch_client
 
     indices = [
-        settings.OPENSEARCH_SPEAKER_INDEX,
+        get_speaker_index(),
         settings.OPENSEARCH_TRANSCRIPT_INDEX,
-        f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4",
+        get_speaker_index_v4(),
         settings.OPENSEARCH_CHUNKS_INDEX,
     ]
 
@@ -625,9 +627,9 @@ def repair_indices(
         raise HTTPException(status_code=503, detail="OpenSearch client not available")
 
     indices = [
-        settings.OPENSEARCH_SPEAKER_INDEX,
+        get_speaker_index(),
         settings.OPENSEARCH_TRANSCRIPT_INDEX,
-        f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4",
+        get_speaker_index_v4(),
         settings.OPENSEARCH_CHUNKS_INDEX,
     ]
 
@@ -644,7 +646,7 @@ def repair_indices(
             results[idx] = "healthy"
         except Exception:
             # Index is unhealthy, attempt repair
-            if idx == settings.OPENSEARCH_SPEAKER_INDEX:
+            if idx == get_speaker_index():
                 try:
                     rebuild_result = rebuild_speaker_index(db)
                     if rebuild_result.get("status") == "rebuilt":

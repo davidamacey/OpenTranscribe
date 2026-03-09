@@ -10,24 +10,9 @@ from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_AUTO_LABEL_STATUS
 from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
-from app.utils.websocket_notify import send_ws_event
+from app.services.notification_service import send_file_cache_invalidation
 
 logger = logging.getLogger(__name__)
-
-NOTIFICATION_TYPE_CACHE_INVALIDATION = "cache_invalidate"
-
-
-def send_file_cache_invalidation(user_id: int, file_uuid: str) -> bool:
-    """Send a per-file cache invalidation notification via WebSocket.
-
-    Tells the frontend to refresh file details when auto-label tags/collections
-    are applied to a specific file.
-    """
-    return send_ws_event(
-        user_id,
-        NOTIFICATION_TYPE_CACHE_INVALIDATION,
-        {"scope": "files", "file_id": file_uuid},
-    )
 
 
 def send_auto_label_notification(
@@ -37,24 +22,16 @@ def send_auto_label_notification(
     data: dict | None = None,
     file_id: str = "auto_label_batch",
 ) -> bool:
-    """Send auto-label status notification via Redis pub/sub.
+    """Send auto-label status notification via WebSocket."""
+    from app.services.notification_service import send_task_notification
 
-    Args:
-        user_id: Target user ID for the notification.
-        status: Notification status (processing, completed, failed).
-        message: Human-readable status message.
-        data: Optional additional data payload.
-        file_id: Synthetic file ID for progressive notification grouping.
-            Use "batch_grouping" for grouping tasks,
-            "retroactive_apply" for retroactive apply tasks.
-    """
-    notification_data = {
-        "status": status,
-        "message": message,
-        "file_id": file_id,
-        **(data or {}),
-    }
-    return send_ws_event(user_id, NOTIFICATION_TYPE_AUTO_LABEL_STATUS, notification_data)
+    return send_task_notification(
+        user_id,
+        NOTIFICATION_TYPE_AUTO_LABEL_STATUS,
+        status=status,
+        message=message,
+        extra={"file_id": file_id, **(data or {})},
+    )
 
 
 @celery_app.task(name="ai.group_batch_files", priority=NLPPriority.BACKGROUND)

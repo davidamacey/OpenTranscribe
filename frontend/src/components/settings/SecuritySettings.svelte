@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
@@ -175,7 +176,7 @@
 
   {#if loading}
     <div class="loading-state">
-      <div class="spinner"></div>
+      <Spinner size="large" />
       <p>{$t('settings.security.loading')}</p>
     </div>
   {:else if !mfaGloballyEnabled}
@@ -378,20 +379,6 @@
   .loading-state p {
     margin: 0;
     font-size: 0.875rem;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-bottom: 12px;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .mfa-disabled-notice {

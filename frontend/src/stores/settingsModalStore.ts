@@ -25,6 +25,7 @@ export type SettingsSection =
   | 'embedding-migration'
   | 'data-integrity'
   | 'retention'
+  | 'media-sources'
   // Super Admin sections
   | 'authentication'
   | 'audit-logs';
@@ -60,6 +61,7 @@ const initialState: SettingsModalState = {
     'embedding-migration': false,
     'data-integrity': false,
     retention: false,
+    'media-sources': false,
     authentication: false,
     'audit-logs': false,
   },

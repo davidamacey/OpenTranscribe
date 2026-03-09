@@ -1,4 +1,3 @@
-import enum
 import uuid as uuid_pkg
 
 from sqlalchemy import Boolean
@@ -16,20 +15,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
+from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward compat
 from app.db.base import Base
-
-
-# Enum for file status
-class FileStatus(str, enum.Enum):
-    PENDING = "pending"  # Uploaded/created, ready to start processing
-    QUEUED = "queued"  # Playlist placeholder, waiting for download
-    DOWNLOADING = "downloading"  # Currently downloading from external source (YouTube)
-    PROCESSING = "processing"  # File downloaded, transcription in progress
-    COMPLETED = "completed"
-    ERROR = "error"
-    CANCELLING = "cancelling"  # User requested cancellation
-    CANCELLED = "cancelled"  # Successfully cancelled
-    ORPHANED = "orphaned"  # Task lost/stuck, needs recovery
 
 
 class MediaFile(Base):

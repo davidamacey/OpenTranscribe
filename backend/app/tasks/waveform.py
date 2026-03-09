@@ -7,7 +7,6 @@ data that runs on the CPU queue in parallel with GPU transcription tasks.
 
 import logging
 import os
-import tempfile
 
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
@@ -16,6 +15,8 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
 from app.tasks.transcription.waveform_generator import WaveformGenerator
+from app.utils.temp_file_utils import cleanup_temp_file
+from app.utils.temp_file_utils import download_to_temp_file
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +41,7 @@ def _download_to_temp_file(storage_path: str) -> str | None:
 
     try:
         file_data, _, _ = download_file(storage_path)
-        temp_fd, temp_file_path = tempfile.mkstemp(suffix=file_extension)
-        os.close(temp_fd)
-
-        with open(temp_file_path, "wb") as f:
-            f.write(file_data.read())
-
+        temp_file_path = download_to_temp_file(file_data, suffix=file_extension)
         logger.info(f"Downloaded file to {temp_file_path}")
         return temp_file_path
     except Exception as e:
@@ -65,12 +61,7 @@ def _save_waveform_data(file_id: int, waveform_data: dict) -> None:
 
 def _cleanup_temp_file(temp_file_path: str | None) -> None:
     """Clean up temporary file if it exists."""
-    if temp_file_path and os.path.exists(temp_file_path):
-        try:
-            os.unlink(temp_file_path)
-            logger.debug(f"Cleaned up temporary file: {temp_file_path}")
-        except Exception as e:
-            logger.warning(f"Error cleaning up temporary file: {e}")
+    cleanup_temp_file(temp_file_path)
 
 
 @celery_app.task(

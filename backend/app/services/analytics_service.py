@@ -34,7 +34,6 @@ from sqlalchemy.orm import Session
 
 from app.models.media import Analytics
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.schemas.media import InterruptionStats
 from app.schemas.media import OverallAnalytics
@@ -93,35 +92,6 @@ class AnalyticsService:
         except Exception as e:
             logger.error(f"Error computing analytics for media file {media_file_id}: {e}")
             return None
-
-    @staticmethod
-    def _create_speaker_mapping(speakers: list[Speaker]) -> dict[str, str]:
-        """Create mapping from speaker labels to display names.
-
-        This method creates a comprehensive mapping that handles both original
-        names and display names, ensuring consistent speaker identification
-        across all analytics calculations.
-
-        Args:
-            speakers: List of Speaker objects containing name and display_name fields.
-
-        Returns:
-            Dictionary mapping speaker labels (both original and display names)
-            to the current display name for each speaker.
-
-        Example:
-            If a speaker has name="SPEAKER_01" and display_name="John Doe",
-            the mapping will contain both:
-            {"SPEAKER_01": "John Doe", "John Doe": "John Doe"}
-        """
-        mapping: dict[str, str] = {}
-        for speaker in speakers:
-            # Map both original name and display name to the current display name
-            display_name = str(speaker.display_name or speaker.name)
-            mapping[str(speaker.name)] = display_name
-            if speaker.display_name:
-                mapping[str(speaker.display_name)] = display_name
-        return mapping
 
     @staticmethod
     def _compute_from_segments(

@@ -7,6 +7,8 @@
   import type { Speaker } from '$lib/types/speaker';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import BaseModal from './ui/BaseModal.svelte';
+  import Spinner from './ui/Spinner.svelte';
 
   export let speakers: Speaker[] = [];
   export let transcriptSegments: any[] = []; // Transcript segments for live segment counting
@@ -226,74 +228,56 @@
     </div>
   {/if}
 
-  {#if showTargetDialog}
-    <div class="modal-overlay" on:click={closeTargetDialog} on:keydown={(e) => e.key === 'Escape' && closeTargetDialog()} role="presentation">
-      <div class="modal-content" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" aria-labelledby="speaker-merge-modal-title" tabindex="-1">
-        <div class="modal-header">
-          <h4 id="speaker-merge-modal-title">{$t('speaker.selectTargetSpeaker')}</h4>
-          <button class="close-button" on:click={closeTargetDialog} title={$t('common.close')}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+  <BaseModal isOpen={showTargetDialog} title={$t('speaker.selectTargetSpeaker')} onClose={closeTargetDialog} maxWidth="500px">
+    <p class="modal-description">
+      {$t('speaker.modalDescription', {
+        count: selectedSpeakers.size - 1,
+        speakerWord: selectedSpeakers.size - 1 !== 1 ? $t('speaker.speakers') : $t('speaker.speaker')
+      })}
+    </p>
 
-        <div class="modal-body">
-          <p class="modal-description">
-            {$t('speaker.modalDescription', {
-              count: selectedSpeakers.size - 1,
-              speakerWord: selectedSpeakers.size - 1 !== 1 ? $t('speaker.speakers') : $t('speaker.speaker')
-            })}
-          </p>
-
-          <div class="target-list">
-            {#each selectedSpeakerList as speaker}
-              <label class="target-option" class:selected={targetSpeaker?.uuid === speaker.uuid}>
-                <input
-                  type="radio"
-                  name="target-speaker"
-                  value={speaker.uuid}
-                  on:change={() => targetSpeaker = speaker}
-                />
-                <div class="target-info">
-                  <span
-                    class="speaker-badge"
-                    style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; --speaker-light: {getSpeakerColor(speaker.name).textLight}; --speaker-dark: {getSpeakerColor(speaker.name).textDark};"
-                  >
-                    {translateSpeakerLabel(speaker.display_name || speaker.name)}
-                  </span>
-                  <span class="segment-count">{getSegmentCount(speaker)} {$t('speaker.segments')}</span>
-                </div>
-              </label>
-            {/each}
+    <div class="target-list">
+      {#each selectedSpeakerList as speaker}
+        <label class="target-option" class:selected={targetSpeaker?.uuid === speaker.uuid}>
+          <input
+            type="radio"
+            name="target-speaker"
+            value={speaker.uuid}
+            on:change={() => targetSpeaker = speaker}
+          />
+          <div class="target-info">
+            <span
+              class="speaker-badge"
+              style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; --speaker-light: {getSpeakerColor(speaker.name).textLight}; --speaker-dark: {getSpeakerColor(speaker.name).textDark};"
+            >
+              {translateSpeakerLabel(speaker.display_name || speaker.name)}
+            </span>
+            <span class="segment-count">{getSegmentCount(speaker)} {$t('speaker.segments')}</span>
           </div>
-        </div>
-
-        <div class="modal-footer">
-          <button class="btn-secondary" on:click={closeTargetDialog} disabled={merging}>
-            {$t('common.cancel')}
-          </button>
-          <button
-            class="btn-primary"
-            on:click={performMerge}
-            disabled={!targetSpeaker || merging}
-          >
-            {#if merging}
-              <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 11-6.219-8.56"/>
-              </svg>
-              {$t('speaker.merging')}
-            {:else if targetSpeaker}
-              {$t('speaker.confirmMerge', { name: targetSpeaker.display_name || targetSpeaker.name })}
-            {:else}
-              {$t('speaker.selectTargetSpeaker')}
-            {/if}
-          </button>
-        </div>
-      </div>
+        </label>
+      {/each}
     </div>
-  {/if}
+
+    <svelte:fragment slot="footer">
+      <button class="btn-secondary" on:click={closeTargetDialog} disabled={merging}>
+        {$t('common.cancel')}
+      </button>
+      <button
+        class="btn-primary"
+        on:click={performMerge}
+        disabled={!targetSpeaker || merging}
+      >
+        {#if merging}
+          <Spinner size="small" color="currentColor" />
+          {$t('speaker.merging')}
+        {:else if targetSpeaker}
+          {$t('speaker.confirmMerge', { name: targetSpeaker.display_name || targetSpeaker.name })}
+        {:else}
+          {$t('speaker.selectTargetSpeaker')}
+        {/if}
+      </button>
+    </svelte:fragment>
+  </BaseModal>
 </div>
 
 <style>
@@ -487,69 +471,6 @@
     cursor: not-allowed;
   }
 
-  /* Modal Styles */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-
-  .modal-content {
-    background: var(--surface-color);
-    border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    max-width: 500px;
-    width: 90%;
-    max-height: 80vh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-header h4 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .close-button {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 0.25rem;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
-
-  .close-button:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-  }
-
-  .modal-body {
-    padding: 1.5rem;
-    overflow-y: auto;
-  }
-
   .modal-description {
     margin: 0 0 1rem 0;
     font-size: 14px;
@@ -600,35 +521,9 @@
     gap: 0.75rem;
   }
 
-  .modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    padding: 1.5rem;
-    border-top: 1px solid var(--border-color);
-  }
-
-  .spinner {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   @media (max-width: 768px) {
     .speaker-grid {
       grid-template-columns: 1fr;
-    }
-
-    .modal-content {
-      width: 95%;
-      max-height: 90vh;
     }
 
     .merge-actions {

@@ -5,6 +5,7 @@
   import { sharingStore } from '$stores/sharing';
   import PermissionLevelSelect from './PermissionLevelSelect.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import type { Share, PermissionLevel } from '$lib/types/groups';
 
   export let shares: Share[] = [];
@@ -106,7 +107,7 @@
               title={$t('sharing.revokeAccess')}
             >
               {#if revokingShareId === share.uuid}
-                <div class="spinner-mini"></div>
+                <Spinner size="small" />
               {:else}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"/>
@@ -244,16 +245,4 @@
     cursor: not-allowed;
   }
 
-  .spinner-mini {
-    width: 12px;
-    height: 12px;
-    border: 2px solid transparent;
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
 </style>

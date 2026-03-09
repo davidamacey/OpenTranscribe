@@ -13,7 +13,7 @@ import logging
 
 import redis
 
-from app.core.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +28,14 @@ class MigrationLockService:
     transcription stays paused until the last one calls deactivate().
     """
 
-    def __init__(self, redis_url: str | None = None):
-        self._redis_url = redis_url or settings.CELERY_BROKER_URL
+    def __init__(self):
         self._client: redis.Redis | None = None
 
     @property
     def _redis(self) -> redis.Redis | None:
         if self._client is None:
             try:
-                self._client = redis.from_url(self._redis_url, decode_responses=True)
+                self._client = get_redis()
                 self._client.ping()
             except Exception as e:
                 logger.error(f"Migration lock: Redis unavailable: {e}")

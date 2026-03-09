@@ -15,7 +15,7 @@ from typing import cast
 
 import redis
 
-from app.core.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -40,23 +40,21 @@ class MigrationStatus(TypedDict):
 class MigrationProgressService:
     """Service for tracking migration progress in Redis."""
 
-    def __init__(self, redis_url: str | None = None, key_prefix: str | None = None):
-        """Initialize the service with Redis connection.
+    def __init__(self, key_prefix: str | None = None):
+        """Initialize the service.
 
         Args:
-            redis_url: Redis connection URL. Defaults to settings.CELERY_BROKER_URL.
             key_prefix: Redis key prefix. Defaults to MIGRATION_KEY_PREFIX.
         """
-        self.redis_url = redis_url or settings.CELERY_BROKER_URL
         self.key_prefix = key_prefix or MIGRATION_KEY_PREFIX
         self._redis_client: redis.Redis | None = None
 
     @property
     def redis_client(self) -> redis.Redis | None:
-        """Lazy initialization of Redis client."""
+        """Return the shared Redis singleton."""
         if self._redis_client is None:
             try:
-                self._redis_client = redis.from_url(self.redis_url, decode_responses=True)
+                self._redis_client = get_redis()
                 self._redis_client.ping()
             except Exception as e:
                 logger.error(f"Failed to connect to Redis: {e}")

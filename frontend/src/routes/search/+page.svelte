@@ -14,6 +14,7 @@
   import PlyrMiniPlayer from '$components/PlyrMiniPlayer.svelte';
   import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import { prefetchNextSearchPage } from '$lib/prefetch';
+  import Spinner from '../../components/ui/Spinner.svelte';
 
   let searchInput = '';
   let previewMediaUrl = '';
@@ -592,7 +593,7 @@
       <main class="results">
         {#if $searchStore.isLoading}
           <div class="state-container">
-            <div class="loading-spinner"></div>
+            <Spinner size="large" />
             <p class="state-text">{$t('search.searching') || 'Searching...'}</p>
           </div>
         {:else if $searchStore.error}
@@ -987,22 +988,6 @@
 
   .empty-icon {
     opacity: 0.35;
-  }
-
-  .loading-spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid var(--border-color, #e5e7eb);
-    border-top-color: var(--primary-color, #4f46e5);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    margin-bottom: 1rem;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 
   /* Sticky Floating Preview Player */

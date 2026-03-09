@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import { getAudioExtractionSettings, updateAudioExtractionSettings, type AudioExtractionSettings } from '$lib/api/audioExtractionSettings';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
@@ -80,7 +81,7 @@
 <div class="audio-extraction-settings">
   {#if loading}
     <div class="loading-state">
-      <div class="spinner"></div>
+      <Spinner size="large" />
       <p>{$t('settings.audioExtraction.loading')}</p>
     </div>
   {:else}
@@ -183,7 +184,7 @@
           disabled={saving || !settingsChanged}
         >
           {#if saving}
-            <span class="button-spinner"></span>
+            <Spinner size="small" color="white" />
             {$t('settings.audioExtraction.saving')}
           {:else}
             {$t('settings.audioExtraction.saveSettings')}
@@ -229,19 +230,6 @@
     padding: 3rem;
     gap: 1rem;
     color: var(--text-secondary);
-  }
-
-  .spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .settings-form {
@@ -421,15 +409,6 @@
   .save-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .button-spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
   }
 
   .info-box {

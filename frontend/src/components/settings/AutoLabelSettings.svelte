@@ -4,6 +4,7 @@
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
+  import ProgressBar from '../ui/ProgressBar.svelte';
 
   let enabled = true;
   let confidenceThreshold = 0.75;
@@ -293,9 +294,7 @@
             <div class="queued-message">
               {retroactiveMessage || $t('autoLabel.retroactiveQueued')}
             </div>
-            <div class="progress-bar-container">
-              <div class="progress-bar-fill indeterminate"></div>
-            </div>
+            <ProgressBar percent={null} />
           {:else}
             <div class="progress-info">
               <span class="progress-label">
@@ -566,17 +565,6 @@
     background: var(--primary-color, #4a9eff);
     border-radius: 4px;
     transition: width 0.3s ease;
-  }
-
-  .progress-bar-fill.indeterminate {
-    width: 30% !important;
-    animation: indeterminate-slide 1.6s ease-in-out infinite;
-  }
-
-  @keyframes indeterminate-slide {
-    0% { margin-left: 0; }
-    50% { margin-left: 70%; }
-    100% { margin-left: 0; }
   }
 
   /* Skeleton Loading */

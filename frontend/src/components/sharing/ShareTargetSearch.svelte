@@ -2,6 +2,8 @@
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
   import { GroupsApi } from '$lib/api/groups';
+  import { createDebouncedHandler } from '$lib/utils/debounce';
+  import Spinner from '../ui/Spinner.svelte';
   import type { ShareTargetSearchResult } from '$lib/types/groups';
 
   export let existingShareTargets: Array<{ type: string; uuid: string }> = [];
@@ -11,13 +13,13 @@
   let searchQuery = '';
   let results: ShareTargetSearchResult[] = [];
   let loading = false;
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const debouncedSearch = createDebouncedHandler(() => doSearch(searchQuery), 300);
 
   // Cache groups to avoid fetching on every keystroke
   let cachedGroups: ShareTargetSearchResult[] | null = null;
 
   onDestroy(() => {
-    if (debounceTimer) clearTimeout(debounceTimer);
+    debouncedSearch.cleanup();
   });
 
   async function loadGroupsOnce(): Promise<ShareTargetSearchResult[]> {
@@ -76,10 +78,7 @@
   }
 
   function handleInput() {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      doSearch(searchQuery);
-    }, 300);
+    debouncedSearch.trigger();
   }
 
   function selectTarget(target: ShareTargetSearchResult) {
@@ -108,7 +107,7 @@
     <div class="search-hint">{$t('sharing.searchMinChars')}</div>
   {:else if loading}
     <div class="search-loading">
-      <div class="spinner-mini"></div>
+      <Spinner size="small" />
       {$t('sharing.searching')}
     </div>
   {:else if results.length > 0}
@@ -194,19 +193,6 @@
     padding: 0.5rem;
     font-size: 0.85rem;
     color: var(--text-secondary);
-  }
-
-  .spinner-mini {
-    width: 14px;
-    height: 14px;
-    border: 2px solid transparent;
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .search-results {

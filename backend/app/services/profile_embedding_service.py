@@ -128,20 +128,20 @@ def _check_opensearch_profile_prerequisites(
     Check prerequisites for OpenSearch profile similarity search.
 
     Returns:
-        Tuple of (opensearch_client, settings, should_continue)
+        Tuple of (opensearch_client, None, should_continue)
     """
+    from app.core.constants import get_speaker_index
     from app.services.opensearch_service import opensearch_client
-    from app.services.opensearch_service import settings
 
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized")
         return None, None, False
 
-    if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
+    if not opensearch_client.indices.exists(index=get_speaker_index()):
         logger.info("Speakers index does not exist yet, skipping profile similarity search")
         return None, None, False
 
-    return opensearch_client, settings, True
+    return opensearch_client, None, True
 
 
 def _check_profiles_exist_in_opensearch(
@@ -311,24 +311,12 @@ class ProfileEmbeddingService:
 
             if not speakers:
                 logger.warning(f"No speakers assigned to profile {profile_id}")
-                # Clear the profile embedding if no speakers are assigned
-                profile.embedding_count = 0  # type: ignore[assignment]
-                profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
+                _process_profile_with_no_speakers(profile, profile_id)
                 db.commit()
-
-                # Clear from OpenSearch as well
-                try:
-                    from app.services.opensearch_service import remove_profile_embedding
-
-                    remove_profile_embedding(str(profile_id))
-                    logger.info(f"Cleared profile {profile_id} embedding from OpenSearch")
-                except Exception as e:
-                    logger.warning(f"Could not clear profile embedding from OpenSearch: {e}")
-
                 return True
 
             # Collect embeddings from all speakers
-            embeddings = []
+            embeddings: list[list[float]] = []
             for speaker in speakers:
                 embedding = get_speaker_embedding(str(speaker.uuid))
                 if embedding:
@@ -342,34 +330,9 @@ class ProfileEmbeddingService:
                 logger.warning(f"No valid embeddings found for profile {profile_id}")
                 return False
 
-            # Calculate the L2-normalized average embedding
-            embeddings_array = np.array(embeddings)
-            averaged_embedding = np.mean(embeddings_array, axis=0)
-            norm = np.linalg.norm(averaged_embedding)
-            if norm > 1e-8:
-                averaged_embedding = averaged_embedding / norm
-
-            # Update the profile metadata
-            profile.embedding_count = len(embeddings)  # type: ignore[assignment]
-            profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
-
+            # Delegate averaging + OpenSearch storage to shared helpers
+            _process_profile_with_embeddings(profile, profile_id, embeddings)
             db.commit()
-
-            # Store in OpenSearch with proper document type for efficient retrieval
-            try:
-                from app.services.opensearch_service import store_profile_embedding
-
-                store_profile_embedding(
-                    profile_id=profile_id,
-                    profile_uuid=str(profile.uuid),
-                    profile_name=str(profile.name),
-                    embedding=averaged_embedding.tolist(),
-                    speaker_count=len(embeddings),
-                    user_id=int(profile.user_id),
-                )
-                logger.info(f"Stored profile {profile_id} embedding in OpenSearch")
-            except Exception as e:
-                logger.warning(f"Failed to store profile {profile_id} embedding in OpenSearch: {e}")
 
             logger.info(
                 f"Updated profile {profile_id} embedding with average of {len(embeddings)} speaker embeddings"
@@ -631,15 +594,16 @@ class ProfileEmbeddingService:
             List of matching profiles with similarity scores
         """
         try:
-            opensearch_client, settings, should_continue = _check_opensearch_profile_prerequisites(
-                user_id
-            )
+            from app.core.constants import get_speaker_index
+
+            opensearch_client, _, should_continue = _check_opensearch_profile_prerequisites(user_id)
             if not should_continue:
                 return []
 
+            speaker_index = get_speaker_index()
             if not _check_profiles_exist_in_opensearch(
                 opensearch_client,
-                settings.OPENSEARCH_SPEAKER_INDEX,
+                speaker_index,
                 user_id,
                 accessible_profile_ids=accessible_profile_ids,
             ):
@@ -647,7 +611,7 @@ class ProfileEmbeddingService:
 
             matches = _execute_knn_search(
                 opensearch_client,
-                settings.OPENSEARCH_SPEAKER_INDEX,
+                speaker_index,
                 embedding,
                 user_id,
                 threshold,

@@ -14,7 +14,6 @@
   import TagsSection from '$components/TagsSection.svelte';
   import CommentSection from '$components/CommentSection.svelte';
   import CollectionsSection from '$components/CollectionsSection.svelte';
-  import ReprocessButton from '$components/ReprocessButton.svelte';
   import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
@@ -27,6 +26,7 @@
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
+  import Spinner from '../../../components/ui/Spinner.svelte';
 
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -2332,7 +2332,7 @@
 <div class="file-detail-page">
   {#if isLoading}
     <div class="loading-container">
-      <div class="spinner"></div>
+      <Spinner size="large" />
       <p>{$t('fileDetail.loading')}</p>
     </div>
   {:else if pageErrorMessage}
@@ -2404,7 +2404,7 @@
               disabled
               title={$t('fileDetail.aiSummaryGenerating')}
             >
-              <div class="spinner-small"></div>
+              <Spinner size="small" color="white" />
               <span>{$t('fileDetail.aiSummary')}</span>
             </button>
           {:else if file?.status === 'completed' && canEdit}
@@ -2440,7 +2440,7 @@
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
               </svg>
               {#if reprocessing}
-                <div class="spinner-small"></div>
+                <Spinner size="small" />
               {/if}
             </button>
           {/if}
@@ -2548,7 +2548,7 @@
           <div class="no-transcript">
             {#if file?.status === 'processing' || file?.status === 'pending'}
               <div class="processing-placeholder">
-                <div class="spinner-large"></div>
+                <Spinner size="large" />
                 <p>{$t('fileDetail.generatingTranscript')}</p>
                 <small>{$t('fileDetail.generatingTranscriptHint')}</small>
               </div>
@@ -2791,21 +2791,6 @@
     text-align: center;
   }
 
-  .spinner {
-    border: 3px solid rgba(0, 0, 0, 0.1);
-    border-top: 3px solid var(--primary-color);
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-    margin-bottom: 1rem;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
   .error-message {
     color: var(--error-color);
     margin-bottom: 1rem;
@@ -2926,16 +2911,6 @@
     cursor: not-allowed;
   }
 
-  .reprocess-button-header .spinner-small {
-    border: 2px solid rgba(128, 128, 128, 0.3);
-    border-top: 2px solid var(--primary-color);
-    border-radius: 50%;
-    width: 12px;
-    height: 12px;
-    animation: spin 1s linear infinite;
-    flex-shrink: 0;
-  }
-
   .video-column h4 {
     margin: 0;
     font-size: 18px;
@@ -3005,16 +2980,6 @@
   .generate-summary-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .spinner-small {
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid white;
-    border-radius: 50%;
-    width: 14px;
-    height: 14px;
-    animation: spin 1s linear infinite;
-    flex-shrink: 0;
   }
 
   .waveform-section {

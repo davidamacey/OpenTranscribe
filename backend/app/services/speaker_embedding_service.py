@@ -317,10 +317,6 @@ class SpeakerEmbeddingService:
             logger.error(f"Error extracting embedding from waveform segment: {e}")
             return None
 
-    def load_audio(self, audio_path: str) -> tuple[torch.Tensor, int]:
-        """Public wrapper for _load_audio. Loads audio file once for reuse."""
-        return self._load_audio(audio_path)
-
     def extract_embeddings_for_segments(
         self,
         audio_path: str,
@@ -399,24 +395,6 @@ class SpeakerEmbeddingService:
             aggregated = aggregated / norm
 
         return aggregated  # type: ignore[no-any-return]
-
-    def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
-        """
-        Compute cosine similarity between two embeddings.
-
-        Delegates to the centralized SimilarityService for optimal performance.
-
-        Args:
-            embedding1: First embedding
-            embedding2: Second embedding
-
-        Returns:
-            Cosine similarity score (0-1)
-        """
-        from app.services.similarity_service import SimilarityService
-
-        result: float = SimilarityService.cosine_similarity(embedding1, embedding2)
-        return result
 
     def extract_reference_embedding(self, audio_paths: list[str]) -> Optional[np.ndarray]:
         """

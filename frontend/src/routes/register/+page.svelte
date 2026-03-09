@@ -240,11 +240,11 @@
       </button>
 
       <div class="auth-footer">
-        <p>
-          <a
+        <p class="auth-link-text">
+          {$t('auth.haveAccountPrefix')} <a
             href="/login"
             class="auth-link"
-          >{$t('auth.haveAccount')}</a>
+          >{$t('auth.login')}</a>
         </p>
       </div>
     </form>
@@ -350,8 +350,21 @@
 
   .auth-footer {
     text-align: center;
+  }
+
+  .auth-link-text {
+    color: var(--text-secondary);
     font-size: 0.9rem;
-    color: var(--text-light);
+  }
+
+  .auth-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .auth-link:hover {
+    text-decoration: underline;
   }
 
   .auth-logo {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -279,7 +280,7 @@
 
   {#if loading}
     <div class="loading-state">
-      <div class="spinner"></div>
+      <Spinner size="small" />
     </div>
   {:else}
     <!-- Enable toggle -->
@@ -397,7 +398,7 @@
         disabled={previewLoading}
       >
         {#if previewLoading}
-          <span class="btn-spinner"></span>
+          <Spinner size="small" />
         {/if}
         {$t('settings.retention.previewButton')}
       </button>
@@ -423,7 +424,7 @@
           on:click={runNow}
           disabled={runNowLoading}
         >
-          {#if runNowLoading}<span class="btn-spinner"></span>{/if}
+          {#if runNowLoading}<Spinner size="small" />{/if}
           {$t('settings.retention.runNowButton')}
         </button>
       {/if}
@@ -528,31 +529,6 @@
     display: flex;
     align-items: center;
     padding: 1rem;
-  }
-
-  .spinner {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .btn-spinner {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid currentColor;
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-right: 0.25rem;
-    vertical-align: middle;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .field-row {

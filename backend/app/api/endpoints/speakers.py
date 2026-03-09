@@ -699,10 +699,11 @@ def debug_cross_media_data(
 
         # Get OpenSearch speaker documents
         try:
+            from app.core.constants import get_speaker_index
             from app.services.opensearch_service import opensearch_client
-            from app.services.opensearch_service import settings
 
             if opensearch_client:
+                speaker_index = get_speaker_index()
                 # Query all speaker documents for this user
                 query = {
                     "size": 100,
@@ -716,9 +717,7 @@ def debug_cross_media_data(
                     },
                 }
 
-                response = opensearch_client.search(
-                    index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-                )
+                response = opensearch_client.search(index=speaker_index, body=query)
                 for hit in response["hits"]["hits"]:
                     source = hit["_source"]
                     debug_info["opensearch_speakers"].append(
@@ -745,9 +744,7 @@ def debug_cross_media_data(
                     },
                 }
 
-                profile_response = opensearch_client.search(
-                    index=settings.OPENSEARCH_SPEAKER_INDEX, body=profile_query
-                )
+                profile_response = opensearch_client.search(index=speaker_index, body=profile_query)
                 for hit in profile_response["hits"]["hits"]:
                     source = hit["_source"]
                     debug_info["opensearch_profiles"].append(

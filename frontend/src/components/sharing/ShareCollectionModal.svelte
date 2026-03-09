@@ -1,13 +1,15 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte';
-  import { fade, slide } from 'svelte/transition';
+  import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
+  import BaseModal from '../ui/BaseModal.svelte';
   import { toastStore } from '$stores/toast';
   import { SharingApi } from '$lib/api/sharing';
   import { sharingStore } from '$stores/sharing';
   import ShareTargetSearch from './ShareTargetSearch.svelte';
   import CurrentSharesList from './CurrentSharesList.svelte';
   import PermissionLevelSelect from './PermissionLevelSelect.svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import type { Share, ShareTargetSearchResult, PermissionLevel } from '$lib/types/groups';
 
   export let collectionUuid: string;
@@ -114,46 +116,7 @@
   });
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
-<div
-  class="modal-backdrop"
-  role="presentation"
-  on:click={handleClose}
-  on:keydown={(e) => e.key === 'Escape' && handleClose()}
-  transition:fade
->
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <!-- svelte-ignore a11y_interactive_supports_focus -->
-  <div
-    class="modal-container"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="share-modal-title"
-    on:click|stopPropagation
-    on:keydown|stopPropagation
-    transition:slide
-  >
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2 id="share-modal-title">{$t('sharing.shareCollection')}</h2>
-        <button
-          class="modal-close-button"
-          on:click={handleClose}
-          type="button"
-          aria-label={$t('sharing.close')}
-          title={$t('sharing.close')}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-
-      <div class="modal-body">
+<BaseModal isOpen={true} title={$t('sharing.shareCollection')} onClose={handleClose} maxWidth="540px" zIndex={1200}>
         <p class="collection-name">{collectionName}</p>
 
         <!-- Search for users/groups to share with -->
@@ -214,7 +177,7 @@
                 disabled={sharing || pendingTargets.length === 0}
               >
                 {#if sharing}
-                  <div class="spinner-mini"></div>
+                  <Spinner size="small" />
                   {$t('sharing.sharing')}
                 {:else}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -237,7 +200,7 @@
         <!-- Existing shares -->
         {#if loading}
           <div class="loading-shares">
-            <div class="spinner-mini"></div>
+            <Spinner size="small" />
             {$t('sharing.loadingShares')}
           </div>
         {:else}
@@ -247,95 +210,9 @@
             {collectionUuid}
           />
         {/if}
-      </div>
-    </div>
-  </div>
-</div>
+</BaseModal>
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1200;
-    padding: 1rem;
-  }
-
-  .modal-container {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    max-width: 540px;
-    width: 100%;
-    max-height: 85vh;
-    overflow-y: auto;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    animation: slideIn 0.2s ease-out;
-  }
-
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-20px) scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  .modal-content {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-header h2 {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--text-color);
-    line-height: 1.4;
-  }
-
-  .modal-close-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: color 0.2s ease;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .modal-close-button:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-  }
-
-  .modal-body {
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
   .collection-name {
     margin: 0;
     font-size: 0.9rem;
@@ -467,33 +344,6 @@
     font-size: 0.85rem;
     color: var(--text-secondary);
     justify-content: center;
-  }
-
-  .spinner-mini {
-    width: 14px;
-    height: 14px;
-    border: 2px solid transparent;
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  :global([data-theme='dark']) .modal-backdrop {
-    background: rgba(0, 0, 0, 0.7);
-  }
-
-  :global([data-theme='dark']) .modal-container {
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .modal-container {
-      animation: none;
-    }
   }
 
   :global([data-theme='dark']) .pending-item {

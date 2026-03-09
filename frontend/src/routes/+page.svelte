@@ -15,6 +15,8 @@
   import GalleryActionButtons from '$components/gallery/GalleryActionButtons.svelte';
   import VirtualList from '$components/gallery/VirtualList.svelte';
   import VirtualGrid from '$components/gallery/VirtualGrid.svelte';
+  import Spinner from '../components/ui/Spinner.svelte';
+  import EmptyState from '../components/ui/EmptyState.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
 
   // Modal state
@@ -1320,10 +1322,10 @@
           >{$t('gallery.retry')}</button>
         </div>
       {:else if files.length === 0}
-        <div class="empty-state">
-          <p>{selectedCollectionId ? $t('gallery.noFilesInCollection') : $t('gallery.libraryEmpty')}</p>
-          <p>{$t('gallery.uploadFirstFile')}</p>
-        </div>
+        <EmptyState
+          title={selectedCollectionId ? $t('gallery.noFilesInCollection') : $t('gallery.libraryEmpty')}
+          description={$t('gallery.uploadFirstFile')}
+        />
       {:else}
         {#if $galleryViewMode === 'list'}
           <!-- List View (Virtual Scrolling) -->
@@ -1355,7 +1357,7 @@
         <!-- Loading indicator -->
         {#if $isLoadingMore}
           <div class="loading-more" transition:fade={{ duration: 200 }}>
-            <div class="loading-spinner"></div>
+            <Spinner size="large" />
             <p>{$t('gallery.loadingMore')}</p>
           </div>
         {/if}
@@ -1644,8 +1646,7 @@
   }
 
   .loading-state,
-  .error-state,
-  .empty-state {
+  .error-state {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1782,20 +1783,6 @@
     color: var(--text-secondary);
     font-size: 0.9rem;
     margin: 0;
-  }
-
-  .loading-spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
   }
 
   /* Responsive design */

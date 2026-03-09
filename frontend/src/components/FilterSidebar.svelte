@@ -9,6 +9,7 @@
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import { createDebouncedHandler } from '$lib/utils/debounce';
 
   // Type definitions for props and state
   /**
@@ -152,35 +153,24 @@
 
   // Debounce infrastructure for auto-triggering filters
   const DEBOUNCE_DELAY = 400;
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isInitialized = false;
+  const debouncedApply = createDebouncedHandler(() => applyFilters(), DEBOUNCE_DELAY);
 
   // Previous values for reactive change detection
   let prevSearchQuery = searchQuery;
   let prevCollectionId = selectedCollectionId;
 
   function triggerFiltersImmediate() {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
+    debouncedApply.cleanup();
     applyFilters();
   }
 
   function triggerFiltersDebounced() {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
-      applyFilters();
-    }, DEBOUNCE_DELAY);
+    debouncedApply.trigger();
   }
 
   onDestroy(() => {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
+    debouncedApply.cleanup();
   });
 
   // Reactive watchers for text inputs (debounced)
@@ -523,10 +513,7 @@
     prevCollectionId = null;
 
     // Clear any pending debounce
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
+    debouncedApply.cleanup();
 
     dispatch('reset');
 

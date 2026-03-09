@@ -4,6 +4,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
+  import Spinner from '../ui/Spinner.svelte';
 
   // State
   let running = false;
@@ -182,7 +183,7 @@
 <div class="integrity-settings">
   {#if loading}
     <div class="loading-state">
-      <div class="spinner"></div>
+      <Spinner size="medium" />
       <p>{$t('settings.dataIntegrity.loading')}</p>
     </div>
   {:else if error}
@@ -281,7 +282,7 @@
         <div class="action-buttons">
           {#if running}
             <button class="btn btn-primary" disabled>
-              <span class="spinner-small"></span>
+              <Spinner size="small" color="white" />
               {$t('settings.dataIntegrity.running')}
             </button>
           {:else}
@@ -366,30 +367,6 @@
 
   .error-state {
     color: var(--error-color);
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .spinner-small {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    display: inline-block;
-    margin-right: 0.5rem;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .settings-section {

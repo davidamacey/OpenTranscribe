@@ -4,6 +4,7 @@ import { authStore } from '$stores/auth';
 import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
 import axios, { type AxiosProgressEvent } from 'axios';
+import { generateId } from '$lib/utils/ids';
 
 // Upload item types
 export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
@@ -628,9 +629,7 @@ class UploadService {
   }
 
   private generateId(): string {
-    return (
-      Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-    );
+    return generateId('upload');
   }
 
   private getSourceName(source: File | string | Blob): string {

@@ -2,6 +2,7 @@
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import EmptyState from './ui/EmptyState.svelte';
 
   // Type definitions matching FileDetail.svelte
   /**
@@ -358,9 +359,7 @@
       </div>
       {/if}
   {:else}
-    <div class="empty-state">
-      <p>{$t('stats.noAnalytics')}</p>
-    </div>
+    <EmptyState title={$t('stats.noAnalytics')} padding="1rem" />
   {/if}
 </div>
 
@@ -638,12 +637,6 @@
     color: var(--text-secondary);
     font-weight: 500;
     flex-shrink: 0;
-  }
-
-  .empty-state {
-    text-align: center;
-    color: var(--text-light);
-    padding: 1rem;
   }
 
   @media (max-width: 768px) {

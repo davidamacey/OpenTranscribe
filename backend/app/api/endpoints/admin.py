@@ -46,6 +46,10 @@ from app.models.user import User
 from app.models.user_mfa import UserMFA
 from app.schemas.admin import GarbageCleanupConfig
 from app.schemas.admin import GarbageCleanupConfigUpdate
+from app.schemas.admin import MediaSource
+from app.schemas.admin import MediaSourceCreate
+from app.schemas.admin import MediaSourcesList
+from app.schemas.admin import MediaSourceUpdate
 from app.schemas.admin import RetentionConfig
 from app.schemas.admin import RetentionConfigUpdate
 from app.schemas.admin import RetentionPreviewFile
@@ -951,6 +955,137 @@ async def get_retention_status(
     return RetentionConfig(**config)
 
 
+# ============== Protected Media Sources ==============
+
+
+@router.get("/settings/media-sources", response_model=MediaSourcesList)
+async def get_media_sources(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> MediaSourcesList:
+    """Get all configured protected media sources (admin only)."""
+    sources = system_settings_service.get_media_sources(db)
+    return MediaSourcesList(sources=[MediaSource(**s) for s in sources])
+
+
+@router.post("/settings/media-sources", response_model=MediaSource)
+async def add_media_source(
+    source: MediaSourceCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> MediaSource:
+    """Add a new protected media source (admin only)."""
+    import uuid
+
+    sources = system_settings_service.get_media_sources(db)
+
+    # Check for duplicate hostname
+    for existing in sources:
+        if existing.get("hostname") == source.hostname:
+            raise HTTPException(
+                status_code=400,
+                detail=f"A source with hostname '{source.hostname}' already exists",
+            )
+
+    new_source = {
+        "id": str(uuid.uuid4())[:8],
+        "hostname": source.hostname,
+        "provider_type": source.provider_type,
+        "username": source.username,
+        "password": source.password,
+        "verify_ssl": source.verify_ssl,
+        "label": source.label,
+    }
+    sources.append(new_source)
+    system_settings_service.set_media_sources(db, sources)
+
+    # Reload providers so the new host is recognized immediately
+    _reload_protected_media_providers()
+
+    logger.info(
+        "Media source added by admin %s: %s (%s)",
+        current_user.email,
+        source.hostname,
+        source.provider_type,
+    )
+    return MediaSource(**new_source)
+
+
+@router.put("/settings/media-sources/{source_id}", response_model=MediaSource)
+async def update_media_source(
+    source_id: str,
+    update: MediaSourceUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> MediaSource:
+    """Update an existing protected media source (admin only)."""
+    sources = system_settings_service.get_media_sources(db)
+
+    for i, s in enumerate(sources):
+        if s.get("id") == source_id:
+            # Check hostname uniqueness if changed
+            if update.hostname and update.hostname != s.get("hostname"):
+                for other in sources:
+                    if other.get("id") != source_id and other.get("hostname") == update.hostname:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"A source with hostname '{update.hostname}' already exists",
+                        )
+
+            # Apply updates
+            update_data = update.model_dump(exclude_unset=True)
+            sources[i] = {**s, **update_data}
+            system_settings_service.set_media_sources(db, sources)
+
+            _reload_protected_media_providers()
+
+            logger.info(
+                "Media source %s updated by admin %s",
+                source_id,
+                current_user.email,
+            )
+            return MediaSource(**sources[i])
+
+    raise HTTPException(status_code=404, detail="Media source not found")
+
+
+@router.delete("/settings/media-sources/{source_id}")
+async def delete_media_source(
+    source_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Delete a protected media source (admin only)."""
+    sources = system_settings_service.get_media_sources(db)
+    original_len = len(sources)
+    sources = [s for s in sources if s.get("id") != source_id]
+
+    if len(sources) == original_len:
+        raise HTTPException(status_code=404, detail="Media source not found")
+
+    system_settings_service.set_media_sources(db, sources)
+
+    _reload_protected_media_providers()
+
+    logger.info(
+        "Media source %s deleted by admin %s",
+        source_id,
+        current_user.email,
+    )
+    return {"success": True}
+
+
+def _reload_protected_media_providers():
+    """Reload the protected media provider registry after config changes."""
+    try:
+        from app.services import protected_media_providers
+        from app.services.protected_media_providers import _load_providers
+
+        protected_media_providers.PROTECTED_MEDIA_PROVIDERS = _load_providers()
+    except Exception as e:
+        logger.warning("Failed to reload protected media providers: %s", e)
+
+
 # ============== Super Admin Role Verification ==============
 
 
@@ -1500,8 +1635,8 @@ async def start_data_integrity_check(
     Scans all OpenSearch indices for documents referencing deleted files
     and removes them.
     """
-    from app.tasks.search_maintenance_task import get_integrity_status
-    from app.tasks.search_maintenance_task import opensearch_orphan_cleanup_task
+    from app.tasks.opensearch_integrity_task import get_integrity_status
+    from app.tasks.opensearch_integrity_task import opensearch_orphan_cleanup_task
 
     status = get_integrity_status()
     if status.get("running"):
@@ -1516,8 +1651,8 @@ async def get_data_integrity_status(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Get data integrity check status, last run results, and index overview."""
-    from app.tasks.search_maintenance_task import get_index_overview
-    from app.tasks.search_maintenance_task import get_integrity_status
+    from app.tasks.opensearch_integrity_task import get_index_overview
+    from app.tasks.opensearch_integrity_task import get_integrity_status
 
     status = get_integrity_status()
     status["index_overview"] = get_index_overview()
@@ -1529,7 +1664,7 @@ async def get_data_integrity_counts(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Quick dry-run scan to count orphaned documents without deleting."""
-    from app.tasks.search_maintenance_task import get_integrity_counts
+    from app.tasks.opensearch_integrity_task import get_integrity_counts
 
     return get_integrity_counts()
 

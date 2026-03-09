@@ -5,6 +5,8 @@
   import { isLLMAvailable } from '../stores/llmStatus';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { t } from '$stores/locale';
+  import Spinner from './ui/Spinner.svelte';
+  import BaseModal from './ui/BaseModal.svelte';
 
   // Import smaller components
   import SummaryDisplay from './SummaryDisplay.svelte';
@@ -47,15 +49,6 @@
   } else {
     totalMatches = 0;
     currentMatchIndex = 0;
-  }
-
-  // Handle body scroll prevention when modal opens/closes
-  $: {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
   }
 
   async function loadSummary() {
@@ -250,10 +243,8 @@
     }, 50);
   }
 
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      dispatch('close');
-    }
+  function handleClose() {
+    dispatch('close');
   }
 
   function handleSearchKeydown(event: CustomEvent<KeyboardEvent>) {
@@ -261,21 +252,6 @@
     if (event.detail.key === 'Escape') {
       searchQuery = '';
     }
-  }
-
-  function handleBackdropClick() {
-    dispatch('close');
-  }
-
-  function handleCloseButton(event: Event) {
-    event.preventDefault();
-    event.stopPropagation();
-    dispatch('close');
-  }
-
-  function handleModalClick(event: Event) {
-    // Prevent backdrop click when clicking inside modal
-    event.stopPropagation();
   }
 
   function handleCopy() {
@@ -423,86 +399,60 @@
   let copyButtonText = $t('summary.copy');
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
-
-{#if isOpen}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="modal-backdrop"
-    role="presentation"
-    on:click={handleBackdropClick}
-    on:keydown={handleKeydown}
-  >
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <!-- svelte-ignore a11y_interactive_supports_focus -->
-    <div
-      class="modal-container"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="summary-modal-title"
-      on:click={handleModalClick}
-      on:keydown={handleKeydown}
-    >
-      <div class="modal-header">
-        <h2 class="modal-title" id="summary-modal-title">{$t('summary.modalTitle', { fileName })}</h2>
-        <div class="header-actions">
-          {#if summary}
-            <button
-              class="copy-button-header"
-              class:copied={copyButtonText === $t('summary.copied')}
-              on:click={handleCopy}
-              aria-label={$t('summary.copySummaryLabel')}
-              title={copyButtonText === $t('summary.copied') ? $t('summary.copiedToClipboard') : $t('summary.copySummaryMarkdown')}
-            >
-              {#if copyButtonText === $t('summary.copied')}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
-                </svg>
-                {$t('summary.copied')}
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                  <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-                </svg>
-                {$t('summary.copy')}
-              {/if}
-            </button>
-
-            <!-- Reprocess button when summary exists and LLM is available -->
-            {#if llmAvailable}
+<div class="summary-modal-wrapper">
+<BaseModal {isOpen} onClose={handleClose} maxWidth="1200px">
+      <svelte:fragment slot="header">
+        <h2 class="modal-title">{$t('summary.modalTitle', { fileName })}</h2>
+        {#if summary}
+          <div class="header-actions">
               <button
-                class="reprocess-button-header"
-                on:click={reprocessSummary}
-                disabled={generating}
-                aria-label={$t('summary.reprocessLabel')}
-                title={$t('summary.regenerateSummaryTooltip')}
+                class="copy-button-header"
+                class:copied={copyButtonText === $t('summary.copied')}
+                on:click={handleCopy}
+                aria-label={$t('summary.copySummaryLabel')}
+                title={copyButtonText === $t('summary.copied') ? $t('summary.copiedToClipboard') : $t('summary.copySummaryMarkdown')}
               >
-                {#if generating}
-                  <div class="spinner-small"></div>
+                {#if copyButtonText === $t('summary.copied')}
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
+                  </svg>
+                  {$t('summary.copied')}
                 {:else}
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
-                    <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
+                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
                   </svg>
+                  {$t('summary.copy')}
                 {/if}
-                {$t('summary.reprocess')}
               </button>
-            {/if}
-          {/if}
-          <button class="close-button" on:click={handleCloseButton} aria-label={$t('summary.closeLabel')} title={$t('summary.closeTooltip')}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-          </button>
-        </div>
-      </div>
+
+              <!-- Reprocess button when summary exists and LLM is available -->
+              {#if llmAvailable}
+                <button
+                  class="reprocess-button-header"
+                  on:click={reprocessSummary}
+                  disabled={generating}
+                  aria-label={$t('summary.reprocessLabel')}
+                  title={$t('summary.regenerateSummaryTooltip')}
+                >
+                  {#if generating}
+                    <Spinner size="small" />
+                  {:else}
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
+                      <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
+                    </svg>
+                  {/if}
+                  {$t('summary.reprocess')}
+                </button>
+              {/if}
+          </div>
+        {/if}
+      </svelte:fragment>
 
       {#if loading}
         <div class="loading-container">
-          <div class="spinner"></div>
+          <Spinner size="large" />
           <p>{$t('summary.loading')}</p>
         </div>
       {:else if error}
@@ -551,50 +501,30 @@
           on:regenerateWithPrompt={regenerateWithPrompt}
         />
       {/if}
-    </div>
-  </div>
-{/if}
+</BaseModal>
+</div>
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
+  /* Zero out BaseModal body padding for full-bleed layout matching TranscriptModal */
+  .summary-modal-wrapper :global(.modal-body) {
+    padding: 0 !important;
   }
 
-  .modal-container {
-    background-color: var(--bg-primary);
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-    width: 100%;
-    max-width: 1200px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
+  .modal-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
     overflow: hidden;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-    background-color: var(--bg-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .header-actions {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    flex-shrink: 0;
   }
 
   .copy-button-header {
@@ -655,53 +585,6 @@
     cursor: not-allowed;
   }
 
-  .reprocess-button-header .spinner-small {
-    border: 2px solid rgba(128, 128, 128, 0.3);
-    border-top: 2px solid var(--primary-color);
-    border-radius: 50%;
-    width: 12px;
-    height: 12px;
-    animation: spin 1s linear infinite;
-    flex-shrink: 0;
-  }
-
-  .modal-title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0;
-    margin-right: 1.5rem;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .close-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-secondary);
-    padding: 0.5rem;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 32px;
-    min-height: 32px;
-  }
-
-  .close-button:hover {
-    background-color: var(--hover-bg);
-    color: var(--text-primary);
-  }
-
-  .close-button:active {
-    transform: scale(0.95);
-  }
-
   .loading-container, .error-container {
     display: flex;
     flex-direction: column;
@@ -714,15 +597,6 @@
   .error-container {
     flex-direction: row;
     text-align: left;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top: 3px solid var(--primary-color);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
   }
 
   .error-icon {
@@ -740,26 +614,4 @@
     color: var(--text-secondary);
   }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  @media (max-width: 768px) {
-    .modal-backdrop {
-      padding: 0;
-    }
-
-    .modal-container {
-      border-radius: 0;
-      max-height: 100vh;
-    }
-
-    .modal-header {
-      padding: 1rem;
-    }
-
-    .modal-title {
-      font-size: 1.25rem;
-    }
-  }
 </style>

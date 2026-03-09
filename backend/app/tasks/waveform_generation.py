@@ -7,7 +7,6 @@ for media files, including both individual files and bulk operations.
 
 import logging
 import os
-import tempfile
 
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
@@ -16,6 +15,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
 from app.tasks.transcription.waveform_generator import WaveformGenerator
+from app.utils.temp_file_utils import temp_file_context
 
 logger = logging.getLogger(__name__)
 
@@ -120,33 +120,21 @@ def _generate_waveform_for_file(file_id: int, storage_path: str, filename: str) 
         # Extract file extension for temporary file
         file_ext = os.path.splitext(filename)[1] or ".tmp"
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
-            try:
-                # Write file data to temporary file
-                temp_file.write(file_data.read())
-                temp_file_path = temp_file.name
+        with temp_file_context(file_data, suffix=file_ext) as temp_file_path:
+            # Generate waveform data
+            waveform_generator = WaveformGenerator()
+            waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
 
-                # Generate waveform data
-                waveform_generator = WaveformGenerator()
-                waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
+            if waveform_data:
+                # Save to database
+                with session_scope() as db:
+                    media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+                    if media_file:
+                        media_file.waveform_data = waveform_data
+                        db.commit()
+                        return True
 
-                if waveform_data:
-                    # Save to database
-                    with session_scope() as db:
-                        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-                        if media_file:
-                            media_file.waveform_data = waveform_data
-                            db.commit()
-                            return True
-
-                return False
-
-            finally:
-                # Clean up temporary file
-                try:
-                    os.unlink(temp_file_path)
-                except Exception as cleanup_error:
-                    logger.warning(f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}")
+            return False
 
     except Exception as e:
         logger.error(f"Error generating waveform for file {file_id}: {e}")

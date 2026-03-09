@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { createDebouncedHandler } from '$lib/utils/debounce';
 
   export let value: string = '';
   export let placeholder: string = '';
@@ -12,12 +13,16 @@
   let suggestions: any[] = [];
   let showSuggestions = false;
   let selectedIndex = -1;
-  let debounceTimer: ReturnType<typeof setTimeout>;
   let inputEl: HTMLInputElement;
   let abortController: AbortController | null = null;
   let suppressFocusReopen = false;
   let searchExecuted = false;
   let isFocused = false;
+  const debouncedFetch = createDebouncedHandler(() => fetchSuggestions(value), 200);
+
+  onDestroy(() => {
+    debouncedFetch.cleanup();
+  });
 
   async function fetchSuggestions(query: string) {
     if (query.length < 2) {
@@ -48,15 +53,14 @@
 
   function handleInput() {
     searchExecuted = false;
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => fetchSuggestions(value), 200);
+    debouncedFetch.trigger();
   }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault();
       // Cancel any pending fetch to prevent suggestions from reappearing
-      clearTimeout(debounceTimer);
+      debouncedFetch.cleanup();
       abortController?.abort();
 
       if (showSuggestions && selectedIndex >= 0 && suggestions[selectedIndex]) {

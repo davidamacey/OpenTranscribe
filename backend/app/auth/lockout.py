@@ -196,35 +196,12 @@ def _normalize_identifier(identifier: str) -> str:
 def _mask_identifier(identifier: str) -> str:
     """Mask identifier for safe logging to prevent sensitive data exposure.
 
-    For emails (contains @): shows first char + *** + @domain
-        e.g., "john.doe@example.com" -> "j***@example.com"
-    For usernames: shows first 2 chars + ***
-        e.g., "johndoe" -> "jo***"
-
-    Args:
-        identifier: Email or username to mask
-
-    Returns:
-        Masked identifier string
+    Delegates to shared utility. Kept as module-private alias for
+    backward compatibility with existing callers.
     """
-    if not identifier:
-        return "***"
+    from app.auth.utils import mask_identifier
 
-    identifier = identifier.strip()
-
-    if "@" in identifier:
-        # Email format: show first char + *** + @domain
-        local_part, domain = identifier.split("@", 1)
-        if len(local_part) >= 1:
-            return f"{local_part[0]}***@{domain}"
-        return f"***@{domain}"
-    else:
-        # Username format: show first 2 chars + ***
-        if len(identifier) >= 2:
-            return f"{identifier[:2]}***"
-        elif len(identifier) == 1:
-            return f"{identifier[0]}***"
-        return "***"
+    return mask_identifier(identifier)
 
 
 def _get_lockout_duration_minutes(lockout_count: int) -> int:

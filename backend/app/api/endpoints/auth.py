@@ -937,16 +937,7 @@ def login_for_access_token(
     except HTTPException:
         raise
     except Exception as e:
-        import sys
-        import traceback
-
-        error_msg = f"Unexpected error during authentication: {str(e)}"
-        tb = traceback.format_exc()
-        logger.error(error_msg)
-        logger.error(f"Traceback: {tb}")
-        # Also print to stderr to ensure it shows in logs
-        print(f"AUTH ERROR: {error_msg}", file=sys.stderr, flush=True)
-        print(f"AUTH TRACEBACK: {tb}", file=sys.stderr, flush=True)
+        logger.error("Unexpected error during authentication: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during authentication",

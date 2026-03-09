@@ -24,7 +24,6 @@ from app.models.user import User
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import transcribe_audio_task
-from app.tasks.transcription.notifications import get_file_metadata
 from app.tasks.waveform import generate_waveform_task
 from app.utils.error_classification import RETRIABLE_CATEGORIES
 from app.utils.error_classification import categorize_error
@@ -97,39 +96,17 @@ def _resolve_download_quality(
 def send_youtube_notification_via_redis(
     user_id: int, file_id: int, status: FileStatus, message: str, progress: int = 0
 ) -> bool:
-    """
-    Send YouTube processing notification via Redis pub/sub from synchronous context.
+    """Send YouTube processing notification via WebSocket."""
+    from app.services.notification_service import send_task_notification
 
-    Args:
-        user_id: User ID
-        file_id: File ID
-        status: File status
-        message: Status message
-        progress: Progress percentage
-
-    Returns:
-        True if notification was sent successfully, False otherwise
-    """
-    try:
-        # Get file metadata
-        file_metadata = get_file_metadata(file_id)
-
-        # Prepare notification data
-        data = {
-            "file_id": file_metadata.get("file_uuid"),  # Use UUID from metadata
-            "status": status.value,
-            "message": message,
-            "progress": progress,
-            "filename": file_metadata["filename"],
-            "content_type": file_metadata["content_type"],
-            "file_size": file_metadata["file_size"],
-        }
-
-        return send_ws_event(user_id, "youtube_processing_status", data)
-
-    except Exception as e:
-        logger.error(f"Failed to send YouTube notification via Redis for file {file_id}: {e}")
-        return False
+    return send_task_notification(
+        user_id,
+        "youtube_processing_status",
+        status=status.value,
+        message=message,
+        file_id=file_id,
+        progress=progress,
+    )
 
 
 class YouTubeProcessingResult(TypedDict):
@@ -503,7 +480,7 @@ def _send_playlist_notification(
     progress: int,
     extra_data: dict | None = None,
 ) -> None:
-    """Send playlist processing notification via Redis.
+    """Send playlist processing notification via WebSocket.
 
     Args:
         user_id: User ID to send notification to.
@@ -513,14 +490,16 @@ def _send_playlist_notification(
         extra_data: Optional additional data to include in notification.
     """
     try:
-        data = {
-            "status": status,
-            "message": message,
-            "progress": progress,
-        }
-        if extra_data:
-            data.update(extra_data)
-        send_ws_event(user_id, "playlist_processing_status", data)
+        from app.services.notification_service import send_task_notification
+
+        send_task_notification(
+            user_id,
+            "playlist_processing_status",
+            status=status,
+            message=message,
+            progress=progress,
+            extra=extra_data,
+        )
     except Exception as e:
         logger.error(f"Failed to send playlist notification: {e}")
 

@@ -3,7 +3,9 @@
   import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
+  import Spinner from '../ui/Spinner.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
+  import BaseModal from '../ui/BaseModal.svelte';
 
   export let show = false;
   export let editingConfig: UserLLMSettings | null = null;
@@ -463,35 +465,10 @@
   }
 </script>
 
-{#if show}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="modal-overlay"
-    role="presentation"
-    on:click={() => closeModal()}
-    on:keydown={(e) => e.key === 'Escape' && closeModal()}
-  >
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <!-- svelte-ignore a11y_interactive_supports_focus -->
-    <div
-      class="modal-content"
-      role="dialog"
-      aria-modal="true"
-      on:click|stopPropagation
-      on:keydown|stopPropagation
-    >
-      <div class="modal-header">
-        <h3>
-          {editingConfig ? $t('llm.editConfiguration') : $t('llm.createConfiguration')}
-          {#if isDirty}
-            <span class="unsaved-indicator" title={$t('llm.unsavedChangesIndicator')}>•</span>
-          {/if}
-        </h3>
-        <button class="close-button" on:click={() => closeModal()} title={isDirty ? $t('llm.closeUnsavedWarning') : $t('common.close')}>×</button>
-      </div>
+<BaseModal isOpen={show} title={editingConfig ? $t('llm.editConfiguration') : $t('llm.createConfiguration')} onClose={() => closeModal()} maxWidth="600px">
+      {#if isDirty}
+        <span class="unsaved-indicator" title={$t('llm.unsavedChangesIndicator')}>•</span>
+      {/if}
 
       <form on:submit|preventDefault={saveConfiguration} class="config-form">
         <!-- Configuration Name -->
@@ -586,7 +563,7 @@
                   title={$t('llm.discoverModelsTooltip')}
                 >
                   {#if loadingOllamaModels}
-                    <div class="spinner-mini"></div>
+                    <Spinner size="small" />
                   {:else}
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <circle cx="12" cy="12" r="3"/>
@@ -611,7 +588,7 @@
                   title={$t('llm.discoverModelsTooltip')}
                 >
                   {#if loadingOpenAIModels}
-                    <div class="spinner-mini"></div>
+                    <Spinner size="small" />
                   {:else}
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <circle cx="12" cy="12" r="3"/>
@@ -636,7 +613,7 @@
                   title={$t('llm.discoverModelsTooltip')}
                 >
                   {#if loadingAnthropicModels}
-                    <div class="spinner-mini"></div>
+                    <Spinner size="small" />
                   {:else}
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <circle cx="12" cy="12" r="3"/>
@@ -827,7 +804,7 @@
               title={$t('llm.testConnectionTooltip')}
             >
               {#if testing}
-                <div class="spinner-mini"></div>
+                <Spinner size="small" />
                 {$t('llm.testing')}
               {:else}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -851,7 +828,7 @@
             disabled={saving || !isFormValid}
           >
             {#if saving}
-              <div class="spinner-mini"></div>
+              <Spinner size="small" />
               {$t('llm.saving')}
             {:else}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -864,9 +841,7 @@
           </button>
         </div>
       </form>
-    </div>
-  </div>
-{/if}
+</BaseModal>
 
 <!-- Unsaved Changes Modal -->
 <ConfirmationModal
@@ -883,70 +858,10 @@
 />
 
 <style>
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
-  }
-
-  .modal-content {
-    background-color: var(--background-color);
-    border-radius: 8px;
-    max-width: 600px;
-    width: 100%;
-    max-height: 90vh;
-    overflow-y: auto;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-header h3 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-color);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
   .unsaved-indicator {
     color: var(--warning-color);
     font-size: 1.5rem;
     line-height: 1;
-  }
-
-  .close-button {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: var(--text-light);
-    padding: 0;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .close-button:hover {
-    color: var(--text-color);
   }
 
   .config-form {
@@ -1210,20 +1125,6 @@
   .save-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .spinner-mini {
-    width: 16px;
-    height: 16px;
-    border: 2px solid transparent;
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
   }
 
   /* Tooltip styles */

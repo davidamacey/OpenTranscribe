@@ -74,17 +74,14 @@ logger = logging.getLogger(__name__)
 
 
 def _mask_identifier(identifier: str) -> str:
-    """Mask an identifier (email/username) for secure logging.
+    """Mask an identifier for secure logging.
 
-    Args:
-        identifier: Email or username to mask
-
-    Returns:
-        Masked string showing only first 2 and last 2 characters
+    Delegates to shared utility. Kept as module-private alias for
+    backward compatibility with existing callers.
     """
-    if not identifier or len(identifier) < 5:
-        return "***"
-    return f"{identifier[:2]}***{identifier[-2:]}"
+    from app.auth.utils import mask_identifier
+
+    return mask_identifier(identifier)
 
 
 def _fetch_user_by_email(conn, cursor, email: str) -> tuple | None:

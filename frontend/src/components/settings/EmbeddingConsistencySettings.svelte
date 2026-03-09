@@ -4,6 +4,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
+  import Spinner from '../ui/Spinner.svelte';
 
   // State
   let running = false;
@@ -307,7 +308,7 @@
           {:else}
             <button class="btn btn-secondary" on:click={loadCounts} disabled={loadingCounts || loading}>
               {#if loadingCounts}
-                <span class="spinner-small"></span>
+                <Spinner size="small" color="var(--text-color)" />
               {/if}
               {$t('settings.embeddingConsistency.check')}
             </button>
@@ -401,21 +402,6 @@
   @keyframes skeleton-pulse {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 0.8; }
-  }
-
-  .spinner-small {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    display: inline-block;
-    margin-right: 0.5rem;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .settings-section {

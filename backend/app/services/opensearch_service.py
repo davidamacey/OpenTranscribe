@@ -10,6 +10,8 @@ from opensearchpy import RequestsHttpConnection
 from app.core.config import settings
 from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
+from app.core.constants import get_speaker_index
+from app.core.constants import get_speaker_index_v4
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -126,8 +128,8 @@ def get_active_speaker_index() -> str:
         if now - cached_at < _ACTIVE_INDEX_CACHE_TTL:
             return cached_index
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
-    main_index = settings.OPENSEARCH_SPEAKER_INDEX
+    v4_index = get_speaker_index_v4()
+    main_index = get_speaker_index()
 
     if not opensearch_client:
         return main_index
@@ -210,7 +212,7 @@ def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
             for prop in properties.values()
             if isinstance(prop, dict)
         )
-        if has_knn and index_name == settings.OPENSEARCH_SPEAKER_INDEX and db is not None:
+        if has_knn and index_name == get_speaker_index() and db is not None:
             logger.info(f"Attempting rebuild of kNN index {index_name} from PostgreSQL data...")
             result = rebuild_speaker_index(db)
             if result.get("status") == "rebuilt":
@@ -253,7 +255,7 @@ def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
 
     from app.models.media import Speaker
 
-    speaker_index = settings.OPENSEARCH_SPEAKER_INDEX
+    speaker_index = get_speaker_index()
     v4_index = f"{speaker_index}_v4"
     rebuild_index = f"{speaker_index}_rebuild"
 
@@ -511,9 +513,9 @@ def check_and_repair_indices() -> list[str]:
         logger.warning("OpenSearch client not initialized, skipping health check")
         return []
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    v4_index = get_speaker_index_v4()
     indices = [
-        settings.OPENSEARCH_SPEAKER_INDEX,
+        get_speaker_index(),
         settings.OPENSEARCH_TRANSCRIPT_INDEX,
         v4_index,
     ]
@@ -581,7 +583,7 @@ def ensure_indices_exist():
             logger.info(f"Created transcript index: {settings.OPENSEARCH_TRANSCRIPT_INDEX}")
 
         # Create speaker index if it doesn't exist
-        if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
+        if not opensearch_client.indices.exists(index=get_speaker_index()):
             speaker_index_config = {
                 "settings": {
                     "index": {
@@ -620,11 +622,9 @@ def ensure_indices_exist():
                 },
             }
 
-            opensearch_client.indices.create(
-                index=settings.OPENSEARCH_SPEAKER_INDEX, body=speaker_index_config
-            )
+            opensearch_client.indices.create(index=get_speaker_index(), body=speaker_index_config)
 
-            logger.info(f"Created speaker index: {settings.OPENSEARCH_SPEAKER_INDEX}")
+            logger.info(f"Created speaker index: {get_speaker_index()}")
 
     except ConnectionError as e:
         logger.error(f"Connection error creating indices: {e}")
@@ -649,7 +649,7 @@ def create_speaker_index_v4(index_name: str | None = None) -> bool:
         logger.warning("OpenSearch client not initialized")
         return False
 
-    index_name = index_name or f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    index_name = index_name or get_speaker_index_v4()
 
     try:
         # Check if index already exists
@@ -714,7 +714,7 @@ def ensure_v4_index_exists() -> bool:
         logger.warning("OpenSearch client not initialized")
         return False
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    v4_index = get_speaker_index_v4()
     try:
         if opensearch_client.indices.exists(index=v4_index):
             return True
@@ -760,7 +760,7 @@ def add_speaker_embedding_v4(
         logger.warning("OpenSearch client not initialized, skipping speaker embedding")
         return
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    v4_index = get_speaker_index_v4()
 
     try:
         # Validate embedding before indexing
@@ -839,7 +839,7 @@ def store_profile_embedding_v4(
         logger.warning("OpenSearch client not initialized")
         return False
 
-    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    v4_index = get_speaker_index_v4()
 
     try:
         doc = {
@@ -1043,7 +1043,7 @@ def add_speaker_embedding(
 
         # Index the document using UUID as document ID
         response = opensearch_client.index(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             body=doc,
             id=str(speaker_uuid),  # Use speaker_uuid as document ID
         )
@@ -1063,7 +1063,7 @@ def add_speaker_embedding(
             _time.sleep(0.5)
             try:
                 response = opensearch_client.index(
-                    index=settings.OPENSEARCH_SPEAKER_INDEX,
+                    index=get_speaker_index(),
                     body=doc,
                     id=str(speaker_uuid),
                 )
@@ -1079,7 +1079,7 @@ def add_speaker_embedding(
             logger.warning(
                 f"Index corruption detected indexing speaker {speaker_uuid}, attempting repair..."
             )
-            if _repair_index(settings.OPENSEARCH_SPEAKER_INDEX):
+            if _repair_index(get_speaker_index()):
                 try:
                     doc = {
                         "speaker_id": speaker_id,
@@ -1097,7 +1097,7 @@ def add_speaker_embedding(
                         "embedding": embedding,
                     }
                     response = opensearch_client.index(
-                        index=settings.OPENSEARCH_SPEAKER_INDEX,
+                        index=get_speaker_index(),
                         body=doc,
                         id=str(speaker_uuid),
                     )
@@ -1134,7 +1134,7 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
             bulk_body.append(
                 {
                     "index": {
-                        "_index": settings.OPENSEARCH_SPEAKER_INDEX,
+                        "_index": get_speaker_index(),
                         "_id": str(data["speaker_uuid"]),
                     }
                 }
@@ -1369,7 +1369,7 @@ def find_matching_speaker(
         }
 
         # Execute search
-        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+        response = opensearch_client.search(index=get_speaker_index(), body=query)
 
         # Check if we have a match
         if len(response["hits"]["hits"]) > 0:
@@ -1406,11 +1406,9 @@ def find_matching_speaker(
             logger.warning(
                 "Index corruption detected during speaker matching, attempting repair..."
             )
-            if _repair_index(settings.OPENSEARCH_SPEAKER_INDEX):
+            if _repair_index(get_speaker_index()):
                 try:
-                    response = opensearch_client.search(
-                        index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-                    )
+                    response = opensearch_client.search(index=get_speaker_index(), body=query)
                     if len(response["hits"]["hits"]) > 0:
                         hit = response["hits"]["hits"][0]
                         score = hit["_score"]
@@ -1467,7 +1465,7 @@ def batch_find_matching_speakers(
 
         for emb_data in embeddings:
             # Add search header
-            msearch_body.append({"index": settings.OPENSEARCH_SPEAKER_INDEX})
+            msearch_body.append({"index": get_speaker_index()})
 
             # Add search query with self-exclusion
             query_body: dict[str, Any] = {
@@ -1545,9 +1543,7 @@ def find_speaker_across_media(speaker_uuid: str, user_id: int) -> list[dict[str,
         ensure_indices_exist()
 
         # First, get the speaker's name from the speaker index using UUID
-        speaker_doc = opensearch_client.get(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_uuid)
-        )
+        speaker_doc = opensearch_client.get(index=get_speaker_index(), id=str(speaker_uuid))
 
         if not speaker_doc or "_source" not in speaker_doc:
             return []
@@ -1627,7 +1623,7 @@ def update_speaker_collections(
         }
 
         response = opensearch_client.update(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             id=str(speaker_uuid),
             body=update_body,
         )
@@ -1670,7 +1666,7 @@ def move_speaker_to_profile_collection(
         }
 
         response = opensearch_client.update(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             id=str(unlabeled_speaker_uuid),
             body=update_body,
         )
@@ -1701,7 +1697,7 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
             bulk_body.append(
                 {
                     "update": {
-                        "_index": settings.OPENSEARCH_SPEAKER_INDEX,
+                        "_index": get_speaker_index(),
                         "_id": str(update["speaker_uuid"]),
                     }
                 }
@@ -1776,7 +1772,7 @@ def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[st
             ],
         }
 
-        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+        response = opensearch_client.search(index=get_speaker_index(), body=query)
 
         total_hits = response["hits"]["total"]["value"]
         if total_hits > size_limit:
@@ -1826,14 +1822,12 @@ def merge_speaker_embeddings(
 
     try:
         # Delete the source speaker document from main index
-        opensearch_client.delete(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(source_speaker_uuid)
-        )
+        opensearch_client.delete(index=get_speaker_index(), id=str(source_speaker_uuid))
 
         # Also remove source from v4 staging index if it exists (mid-migration cleanup)
         import contextlib as _ctx
 
-        v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+        v4_index = get_speaker_index_v4()
         with _ctx.suppress(Exception):
             if opensearch_client.indices.exists(index=v4_index):
                 opensearch_client.delete(index=v4_index, id=str(source_speaker_uuid))
@@ -1847,7 +1841,7 @@ def merge_speaker_embeddings(
         }
 
         response = opensearch_client.update(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             id=str(target_speaker_uuid),
             body=update_body,
         )
@@ -1887,7 +1881,7 @@ def cleanup_orphaned_embeddings(user_id: int) -> dict:
             "_source": ["speaker_id", "profile_id"],
         }
 
-        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+        response = opensearch_client.search(index=get_speaker_index(), body=query)
 
         count = len(response["hits"]["hits"])
         logger.info(
@@ -1918,9 +1912,7 @@ def get_speaker_document(speaker_uuid: str) -> dict[str, Any] | None:
     try:
         ensure_indices_exist()
 
-        response = opensearch_client.get(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_uuid)
-        )
+        response = opensearch_client.get(index=get_speaker_index(), id=str(speaker_uuid))
 
         if response and "_source" in response:
             source = response["_source"]
@@ -2044,9 +2036,7 @@ def get_profile_embedding(profile_uuid: str) -> list[float] | None:
         ensure_indices_exist()
 
         # Use UUID-based document ID for profiles
-        response = opensearch_client.get(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, id=f"profile_{profile_uuid}"
-        )
+        response = opensearch_client.get(index=get_speaker_index(), id=f"profile_{profile_uuid}")
 
         if response and "_source" in response:
             embedding = response["_source"].get("embedding")
@@ -2105,7 +2095,7 @@ def store_profile_embedding(
         # Use refresh='wait_for' to ensure the update is immediately searchable
         # This prevents race conditions where voice_suggestions show stale profile names
         opensearch_client.index(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             body=doc,
             id=f"profile_{profile_uuid}",
             refresh="wait_for",
@@ -2155,7 +2145,7 @@ def update_profile_embedding(
         # Use UUID-based prefixed ID
         # Use refresh='wait_for' to ensure the update is immediately searchable
         opensearch_client.index(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             id=f"profile_{profile_uuid}",
             body=doc,
             refresh="wait_for",
@@ -2188,7 +2178,7 @@ def remove_profile_embedding(profile_uuid: str) -> bool:
     doc_id = f"profile_{profile_uuid}"
     success = False
     try:
-        opensearch_client.delete(index=settings.OPENSEARCH_SPEAKER_INDEX, id=doc_id)
+        opensearch_client.delete(index=get_speaker_index(), id=doc_id)
         logger.info(f"Removed profile {profile_uuid} embedding from main index")
         success = True
     except Exception as e:
@@ -2196,7 +2186,7 @@ def remove_profile_embedding(profile_uuid: str) -> bool:
 
     # Also clean v4 staging index if it exists
     try:
-        v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+        v4_index = get_speaker_index_v4()
         if opensearch_client.indices.exists(index=v4_index):
             opensearch_client.delete(index=v4_index, id=doc_id)
             logger.debug(f"Removed profile {profile_uuid} from v4 staging index")
@@ -2656,7 +2646,7 @@ def remove_speaker_embedding(speaker_uuid: str) -> bool:
 
     success = False
     try:
-        opensearch_client.delete(index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_uuid))
+        opensearch_client.delete(index=get_speaker_index(), id=str(speaker_uuid))
         logger.info(f"Removed speaker {speaker_uuid} from main speaker index")
         success = True
     except Exception as e:
@@ -2664,7 +2654,7 @@ def remove_speaker_embedding(speaker_uuid: str) -> bool:
 
     # Also clean the v4 staging index if it exists (mid-migration cleanup)
     try:
-        v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+        v4_index = get_speaker_index_v4()
         if opensearch_client.indices.exists(index=v4_index):
             opensearch_client.delete(index=v4_index, id=str(speaker_uuid))
             logger.debug(f"Removed speaker {speaker_uuid} from v4 staging index")
@@ -2698,7 +2688,7 @@ def update_speaker_segment_count(speaker_uuid: str, segment_count: int) -> bool:
         }
 
         opensearch_client.update(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             id=str(speaker_uuid),
             body=update_body,
         )
@@ -2733,7 +2723,7 @@ def update_speaker_display_name(speaker_uuid: str, display_name: str | None):
         }
 
         response = opensearch_client.update(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             id=str(speaker_uuid),
             body=update_body,
             refresh="wait_for",
@@ -2777,7 +2767,7 @@ def update_speaker_profile(
         }
 
         response = opensearch_client.update(
-            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            index=get_speaker_index(),
             id=str(speaker_uuid),
             body=update_body,
         )
@@ -2836,7 +2826,7 @@ def find_matching_profiles(
             "_source": ["profile_id", "profile_name", "embedding_count", "updated_at"],
         }
 
-        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+        response = opensearch_client.search(index=get_speaker_index(), body=query)
 
         matches = []
         for hit in response["hits"]["hits"]:
@@ -2964,7 +2954,7 @@ def cleanup_orphaned_speaker_embeddings(user_id: int) -> int:
             "_source": ["speaker_id", "speaker_uuid", "media_file_id"],
         }
 
-        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+        response = opensearch_client.search(index=get_speaker_index(), body=query)
 
         orphaned_speaker_uuids = []
         for hit in response["hits"]["hits"]:
@@ -2983,9 +2973,7 @@ def cleanup_orphaned_speaker_embeddings(user_id: int) -> int:
         deleted_count = 0
         for speaker_uuid in orphaned_speaker_uuids:
             try:
-                opensearch_client.delete(
-                    index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_uuid)
-                )
+                opensearch_client.delete(index=get_speaker_index(), id=str(speaker_uuid))
                 logger.info(f"Deleted orphaned speaker document for speaker {speaker_uuid}")
                 deleted_count += 1
             except Exception as e:

@@ -10,6 +10,8 @@
     resetSpeakerAttributeSettings,
     type SpeakerAttributeSettings,
   } from '$lib/api/speakerAttributeSettings';
+  import Spinner from '../ui/Spinner.svelte';
+  import ProgressBar from '../ui/ProgressBar.svelte';
 
   let settings: SpeakerAttributeSettings = {
     detection_enabled: true,
@@ -381,9 +383,7 @@
             <div class="queued-message">
               {migrationProgressMessage || $t('settings.speakerAttributes.queued')}
             </div>
-            <div class="progress-bar-container">
-              <div class="progress-bar-fill indeterminate"></div>
-            </div>
+            <ProgressBar percent={null} />
           {:else}
             <div class="progress-header">
               <span class="progress-text">
@@ -417,7 +417,7 @@
             disabled={stoppingMigration}
           >
             {#if stoppingMigration}
-              <span class="spinner-small"></span>
+              <Spinner size="small" color="white" />
             {/if}
             {$t('settings.speakerAttributes.stopMigration')}
           </button>
@@ -785,16 +785,6 @@
     transition: width 0.3s ease;
   }
 
-  .progress-bar-fill.indeterminate {
-    width: 30% !important;
-    animation: indeterminate-slide 1.6s ease-in-out infinite;
-  }
-
-  @keyframes indeterminate-slide {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(400%); }
-  }
-
   .queued-message {
     font-size: 0.8rem;
     color: var(--text-secondary, #999);
@@ -829,27 +819,6 @@
     transform: translateY(0);
   }
 
-  .spinner-small {
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    display: inline-block;
-    margin-right: 0.375rem;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .reextract-section {
-    margin-top: 1rem;
-    padding-top: 0.75rem;
-    border-top: 1px dashed var(--border-color, #444);
-  }
-
   .reextract-confirm {
     padding: 0.875rem;
     background: rgba(239, 68, 68, 0.08);
@@ -869,9 +838,4 @@
     gap: 0.5rem;
   }
 
-  .reextract-hint {
-    font-size: 0.75rem;
-    color: var(--text-secondary, #999);
-    margin-left: 0.5rem;
-  }
 </style>

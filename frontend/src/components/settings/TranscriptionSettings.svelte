@@ -16,6 +16,7 @@
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
+  import Spinner from '../ui/Spinner.svelte';
 
   const dispatch = createEventDispatcher();
 
@@ -265,7 +266,7 @@
 <div class="transcription-settings">
   {#if loading}
     <div class="loading-state">
-      <div class="spinner"></div>
+      <Spinner size="large" />
       <p>{$t('settings.transcription.loading')}</p>
     </div>
   {:else}
@@ -787,19 +788,6 @@
     padding: 3rem;
     gap: 1rem;
     color: var(--text-secondary);
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .settings-form {

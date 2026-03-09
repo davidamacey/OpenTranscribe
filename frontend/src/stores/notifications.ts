@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { generateId } from '$lib/utils/ids';
 
 // Create a store for the notifications panel visibility
 export const showNotificationsPanel = writable(false);
@@ -64,7 +65,7 @@ export function markAllAsRead(): void {
 
 // Add a notification
 export function addNotification(notification: Omit<Notification, 'id' | 'timestamp'>): void {
-  const id = `notification-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const id = generateId('notification');
   const timestamp = new Date();
 
   notifications.update((items) => {

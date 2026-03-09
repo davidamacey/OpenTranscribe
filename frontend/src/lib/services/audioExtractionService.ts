@@ -24,6 +24,7 @@ import {
 import { websocketStore } from '../../stores/websocket';
 import { get } from 'svelte/store';
 import { t } from '../../stores/locale';
+import { generateId } from '$lib/utils/ids';
 
 /**
  * Audio Extraction Service Class
@@ -379,7 +380,7 @@ class AudioExtractionService {
     const startTime = Date.now();
 
     // Set up tracking for notifications - use unique ID for each extraction
-    const extractionId = `extraction-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const extractionId = generateId('extraction');
     const fileName = file.name;
 
     try {

@@ -4,6 +4,7 @@
   import 'plyr/dist/plyr.css';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import Spinner from './ui/Spinner.svelte';
 
   export let videoUrl: string = '';
   export let file: any = null;
@@ -390,14 +391,14 @@
 
     {#if isPlayerBuffering}
       <div class="buffer-indicator">
-        <div class="spinner"></div>
+        <Spinner size="large" color="white" />
         <div class="buffer-text">{$t('videoPlayer.loadingProgress', { progress: Math.round(loadProgress) })}</div>
       </div>
     {/if}
 
     {#if isSeeking}
       <div class="seek-overlay">
-        <div class="seek-spinner"></div>
+        <Spinner size="medium" color="white" />
       </div>
     {/if}
 
@@ -959,21 +960,6 @@
     z-index: 10;
   }
 
-  .spinner {
-    border: 4px solid rgba(255, 255, 255, 0.1);
-    border-left: 4px solid white;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 10px;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
   .buffer-text {
     font-size: 14px;
     font-weight: 500;
@@ -992,15 +978,6 @@
     z-index: 10;
     pointer-events: none;
     border-radius: 8px;
-  }
-
-  .seek-spinner {
-    width: 28px;
-    height: 28px;
-    border: 3px solid rgba(255, 255, 255, 0.2);
-    border-left-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
   }
 
   .error-message {

@@ -49,10 +49,14 @@ celery_app = Celery(
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
         "app.tasks.speaker_tasks",
+        "app.tasks.speaker_identification_task",
+        "app.tasks.speaker_update_task",
+        "app.tasks.speaker_embedding_task",
         "app.tasks.speaker_attribute_task",
         "app.tasks.topic_extraction",
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
+        "app.tasks.opensearch_integrity_task",
         "app.tasks.search_indexing_task",
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
@@ -65,6 +69,7 @@ celery_app = Celery(
         "app.tasks.speaker_attribute_migration_task",
         "app.tasks.combined_speaker_analysis_task",
         "app.tasks.speaker_embedding_consistency",
+        "app.tasks.embedding_consistency_repair",
     ],
 )
 

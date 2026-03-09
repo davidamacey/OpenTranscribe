@@ -28,6 +28,7 @@ from app.services.formatting_service import FormattingService
 from app.services.minio_service import delete_file
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
+from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
@@ -556,9 +557,12 @@ def _cleanup_opensearch_data(db: Session, file_id: int, file_uuid: str) -> None:
 
         # Delete speaker embeddings from v3 and v4 indices
         if speaker_uuids:
+            from app.core.constants import get_speaker_index
+            from app.core.constants import get_speaker_index_v4
+
             for idx in [
-                settings.OPENSEARCH_SPEAKER_INDEX,
-                f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4",
+                get_speaker_index(),
+                get_speaker_index_v4(),
             ]:
                 with contextlib.suppress(Exception):
                     _delete_speaker_embeddings_from_index(
@@ -769,17 +773,6 @@ def update_single_transcript_segment(
 
     db.commit()
     db.refresh(segment)
-
-    # Helper for timestamp formatting
-    def format_timestamp(seconds: float) -> str:
-        """Format seconds as MM:SS or H:MM:SS."""
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        if minutes >= 60:
-            hours = minutes // 60
-            minutes = minutes % 60
-            return f"{hours}:{minutes:02d}:{secs:02d}"
-        return f"{minutes}:{secs:02d}"
 
     # Manually construct Pydantic response with all required fields
     return TranscriptSegmentSchema(

@@ -5,6 +5,7 @@
   import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import { t } from '$stores/locale';
+  import EmptyState from './ui/EmptyState.svelte';
 
   /**
    * @typedef {Object} User
@@ -463,9 +464,7 @@
       <p>{$t('userManagement.loadingUsers')}</p>
     </div>
   {:else if !users || users.length === 0}
-    <div class="empty-state">
-      <p>{$t('userManagement.noUsersFound')}</p>
-    </div>
+    <EmptyState title={$t('userManagement.noUsersFound')} padding="2rem" />
   {:else}
     <table class="users-table user-management-table">
       <thead>
@@ -945,7 +944,7 @@
     font-size: 0.8125rem;
   }
 
-  .loading-state, .empty-state {
+  .loading-state {
     padding: 2rem;
     text-align: center;
     background-color: var(--card-background);

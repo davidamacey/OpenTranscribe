@@ -350,11 +350,11 @@ def _cleanup_opensearch_for_file(file: "MediaFile", file_uuid: str) -> None:
 
     # Speaker embeddings (v4)
     with contextlib.suppress(Exception):
+        from app.core.constants import get_speaker_index_v4
         from app.services.opensearch_service import opensearch_client
-        from app.services.opensearch_service import settings as os_settings
 
         if opensearch_client:
-            v4_index = f"{os_settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+            v4_index = get_speaker_index_v4()
             if opensearch_client.indices.exists(index=v4_index):
                 for speaker in list(file.speakers):
                     with contextlib.suppress(Exception):

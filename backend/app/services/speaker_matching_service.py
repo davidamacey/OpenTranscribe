@@ -227,8 +227,8 @@ class SpeakerMatchingService:
         logger.info(f"Finding unlabeled matches for speaker {exclude_speaker_id}, user {user_id}")
 
         try:
+            from app.core.constants import get_speaker_index
             from app.services.opensearch_service import opensearch_client
-            from app.services.opensearch_service import settings
 
             query = {
                 "size": 10,  # Get more potential matches for unlabeled speakers
@@ -262,7 +262,7 @@ class SpeakerMatchingService:
             if opensearch_client is None:
                 logger.error("OpenSearch client is not available")
                 return matches
-            response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+            response = opensearch_client.search(index=get_speaker_index(), body=query)
 
             logger.info(
                 f"OpenSearch response for speaker {exclude_speaker_id}: {len(response['hits']['hits'])} hits"
@@ -1165,14 +1165,14 @@ class SpeakerMatchingService:
         Returns:
             OpenSearch response or None if client unavailable
         """
+        from app.core.constants import get_speaker_index
         from app.services.opensearch_service import opensearch_client
-        from app.services.opensearch_service import settings
 
         query = self._build_speaker_match_query(embedding, user_id, new_speaker_id)
         if opensearch_client is None:
             logger.error("OpenSearch client is not available")
             return None
-        return opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)  # type: ignore[no-any-return]
+        return opensearch_client.search(index=get_speaker_index(), body=query)  # type: ignore[no-any-return]
 
     def find_and_store_speaker_matches(
         self,

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import { AdminSettingsApi, type RetryConfig } from '../../lib/api/adminSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -92,7 +93,7 @@
 
   {#if loading}
     <div class="loading-state">
-      <div class="spinner"></div>
+      <Spinner size="small" />
     </div>
   {:else}
     <div class="setting-row">
@@ -191,19 +192,6 @@
     display: flex;
     align-items: center;
     padding: 1rem;
-  }
-
-  .spinner {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .setting-row {

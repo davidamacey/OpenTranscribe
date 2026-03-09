@@ -5,6 +5,8 @@
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import StatusChip from './StatusChip.svelte';
+  import Spinner from '../ui/Spinner.svelte';
+  import ProgressBar from '../ui/ProgressBar.svelte';
 
   let showModelChangeModal = false;
 
@@ -281,7 +283,7 @@
     <div class="reindex-live-progress">
       <div class="reindex-header">
         <span class="reindex-label">
-          <span class="spinner"></span>
+          <Spinner size="small" />
           {isStopping
             ? ($t('search.stoppingReindex') || 'Stopping...')
             : ($t('search.reindexingInProgress') || 'Re-indexing in progress...')}
@@ -310,9 +312,9 @@
           {/if}
         </div>
       {:else}
-        <div class="progress-container">
-          <div class="progress-bar reindexing">
-            <div class="progress-fill indeterminate"></div>
+        <div class="progress-container indeterminate-row">
+          <div class="progress-bar-wrapper">
+            <ProgressBar percent={null} />
           </div>
           <span class="progress-text">{$t('search.reindexStarting') || 'Starting...'}</span>
         </div>
@@ -675,21 +677,6 @@
     font-weight: 500;
   }
 
-  .spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--primary-light, rgba(59, 130, 246, 0.3));
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   .progress-bar.reindexing {
     background: var(--primary-light, rgba(59, 130, 246, 0.2));
   }
@@ -816,24 +803,15 @@
     font-size: 0.75rem;
   }
 
-  .progress-bar.reindexing .progress-fill.indeterminate {
-    width: 30%;
-    animation: indeterminate 1.5s ease-in-out infinite;
+  .indeterminate-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin-bottom: 0.5rem;
   }
 
-  @keyframes indeterminate {
-    0% {
-      margin-left: 0%;
-      width: 30%;
-    }
-    50% {
-      margin-left: 35%;
-      width: 30%;
-    }
-    100% {
-      margin-left: 0%;
-      width: 30%;
-    }
+  .indeterminate-row .progress-bar-wrapper {
+    flex: 1;
   }
 
 </style>

@@ -4,6 +4,8 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
+  import Spinner from '../ui/Spinner.svelte';
+  import ProgressBar from '../ui/ProgressBar.svelte';
 
   // Migration status state
   let currentMode = 'v3';
@@ -443,7 +445,7 @@
             {#if migrationInProgress}
               <div class="migration-controls">
                 <button class="btn btn-primary" disabled>
-                  <span class="spinner-small"></span>
+                  <Spinner size="small" color="white" />
                   {$t('settings.embeddingMigration.migrating')}
                 </button>
                 <button
@@ -452,7 +454,7 @@
                   disabled={stoppingMigration}
                 >
                   {#if stoppingMigration}
-                    <span class="spinner-small"></span>
+                    <Spinner size="small" color="white" />
                   {/if}
                   {$t('settings.embeddingMigration.stopMigration')}
                 </button>
@@ -472,9 +474,7 @@
               <div class="queued-message">
                 {progressMessage || $t('settings.embeddingMigration.queued')}
               </div>
-              <div class="progress-bar-container">
-                <div class="progress-bar-fill indeterminate"></div>
-              </div>
+              <ProgressBar percent={null} />
             {:else}
               <div class="progress-header">
                 <span class="progress-text">
@@ -541,7 +541,7 @@
               disabled={retryingFailed}
             >
               {#if retryingFailed}
-                <span class="spinner-small"></span>
+                <Spinner size="small" color="white" />
               {/if}
               {$t('settings.embeddingMigration.retryFailed')}
             </button>
@@ -575,7 +575,7 @@
           {#if finalizing}
             <p>{$t('settings.embeddingMigration.finalizing') || 'Finalizing migration — swapping indices...'}</p>
             <button class="btn btn-secondary" disabled>
-              <span class="spinner-small dark"></span>
+              <Spinner size="small" color="var(--text-color)" />
               {$t('settings.embeddingMigration.finalizeMigration')}
             </button>
           {:else}
@@ -644,26 +644,6 @@
   @keyframes skeleton-pulse {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 0.8; }
-  }
-
-  .spinner-small {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    display: inline-block;
-    flex-shrink: 0;
-  }
-
-  .spinner-small.dark {
-    border-color: rgba(0,0,0,0.15);
-    border-top-color: var(--text-color);
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .status-chips-row {
@@ -903,16 +883,6 @@
     background: var(--primary-color);
     border-radius: 4px;
     transition: width 0.3s ease;
-  }
-
-  .progress-bar-fill.indeterminate {
-    width: 30% !important;
-    animation: indeterminate-slide 1.6s ease-in-out infinite;
-  }
-
-  @keyframes indeterminate-slide {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(400%); }
   }
 
   .queued-message {

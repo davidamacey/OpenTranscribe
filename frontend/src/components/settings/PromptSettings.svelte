@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate } from '../../lib/api/prompts';
   import ConfirmationModal from '../ConfirmationModal.svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -786,7 +787,7 @@
               disabled={saving || !isFormValid}
             >
               {#if saving}
-                <div class="spinner"></div>
+                <Spinner size="small" color="white" />
                 {$t('prompts.saving')}
               {:else}
                 {editingPrompt ? $t('prompts.updatePrompt') : $t('prompts.createPromptBtn')}
@@ -1605,20 +1606,6 @@
     justify-content: flex-end;
     padding-top: 1rem;
     border-top: 1px solid var(--border-color);
-  }
-
-  .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-right: 0.5rem;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   @media (max-width: 768px) {

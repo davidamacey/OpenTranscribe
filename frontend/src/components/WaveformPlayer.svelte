@@ -3,6 +3,7 @@
   import axiosInstance from '$lib/axios';
   import { theme } from '../stores/theme.js';
   import { t } from '$stores/locale';
+  import Spinner from './ui/Spinner.svelte';
 
   // Props
   export let fileId: string | number;
@@ -333,7 +334,7 @@
   <!-- Overlay states -->
   {#if isLoadingWaveform}
     <div class="waveform-overlay waveform-loading">
-      <div class="loading-spinner"></div>
+      <Spinner size="medium" />
       <span>{$t('waveform.loading')}</span>
     </div>
   {:else if waveformError}
@@ -406,15 +407,6 @@
     color: var(--error-color);
   }
 
-  .loading-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
   .retry-button {
     padding: 0.25rem 0.75rem;
     background-color: var(--primary-color);
@@ -434,12 +426,6 @@
     transform: translateY(1px);
   }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   /* Dark mode support using theme attribute */
   :global([data-theme='dark']) .waveform-container {
     background-color: var(--surface-color);
@@ -448,11 +434,6 @@
 
   :global([data-theme='dark']) .waveform-canvas:hover {
     background-color: var(--background-color);
-  }
-
-  :global([data-theme='dark']) .loading-spinner {
-    border-color: var(--border-color);
-    border-top-color: var(--primary-color);
   }
 
   /* Responsive adjustments */

@@ -3,6 +3,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import Spinner from '../ui/Spinner.svelte';
   import {
     getDownloadSettings,
     updateDownloadSettings,
@@ -109,7 +110,7 @@
 
 {#if loading}
   <div class="loading-state">
-    <span class="spinner"></span>
+    <Spinner size="small" />
     {$t('settings.download.loading')}
   </div>
 {:else}
@@ -206,19 +207,6 @@
     gap: 0.5rem;
     padding: 1rem 0;
     color: var(--text-secondary, #6b7280);
-  }
-
-  .spinner {
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid var(--border-color, #e5e7eb);
-    border-top-color: var(--primary-color, #3b82f6);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .settings-form {

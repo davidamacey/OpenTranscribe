@@ -1,11 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { fade, fly, scale } from 'svelte/transition';
-  import { cubicOut, cubicIn } from 'svelte/easing';
+  import { fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { t } from '$stores/locale';
   import { isLLMAvailable } from '../stores/llmStatus';
   import axiosInstance from '../lib/axios';
   import { toastStore } from '../stores/toast';
+  import Spinner from './ui/Spinner.svelte';
+  import BaseModal from './ui/BaseModal.svelte';
 
   export let showModal: boolean = false;
   export let file: any = null;
@@ -259,18 +261,6 @@
     showModal = false;
   }
 
-  function handleBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      handleClose();
-    }
-  }
-
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      handleClose();
-    }
-  }
-
   function selectAll() {
     const newSet = new Set<string>();
     for (const stage of allStages) {
@@ -295,44 +285,7 @@
   }
 </script>
 
-{#if showModal}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div
-    class="modal-backdrop"
-    in:fade={{ duration: 200 }}
-    out:fade={{ duration: 150 }}
-    on:click={handleBackdropClick}
-    on:keydown={handleKeydown}
-    tabindex="-1"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="reprocess-modal-title"
-  >
-    <div
-      class="modal-container"
-      in:scale={{ start: 0.96, duration: 200, easing: cubicOut }}
-      out:scale={{ start: 0.96, duration: 120, easing: cubicIn }}
-    >
-      <div class="modal-content">
-        <!-- Header -->
-        <div class="modal-header">
-          <h2 id="reprocess-modal-title" class="modal-title">
-            {bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')}
-          </h2>
-          <button
-            class="modal-close-button"
-            on:click={handleClose}
-            aria-label={$t('reprocess.cancel')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-
+<BaseModal isOpen={showModal} title={bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')} maxWidth="540px" zIndex={9999} onClose={handleClose}>
         <!-- Step Indicator -->
         <div class="step-indicator">
           {#each stepLabels as label, i}
@@ -685,8 +638,7 @@
           {/key}
         </div>
 
-        <!-- Footer -->
-        <div class="modal-footer">
+        <svelte:fragment slot="footer">
           {#if currentStep > 1}
             <button
               class="modal-button cancel-button"
@@ -713,7 +665,7 @@
               type="button"
             >
               {#if reprocessing}
-                <div class="spinner-small"></div>
+                <Spinner size="small" color="white" />
               {/if}
               {#if reprocessing}
                 {$t('reprocess.buttonLabelProcessing')}
@@ -736,84 +688,10 @@
               </svg>
             </button>
           {/if}
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}
+        </svelte:fragment>
+</BaseModal>
 
 <style>
-  /* Modal overlay */
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    padding: 1rem;
-  }
-
-  .modal-container {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    max-width: 540px;
-    width: 100%;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1),
-      0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  }
-
-  .modal-content {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* Header */
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
-  }
-
-  .modal-title {
-    margin: 0;
-    font-size: 1.15rem;
-    font-weight: 600;
-    color: var(--text-color);
-    line-height: 1.4;
-  }
-
-  .modal-close-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: color 0.2s ease;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .modal-close-button:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-  }
-
   /* Step Indicator */
   .step-indicator {
     display: flex;
@@ -1283,16 +1161,6 @@
     margin-top: 0.5rem;
   }
 
-  /* Footer */
-  .modal-footer {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem 1.25rem;
-    justify-content: space-between;
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
-  }
-
   .modal-button {
     padding: 0.55rem 1.1rem;
     border: none;
@@ -1349,37 +1217,7 @@
     cursor: not-allowed;
   }
 
-  /* Spinner */
-  .spinner-small {
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid white;
-    border-radius: 50%;
-    width: 14px;
-    height: 14px;
-    animation: spin 0.8s linear infinite;
-    flex-shrink: 0;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   /* Dark mode */
-  :global([data-theme='dark']) .modal-backdrop {
-    background: var(--modal-backdrop, rgba(0, 0, 0, 0.7));
-  }
-
-  :global([data-theme='dark']) .modal-container {
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3),
-      0 10px 10px -5px rgba(0, 0, 0, 0.2);
-  }
-
-  :global([data-theme='dark']) .modal-close-button:hover {
-    background: var(--button-hover, rgba(255, 255, 255, 0.1));
-  }
-
   :global([data-theme='dark']) .cancel-button:hover {
     background: #3b82f6;
     color: white;
@@ -1401,16 +1239,6 @@
 
   /* Responsive design */
   @media (max-width: 480px) {
-    .modal-container {
-      margin: 0.5rem;
-      max-width: none;
-      max-height: 90vh;
-    }
-
-    .modal-footer {
-      flex-direction: column-reverse;
-    }
-
     .modal-button {
       width: 100%;
     }
@@ -1430,10 +1258,6 @@
 
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
-    .modal-container {
-      animation: none;
-    }
-
     .modal-button,
     .stage-item,
     .stage-check-custom,

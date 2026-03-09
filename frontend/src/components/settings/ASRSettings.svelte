@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Spinner from '../ui/Spinner.svelte';
   import {
     ASRSettingsApi,
     type UserASRSettingsResponse,
@@ -263,7 +264,7 @@
                 title={$t('settings.asrProvider.testConnection')}
               >
                 {#if testing && testingConfigId === config.uuid}
-                  <span class="spinner-sm"></span>
+                  <Spinner size="small" />
                 {:else}
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
@@ -645,20 +646,6 @@
   }
 
   .btn-add-first:hover { background: #2563eb; }
-
-  .spinner-sm {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid currentColor;
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
 
   button:disabled {
     opacity: 0.6;

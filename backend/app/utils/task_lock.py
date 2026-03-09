@@ -9,9 +9,8 @@ import logging
 from contextlib import contextmanager
 
 import redis
-from redis import Redis
 
-from app.core.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -23,25 +22,22 @@ class TaskLockError(Exception):
 class TaskLockManager:
     """Manages distributed locks for task execution."""
 
-    def __init__(self, redis_url: str | None = None):
-        """Initialize the lock manager with Redis connection."""
-        self.redis_url = redis_url or settings.CELERY_BROKER_URL
-        self._redis_client: Redis[str] | bool | None = None
+    def __init__(self):
+        """Initialize the lock manager."""
+        self._redis_client: redis.Redis | None = None
+        self._redis_init_failed: bool = False
 
     @property
-    def redis_client(self):
-        """Lazy initialization of Redis client."""
-        if self._redis_client is None:
+    def redis_client(self) -> redis.Redis | None:
+        """Lazy initialization of Redis client via shared singleton."""
+        if self._redis_client is None and not self._redis_init_failed:
             try:
-                # Parse Redis URL and create client
-                self._redis_client = redis.from_url(self.redis_url, decode_responses=True)
-                # Test connection
+                self._redis_client = get_redis()
                 self._redis_client.ping()
             except Exception as e:
                 logger.error(f"Failed to connect to Redis: {e}")
-                # Fallback to None - will disable locking
-                self._redis_client = False
-        return self._redis_client if self._redis_client is not False else None
+                self._redis_init_failed = True
+        return self._redis_client
 
     @contextmanager
     def acquire_lock(self, lock_key: str, timeout: int = 300, blocking_timeout: int = 0):

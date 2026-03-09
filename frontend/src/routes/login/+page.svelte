@@ -8,6 +8,7 @@
   import { browser } from '$app/environment';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
   import LoginBanner from '$components/LoginBanner.svelte';
+  import Spinner from '../../components/ui/Spinner.svelte';
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
@@ -450,7 +451,7 @@
             disabled={mfaLoading}
           >
             {#if mfaLoading}
-              <span class="spinner"></span> {$t('auth.verifying') || 'Verifying...'}
+              <Spinner size="small" color="white" /> {$t('auth.verifying') || 'Verifying...'}
             {:else}
               {$t('auth.mfaVerify') || 'Verify'}
             {/if}
@@ -559,7 +560,7 @@
 
       <div class="forgot-password-row">
         <a href="/forgot-password" class="forgot-password-link">
-          {$t('auth.forgotPassword') || 'Forgot password?'}
+          {$t('auth.forgotPassword')}
         </a>
       </div>
 
@@ -569,7 +570,7 @@
         disabled={loading}
       >
         {#if loading}
-          <span class="spinner"></span> {$t('auth.signingIn')}
+          <Spinner size="small" color="white" /> {$t('auth.signingIn')}
         {:else}
           {$t('auth.signIn')}
         {/if}
@@ -590,7 +591,7 @@
             disabled={keycloakLoading || loading}
           >
             {#if keycloakLoading}
-              <span class="spinner"></span>
+              <Spinner size="small" color="white" />
             {:else}
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
@@ -608,7 +609,7 @@
             disabled={pkiLoading || loading}
           >
             {#if pkiLoading}
-              <span class="spinner"></span>
+              <Spinner size="small" color="white" />
             {:else}
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
@@ -623,10 +624,10 @@
     {/if}
 
     <div class="auth-links">
-      <a
+      <span class="auth-link-text">{$t('auth.needAccountPrefix')} <a
         href="/register"
         class="auth-link"
-      >{$t('auth.needAccount')}</a>
+      >{$t('auth.register')}</a></span>
     </div>
     {/if}
   </div>
@@ -733,7 +734,21 @@
   .auth-links {
     margin-top: 1.5rem;
     text-align: center;
-    color: var(--text-light);
+  }
+
+  .auth-link-text {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+  }
+
+  .auth-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .auth-link:hover {
+    text-decoration: underline;
   }
 
   .forgot-password-row {
@@ -800,21 +815,6 @@
   .success-message svg {
     flex-shrink: 0;
     opacity: 0.8;
-  }
-
-  .spinner {
-    display: inline-block;
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    border-top-color: #fff;
-    animation: spin 1s ease-in-out infinite;
-    margin-right: 0.5rem;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .auth-logo {

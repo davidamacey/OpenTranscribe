@@ -138,3 +138,77 @@ class RetentionRunResponse(BaseModel):
     task_id: str
     status: str
     message: str
+
+
+# ---------------------------------------------------------------------------
+# Protected Media Sources
+# ---------------------------------------------------------------------------
+
+
+class MediaSource(BaseModel):
+    """A single protected media source configuration."""
+
+    id: str = Field(..., description="Unique identifier for this source")
+    hostname: str = Field(..., min_length=1, description="Hostname (e.g. media.example.com)")
+    provider_type: str = Field(
+        default="mediacms", description="Provider plugin type (mediacms, etc.)"
+    )
+    username: str = Field(default="", description="Default username for this source")
+    password: str = Field(default="", description="Default password for this source")
+    verify_ssl: bool = Field(default=True, description="Verify SSL certificates")
+    label: str = Field(default="", description="Optional display label")
+
+    @field_validator("hostname")
+    @classmethod
+    def validate_hostname(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$", v):
+            raise ValueError("Invalid hostname format")
+        return v
+
+
+class MediaSourceCreate(BaseModel):
+    """Schema for creating a new media source."""
+
+    hostname: str = Field(..., min_length=1)
+    provider_type: str = Field(default="mediacms")
+    username: str = Field(default="")
+    password: str = Field(default="")
+    verify_ssl: bool = Field(default=True)
+    label: str = Field(default="")
+
+    @field_validator("hostname")
+    @classmethod
+    def validate_hostname(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$", v):
+            raise ValueError("Invalid hostname format")
+        return v
+
+
+class MediaSourceUpdate(BaseModel):
+    """Schema for updating a media source."""
+
+    hostname: Optional[str] = None
+    provider_type: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    verify_ssl: Optional[bool] = None
+    label: Optional[str] = None
+
+    @field_validator("hostname")
+    @classmethod
+    def validate_hostname(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip().lower()
+            if not re.match(
+                r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$", v
+            ):
+                raise ValueError("Invalid hostname format")
+        return v
+
+
+class MediaSourcesList(BaseModel):
+    """Response schema for the list of media sources."""
+
+    sources: list[MediaSource]

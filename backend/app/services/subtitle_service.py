@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.utils.time_format import format_srt_timestamp
+from app.utils.time_format import format_timestamp_simple
 
 
 class SubtitleService:
@@ -29,11 +31,7 @@ class SubtitleService:
     @staticmethod
     def format_timestamp(seconds: float) -> str:
         """Convert seconds to SRT timestamp format (HH:MM:SS,mmm)."""
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        milliseconds = int((seconds % 1) * 1000)
-        return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+        return format_srt_timestamp(seconds)
 
     @staticmethod
     def calculate_optimal_display_time(text: str) -> float:
@@ -440,13 +438,8 @@ class SubtitleService:
 
     @staticmethod
     def format_timestamp_simple(seconds: float) -> str:
-        """Convert seconds to simple MM:SS or HH:MM:SS format."""
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        if hours > 0:
-            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-        return f"{minutes:02d}:{secs:02d}"
+        """Convert seconds to simple MM:SS or H:MM:SS format."""
+        return format_timestamp_simple(seconds)
 
     @staticmethod
     def generate_txt_content(db: Session, media_file_id: int, include_speakers: bool = True) -> str:

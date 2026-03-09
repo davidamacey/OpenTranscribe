@@ -1,5 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import Spinner from '../ui/Spinner.svelte';
+  import BaseModal from '../ui/BaseModal.svelte';
   import {
     ASRSettingsApi,
     type UserASRSettingsResponse,
@@ -177,29 +179,9 @@
     resetForm();
   }
 
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) handleClose();
-  }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape') handleClose();
-  }
 </script>
 
-{#if show}
-  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:click={handleBackdropClick} on:keydown={handleKeyDown}>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="asr-modal-title">
-      <div class="modal-header">
-        <h3 id="asr-modal-title">{editingConfig ? $t('settings.asrProvider.editConfig') : $t('settings.asrProvider.addConfig')}</h3>
-        <button class="close-btn" on:click={handleClose} aria-label={$t('common.close')} title={$t('common.close')}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-      </div>
-
-      <div class="modal-body">
+<BaseModal isOpen={show} title={editingConfig ? $t('settings.asrProvider.editConfig') : $t('settings.asrProvider.addConfig')} onClose={handleClose} maxWidth="520px">
         <!-- Name -->
         <div class="form-group">
           <label for="asr-name">{$t('settings.asrProvider.fields.name')}</label>
@@ -337,16 +319,16 @@
         {#if estimatedCostPerHour}
           <p class="pricing-disclaimer">{$t('settings.asrProvider.pricingDisclaimer')}</p>
         {/if}
-      </div>
 
-      <div class="modal-footer">
+  <svelte:fragment slot="footer">
+    <div class="footer-row">
         <button
           class="btn-test-conn"
           on:click={handleTest}
           disabled={testing || !formData.provider || !formData.model_name}
         >
           {#if testing}
-            <span class="spinner-sm"></span> Testing...
+            <Spinner size="small" /> Testing...
           {:else}
             {$t('settings.asrProvider.testConnection')}
           {/if}
@@ -357,73 +339,11 @@
             {saving ? 'Saving...' : (editingConfig ? 'Update' : 'Save')}
           </button>
         </div>
-      </div>
     </div>
-  </div>
-{/if}
+  </svelte:fragment>
+</BaseModal>
 
 <style>
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
-  }
-
-  .modal {
-    background: var(--bg-primary, var(--card-bg, #fff));
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 520px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  }
-
-  .modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.25rem 1.5rem 1rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-header h3 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    padding: 0.25rem;
-    cursor: pointer;
-    color: var(--text-muted);
-    border-radius: 4px;
-    transition: color 0.15s;
-    display: flex;
-    align-items: center;
-  }
-
-  .close-btn:hover { color: var(--text-color); }
-
-  .modal-body {
-    padding: 1.25rem 1.5rem;
-    overflow-y: auto;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
   .form-group {
     display: flex;
     flex-direction: column;
@@ -526,12 +446,11 @@
     border: 1px solid rgba(239, 68, 68, 0.2);
   }
 
-  .modal-footer {
+  .footer-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1.5rem;
-    border-top: 1px solid var(--border-color);
+    width: 100%;
     gap: 0.75rem;
   }
 
@@ -591,17 +510,4 @@
     cursor: not-allowed;
   }
 
-  .spinner-sm {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid currentColor;
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
 </style>

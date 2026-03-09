@@ -19,7 +19,7 @@ class TestMigrationLockService:
         """Create a fresh service instance with mocked Redis for each test."""
         from app.services.migration_lock_service import MigrationLockService
 
-        self.service = MigrationLockService(redis_url="redis://fake:6379/0")
+        self.service = MigrationLockService()
         self.mock_redis = MagicMock()
         self.mock_redis.ping.return_value = True
         self.service._client = self.mock_redis
@@ -39,8 +39,8 @@ class TestMigrationLockService:
 
     def test_activate_returns_false_when_redis_unavailable(self):
         self.service._client = None
-        with patch("app.services.migration_lock_service.redis") as mock_mod:
-            mock_mod.from_url.side_effect = ConnectionError("down")
+        with patch("app.services.migration_lock_service.get_redis") as mock_fn:
+            mock_fn.side_effect = ConnectionError("down")
             assert self.service.activate() is False
 
     # ---- deactivate (DECR-based) ----
@@ -76,8 +76,8 @@ class TestMigrationLockService:
 
     def test_is_active_false_when_redis_unavailable(self):
         self.service._client = None
-        with patch("app.services.migration_lock_service.redis") as mock_mod:
-            mock_mod.from_url.side_effect = ConnectionError("down")
+        with patch("app.services.migration_lock_service.get_redis") as mock_fn:
+            mock_fn.side_effect = ConnectionError("down")
             assert self.service.is_active() is False
 
     # ---- refresh_ttl ----
