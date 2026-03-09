@@ -107,6 +107,7 @@
         return 'search';
       case 'migration_progress':
       case 'migration_complete':
+      case 'migration_finalized':
         return 'database';
       case 'clustering_progress':
       case 'clustering_complete':

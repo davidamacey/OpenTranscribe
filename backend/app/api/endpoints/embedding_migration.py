@@ -342,7 +342,7 @@ async def finalize_migration(
         }
 
     try:
-        task = finalize_v4_migration_task.delay()
+        task = finalize_v4_migration_task.delay(user_id=current_user.id)
 
         logger.info(f"Started finalization task: {task.id}")
 

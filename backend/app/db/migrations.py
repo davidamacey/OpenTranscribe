@@ -176,8 +176,22 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'speaker' AND column_name = 'gender_confirmed_by_user')"
     )
+    has_speaker_cannot_link = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'speaker_cannot_link')"
+    )
+    has_cluster_suggested_name = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker_cluster' AND column_name = 'suggested_name')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v320: suggested_name column on speaker_cluster for title-based name extraction
+    if has_cluster_suggested_name:
+        return "v320_add_cluster_suggested_name"
+    # v310: speaker constraint tables (cannot-link and profile blacklist)
+    if has_speaker_cannot_link:
+        return "v310_add_speaker_constraints"
     # v300: gender_confirmed_by_user column on speaker table
     if has_gender_confirmed:
         return "v300_add_gender_confirmed"

@@ -136,6 +136,7 @@ services:
     # which is loaded for query-time vector search. AI processing in celery-worker.
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     ports:
       - "${BACKEND_PORT:-5174}:8080"
     environment:
@@ -283,6 +284,8 @@ services:
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=${NLP_CONCURRENCY:-4} --max-tasks-per-child=${NLP_MAX_TASKS:-50} --hostname ai-nlp@%h -E
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres

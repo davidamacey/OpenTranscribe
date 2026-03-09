@@ -412,11 +412,12 @@ def download_nltk_data():
         print_info(f"NLTK data path: {nltk_data_path}")
 
         # Download required NLTK data packages
-        # punkt_tab is required by transformers/whisperx for tokenization
         required_packages = [
             'punkt_tab',       # Punkt tokenizer (new tabular format)
             'punkt',           # Punkt tokenizer (legacy format for compatibility)
-            'averaged_perceptron_tagger_eng',  # POS tagger (may be needed by transformers)
+            'averaged_perceptron_tagger_eng',  # POS tagger for NER
+            'maxent_ne_chunker_tab',           # Named entity chunker for speaker name extraction
+            'words',                           # English word corpus (required by NE chunker)
         ]
 
         downloaded = []

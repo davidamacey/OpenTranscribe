@@ -35,6 +35,16 @@ logger = logging.getLogger(__name__)
 # Clustering thresholds
 # With complete linkage, 0.75 nearly guarantees same speaker identity
 CLUSTER_ASSIGNMENT_THRESHOLD = 0.75
+# Cross-gender cluster assignment requires higher similarity to prevent
+# gender-mismatched speakers from joining clusters.  A speaker whose
+# predicted gender differs from the cluster's dominant gender must exceed
+# this threshold instead of CLUSTER_ASSIGNMENT_THRESHOLD.
+GENDER_CROSS_THRESHOLD = 0.85
+# In batch_recluster post-processing, minority-gender members whose
+# embedding similarity to the group centroid falls below this value are
+# auto-evicted.  Both signals (gender mismatch + weak embedding) must
+# agree — this avoids removing legitimate same-speaker matches.
+GENDER_OUTLIER_EVICT_THRESHOLD = 0.70
 # Rows of the similarity chunk processed at a time.
 # 500 rows x N cols x 4 bytes keeps each chunk under ~30 MB
 # even at 15 000 unlabeled speakers.
@@ -94,20 +104,56 @@ class SpeakerClusteringService:
             matches = find_matching_clusters(embedding, user_id, k=5, threshold=threshold)
 
             if matches:
-                best = matches[0]
-                margin = best["similarity"] - matches[1]["similarity"] if len(matches) > 1 else 1.0
-                cluster_uuid = best["cluster_uuid"]
-                cluster = (
-                    self.db.query(SpeakerCluster)
-                    .filter(
-                        SpeakerCluster.uuid == cluster_uuid,
-                        SpeakerCluster.user_id == user_id,
+                # Iterate through matches to find first non-blocked cluster
+                for i, candidate in enumerate(matches):
+                    margin = (
+                        candidate["similarity"] - matches[i + 1]["similarity"]
+                        if i + 1 < len(matches)
+                        else 1.0
                     )
-                    .first()
-                )
-                if cluster:
+                    cluster_uuid = candidate["cluster_uuid"]
+                    cluster = (
+                        self.db.query(SpeakerCluster)
+                        .filter(
+                            SpeakerCluster.uuid == cluster_uuid,
+                            SpeakerCluster.user_id == user_id,
+                        )
+                        .first()
+                    )
+                    if not cluster:
+                        continue
+
+                    # Check constraints before assigning
+                    if self._is_speaker_blocked_from_cluster(speaker_id, cluster):
+                        logger.debug(
+                            "Speaker %s blocked from cluster %s by constraint",
+                            speaker_id,
+                            cluster_uuid,
+                        )
+                        continue
+
+                    # Gender-aware threshold: cross-gender matches need higher similarity
+                    if speaker.predicted_gender and cluster.member_count >= 2:
+                        dominant = self._get_cluster_dominant_gender(cluster)
+                        if (
+                            dominant
+                            and dominant != speaker.predicted_gender
+                            and candidate["similarity"] < GENDER_CROSS_THRESHOLD
+                        ):
+                            logger.debug(
+                                "Speaker %s gender (%s) differs from cluster %s dominant (%s), "
+                                "sim %.3f < cross-gender threshold %.3f — skipping",
+                                speaker_id,
+                                speaker.predicted_gender,
+                                cluster_uuid,
+                                dominant,
+                                candidate["similarity"],
+                                GENDER_CROSS_THRESHOLD,
+                            )
+                            continue
+
                     self._add_speaker_to_cluster(
-                        speaker, cluster, best["similarity"], margin=margin
+                        speaker, cluster, candidate["similarity"], margin=margin
                     )
                     # Auto-propagate profile if cluster is promoted
                     if cluster.promoted_to_profile_id:
@@ -475,6 +521,66 @@ class SpeakerClusteringService:
             sim_clusters = 0
             sim_assigned = 0
 
+            # Post-AHC constraint enforcement: remove speakers that violate
+            # cannot-link constraints from their assigned groups.
+            from app.models.media import SpeakerCannotLink
+
+            all_cannot_links = (
+                self.db.query(SpeakerCannotLink)
+                .filter(
+                    SpeakerCannotLink.speaker_id.in_(ordered_ids)
+                    | SpeakerCannotLink.cannot_link_speaker_id.in_(ordered_ids)
+                )
+                .all()
+            )
+            cannot_link_set: set[tuple[int, int]] = set()
+            for cl in all_cannot_links:
+                cannot_link_set.add((int(cl.speaker_id), int(cl.cannot_link_speaker_id)))
+
+            if cannot_link_set:
+                for label_key in list(groups.keys()):
+                    member_ids_g = groups[label_key]
+                    if len(member_ids_g) < 2:
+                        continue
+                    # Find violating speakers in this group
+                    evicted: set[int] = set()
+                    for i, sid_a in enumerate(member_ids_g):
+                        for sid_b in member_ids_g[i + 1 :]:
+                            if (sid_a, sid_b) in cannot_link_set or (
+                                sid_b,
+                                sid_a,
+                            ) in cannot_link_set:
+                                # Evict the speaker with lower similarity to group centroid
+                                g_embs = [
+                                    emb_cache[s]
+                                    for s in member_ids_g
+                                    if s in emb_cache and s not in evicted
+                                ]
+                                if g_embs:
+                                    g_cent = np.mean(g_embs, axis=0)
+                                    g_norm = np.linalg.norm(g_cent)
+                                    if g_norm > 1e-8:
+                                        g_cent = g_cent / g_norm
+                                    sim_a = (
+                                        float(np.dot(emb_cache[sid_a], g_cent))
+                                        if sid_a in emb_cache
+                                        else 0.0
+                                    )
+                                    sim_b = (
+                                        float(np.dot(emb_cache[sid_b], g_cent))
+                                        if sid_b in emb_cache
+                                        else 0.0
+                                    )
+                                    evicted.add(sid_b if sim_a >= sim_b else sid_a)
+                                else:
+                                    evicted.add(sid_b)
+                    if evicted:
+                        groups[label_key] = [s for s in member_ids_g if s not in evicted]
+                        logger.debug(
+                            "Constraint enforcement: evicted %d speaker(s) from AHC group",
+                            len(evicted),
+                        )
+
             # Batch-fetch all speakers that belong to multi-member groups
             multi_member_ids: list[int] = []
             for member_ids in groups.values():
@@ -487,6 +593,65 @@ class SpeakerClusteringService:
                     self.db.query(Speaker).filter(Speaker.id.in_(multi_member_ids)).all()
                 )
                 speakers_by_id = {int(s.id): s for s in batch_speakers}
+
+            # Gender-aware eviction: for each group, if there's a clear
+            # dominant gender, evict minority-gender members whose embedding
+            # similarity to the group centroid is below the eviction threshold.
+            # Dual signal required: gender mismatch + weak embedding.
+            gender_evicted_total = 0
+            for label_key in list(groups.keys()):
+                member_ids_g = groups[label_key]
+                if len(member_ids_g) < 3:
+                    continue
+                # Count genders in this group
+                g_counts: dict[str, list[int]] = {}
+                for sid in member_ids_g:
+                    s = speakers_by_id.get(sid)
+                    g = s.predicted_gender if s else None
+                    if g:
+                        g_counts.setdefault(g, []).append(sid)
+                if len(g_counts) < 2:
+                    continue
+                # Find dominant gender (must be clear majority: >= 2/3)
+                sorted_g = sorted(g_counts.items(), key=lambda x: len(x[1]), reverse=True)
+                dominant_g, dominant_ids = sorted_g[0]
+                total_gendered = sum(len(v) for v in g_counts.values())
+                if len(dominant_ids) < total_gendered * 2 / 3:
+                    continue  # No clear majority — skip
+                # Compute group centroid from majority members
+                maj_embs = [emb_cache[sid] for sid in dominant_ids if sid in emb_cache]
+                if not maj_embs:
+                    continue
+                g_cent = np.mean(maj_embs, axis=0)
+                g_norm = np.linalg.norm(g_cent)
+                if g_norm > 1e-8:
+                    g_cent = g_cent / g_norm
+                # Check minority members: evict only if sim < threshold
+                evict_ids: list[int] = []
+                for minority_g, minority_ids in sorted_g[1:]:
+                    for sid in minority_ids:
+                        if sid not in emb_cache:
+                            continue
+                        sim = float(np.dot(emb_cache[sid], g_cent))
+                        if sim < GENDER_OUTLIER_EVICT_THRESHOLD:
+                            evict_ids.append(sid)
+                            logger.debug(
+                                "Gender eviction: speaker %d (%s) from group, "
+                                "sim %.3f < %.3f to %s-dominant centroid",
+                                sid,
+                                minority_g,
+                                sim,
+                                GENDER_OUTLIER_EVICT_THRESHOLD,
+                                dominant_g,
+                            )
+                if evict_ids:
+                    groups[label_key] = [s for s in member_ids_g if s not in evict_ids]
+                    gender_evicted_total += len(evict_ids)
+            if gender_evicted_total:
+                logger.info(
+                    "Gender-aware eviction: removed %d speaker(s) from AHC groups",
+                    gender_evicted_total,
+                )
 
             from app.services.opensearch_service import store_cluster_embedding
 
@@ -668,15 +833,25 @@ class SpeakerClusteringService:
                         matches = find_matching_clusters(
                             emb,
                             user_id,
-                            k=1,
+                            k=5,
                             threshold=threshold,
                         )
-                        if matches:
-                            pc = profile_cluster_map.get(matches[0]["cluster_uuid"])
-                            if pc:
-                                self._add_speaker_to_cluster(spk, pc, matches[0]["similarity"])
-                                speakers_assigned += 1
-                                matched_singletons += 1
+                        for match in matches:
+                            pc = profile_cluster_map.get(match["cluster_uuid"])
+                            if not pc:
+                                continue
+                            # Check constraints before assigning singleton
+                            if self._is_speaker_blocked_from_cluster(int(spk.id), pc):
+                                logger.debug(
+                                    "Singleton %s blocked from cluster %s by constraint",
+                                    spk.id,
+                                    pc.uuid,
+                                )
+                                continue
+                            self._add_speaker_to_cluster(spk, pc, match["similarity"])
+                            speakers_assigned += 1
+                            matched_singletons += 1
+                            break  # Assigned to first valid match
                     if matched_singletons:
                         logger.info(
                             "Phase 2.5: matched %d singletons to profile clusters",
@@ -1075,6 +1250,252 @@ class SpeakerClusteringService:
             return None
 
     # ------------------------------------------------------------------
+    # Outlier analysis and constraint-based unassignment
+    # ------------------------------------------------------------------
+
+    def analyze_gender_outliers(self, cluster_uuid: str, user_id: int) -> dict:
+        """Analyze minority-gender speakers for potential outliers using embedding similarity.
+
+        Uses batch OpenSearch mget + numpy matrix ops for speed.
+        """
+        from app.services.opensearch_service import get_speaker_embeddings_batch
+
+        cluster = (
+            self.db.query(SpeakerCluster)
+            .filter(SpeakerCluster.uuid == cluster_uuid, SpeakerCluster.user_id == user_id)
+            .first()
+        )
+        if not cluster:
+            raise ValueError("Cluster not found")
+
+        members = (
+            self.db.query(SpeakerClusterMember)
+            .filter(SpeakerClusterMember.cluster_id == cluster.id)
+            .all()
+        )
+
+        # Load speakers with gender info
+        speaker_ids = [m.speaker_id for m in members]
+        speakers = self.db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
+        speaker_map = {s.id: s for s in speakers}
+        uuid_to_id = {str(s.uuid): s.id for s in speakers}
+
+        # Determine majority/minority gender
+        gender_counts: dict[str, int] = {}
+        for s in speakers:
+            if s.predicted_gender:
+                gender_counts[s.predicted_gender] = gender_counts.get(s.predicted_gender, 0) + 1
+
+        if len(gender_counts) < 2:
+            return {
+                "cluster_uuid": cluster_uuid,
+                "majority_gender": list(gender_counts.keys())[0] if gender_counts else "unknown",
+                "minority_gender": "unknown",
+                "minority_analysis": [],
+            }
+
+        sorted_genders = sorted(gender_counts.items(), key=lambda x: x[1], reverse=True)
+        majority_gender = sorted_genders[0][0]
+        minority_gender = sorted_genders[1][0]
+
+        # Batch-fetch all embeddings in one mget call
+        speaker_uuids = [str(s.uuid) for s in speakers]
+        raw_embeddings = get_speaker_embeddings_batch(speaker_uuids)
+
+        embeddings: dict[int, np.ndarray] = {}
+        for suuid, emb in raw_embeddings.items():
+            sid = uuid_to_id.get(suuid)
+            if sid is not None:
+                embeddings[sid] = np.array(emb, dtype=np.float32)
+
+        if not embeddings:
+            return {
+                "cluster_uuid": cluster_uuid,
+                "majority_gender": majority_gender,
+                "minority_gender": minority_gender,
+                "minority_analysis": [],
+            }
+
+        # Vectorized centroid computation
+        all_embs = np.array(list(embeddings.values()))
+        centroid = all_embs.mean(axis=0)
+        centroid /= np.linalg.norm(centroid) + 1e-10
+
+        majority_ids = [
+            s.id for s in speakers if s.predicted_gender == majority_gender and s.id in embeddings
+        ]
+        minority_ids = [
+            s.id for s in speakers if s.predicted_gender == minority_gender and s.id in embeddings
+        ]
+
+        # Build matrices for vectorized similarity
+        minority_matrix = np.array([embeddings[sid] for sid in minority_ids])  # (M, D)
+        majority_matrix = (
+            np.array([embeddings[sid] for sid in majority_ids])
+            if majority_ids
+            else np.empty((0, 0))
+        )
+
+        # Vectorized: all minority sims to centroid at once
+        sims_to_centroid = minority_matrix @ centroid  # (M,)
+
+        # Vectorized: all minority avg sims to majority at once
+        if majority_matrix.size > 0:
+            sim_matrix = minority_matrix @ majority_matrix.T  # (M, N_majority)
+            avg_sims_to_majority = sim_matrix.mean(axis=1)  # (M,)
+        else:
+            avg_sims_to_majority = np.zeros(len(minority_ids))
+
+        # Vectorized: minority peer similarities
+        if len(minority_ids) > 1:
+            peer_matrix = minority_matrix @ minority_matrix.T  # (M, M)
+            # Zero out diagonal (self-similarity) and average remaining
+            np.fill_diagonal(peer_matrix, 0.0)
+            avg_sims_to_peers = peer_matrix.sum(axis=1) / (len(minority_ids) - 1)
+        else:
+            avg_sims_to_peers = None
+
+        analysis = []
+        for i, sid in enumerate(minority_ids):
+            s = speaker_map[sid]
+            sim_c = float(sims_to_centroid[i])
+
+            if sim_c < 0.70:
+                recommendation = "likely_outlier"
+            elif sim_c < 0.80:
+                recommendation = "borderline"
+            else:
+                recommendation = "likely_valid"
+
+            analysis.append(
+                {
+                    "speaker_uuid": str(s.uuid),
+                    "speaker_name": s.display_name or s.name,
+                    "predicted_gender": s.predicted_gender,
+                    "sim_to_centroid": round(sim_c, 4),
+                    "avg_sim_to_majority": round(float(avg_sims_to_majority[i]), 4),
+                    "avg_sim_to_minority_peers": round(float(avg_sims_to_peers[i]), 4)
+                    if avg_sims_to_peers is not None
+                    else None,
+                    "outlier_score": round(1.0 - sim_c, 4),
+                    "recommendation": recommendation,
+                }
+            )
+
+        return {
+            "cluster_uuid": cluster_uuid,
+            "majority_gender": majority_gender,
+            "minority_gender": minority_gender,
+            "minority_analysis": analysis,
+        }
+
+    def unassign_speakers(
+        self,
+        cluster_uuid: str,
+        speaker_uuids: list[str],
+        user_id: int,
+        blacklist: bool = True,
+    ) -> dict:
+        """Unassign speakers from a cluster, optionally blacklisting them."""
+        from app.models.media import SpeakerCannotLink
+        from app.models.media import SpeakerProfileBlacklist
+
+        cluster = (
+            self.db.query(SpeakerCluster)
+            .filter(SpeakerCluster.uuid == cluster_uuid, SpeakerCluster.user_id == user_id)
+            .first()
+        )
+        if not cluster:
+            raise ValueError("Cluster not found")
+
+        # Find speaker IDs
+        speakers_to_remove = (
+            self.db.query(Speaker)
+            .filter(Speaker.uuid.in_(speaker_uuids), Speaker.user_id == user_id)
+            .all()
+        )
+        if not speakers_to_remove:
+            raise ValueError("No valid speakers found")
+
+        remove_ids = {s.id for s in speakers_to_remove}
+
+        # Get remaining members
+        remaining_member_ids = [
+            m.speaker_id for m in cluster.members if m.speaker_id not in remove_ids
+        ]
+
+        # Remove cluster memberships
+        self.db.query(SpeakerClusterMember).filter(
+            SpeakerClusterMember.cluster_id == cluster.id,
+            SpeakerClusterMember.speaker_id.in_(remove_ids),
+        ).delete(synchronize_session="fetch")
+
+        # Set speaker.cluster_id = None
+        for s in speakers_to_remove:
+            s.cluster_id = None
+
+        # Add blacklist constraints
+        if blacklist:
+            if cluster.promoted_to_profile_id:
+                # Profile blacklist: one entry covers all current and future members
+                for s in speakers_to_remove:
+                    existing = (
+                        self.db.query(SpeakerProfileBlacklist)
+                        .filter(
+                            SpeakerProfileBlacklist.speaker_id == s.id,
+                            SpeakerProfileBlacklist.profile_id == cluster.promoted_to_profile_id,
+                        )
+                        .first()
+                    )
+                    if not existing:
+                        self.db.add(
+                            SpeakerProfileBlacklist(
+                                speaker_id=s.id,
+                                profile_id=cluster.promoted_to_profile_id,
+                                reason="unassigned_by_user",
+                            )
+                        )
+            else:
+                # Cannot-link: pairwise between removed speakers and remaining members
+                for s in speakers_to_remove:
+                    for remaining_id in remaining_member_ids:
+                        # Add both directions
+                        for a, b in [(s.id, remaining_id), (remaining_id, s.id)]:
+                            existing = (
+                                self.db.query(SpeakerCannotLink)
+                                .filter(
+                                    SpeakerCannotLink.speaker_id == a,
+                                    SpeakerCannotLink.cannot_link_speaker_id == b,
+                                )
+                                .first()
+                            )
+                            if not existing:
+                                self.db.add(
+                                    SpeakerCannotLink(
+                                        speaker_id=a,
+                                        cannot_link_speaker_id=b,
+                                        reason="unassigned_by_user",
+                                    )
+                                )
+
+        # Update cluster member_count
+        cluster.member_count = len(remaining_member_ids)
+
+        # Delete cluster if empty
+        if cluster.member_count == 0:
+            self.db.delete(cluster)
+        else:
+            # Recompute centroid
+            self._update_cluster_centroid(cluster, user_id)
+
+        self.db.commit()
+
+        return {
+            "unassigned_count": len(speakers_to_remove),
+            "message": f"Unassigned {len(speakers_to_remove)} speaker(s) from cluster",
+        }
+
+    # ------------------------------------------------------------------
     # Inbox / unverified speakers
     # ------------------------------------------------------------------
 
@@ -1310,6 +1731,8 @@ class SpeakerClusteringService:
         total = query.count()
 
         # Counts for section headers (unfiltered by search/has_label)
+        from sqlalchemy import func as sa_func
+
         base_count_query = self.db.query(SpeakerCluster).filter(SpeakerCluster.user_id == user_id)
         labeled_count = base_count_query.filter(
             (SpeakerCluster.label.isnot(None)) | (SpeakerCluster.promoted_to_profile_id.isnot(None))
@@ -1318,6 +1741,12 @@ class SpeakerClusteringService:
             SpeakerCluster.label.is_(None),
             SpeakerCluster.promoted_to_profile_id.is_(None),
         ).count()
+        # Most recent cluster update = last time clustering ran
+        last_clustered_at = (
+            self.db.query(sa_func.max(SpeakerCluster.updated_at))
+            .filter(SpeakerCluster.user_id == user_id)
+            .scalar()
+        )
         pages = max(1, math.ceil(total / per_page))
         offset = (page - 1) * per_page
         clusters = query.offset(offset).limit(per_page).all()
@@ -1379,6 +1808,7 @@ class SpeakerClusteringService:
                     else None,
                     "promoted_to_profile_name": promoted_profile.name if promoted_profile else None,
                     "promoted_to_profile_avatar_url": promoted_avatar_url,
+                    "suggested_name": cluster.suggested_name,
                     "quality_score": float(cluster.quality_score)
                     if cluster.quality_score is not None
                     else None,
@@ -1402,6 +1832,7 @@ class SpeakerClusteringService:
             "pages": pages,
             "labeled_count": labeled_count,
             "unlabeled_count": unlabeled_count,
+            "last_clustered_at": last_clustered_at,
         }
 
     def get_cluster_detail(
@@ -1497,6 +1928,7 @@ class SpeakerClusteringService:
             "promoted_to_profile_id": cluster.promoted_to_profile_id,
             "promoted_to_profile_uuid": str(promoted_profile.uuid) if promoted_profile else None,
             "promoted_to_profile_name": promoted_profile.name if promoted_profile else None,
+            "suggested_name": cluster.suggested_name,
             "quality_score": float(cluster.quality_score)
             if cluster.quality_score is not None
             else None,
@@ -1552,6 +1984,59 @@ class SpeakerClusteringService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _get_cluster_dominant_gender(self, cluster: SpeakerCluster) -> str | None:
+        """Get the dominant predicted gender of a cluster's members."""
+        from sqlalchemy import func as sa_func
+
+        rows = (
+            self.db.query(Speaker.predicted_gender, sa_func.count())
+            .join(SpeakerClusterMember, SpeakerClusterMember.speaker_id == Speaker.id)
+            .filter(
+                SpeakerClusterMember.cluster_id == cluster.id,
+                Speaker.predicted_gender.isnot(None),
+            )
+            .group_by(Speaker.predicted_gender)
+            .all()
+        )
+        if not rows:
+            return None
+        dominant: str | None = max(rows, key=lambda r: r[1])[0]
+        return dominant
+
+    def _is_speaker_blocked_from_cluster(self, speaker_id: int, cluster: SpeakerCluster) -> bool:
+        """Check if a speaker is blocked from joining a cluster by constraints."""
+        from app.models.media import SpeakerCannotLink
+        from app.models.media import SpeakerProfileBlacklist
+
+        # Check 1: Profile blacklist
+        if cluster.promoted_to_profile_id:
+            blocked = (
+                self.db.query(SpeakerProfileBlacklist)
+                .filter(
+                    SpeakerProfileBlacklist.speaker_id == speaker_id,
+                    SpeakerProfileBlacklist.profile_id == cluster.promoted_to_profile_id,
+                )
+                .first()
+            )
+            if blocked:
+                return True
+
+        # Check 2: Cannot-link with any cluster member
+        member_ids = [m.speaker_id for m in cluster.members]
+        if member_ids:
+            conflicts = (
+                self.db.query(SpeakerCannotLink)
+                .filter(
+                    SpeakerCannotLink.speaker_id == speaker_id,
+                    SpeakerCannotLink.cannot_link_speaker_id.in_(member_ids),
+                )
+                .count()
+            )
+            if conflicts > 0:
+                return True
+
+        return False
 
     def _add_speaker_to_cluster(
         self,

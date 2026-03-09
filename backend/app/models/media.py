@@ -514,6 +514,7 @@ class SpeakerCluster(Base):
     quality_score = Column(Float, nullable=True)
     min_similarity = Column(Float, nullable=True)
     separation_score = Column(Float, nullable=True)
+    suggested_name = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -568,3 +569,45 @@ class SpeakerMatch(Base):
     # Relationships
     speaker1 = relationship("Speaker", foreign_keys=[speaker1_id])
     speaker2 = relationship("Speaker", foreign_keys=[speaker2_id])
+
+
+class SpeakerCannotLink(Base):
+    """Pairwise constraint: these two speakers must not be in the same cluster."""
+
+    __tablename__ = "speaker_cannot_link"
+
+    id = Column(Integer, primary_key=True, index=True)
+    speaker_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
+    cannot_link_speaker_id = Column(
+        Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    reason = Column(String(255), nullable=True)
+
+    speaker = relationship("Speaker", foreign_keys=[speaker_id])
+    cannot_link_speaker = relationship("Speaker", foreign_keys=[cannot_link_speaker_id])
+
+    __table_args__ = (
+        UniqueConstraint("speaker_id", "cannot_link_speaker_id", name="uq_speaker_cannot_link"),
+    )
+
+
+class SpeakerProfileBlacklist(Base):
+    """Blacklist: this speaker must never join any cluster belonging to this profile."""
+
+    __tablename__ = "speaker_profile_blacklist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    speaker_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
+    profile_id = Column(
+        Integer, ForeignKey("speaker_profile.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    reason = Column(String(255), nullable=True)
+
+    speaker = relationship("Speaker", foreign_keys=[speaker_id])
+    profile = relationship("SpeakerProfile", foreign_keys=[profile_id])
+
+    __table_args__ = (
+        UniqueConstraint("speaker_id", "profile_id", name="uq_speaker_profile_blacklist"),
+    )

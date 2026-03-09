@@ -28,6 +28,7 @@ export type NotificationType =
   | 'reindex_stopped'
   | 'migration_progress'
   | 'migration_complete'
+  | 'migration_finalized'
   | 'clustering_progress'
   | 'clustering_complete'
   | 'clustering_file_complete'
@@ -99,6 +100,7 @@ const ADMIN_TASK_PROGRESS_IDS: Record<string, string> = {
   reindex_stopped: 'admin_reindex',
   migration_progress: 'admin_migration',
   migration_complete: 'admin_migration',
+  migration_finalized: 'admin_migration',
   clustering_progress: 'admin_clustering',
   clustering_complete: 'admin_clustering',
   attribute_migration_progress: 'admin_attribute_migration',
@@ -114,6 +116,7 @@ const ADMIN_COMPLETION_TYPES = new Set([
   'reindex_complete',
   'reindex_stopped',
   'migration_complete',
+  'migration_finalized',
   'clustering_complete',
   'attribute_migration_complete',
   'data_integrity_complete',
@@ -307,6 +310,12 @@ function createWebSocketStore() {
               // Embedding migration complete — dispatch event for EmbeddingMigrationSettings
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('migration-complete', { detail: data.data }));
+              }
+              // Fall through to progressive notification handler
+            } else if (data.type === 'migration_finalized') {
+              // Embedding migration finalized (index swap complete)
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('migration-finalized', { detail: data.data }));
               }
               // Fall through to progressive notification handler
             } else if (data.type === 'attribute_migration_progress') {
@@ -861,6 +870,7 @@ function createWebSocketStore() {
         return translate('notifications.searchReindexing');
       case 'migration_progress':
       case 'migration_complete':
+      case 'migration_finalized':
         return translate('notifications.embeddingMigration');
       case 'attribute_migration_progress':
       case 'attribute_migration_complete':

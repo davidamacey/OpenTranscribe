@@ -23,6 +23,7 @@ export interface SpeakerCluster {
   promoted_to_profile_uuid: string | null;
   promoted_to_profile_name: string | null;
   promoted_to_profile_avatar_url: string | null;
+  suggested_name: string | null;
   quality_score: number | null;
   min_similarity: number | null;
   separation_score: number | null;
@@ -81,6 +82,7 @@ export interface PaginatedResponse<T> {
   pages: number;
   labeled_count?: number;
   unlabeled_count?: number;
+  last_clustered_at?: string | null;
 }
 
 export interface BatchVerifyRequest {
@@ -100,6 +102,29 @@ export interface ReclusterResponse {
   status: string;
   task_id: string | null;
   message: string;
+}
+
+export interface MinorityAnalysisItem {
+  speaker_uuid: string;
+  speaker_name: string;
+  predicted_gender: string;
+  sim_to_centroid: number;
+  avg_sim_to_majority: number;
+  avg_sim_to_minority_peers: number | null;
+  outlier_score: number;
+  recommendation: 'likely_outlier' | 'borderline' | 'likely_valid';
+}
+
+export interface OutlierAnalysisResponse {
+  cluster_uuid: string;
+  majority_gender: string;
+  minority_gender: string;
+  minority_analysis: MinorityAnalysisItem[];
+}
+
+export interface ClusterUnassignRequest {
+  speaker_uuids: string[];
+  blacklist: boolean;
 }
 
 export interface SpeakerProfile {

@@ -7,6 +7,17 @@
   export let expanded = false;
   export let actionInProgress = false;
   export let loading = false;
+  export let unassignActive = false;
+  export let unassignSelectedCount = 0;
+  export let unassignTotalCount = 0;
+  export let unassignBlacklist = true;
+
+  // Compute gender mismatch count directly from cluster data (no API call)
+  $: genderMismatchCount = (() => {
+    const gc = cluster.gender_composition;
+    if (!gc || !gc.has_gender_conflict || gc.total_with_gender < 2) return 0;
+    return gc.total_with_gender - Math.max(gc.male_count, gc.female_count);
+  })();
 
   const dispatch = createEventDispatcher();
 
@@ -76,12 +87,32 @@
         />
       {:else}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <span class="cluster-label" on:dblclick|stopPropagation={startEdit} title={$t('speakers.tooltip.editLabel')}>
-          {cluster.label || cluster.promoted_to_profile_name || $t('speakers.cluster.unlabeled')}
-        </span>
+        {#if cluster.label || cluster.promoted_to_profile_name}
+          <span class="cluster-label" on:dblclick|stopPropagation={startEdit} title={$t('speakers.tooltip.editLabel')}>
+            {cluster.label || cluster.promoted_to_profile_name}
+          </span>
+        {:else if cluster.suggested_name}
+          <span class="cluster-label suggested" on:dblclick|stopPropagation={startEdit} title={$t('speakers.tooltip.suggestedName')}>
+            {cluster.suggested_name}
+          </span>
+          <span class="suggested-badge" title={$t('speakers.tooltip.suggestedName')}>{$t('speakers.cluster.suggested')}</span>
+        {:else}
+          <span class="cluster-label" on:dblclick|stopPropagation={startEdit} title={$t('speakers.tooltip.editLabel')}>
+            {$t('speakers.cluster.unlabeled')}
+          </span>
+        {/if}
       {/if}
     </div>
     <div class="header-right">
+      {#if genderMismatchCount > 0}
+        <span class="outlier-chip" title={$t('speakers.cluster.outliersDetected', { count: genderMismatchCount })}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          {genderMismatchCount}
+        </span>
+      {/if}
       {#if cluster.quality_score != null && !isNaN(cluster.quality_score)}
         <span class="quality-badge" style="color: {qualityColor(cluster.quality_score)}" title={$t('speakers.tooltip.qualityScore')}>
           {$t('speakers.cluster.matchPercent', { score: (cluster.quality_score * 100).toFixed(0) })}
@@ -120,26 +151,41 @@
           {/each}
         </div>
       {:else}
+        <div class="card-actions">
+          {#if unassignActive}
+            <button class="action-btn" on:click={() => dispatch('cancelUnassign')}>{$t('modal.cancel')}</button>
+            <label class="blacklist-toggle">
+              <input type="checkbox" checked={unassignBlacklist} on:change={(e) => dispatch('toggleBlacklist', (e.target as HTMLInputElement).checked)} />
+              {$t('speakers.cluster.unassignBlacklist')}
+            </label>
+            <span class="selection-chip">{$t('speakers.unassign.selectMembersCount', { selected: unassignSelectedCount, total: unassignTotalCount })}</span>
+            <button class="action-btn confirm-unassign" disabled={unassignSelectedCount === 0} on:click={() => dispatch('confirmUnassign')}>
+              {$t('speakers.unassign.confirm', { count: unassignSelectedCount })}
+            </button>
+          {:else}
+            {#if !cluster.promoted_to_profile_id}
+              <button class="action-btn promote" disabled={actionInProgress} on:click={() => dispatch('promote', { uuid: cluster.uuid })} title={$t('speakers.tooltip.promoteToProfile')}>
+                {$t('speakers.promote.title')}
+              </button>
+            {/if}
+            <button class="action-btn merge" disabled={actionInProgress} on:click={() => dispatch('merge', { uuid: cluster.uuid })} title={$t('speakers.tooltip.mergeClusters')}>
+              {$t('speakers.cluster.merge')}
+            </button>
+            {#if cluster.member_count > 1}
+              <button class="action-btn split" disabled={actionInProgress} on:click={() => dispatch('split', { uuid: cluster.uuid })} title={$t('speakers.tooltip.splitCluster')}>
+                {$t('speakers.cluster.split')}
+              </button>
+              <button class="action-btn unassign" disabled={actionInProgress} on:click={() => dispatch('unassign', { uuid: cluster.uuid })}>
+                {$t('speakers.cluster.unassign')}
+              </button>
+            {/if}
+            <button class="action-btn delete" disabled={actionInProgress} on:click={() => dispatch('delete', { uuid: cluster.uuid })} title={$t('speakers.tooltip.deleteCluster')}>
+              {$t('speakers.cluster.deleteBtn')}
+            </button>
+          {/if}
+        </div>
         <slot name="members" />
       {/if}
-      <div class="card-actions">
-        {#if !cluster.promoted_to_profile_id}
-          <button class="action-btn promote" disabled={actionInProgress} on:click={() => dispatch('promote', { uuid: cluster.uuid })} title={$t('speakers.tooltip.promoteToProfile')}>
-            {$t('speakers.promote.title')}
-          </button>
-        {/if}
-        <button class="action-btn merge" disabled={actionInProgress} on:click={() => dispatch('merge', { uuid: cluster.uuid })} title={$t('speakers.tooltip.mergeClusters')}>
-          {$t('speakers.cluster.merge')}
-        </button>
-        {#if cluster.member_count > 1}
-          <button class="action-btn split" disabled={actionInProgress} on:click={() => dispatch('split', { uuid: cluster.uuid })} title={$t('speakers.tooltip.splitCluster')}>
-            {$t('speakers.cluster.split')}
-          </button>
-        {/if}
-        <button class="action-btn delete" disabled={actionInProgress} on:click={() => dispatch('delete', { uuid: cluster.uuid })} title={$t('speakers.tooltip.deleteCluster')}>
-          {$t('speakers.cluster.deleteBtn')}
-        </button>
-      </div>
     </div>
   {/if}
 </div>
@@ -190,6 +236,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .cluster-label.suggested {
+    font-style: italic;
+    color: var(--primary-color, #3b82f6);
+  }
+
+  .suggested-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--primary-color, #3b82f6) 12%, transparent);
+    color: var(--primary-color, #3b82f6);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .label-input {
@@ -260,10 +322,12 @@
 
   .card-actions {
     display: flex;
+    align-items: center;
     gap: 8px;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-color, #e5e7eb);
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
   }
 
   .action-btn {
@@ -297,6 +361,16 @@
     opacity: 0.9;
   }
 
+  .action-btn.unassign {
+    color: var(--warning-color, #f59e0b);
+    border-color: var(--warning-color, #f59e0b);
+  }
+
+  .action-btn.unassign:hover {
+    background: var(--warning-color, #f59e0b);
+    color: white;
+  }
+
   .action-btn.delete {
     color: var(--error-color, #ef4444);
     border-color: var(--error-color, #ef4444);
@@ -305,6 +379,51 @@
   .action-btn.delete:hover {
     background: var(--error-color, #ef4444);
     color: white;
+  }
+
+  .action-btn.confirm-unassign {
+    background: var(--error-color, #ef4444);
+    color: white;
+    border-color: var(--error-color, #ef4444);
+  }
+
+  .action-btn.confirm-unassign:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .outlier-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent);
+    color: var(--warning-color, #f59e0b);
+    white-space: nowrap;
+  }
+
+  .selection-chip {
+    font-size: 12px;
+    color: var(--text-secondary, #6b7280);
+    white-space: nowrap;
+  }
+
+  .blacklist-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-color);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .blacklist-toggle input[type="checkbox"] {
+    accent-color: var(--error-color, #ef4444);
+    width: 14px;
+    height: 14px;
   }
 
   .skeleton-members {

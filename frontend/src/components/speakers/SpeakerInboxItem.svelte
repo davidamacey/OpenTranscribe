@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { SpeakerInboxItem as InboxItemType } from '$lib/types/speakerCluster';
+  import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import { t } from '$stores/locale';
 
   export let item: InboxItemType;
@@ -35,13 +36,20 @@
     <div class="item-left">
       <button
         class="preview-toggle"
+        class:playing={$audioPlaybackStore.activeSpeakerUuid === item.speaker_uuid && $audioPlaybackStore.isPlaying}
         on:click={() => dispatch('preview', { speaker_uuid: item.speaker_uuid })}
         on:mouseenter={() => dispatch('prefetch', { speaker_uuid: item.speaker_uuid })}
         title={$t('speakers.inbox.previewTitle')}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-          <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11.04-6.86a1 1 0 0 0 0-1.72L9.5 4.28a1 1 0 0 0-1.5.86z"></path>
-        </svg>
+        {#if $audioPlaybackStore.activeSpeakerUuid === item.speaker_uuid && $audioPlaybackStore.isPlaying}
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
+          </svg>
+        {:else}
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11.04-6.86a1 1 0 0 0 0-1.72L9.5 4.28a1 1 0 0 0-1.5.86z"></path>
+          </svg>
+        {/if}
       </button>
       <div class="item-info">
         <div class="speaker-name">{item.speaker_name}</div>
@@ -143,6 +151,11 @@
     background: color-mix(in srgb, var(--primary-color, #4f46e5) 10%, transparent);
     transform: scale(1.1);
     box-shadow: none;
+  }
+
+  .preview-toggle.playing {
+    color: var(--primary-color, #4f46e5);
+    background: color-mix(in srgb, var(--primary-color, #4f46e5) 12%, transparent);
   }
 
   .item-info {

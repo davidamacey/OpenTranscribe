@@ -5,7 +5,9 @@
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SpeakerClusterCard from '$components/speakers/SpeakerClusterCard.svelte';
+  import ClusterMemberList from '$components/speakers/ClusterMemberList.svelte';
   import SpeakerInboxItem from '$components/speakers/SpeakerInboxItem.svelte';
+  import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import { browser } from '$app/environment';
 
   // Dynamic import: Plyr is browser-only (breaks SSR on page refresh)
@@ -30,7 +32,8 @@
     listProfiles,
     uploadProfileAvatar,
     deleteProfileAvatar,
-    confirmProfileGender
+    confirmProfileGender,
+    unassignSpeakers
   } from '$lib/api/speakerClusters';
   import type { SpeakerMediaPreviewData } from '$lib/api/speakerClusters';
   import type {
@@ -56,6 +59,7 @@
   let reclusterTimeout: ReturnType<typeof setTimeout> | null = null;
   let labeledCount = 0;
   let unlabeledCount = 0;
+  let lastClusteredAt: string | null = null;
 
   // Collapsible sections state
   let identifiedCollapsed = false;
@@ -76,6 +80,15 @@
   let splitMode = false;
   let splitTargetUuid: string | null = null;
   let splitSelectedMembers: Set<string> = new Set();
+
+  // Unassign state
+  let unassignMode = false;
+  let unassignTargetUuid: string | null = null;
+  let unassignSelectedMembers: Set<string> = new Set();
+  let unassignBlacklist = true;
+
+  // Outlier data per cluster (populated by ClusterMemberList embedding analysis)
+  let clusterOutlierData: Record<string, { outlierUuids: string[] }> = {};
 
   // Profiles state
   let profiles: SpeakerProfile[] = [];
@@ -106,6 +119,7 @@
   // Sticky floating player state
   let speakerPreviewData: SpeakerMediaPreviewData | null = null;
   let previewCurrentTime = 0;
+  let previewPlayerRef: any = null;
 
   // Promote modal state
   let showPromoteModal = false;
@@ -187,6 +201,17 @@
     return name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
   }
 
+  function formatRelativeTime(isoDate: string): string {
+    const diff = Date.now() - new Date(isoDate).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return $t('speakers.clusters.justNow');
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
   async function handleAvatarUpload(profileUuid: string, event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -231,6 +256,9 @@
     splitMode = false;
     splitTargetUuid = null;
     splitSelectedMembers = new Set();
+    unassignMode = false;
+    unassignTargetUuid = null;
+    unassignSelectedMembers = new Set();
     speakerPreviewData = null;
     if (tab === 'clusters') loadClusters();
     if (tab === 'profiles') loadProfiles();
@@ -248,6 +276,7 @@
       clusterPages = res.pages;
       labeledCount = res.labeled_count ?? 0;
       unlabeledCount = res.unlabeled_count ?? 0;
+      lastClusteredAt = res.last_clustered_at ?? null;
     } catch (err) {
       if (!silent) toastStore.error($t('speakers.error.loadClusters'));
       throw err;
@@ -333,7 +362,8 @@
   // Promote cluster (modal with text input)
   async function handleClusterPromote(e: CustomEvent<{ uuid: string }>) {
     promoteTargetUuid = e.detail.uuid;
-    promoteNameInput = clusters.find(c => c.uuid === promoteTargetUuid)?.label || '';
+    const targetCluster = clusters.find(c => c.uuid === promoteTargetUuid);
+    promoteNameInput = targetCluster?.label || targetCluster?.suggested_name || '';
     showPromoteModal = true;
   }
 
@@ -446,6 +476,70 @@
     splitSelectedMembers = splitSelectedMembers;
   }
 
+  // Unassign flow
+  async function handleClusterUnassign(e: CustomEvent<{ uuid: string }>) {
+    const uuid = e.detail.uuid;
+    identifiedCollapsed = false;
+    unidentifiedCollapsed = false;
+    if (expandedCluster !== uuid) {
+      expandedCluster = uuid;
+      if (!clusterMembers[uuid]) {
+        try {
+          const detail = await getClusterDetail(uuid);
+          clusterMembers[uuid] = detail.members;
+          clusterMembers = clusterMembers;
+        } catch {
+          toastStore.error($t('speakers.error.loadClusters'));
+          return;
+        }
+      }
+    }
+    unassignTargetUuid = uuid;
+    unassignMode = true;
+    // Pre-select outliers if analysis data exists for this cluster
+    const outlierData = clusterOutlierData[uuid];
+    unassignSelectedMembers = outlierData?.outlierUuids?.length ? new Set(outlierData.outlierUuids) : new Set();
+    unassignBlacklist = true;
+  }
+
+  async function confirmUnassign() {
+    if (!unassignTargetUuid || unassignSelectedMembers.size === 0) return;
+    try {
+      await unassignSpeakers(unassignTargetUuid, Array.from(unassignSelectedMembers), unassignBlacklist);
+      toastStore.success($t('speakers.unassign.success'));
+      unassignMode = false;
+      unassignTargetUuid = null;
+      unassignSelectedMembers = new Set();
+      await loadClusters();
+    } catch {
+      unassignMode = false;
+      unassignTargetUuid = null;
+      unassignSelectedMembers = new Set();
+      toastStore.error($t('speakers.split.error'));
+    }
+  }
+
+  function cancelUnassign() {
+    unassignMode = false;
+    unassignTargetUuid = null;
+    unassignSelectedMembers = new Set();
+  }
+
+  function toggleUnassignMember(speakerUuid: string) {
+    if (unassignSelectedMembers.has(speakerUuid)) {
+      unassignSelectedMembers.delete(speakerUuid);
+    } else {
+      unassignSelectedMembers.add(speakerUuid);
+    }
+    unassignSelectedMembers = unassignSelectedMembers;
+  }
+
+  function handleOutlierAnalysisComplete(e: CustomEvent<{ clusterUuid: string; outlierUuids: string[] }>) {
+    const { clusterUuid, outlierUuids } = e.detail;
+    clusterOutlierData[clusterUuid] = { outlierUuids };
+    clusterOutlierData = clusterOutlierData;
+  }
+
   // Recluster
   async function handleRecluster() {
     reclustering = true;
@@ -548,6 +642,11 @@
   }
 
   async function openSpeakerPreview(speakerUuid: string) {
+    // If same speaker is already playing, pause instead
+    if ($audioPlaybackStore.activeSpeakerUuid === speakerUuid && $audioPlaybackStore.isPlaying) {
+      previewPlayerRef?.getPlayer()?.pause();
+      return;
+    }
     try {
       const cached = previewCache.get(speakerUuid);
       if (cached && Date.now() - cached.ts < CACHE_TTL) {
@@ -557,14 +656,27 @@
         previewCache.set(speakerUuid, { data: speakerPreviewData, ts: Date.now() });
       }
       previewCurrentTime = speakerPreviewData?.start_time ?? 0;
+      audioPlaybackStore.play(speakerUuid);
     } catch {
       toastStore.error($t('speakers.inbox.previewUnavailable'));
       speakerPreviewData = null;
+      audioPlaybackStore.stop();
     }
   }
 
   function closeSpeakerPreview() {
     speakerPreviewData = null;
+    audioPlaybackStore.stop();
+  }
+
+  function handlePreviewPlay() {
+    if (speakerPreviewData) {
+      audioPlaybackStore.play(speakerPreviewData.speaker_uuid);
+    }
+  }
+
+  function handlePreviewPause() {
+    audioPlaybackStore.pause();
   }
 
   function handlePreviewTimeUpdate(e: CustomEvent<{ currentTime: number }>) {
@@ -623,7 +735,8 @@
     if (e.key === 'Escape') {
       if (mergeMode) { cancelMerge(); return; }
       if (splitMode) { cancelSplit(); return; }
-      if (speakerPreviewData) { speakerPreviewData = null; return; }
+      if (unassignMode) { cancelUnassign(); return; }
+      if (speakerPreviewData) { closeSpeakerPreview(); return; }
     }
 
     if (activeTab !== 'inbox' || !inboxItems.length) return;
@@ -691,6 +804,11 @@
         <button class="btn-recluster" on:click={handleRecluster} disabled={reclustering} title={$t('speakers.tooltip.recluster')}>
           {reclustering ? $t('speakers.clusters.reclustering') : $t('speakers.clusters.recluster')}
         </button>
+        {#if lastClusteredAt}
+          <span class="last-clustered-chip" title={new Date(lastClusteredAt).toLocaleString()}>
+            {$t('speakers.clusters.lastRun')}: {formatRelativeTime(lastClusteredAt)}
+          </span>
+        {/if}
       </div>
 
       {#if reclustering && clusteringProgress}
@@ -746,47 +864,41 @@
                     <SpeakerClusterCard
                       {cluster}
                       expanded={expandedCluster === cluster.uuid}
+
+                      unassignActive={unassignMode && unassignTargetUuid === cluster.uuid}
+                      unassignSelectedCount={unassignMode && unassignTargetUuid === cluster.uuid ? unassignSelectedMembers.size : 0}
+                      unassignTotalCount={clusterMembers[cluster.uuid]?.length ?? cluster.member_count}
+                      {unassignBlacklist}
                       on:expand={handleClusterExpand}
                       on:update={handleClusterUpdate}
                       on:promote={handleClusterPromote}
                       on:delete={handleClusterDelete}
                       on:merge={handleClusterMerge}
                       on:split={handleClusterSplit}
+                      on:unassign={handleClusterUnassign}
+                      on:cancelUnassign={cancelUnassign}
+                      on:confirmUnassign={confirmUnassign}
+                      on:toggleBlacklist={(e) => { unassignBlacklist = e.detail; }}
                     >
                       <div slot="members">
                         {#if clusterMembers[cluster.uuid]}
-                          {#if splitMode && splitTargetUuid === cluster.uuid}
-                            <div class="split-banner">
-                              <span>{$t('speakers.split.selectMembersCount', { selected: splitSelectedMembers.size, total: clusterMembers[cluster.uuid]?.length || 0 })}</span>
-                            </div>
-                          {/if}
-                          <div class="member-list">
-                            {#each clusterMembers[cluster.uuid] as member}
-                              <div class="member-row" class:split-selectable={splitMode && splitTargetUuid === cluster.uuid} class:gender-outlier={member.predicted_gender != null && cluster.gender_composition?.dominant_gender != null && member.predicted_gender !== cluster.gender_composition.dominant_gender}>
-                                {#if splitMode && splitTargetUuid === cluster.uuid}
-                                  <input type="checkbox" checked={splitSelectedMembers.has(member.speaker_uuid)} on:change={() => toggleSplitMember(member.speaker_uuid)} />
-                                {/if}
-                                {#if member.has_audio_clip}
-                                  <button class="member-play-btn" on:click|stopPropagation={() => openSpeakerPreview(member.speaker_uuid)} on:mouseenter={() => prefetchSpeakerPreview(member.speaker_uuid)} title={$t('speakers.audioClip.play')}>
-                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z" /></svg>
-                                  </button>
-                                {/if}
-                                <span class="member-name">{member.display_name || member.speaker_name}</span>
-                                <span class="member-file">{member.media_file_title || ''}</span>
-                                <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
-                                {#if member.predicted_gender}
-                                  <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">{member.predicted_gender === 'male' ? '\u2642' : '\u2640'}{#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>\u2713</span>{/if}</span>
-                                {/if}
-                                {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
-                              </div>
-                            {/each}
-                          </div>
-                          {#if splitMode && splitTargetUuid === cluster.uuid}
-                            <div class="split-actions">
-                              <button class="btn-cancel" on:click={cancelSplit}>{$t('modal.cancel')}</button>
-                              <button class="btn-confirm" on:click={confirmSplit} disabled={splitSelectedMembers.size === 0 || splitSelectedMembers.size === (clusterMembers[splitTargetUuid]?.length || 0)}>{$t('speakers.split.confirm', { count: splitSelectedMembers.size })}</button>
-                            </div>
-                          {/if}
+                          <ClusterMemberList
+                            members={clusterMembers[cluster.uuid]}
+                            {cluster}
+                            {splitMode}
+                            {splitTargetUuid}
+                            {splitSelectedMembers}
+                            {unassignMode}
+                            {unassignTargetUuid}
+                            {unassignSelectedMembers}
+                            on:preview={(e) => openSpeakerPreview(e.detail.speaker_uuid)}
+                            on:prefetch={(e) => prefetchSpeakerPreview(e.detail.speaker_uuid)}
+                            on:toggleSplitMember={(e) => toggleSplitMember(e.detail)}
+                            on:toggleUnassignMember={(e) => toggleUnassignMember(e.detail)}
+                            on:cancelSplit={cancelSplit}
+                            on:confirmSplit={confirmSplit}
+                            on:outlierAnalysisComplete={handleOutlierAnalysisComplete}
+                          />
                         {:else}
                           <div class="loading-members">{$t('speakers.members.loading')}</div>
                         {/if}
@@ -813,47 +925,41 @@
                     <SpeakerClusterCard
                       {cluster}
                       expanded={expandedCluster === cluster.uuid}
+
+                      unassignActive={unassignMode && unassignTargetUuid === cluster.uuid}
+                      unassignSelectedCount={unassignMode && unassignTargetUuid === cluster.uuid ? unassignSelectedMembers.size : 0}
+                      unassignTotalCount={clusterMembers[cluster.uuid]?.length ?? cluster.member_count}
+                      {unassignBlacklist}
                       on:expand={handleClusterExpand}
                       on:update={handleClusterUpdate}
                       on:promote={handleClusterPromote}
                       on:delete={handleClusterDelete}
                       on:merge={handleClusterMerge}
                       on:split={handleClusterSplit}
+                      on:unassign={handleClusterUnassign}
+                      on:cancelUnassign={cancelUnassign}
+                      on:confirmUnassign={confirmUnassign}
+                      on:toggleBlacklist={(e) => { unassignBlacklist = e.detail; }}
                     >
                       <div slot="members">
                         {#if clusterMembers[cluster.uuid]}
-                          {#if splitMode && splitTargetUuid === cluster.uuid}
-                            <div class="split-banner">
-                              <span>{$t('speakers.split.selectMembersCount', { selected: splitSelectedMembers.size, total: clusterMembers[cluster.uuid]?.length || 0 })}</span>
-                            </div>
-                          {/if}
-                          <div class="member-list">
-                            {#each clusterMembers[cluster.uuid] as member}
-                              <div class="member-row" class:split-selectable={splitMode && splitTargetUuid === cluster.uuid} class:gender-outlier={member.predicted_gender != null && cluster.gender_composition?.dominant_gender != null && member.predicted_gender !== cluster.gender_composition.dominant_gender}>
-                                {#if splitMode && splitTargetUuid === cluster.uuid}
-                                  <input type="checkbox" checked={splitSelectedMembers.has(member.speaker_uuid)} on:change={() => toggleSplitMember(member.speaker_uuid)} />
-                                {/if}
-                                {#if member.has_audio_clip}
-                                  <button class="member-play-btn" on:click|stopPropagation={() => openSpeakerPreview(member.speaker_uuid)} on:mouseenter={() => prefetchSpeakerPreview(member.speaker_uuid)} title={$t('speakers.audioClip.play')}>
-                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z" /></svg>
-                                  </button>
-                                {/if}
-                                <span class="member-name">{member.display_name || member.speaker_name}</span>
-                                <span class="member-file">{member.media_file_title || ''}</span>
-                                <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
-                                {#if member.predicted_gender}
-                                  <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">{member.predicted_gender === 'male' ? '\u2642' : '\u2640'}{#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>\u2713</span>{/if}</span>
-                                {/if}
-                                {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
-                              </div>
-                            {/each}
-                          </div>
-                          {#if splitMode && splitTargetUuid === cluster.uuid}
-                            <div class="split-actions">
-                              <button class="btn-cancel" on:click={cancelSplit}>{$t('modal.cancel')}</button>
-                              <button class="btn-confirm" on:click={confirmSplit} disabled={splitSelectedMembers.size === 0 || splitSelectedMembers.size === (clusterMembers[splitTargetUuid]?.length || 0)}>{$t('speakers.split.confirm', { count: splitSelectedMembers.size })}</button>
-                            </div>
-                          {/if}
+                          <ClusterMemberList
+                            members={clusterMembers[cluster.uuid]}
+                            {cluster}
+                            {splitMode}
+                            {splitTargetUuid}
+                            {splitSelectedMembers}
+                            {unassignMode}
+                            {unassignTargetUuid}
+                            {unassignSelectedMembers}
+                            on:preview={(e) => openSpeakerPreview(e.detail.speaker_uuid)}
+                            on:prefetch={(e) => prefetchSpeakerPreview(e.detail.speaker_uuid)}
+                            on:toggleSplitMember={(e) => toggleSplitMember(e.detail)}
+                            on:toggleUnassignMember={(e) => toggleUnassignMember(e.detail)}
+                            on:cancelSplit={cancelSplit}
+                            on:confirmSplit={confirmSplit}
+                            on:outlierAnalysisComplete={handleOutlierAnalysisComplete}
+                          />
                         {:else}
                           <div class="loading-members">{$t('speakers.members.loading')}</div>
                         {/if}
@@ -1117,6 +1223,7 @@
       {#key `${speakerPreviewData?.media_url}:${speakerPreviewData?.start_time}`}
         {#if PlyrMiniPlayer && speakerPreviewData}
           <svelte:component this={PlyrMiniPlayer}
+            bind:this={previewPlayerRef}
             mediaUrl={speakerPreviewData.media_url || ''}
             contentType={speakerPreviewData.content_type}
             startTime={speakerPreviewData.start_time}
@@ -1125,6 +1232,8 @@
             fileId={speakerPreviewData.file_uuid}
             compact={true}
             on:timeupdate={handlePreviewTimeUpdate}
+            on:play={handlePreviewPlay}
+            on:pause={handlePreviewPause}
           />
         {/if}
       {/key}
@@ -1242,6 +1351,16 @@
   .btn-recluster:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .last-clustered-chip {
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--hover-color);
+    padding: 1px 7px;
+    border-radius: 10px;
+    white-space: nowrap;
+    align-self: center;
   }
 
   .clustering-progress {
@@ -1382,66 +1501,7 @@
     font-style: italic;
   }
 
-  .member-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .member-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 6px 8px;
-    border-radius: 4px;
-    font-size: 13px;
-  }
-
-  .member-row:hover {
-    background: var(--hover-color);
-  }
-
-  .member-name {
-    font-weight: 500;
-    color: var(--text-color);
-    min-width: 120px;
-  }
-
-  .member-file {
-    color: var(--text-secondary);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .member-confidence {
-    color: var(--text-secondary);
-    font-size: 12px;
-  }
-
-  .verified-badge {
-    font-size: 11px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
-    color: var(--success-color, #059669);
-  }
-
-  .gender-icon {
-    font-size: 12px;
-    color: var(--text-secondary, #6b7280);
-  }
-
-  .gender-confirmed-tick {
-    font-size: 10px;
-    color: var(--success-color, #10b981);
-    margin-left: 1px;
-  }
-
-  .gender-outlier {
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 8%, transparent);
-  }
+  /* member-list styles moved to ClusterMemberList.svelte */
 
   .gender-confirm-group {
     display: inline-flex;
@@ -1794,40 +1854,7 @@
     border-radius: 8px;
   }
 
-  .split-banner {
-    padding: 8px 12px;
-    background: var(--color-warning-bg, rgba(245, 158, 11, 0.1));
-    border: 1px solid var(--color-warning-border, rgba(245, 158, 11, 0.3));
-    border-radius: 6px;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: var(--warning-color, #f59e0b);
-  }
-
-  .split-selectable {
-    cursor: pointer;
-  }
-
-  .split-selectable:hover {
-    background: var(--hover-color, #f3f4f6);
-  }
-
-  /* Style checkboxes for dark mode */
-  .split-selectable input[type="checkbox"] {
-    accent-color: var(--primary-color, #3b82f6);
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-  }
-
-  .split-actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-color, #e5e7eb);
-    margin-top: 8px;
-  }
+  /* split/unassign styles moved to ClusterMemberList.svelte */
 
 
   .profile-actions {
@@ -1882,31 +1909,7 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
   }
 
-  .member-play-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border-radius: 50%;
-    border: 1px solid var(--border-color, #e5e7eb);
-    background: var(--card-background, #fff);
-    color: var(--text-secondary, #6b7280);
-    cursor: pointer;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-    box-shadow: none;
-    font-size: 0;
-  }
-
-  .member-play-btn:hover {
-    background: var(--primary-color, #3b82f6);
-    color: white;
-    border-color: var(--primary-color, #3b82f6);
-    transform: none;
-    box-shadow: none;
-  }
+  /* member-play-btn styles moved to ClusterMemberList.svelte */
 
   /* Sticky Floating Preview Player */
   .sticky-preview {

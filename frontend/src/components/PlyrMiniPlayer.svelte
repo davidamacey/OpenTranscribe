@@ -96,10 +96,11 @@
       }
     });
 
-    player.on('playing', () => { seeking = false; });
+    player.on('playing', () => { seeking = false; dispatch('play'); });
+    player.on('pause', () => { dispatch('pause'); });
     player.on('error', () => { seeking = false; });
     player.on('ready', () => { dispatch('ready'); });
-    player.on('ended', () => { dispatch('ended'); });
+    player.on('ended', () => { dispatch('pause'); dispatch('ended'); });
 
     // Fallback: clear spinner after timeout
     fallbackTimeout = setTimeout(() => { seeking = false; }, 15000);

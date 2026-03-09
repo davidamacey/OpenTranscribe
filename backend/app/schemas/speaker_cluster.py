@@ -73,6 +73,7 @@ class SpeakerClusterResponse(SpeakerClusterBase):
     promoted_to_profile_id: Optional[int] = None
     promoted_to_profile_uuid: Optional[UUID] = None
     promoted_to_profile_name: Optional[str] = None
+    suggested_name: Optional[str] = None
     quality_score: Optional[float] = None
     gender_composition: Optional[GenderComposition] = None
     created_at: datetime
@@ -116,6 +117,44 @@ class SpeakerInboxItem(BaseModel):
 
 
 # --- Batch Operations ---
+
+
+class MinorityAnalysisItem(BaseModel):
+    """Analysis of a minority-gender speaker in a cluster."""
+
+    speaker_uuid: UUID
+    speaker_name: str
+    predicted_gender: str
+    sim_to_centroid: float
+    avg_sim_to_majority: float
+    avg_sim_to_minority_peers: Optional[float] = None
+    outlier_score: float
+    recommendation: str  # likely_outlier, borderline, likely_valid
+
+
+class OutlierAnalysisResponse(BaseModel):
+    """Response for cluster outlier analysis."""
+
+    cluster_uuid: UUID
+    majority_gender: str
+    minority_gender: str
+    minority_analysis: list[MinorityAnalysisItem] = []
+
+
+class ClusterUnassignRequest(BaseModel):
+    """Request to unassign speakers from a cluster."""
+
+    speaker_uuids: list[UUID] = Field(..., min_length=1)
+    blacklist: bool = Field(
+        default=True, description="Prevent speakers from rejoining this cluster"
+    )
+
+
+class ClusterUnassignResponse(BaseModel):
+    """Response for cluster unassign operation."""
+
+    unassigned_count: int
+    message: str
 
 
 class BatchVerifyRequest(BaseModel):
@@ -185,6 +224,7 @@ class PaginatedClusterResponse(BaseModel):
     page: int = 1
     per_page: int = 20
     pages: int = 0
+    last_clustered_at: Optional[datetime] = None
 
 
 class PaginatedInboxResponse(BaseModel):

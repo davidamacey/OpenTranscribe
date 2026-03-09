@@ -23,6 +23,7 @@ import logging
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
+from app.core.constants import NOTIFICATION_TYPE_MIGRATION_FINALIZED
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_PROGRESS
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.constants import CPUPriority
@@ -59,6 +60,7 @@ def get_migration_status() -> dict:
 
     current_mode = EmbeddingModeService.detect_mode()
     v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    backup_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v3_backup"
     v4_exists = client.indices.exists(index=v4_index)
 
     # Count only speaker documents (exclude profile_ and cluster_ documents
@@ -77,11 +79,29 @@ def get_migration_status() -> dict:
         v3_count = 0
         v4_count = 0
 
+    # After finalization, v4 data lives in the main index. The _v4 staging
+    # index may still exist (empty) or be deleted. When mode is v4, the main
+    # index contains v4 embeddings — report its count as v4_document_count.
+    # Also show the v3 backup count so users can see their archived data.
+    if current_mode == "v4" and v4_count == 0:
+        v4_document_count = v3_count
+        # Show v3 backup count if it exists
+        v3_backup_count = 0
+        try:
+            if client.indices.exists(index=backup_index):
+                v3_backup_count = client.count(index=backup_index, body=speaker_only_query)["count"]
+        except Exception:  # noqa: S110  # nosec B110 - backup index check is non-critical
+            pass
+        v3_document_count = v3_backup_count
+    else:
+        v4_document_count = v4_count
+        v3_document_count = v3_count
+
     return {
         "current_mode": current_mode,
         "v4_index_exists": v4_exists,
-        "v3_document_count": v3_count,
-        "v4_document_count": v4_count,
+        "v3_document_count": v3_document_count,
+        "v4_document_count": v4_document_count,
         "migration_needed": current_mode == "v3",
         "migration_complete": current_mode == "v4"
         and not client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX + "_v3_backup"),
@@ -749,7 +769,7 @@ def extract_v4_embeddings_task(
 @celery_app.task(
     bind=True, name="finalize_v4_migration", queue="utility", priority=UtilityPriority.BACKGROUND
 )
-def finalize_v4_migration_task(self):
+def finalize_v4_migration_task(self, user_id: int = 1):
     """Finalize the v4 migration by swapping indices.
 
     Safety checks:
@@ -841,15 +861,19 @@ def finalize_v4_migration_task(self):
         client.indices.delete(index=v4_index, ignore=[404])
 
         logger.info(f"V4 migration finalized successfully: {new_main_count} docs in main index")
-        return {
+        result = {
             "status": "success",
             "message": "Migration complete",
             "v4_documents": new_main_count,
         }
+        send_ws_event(user_id, NOTIFICATION_TYPE_MIGRATION_FINALIZED, result)
+        return result
 
     except Exception as e:
         logger.error(f"Error finalizing migration: {e}")
-        return {"status": "error", "message": str(e)}
+        result = {"status": "error", "message": str(e)}
+        send_ws_event(user_id, NOTIFICATION_TYPE_MIGRATION_FINALIZED, result)
+        return result
 
     finally:
         # ALWAYS clear caches, even on error

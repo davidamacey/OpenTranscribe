@@ -21,6 +21,9 @@
 
   let estimatedMinutes = 0;
 
+  // Finalization state
+  let finalizing = false;
+
   // Stalled migration state
   let stalled = false;
   let stalledRemainingFiles = 0;
@@ -313,6 +316,7 @@
   }
 
   async function finalizeMigration() {
+    finalizing = true;
     try {
       const response = await fetch('/api/embeddings/migration/finalize', {
         method: 'POST',
@@ -324,13 +328,25 @@
         throw new Error($t('settings.embeddingMigration.migrationFinalizeFailed'));
       }
 
-      toastStore.success($t('settings.embeddingMigration.migrationFinalized'));
-      await loadMigrationStatus();
-      migrationInProgress = false;
+      // Celery task dispatched — WS event 'migration-finalized' will update state
 
     } catch (err) {
       console.error('Failed to finalize migration:', err);
       toastStore.error($t('settings.embeddingMigration.migrationFinalizeFailed'));
+      finalizing = false;
+    }
+  }
+
+  function handleMigrationFinalized(event: CustomEvent<{ status: string; v4_documents?: number; message?: string }>) {
+    const data = event.detail;
+    finalizing = false;
+    migrationInProgress = false;
+
+    if (data.status === 'success') {
+      toastStore.success($t('settings.embeddingMigration.migrationFinalized'));
+      loadMigrationStatus();
+    } else {
+      toastStore.error(data.message || $t('settings.embeddingMigration.migrationFinalizeFailed'));
     }
   }
 
@@ -340,11 +356,13 @@
     // Listen for WebSocket events
     window.addEventListener('migration-progress', handleMigrationProgress as EventListener);
     window.addEventListener('migration-complete', handleMigrationComplete as EventListener);
+    window.addEventListener('migration-finalized', handleMigrationFinalized as EventListener);
   });
 
   onDestroy(() => {
     window.removeEventListener('migration-progress', handleMigrationProgress as EventListener);
     window.removeEventListener('migration-complete', handleMigrationComplete as EventListener);
+    window.removeEventListener('migration-finalized', handleMigrationFinalized as EventListener);
   });
 </script>
 
@@ -554,10 +572,18 @@
       <!-- Finalize Button (if v4 index exists but not yet swapped) -->
       {#if v4DocumentCount > 0 && currentMode === 'v3' && !migrationInProgress}
         <div class="finalize-section">
-          <p>{$t('settings.embeddingMigration.finalizePrompt')}</p>
-          <button class="btn btn-secondary" on:click={finalizeMigration}>
-            {$t('settings.embeddingMigration.finalizeMigration')}
-          </button>
+          {#if finalizing}
+            <p>{$t('settings.embeddingMigration.finalizing') || 'Finalizing migration — swapping indices...'}</p>
+            <button class="btn btn-secondary" disabled>
+              <span class="spinner-small dark"></span>
+              {$t('settings.embeddingMigration.finalizeMigration')}
+            </button>
+          {:else}
+            <p>{$t('settings.embeddingMigration.finalizePrompt')}</p>
+            <button class="btn btn-secondary" on:click={finalizeMigration}>
+              {$t('settings.embeddingMigration.finalizeMigration')}
+            </button>
+          {/if}
         </div>
       {/if}
 
@@ -629,6 +655,11 @@
     animation: spin 0.8s linear infinite;
     display: inline-block;
     flex-shrink: 0;
+  }
+
+  .spinner-small.dark {
+    border-color: rgba(0,0,0,0.15);
+    border-top-color: var(--text-color);
   }
 
   @keyframes spin {

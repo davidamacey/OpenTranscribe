@@ -1993,6 +1993,38 @@ def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
         return None
 
 
+def get_speaker_embeddings_batch(speaker_uuids: list[str]) -> dict[str, list[float]]:
+    """Get embeddings for multiple speakers in a single mget request.
+
+    Args:
+        speaker_uuids: List of speaker UUIDs
+
+    Returns:
+        Dict mapping speaker_uuid -> embedding vector (only for found speakers)
+    """
+    if not opensearch_client or not speaker_uuids:
+        return {}
+
+    try:
+        ensure_indices_exist()
+        active_index = get_active_speaker_index()
+
+        body = {"docs": [{"_index": active_index, "_id": str(uid)} for uid in speaker_uuids]}
+        response = opensearch_client.mget(body=body)
+
+        results: dict[str, list[float]] = {}
+        for doc in response.get("docs", []):
+            if doc.get("found") and "_source" in doc:
+                embedding = doc["_source"].get("embedding")
+                if embedding is not None:
+                    results[doc["_id"]] = list(embedding)
+        return results
+
+    except Exception as e:
+        logger.error(f"Error batch-fetching speaker embeddings: {e}")
+        return {}
+
+
 def get_profile_embedding(profile_uuid: str) -> list[float] | None:
     """
     Get the embedding vector for a speaker profile from OpenSearch

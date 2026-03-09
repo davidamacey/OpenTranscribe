@@ -18,6 +18,7 @@ from app.models.user import User
 from app.schemas.speaker_cluster import BatchVerifyRequest
 from app.schemas.speaker_cluster import ClusterPromoteRequest
 from app.schemas.speaker_cluster import ClusterSplitRequest
+from app.schemas.speaker_cluster import ClusterUnassignRequest
 from app.schemas.speaker_cluster import ReclusterRequest
 from app.schemas.speaker_cluster import SpeakerClusterUpdate
 from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -217,6 +218,42 @@ def get_clustering_stats(
         "total_clusters": total_clusters,
         "coverage_pct": round(clustered / total_speakers * 100, 1) if total_speakers else 0,
     }
+
+
+@router.post("/{cluster_uuid}/analyze-outliers")
+async def analyze_outliers(
+    cluster_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Analyze minority-gender speakers for potential outliers."""
+    service = SpeakerClusteringService(db)
+    try:
+        result = service.analyze_gender_outliers(cluster_uuid, int(current_user.id))
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post("/{cluster_uuid}/unassign")
+async def unassign_speakers(
+    cluster_uuid: str,
+    request: ClusterUnassignRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Unassign speakers from a cluster with optional blacklisting."""
+    service = SpeakerClusteringService(db)
+    try:
+        result = service.unassign_speakers(
+            cluster_uuid,
+            [str(u) for u in request.speaker_uuids],
+            int(current_user.id),
+            request.blacklist,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 # ---------------------------------------------------------------------------

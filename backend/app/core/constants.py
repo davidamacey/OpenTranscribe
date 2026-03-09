@@ -253,6 +253,7 @@ NOTIFICATION_TYPE_REINDEX_STOPPED = "reindex_stopped"
 # WebSocket notification types for embedding migration
 NOTIFICATION_TYPE_MIGRATION_PROGRESS = "migration_progress"
 NOTIFICATION_TYPE_MIGRATION_COMPLETE = "migration_complete"
+NOTIFICATION_TYPE_MIGRATION_FINALIZED = "migration_finalized"
 
 # Speaker clustering notification types
 NOTIFICATION_TYPE_CLUSTERING_PROGRESS = "clustering_progress"

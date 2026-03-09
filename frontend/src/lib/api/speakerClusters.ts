@@ -9,6 +9,7 @@ import type {
   PaginatedResponse,
   BatchVerifyResponse,
   ReclusterResponse,
+  OutlierAnalysisResponse,
 } from '$lib/types/speakerCluster';
 
 export async function listClusters(
@@ -187,6 +188,25 @@ export async function confirmSpeakerGender(
   const response = await axiosInstance.post(
     `/speakers/${speakerUuid}/confirm-gender?gender=${encodeURIComponent(gender)}`
   );
+  return response.data;
+}
+
+export async function analyzeClusterOutliers(
+  clusterUuid: string
+): Promise<OutlierAnalysisResponse> {
+  const response = await axiosInstance.post(`/speaker-clusters/${clusterUuid}/analyze-outliers`);
+  return response.data;
+}
+
+export async function unassignSpeakers(
+  clusterUuid: string,
+  speakerUuids: string[],
+  blacklist = true
+): Promise<{ unassigned_count: number; message: string }> {
+  const response = await axiosInstance.post(`/speaker-clusters/${clusterUuid}/unassign`, {
+    speaker_uuids: speakerUuids,
+    blacklist,
+  });
   return response.data;
 }
 
