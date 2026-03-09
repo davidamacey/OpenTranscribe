@@ -218,8 +218,7 @@ def _index_transcript(file_id: int, file_uuid: str, user_id: int) -> None:
             .all()
         )
         seg_dicts = [
-            {"text": s.text, "speaker_name": s.speaker.name if s.speaker else None}
-            for s in segments
+            {"text": s.text, "speaker": s.speaker.name if s.speaker else None} for s in segments
         ]
 
         media_file = get_refreshed_object(db, MediaFile, file_id)

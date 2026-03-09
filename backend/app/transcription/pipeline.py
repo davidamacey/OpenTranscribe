@@ -233,7 +233,7 @@ class TranscriptionPipeline:
             import torch
 
             if torch.cuda.is_available():
-                return int(torch.cuda.get_device_properties(0).total_mem / (1024**2))
+                return int(torch.cuda.get_device_properties(0).total_memory / (1024**2))
         except Exception as e:
             logger.debug("Could not detect VRAM: %s", e)
         return 0
