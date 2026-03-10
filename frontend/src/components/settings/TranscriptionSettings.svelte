@@ -13,6 +13,7 @@
     type SpeakerPromptBehavior,
     type LanguageOption
   } from '$lib/api/transcriptionSettings';
+  import { ASRSettingsApi, type ASRModelCapabilities } from '$lib/api/asrSettings';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
@@ -68,6 +69,13 @@
   let loading = true;
   let saving = false;
   let resetting = false;
+
+  // ASR model capabilities (for translation/language guards)
+  let asrCapabilities: ASRModelCapabilities | null = null;
+  $: translationDisabled = asrCapabilities ? !asrCapabilities.supports_translation : false;
+  $: isEnglishOptimized = asrCapabilities?.language_support === 'english_optimized';
+  $: isEnglishOnly = asrCapabilities?.languages === 1;
+  $: isNonEnglishSelected = sourceLanguage !== 'auto' && sourceLanguage !== 'en';
 
   // Validation
   let validationError = '';
@@ -133,7 +141,7 @@
   ];
 
   onMount(async () => {
-    await Promise.all([loadSettings(), loadSystemDefaults()]);
+    await Promise.all([loadSettings(), loadSystemDefaults(), loadASRCapabilities()]);
   });
 
   async function loadSettings() {
@@ -169,6 +177,15 @@
     } catch (err) {
       console.error('Failed to load system defaults:', err);
       // Non-critical, don't show error
+    }
+  }
+
+  async function loadASRCapabilities() {
+    try {
+      const status = await ASRSettingsApi.getStatus();
+      asrCapabilities = status.active_model_capabilities ?? null;
+    } catch (err) {
+      console.error('Failed to load ASR capabilities:', err);
     }
   }
 
@@ -449,20 +466,39 @@
               {/each}
             </optgroup>
           </select>
+          {#if isEnglishOptimized && isNonEnglishSelected}
+            <p class="capability-warning warning-subtle">
+              The current model is optimized for English. Accuracy may vary for other languages.
+            </p>
+          {/if}
+          {#if isEnglishOnly && isNonEnglishSelected}
+            <p class="capability-warning">
+              The current model only supports English. Select "Auto-detect" or "English" for best results.
+            </p>
+          {/if}
         </div>
 
         <!-- Translate to English -->
         <div class="form-group">
           <div class="setting-row">
             <div class="setting-controls">
-              <label class="toggle-label">
-                <input type="checkbox" bind:checked={translateToEnglish} class="toggle-input" />
+              <label class="toggle-label" class:disabled-toggle={translationDisabled}>
+                <input type="checkbox" bind:checked={translateToEnglish} class="toggle-input" disabled={translationDisabled} />
                 <span class="toggle-switch"></span>
                 <span class="toggle-text">{$t('settings.transcription.translateToEnglish')}</span>
               </label>
             </div>
           </div>
           <p class="input-hint">{$t('settings.transcription.translateToEnglishDesc')}</p>
+          {#if translationDisabled && asrCapabilities}
+            <p class="capability-warning">
+              {#if asrCapabilities.provider === 'local'}
+                Translation is not available with the current model ({asrCapabilities.model_id}). Switch to a model that supports translation (e.g., large-v3, whisper-1).
+              {:else}
+                Translation is not supported by {ASRSettingsApi.getProviderDisplayName(asrCapabilities.provider)}.
+              {/if}
+            </p>
+          {/if}
         </div>
 
         <!-- LLM Output Language -->
@@ -1262,5 +1298,30 @@
     .btn {
       width: 100%;
     }
+  }
+
+  .capability-warning {
+    font-size: 0.8rem;
+    color: var(--warning-color, #b45309);
+    margin-top: 0.25rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--warning-bg, rgba(245, 158, 11, 0.1));
+    border-radius: 4px;
+    border-left: 3px solid var(--warning-color, #b45309);
+  }
+
+  .capability-warning.warning-subtle {
+    color: var(--text-secondary);
+    background: var(--surface-color);
+    border-left-color: var(--text-secondary);
+  }
+
+  .disabled-toggle {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .disabled-toggle .toggle-input {
+    pointer-events: none;
   }
 </style>

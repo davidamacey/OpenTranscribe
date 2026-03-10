@@ -39,7 +39,8 @@ ASR_PROVIDER_CATALOG: dict = {
                 "price_per_min_batch": 0,
                 "is_default": True,
                 "supports_diarization": True,
-                "supports_translation": True,
+                "supports_translation": False,
+                "language_support": "english_optimized",
             },
             {
                 "id": "large-v3",
@@ -48,6 +49,7 @@ ASR_PROVIDER_CATALOG: dict = {
                 "price_per_min_batch": 0,
                 "supports_diarization": True,
                 "supports_translation": True,
+                "language_support": "multilingual",
             },
             {
                 "id": "large-v2",
@@ -56,6 +58,7 @@ ASR_PROVIDER_CATALOG: dict = {
                 "price_per_min_batch": 0,
                 "supports_diarization": True,
                 "supports_translation": True,
+                "language_support": "multilingual",
             },
             {
                 "id": "medium",
@@ -63,6 +66,8 @@ ASR_PROVIDER_CATALOG: dict = {
                 "description": "~5 GB VRAM",
                 "price_per_min_batch": 0,
                 "supports_diarization": True,
+                "supports_translation": True,
+                "language_support": "multilingual",
             },
             {
                 "id": "small",
@@ -70,6 +75,8 @@ ASR_PROVIDER_CATALOG: dict = {
                 "description": "~2 GB VRAM",
                 "price_per_min_batch": 0,
                 "supports_diarization": True,
+                "supports_translation": True,
+                "language_support": "multilingual",
             },
             {
                 "id": "base",
@@ -77,6 +84,8 @@ ASR_PROVIDER_CATALOG: dict = {
                 "description": "~1 GB VRAM",
                 "price_per_min_batch": 0,
                 "supports_diarization": True,
+                "supports_translation": True,
+                "language_support": "multilingual",
             },
             {
                 "id": "tiny",
@@ -84,6 +93,8 @@ ASR_PROVIDER_CATALOG: dict = {
                 "description": "Fastest, lowest accuracy",
                 "price_per_min_batch": 0,
                 "supports_diarization": True,
+                "supports_translation": True,
+                "language_support": "multilingual",
             },
         ],
     },
@@ -197,6 +208,7 @@ ASR_PROVIDER_CATALOG: dict = {
                 "is_default": True,
                 "max_file_size_mb": 25,
                 "supports_confidence": True,
+                "supports_translation": False,
             },
             {
                 "id": "gpt-4o-transcribe-diarize",
@@ -205,6 +217,7 @@ ASR_PROVIDER_CATALOG: dict = {
                 "price_per_min_batch": 0.006,
                 "max_file_size_mb": 25,
                 "supports_diarization": True,
+                "supports_translation": False,
             },
             {
                 "id": "whisper-1",
@@ -598,6 +611,116 @@ class ASRProviderFactory:
             return GladiaProvider(api_key or "", model or "standard")
         logger.warning("Unknown provider '%s', falling back to local", provider)
         return LocalASRProvider()
+
+    @staticmethod
+    def get_model_capabilities(provider_id: str, model_id: str) -> dict:
+        """Look up capabilities for a specific provider+model from the catalog.
+
+        For unknown local models: substring match against known IDs
+        (most-specific first: "large-v3-turbo" before "large-v3").
+        No match -> permissive default (supports_translation=True, multilingual).
+        """
+        provider_entry = ASR_PROVIDER_CATALOG.get(provider_id)
+        if not provider_entry:
+            return {
+                "supports_translation": True,
+                "language_support": "multilingual",
+                "languages": None,
+            }
+
+        # Check model-level capabilities first
+        models = provider_entry.get("models", [])
+        for m in models:
+            if m["id"] == model_id:
+                return {
+                    "supports_translation": m.get(
+                        "supports_translation",
+                        provider_entry.get("supports_translation", True),
+                    ),
+                    "language_support": m.get("language_support", "multilingual"),
+                    "languages": m.get("languages"),
+                }
+
+        # For local provider: substring match (most-specific first)
+        if provider_id == "local":
+            sorted_models = sorted(models, key=lambda m: len(m["id"]), reverse=True)
+            for m in sorted_models:
+                if m["id"] in model_id:
+                    return {
+                        "supports_translation": m.get(
+                            "supports_translation",
+                            provider_entry.get("supports_translation", True),
+                        ),
+                        "language_support": m.get("language_support", "multilingual"),
+                        "languages": m.get("languages"),
+                    }
+
+        # Fallback to provider-level capabilities
+        return {
+            "supports_translation": provider_entry.get("supports_translation", True),
+            "language_support": "multilingual",
+            "languages": None,
+        }
+
+    @staticmethod
+    def get_active_model_capabilities(user_id: int, db) -> dict:
+        """Get capabilities for user's active ASR model.
+
+        Resolution: user DB ASR config -> ASR_PROVIDER env -> WHISPER_MODEL env -> local default.
+        """
+        from app import models as app_models
+
+        # 1. Check user's active DB config
+        setting = (
+            db.query(app_models.UserSetting)
+            .filter(
+                app_models.UserSetting.user_id == user_id,
+                app_models.UserSetting.setting_key == "active_asr_config_id",
+            )
+            .first()
+        )
+        if setting and setting.setting_value:
+            try:
+                from app.models.user_asr_settings import UserASRSettings
+
+                cfg = (
+                    db.query(UserASRSettings)
+                    .filter(
+                        UserASRSettings.id == int(setting.setting_value),
+                        UserASRSettings.user_id == user_id,
+                        UserASRSettings.is_active == True,  # noqa: E712
+                    )
+                    .first()
+                )
+                if cfg:
+                    provider_id = cfg.provider or "local"
+                    model_id = cfg.model_name or ""
+                    caps = ASRProviderFactory.get_model_capabilities(provider_id, model_id)
+                    return {
+                        "provider": provider_id,
+                        "model_id": model_id,
+                        **caps,
+                    }
+            except Exception:
+                logger.debug("Failed to resolve active ASR config for user %d", user_id)
+
+        # 2. ASR_PROVIDER env var
+        env_provider = os.getenv("ASR_PROVIDER", "local").lower()
+        if env_provider != "local":
+            return {
+                "provider": env_provider,
+                "model_id": "",
+                **ASRProviderFactory.get_model_capabilities(env_provider, ""),
+            }
+
+        # 3. Local default with WHISPER_MODEL
+        whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
+        caps = ASRProviderFactory.get_model_capabilities("local", whisper_model)
+        return {
+            "provider": "local",
+            "model_id": whisper_model,
+            **caps,
+        }
 
     @staticmethod
     def get_provider_catalog() -> dict:

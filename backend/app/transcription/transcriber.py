@@ -137,7 +137,21 @@ class Transcriber:
 
         step_start = time.perf_counter()
 
-        task = "translate" if self.config.translate_to_english else "transcribe"
+        if self.config.translate_to_english:
+            from app.services.asr.factory import ASRProviderFactory
+
+            caps = ASRProviderFactory.get_model_capabilities("local", self.config.model_name)
+            if not caps["supports_translation"]:
+                logger.warning(
+                    "Model %s does not support translation — falling back to transcribe",
+                    self.config.model_name,
+                )
+                task = "transcribe"
+            else:
+                task = "translate"
+        else:
+            task = "transcribe"
+
         language = self.config.source_language if self.config.source_language != "auto" else None
 
         logger.info(

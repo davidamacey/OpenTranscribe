@@ -403,6 +403,8 @@ def get_asr_status(
         active_provider = asr_provider
         is_cloud_provider = asr_provider in _CLOUD_PROVIDERS
 
+    from app.services.asr.factory import ASRProviderFactory
+
     return {
         "has_settings": has_settings,
         "active_config": _config_to_dict(active_config) if active_config else None,
@@ -413,6 +415,9 @@ def get_asr_status(
         "active_model": active_model,
         "active_config_uuid": active_config_uuid_str,
         "is_cloud_provider": is_cloud_provider,
+        "active_model_capabilities": ASRProviderFactory.get_active_model_capabilities(
+            current_user.id, db
+        ),
     }
 
 

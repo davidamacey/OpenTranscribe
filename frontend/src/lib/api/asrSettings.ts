@@ -106,6 +106,14 @@ export interface ASRSettingsList {
   total: number;
 }
 
+export interface ASRModelCapabilities {
+  provider: string;
+  model_id: string;
+  supports_translation: boolean;
+  language_support: string;
+  languages: number | null;
+}
+
 export interface ASRStatusResponse {
   has_settings: boolean;
   active_config?: UserASRSettingsResponse;
@@ -116,6 +124,7 @@ export interface ASRStatusResponse {
   active_model?: string;
   active_config_uuid?: string;
   is_cloud_provider?: boolean;
+  active_model_capabilities?: ASRModelCapabilities;
 }
 
 export interface ASRConnectionTestRequest {

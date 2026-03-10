@@ -116,6 +116,8 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "transcription_vad_speech_pad_ms",
         "transcription_hallucination_silence_threshold",
         "transcription_repetition_penalty",
+        "transcription_min_speakers",
+        "transcription_max_speakers",
     ]
     user_settings = (
         db.query(models.UserSetting)
@@ -146,6 +148,12 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "hallucination_silence_threshold": hal_value,
         "repetition_penalty": float(
             settings_map.get("transcription_repetition_penalty", str(DEFAULT_REPETITION_PENALTY))
+        ),
+        "min_speakers": int(
+            settings_map.get("transcription_min_speakers", str(settings.MIN_SPEAKERS))
+        ),
+        "max_speakers": int(
+            settings_map.get("transcription_max_speakers", str(settings.MAX_SPEAKERS))
         ),
     }
 
@@ -742,8 +750,8 @@ def _run_transcription_pipeline(
     config = TranscriptionConfig.from_environment(
         source_language=source_language,
         translate_to_english=translate_to_english,
-        min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
-        max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
+        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
+        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
         num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
         hf_token=settings.HUGGINGFACE_TOKEN,
         vad_threshold=user_settings["vad_threshold"],
@@ -1369,13 +1377,26 @@ def _run_cloud_asr_pipeline(
     # Only request diarization when the provider actually supports it; passing
     # enable_diarization=True to a provider that doesn't support it (e.g. OpenAI
     # whisper-1) wastes the parameter and can confuse the response parser.
+    # Guard translation: only enable if provider supports it
+    translate_requested = user_lang_settings["translate_to_english"]
+    translate_enabled = translate_requested and provider.supports_translation()
+    if translate_requested and not provider.supports_translation():
+        logger.warning(
+            "Provider %s does not support translation — proceeding without translation",
+            provider.provider_name,
+        )
+
+    # Read user's speaker settings from DB (task param > user DB > env var)
+    with session_scope() as db:
+        user_settings = _get_user_transcription_settings(db, ctx.user_id)
+
     config = ASRConfig(
         language=user_lang_settings["source_language"],
-        min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
-        max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
+        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
+        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
         num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
         enable_diarization=provider.supports_diarization(),
-        translate_to_english=user_lang_settings["translate_to_english"],
+        translate_to_english=translate_enabled,
         vocabulary=vocab_terms if vocab_terms else None,
     )
 
