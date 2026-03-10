@@ -19,35 +19,35 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 
 ## Key Features
 
-### 🎧 Advanced Transcription
+### Advanced Transcription
 - WhisperX integration with faster-whisper backend
 - Word-level timestamps with WAV2VEC2 alignment
 - Multi-language support with automatic English translation
 - 70x realtime speed on GPU (large-v2 model)
 - Support for audio (MP3, WAV, FLAC, M4A) and video (MP4, MOV, AVI, MKV)
 
-### 👥 Smart Speaker Management
+### Smart Speaker Management
 - Automatic speaker diarization using PyAnnote.audio
 - Cross-video speaker recognition with voice fingerprinting
 - LLM-enhanced speaker identification
 - Global speaker profiles that persist across transcriptions
 - Confidence scoring and manual verification workflow
 
-### 🤖 AI-Powered Features
+### AI-Powered Features
 - LLM summarization with BLUF (Bottom Line Up Front) format
 - Support for multiple LLM providers (OpenAI, Claude, vLLM, Ollama, OpenRouter)
 - Custom AI prompts for different content types
 - Intelligent section-by-section processing for unlimited transcript lengths
 - Speaker analytics and interaction patterns
 
-### 🔍 Search & Discovery
+### Search & Discovery
 - Hybrid search combining keyword and semantic search
 - 9.5x faster vector search with OpenSearch 3.3.1
 - Advanced filtering by speaker, date, tags, duration
 - Collections for organizing related media
 - Interactive waveform visualization with click-to-seek
 
-### 📊 Analytics & Insights
+### Analytics & Insights
 - Speaker analytics (talk time, interruptions, pace)
 - Meeting efficiency metrics
 - Action item extraction
@@ -75,21 +75,28 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 - **Account lockout** - Progressive lockout after failed attempts
 
 ### Modern Stack
-- **React + TypeScript frontend** - responsive, PWA-enabled
+- **Svelte + TypeScript frontend** - responsive, PWA-enabled
 - **FastAPI backend** - high-performance Python
 - **PostgreSQL + OpenSearch** - reliable, scalable storage
 - **Celery workers** - distributed background processing
+
+### User Interface
+- **Light and dark mode** - Toggle between themes via the sun/moon icon in the navbar, or let the app follow your system preference automatically
+- **7 UI languages** - Switch the interface language from Settings: English, Spanish, French, German, Portuguese, Chinese, and Japanese. The app also detects your browser language on first visit
+- **Grid and list views** - Toggle between card-based grid view (with thumbnails) and compact list view in the file gallery using the view toggle button
+- **Virtual scrolling** - Smooth performance when browsing large libraries with thousands of files, loading only visible items
+- **Progressive Web App (PWA)** - Install OpenTranscribe as a standalone app on desktop or mobile from your browser's "Install" or "Add to Home Screen" option for a native app experience
 
 ## Use Cases
 
 OpenTranscribe is perfect for:
 
-- 📞 **Meeting transcriptions** - Record and analyze team meetings with speaker identification
-- 🎙️ **Podcast production** - Generate transcripts and show notes automatically
-- 🎓 **Academic research** - Transcribe interviews and lectures for analysis
-- ⚖️ **Legal & compliance** - Accurate transcripts with speaker identification for depositions
-- 📞 **Customer service** - Analyze support calls for quality and training
-- 🎬 **Content creation** - Generate subtitles and content from videos
+- **Meeting transcriptions** - Record and analyze team meetings with speaker identification
+- **Podcast production** - Generate transcripts and show notes automatically
+- **Academic research** - Transcribe interviews and lectures for analysis
+- **Legal & compliance** - Accurate transcripts with speaker identification for depositions
+- **Customer service** - Analyze support calls for quality and training
+- **Content creation** - Generate subtitles and content from videos
 
 ## Quick Look
 

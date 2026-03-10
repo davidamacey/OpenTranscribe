@@ -1,28 +1,77 @@
-/**
- * CSS files with the .module.css suffix will be treated as CSS modules
- * and scoped locally.
- */
-
+/* ===== HERO ===== */
 .heroBanner {
-  padding: 4rem 0;
+  padding: 3rem 0 2.5rem;
   text-align: center;
+  background: #0f172a;
   position: relative;
-  overflow: hidden;
-  background: linear-gradient(180deg, var(--ifm-color-primary-darker) 0%, var(--ifm-color-primary-dark) 100%);
 }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
-  }
+[data-theme='dark'] .heroBanner {
+  background: #020617;
 }
 
-.heroDescription {
-  font-size: 1.2rem;
+.heroContent {
+  position: relative;
+  z-index: 1;
+}
+
+.heroTitle {
+  font-size: 3rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.heroTagline {
+  font-size: 1.15rem;
+  color: #94a3b8;
+  margin: 0 auto 1.25rem;
+  max-width: 560px;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+.heroBadges {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.heroDemo {
   margin: 1.5rem auto;
-  max-width: 800px;
-  color: var(--ifm-hero-text-color);
-  opacity: 0.9;
+  max-width: 620px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.heroDemo img {
+  width: 100%;
+  display: block;
+}
+
+.heroDemoCaption {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #64748b;
 }
 
 .buttons {
@@ -30,107 +79,429 @@
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.5rem;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  background: #2563eb;
+  border: none;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.primaryBtn:hover {
+  background: #1d4ed8;
+  color: #fff;
+  text-decoration: none;
+}
+
+.secondaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.5rem;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  background: transparent;
+  border: 1px solid #334155;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.secondaryBtn:hover {
+  border-color: #64748b;
+  color: #e2e8f0;
+  text-decoration: none;
 }
 
 .quickInstall {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
   display: flex;
   justify-content: center;
 }
 
 .installCommand {
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 8px;
-  padding: 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  padding: 0.65rem 1.25rem;
   margin: 0;
-  max-width: 90%;
+  max-width: 95%;
   overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .installCommand code {
-  color: #fff;
-  font-size: 0.9rem;
+  color: #94a3b8;
+  font-size: 0.8rem;
   white-space: nowrap;
 }
 
-/* Stats Section */
+.installLabel {
+  font-size: 0.65rem;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+
+/* ===== STATS ===== */
 .stats {
-  padding: 4rem 0;
-  background-color: var(--ifm-background-surface-color);
+  padding: 2.5rem 0;
+  background: var(--ot-surface);
+  border-bottom: 1px solid var(--ot-border);
 }
 
 .stat {
   text-align: center;
-  padding: 2rem 1rem;
+  padding: 1rem;
 }
 
 .statNumber {
-  font-size: 3rem;
-  font-weight: bold;
+  font-size: 2.25rem;
+  font-weight: 800;
   color: var(--ifm-color-primary);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.15rem;
+  line-height: 1.1;
 }
 
 .statLabel {
-  font-size: 1rem;
-  color: var(--ifm-color-emphasis-600);
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  font-size: 0.8rem;
+  color: var(--ot-text-muted);
+  font-weight: 500;
 }
 
-/* Demo Section */
-.demo {
+/* ===== FEATURES ===== */
+.features {
   padding: 4rem 0;
-  background-color: var(--ifm-background-color);
 }
 
-.demoPlaceholder {
-  background: var(--ifm-color-emphasis-100);
-  border: 2px dashed var(--ifm-color-emphasis-300);
-  border-radius: 12px;
-  padding: 4rem 2rem;
-  min-height: 400px;
+.sectionTitle {
+  text-align: center;
+  margin-bottom: 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.sectionSubtitle {
+  text-align: center;
+  color: var(--ot-text-muted);
+  font-size: 1rem;
+  margin-bottom: 2.5rem;
+  max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.featureCard {
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--ot-border);
+  background: var(--ifm-background-color);
+  transition: border-color 0.15s ease;
+  height: 100%;
+}
+
+.featureCard:hover {
+  border-color: var(--ifm-color-primary-lighter);
+}
+
+.featureIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 0.75rem;
+  background: var(--ot-surface-alt);
+  color: var(--ot-accent);
 }
 
-.demoPlaceholder p {
-  font-size: 1.2rem;
-  max-width: 600px;
+.featureTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
 }
 
-/* CTA Section */
+.featureDescription {
+  color: var(--ot-text-muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* ===== USE CASES ===== */
+.useCases {
+  padding: 4rem 0;
+  background: var(--ot-surface);
+}
+
+.useCaseCard {
+  padding: 1.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--ot-border);
+  background: var(--ifm-background-color);
+  text-align: center;
+  transition: border-color 0.15s ease;
+}
+
+.useCaseCard:hover {
+  border-color: var(--ifm-color-primary-lighter);
+}
+
+.useCaseIcon {
+  margin-bottom: 0.5rem;
+  color: var(--ot-text-muted);
+}
+
+.useCaseTitle {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.useCaseDesc {
+  font-size: 0.8rem;
+  color: var(--ot-text-muted);
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* ===== ARCHITECTURE ===== */
+.architecture {
+  padding: 4rem 0;
+}
+
+.archGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  align-items: center;
+}
+
+.archText h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.archText p {
+  color: var(--ot-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  margin-bottom: 1.25rem;
+}
+
+.archList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.archList li {
+  padding: 0.35rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--ot-text-muted);
+}
+
+.archList li::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ot-accent);
+  flex-shrink: 0;
+}
+
+.archVisual {
+  background: var(--ot-surface);
+  border-radius: 8px;
+  padding: 1.5rem;
+  border: 1px solid var(--ot-border);
+}
+
+.archComponent {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  background: var(--ifm-background-color);
+  border: 1px solid var(--ot-border);
+}
+
+.archDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ===== COMPARISON ===== */
+.comparison {
+  padding: 4rem 0;
+  background: var(--ot-surface);
+}
+
+.comparisonWrapper {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+.comparisonTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 0.85rem;
+  border: 1px solid var(--ot-border);
+}
+
+.comparisonTable th,
+.comparisonTable td {
+  padding: 0.6rem 0.85rem;
+  text-align: center;
+  border-bottom: 1px solid var(--ot-border);
+  white-space: nowrap;
+}
+
+.comparisonTable th:first-child,
+.comparisonTable td:first-child {
+  text-align: left;
+  font-weight: 500;
+  white-space: normal;
+}
+
+.comparisonTable thead th {
+  background: var(--ot-surface-alt);
+  color: var(--ifm-font-color-base);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 2px solid var(--ot-border);
+}
+
+.comparisonTable tbody td {
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+}
+
+.comparisonTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.comparisonTable tbody tr:hover td {
+  background: var(--ot-surface-alt);
+}
+
+.highlightCol {
+  background: rgba(37, 99, 235, 0.05) !important;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .highlightCol {
+  background: rgba(96, 165, 250, 0.07) !important;
+}
+
+.comparisonTable thead .highlightCol {
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: var(--ifm-color-primary);
+  font-weight: 700;
+}
+
+[data-theme='dark'] .comparisonTable thead .highlightCol {
+  background: rgba(96, 165, 250, 0.12) !important;
+  color: var(--ifm-color-primary);
+}
+
+.groupHeader {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 2px solid var(--ot-border);
+  color: var(--ot-text-muted);
+  font-weight: 700;
+}
+
+/* ===== CTA ===== */
 .cta {
   padding: 4rem 0;
-  background: linear-gradient(180deg, var(--ifm-color-primary-lightest) 0%, var(--ifm-color-primary-lighter) 100%);
+  background: #0f172a;
+  text-align: center;
 }
 
 [data-theme='dark'] .cta {
-  background: linear-gradient(180deg, var(--ifm-color-primary-darkest) 0%, var(--ifm-color-primary-darker) 100%);
+  background: #020617;
 }
 
-/* Responsive adjustments */
-@media screen and (max-width: 768px) {
-  .statNumber {
-    font-size: 2rem;
-  }
+.ctaTitle {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 0.5rem;
+}
 
-  .heroDescription {
-    font-size: 1rem;
-  }
+.ctaSubtitle {
+  font-size: 1rem;
+  color: #94a3b8;
+  margin-bottom: 1.5rem;
+  max-width: 450px;
+  margin-left: auto;
+  margin-right: auto;
+}
 
-  .installCommand code {
-    font-size: 0.8rem;
-  }
-
-  .demoPlaceholder {
-    min-height: 300px;
+/* ===== RESPONSIVE ===== */
+@media screen and (max-width: 996px) {
+  .heroBanner {
     padding: 2rem 1rem;
   }
 
-  .demoPlaceholder p {
-    font-size: 1rem;
+  .heroTitle {
+    font-size: 2.25rem;
+  }
+
+  .archGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .heroTitle {
+    font-size: 1.75rem;
+  }
+
+  .statNumber {
+    font-size: 1.75rem;
+  }
+
+  .heroDemo {
+    max-width: 95%;
+  }
+
+  .installCommand code {
+    font-size: 0.7rem;
+  }
+
+  .ctaTitle {
+    font-size: 1.4rem;
   }
 }

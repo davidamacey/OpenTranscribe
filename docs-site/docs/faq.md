@@ -267,6 +267,46 @@ System statistics (CPU, memory, disk, GPU usage) are visible to all authenticate
 
 For transcripts with thousands of segments (3+ hour recordings), OpenTranscribe automatically paginates the display to prevent browser slowdown. Segments load progressively as you scroll through the transcript.
 
+### Can I share transcriptions with specific groups of users?
+
+Yes! OpenTranscribe supports **User Groups** and **Collection Sharing**. Admins can create groups of users and then share entire collections with those groups. This makes it easy to organize team access — for example, share a "Legal Team" collection with a "Legal" user group so all members can access the same transcriptions.
+
+### Can I use cloud speech-to-text instead of local Whisper?
+
+Yes! OpenTranscribe supports **multi-provider cloud ASR** in addition to local WhisperX. You can configure cloud speech-to-text providers for an API-lite deployment that doesn't require a GPU. This is useful for lighter-weight setups where you prefer cloud processing over local hardware.
+
+### Can I reprocess just the speaker diarization without re-transcribing?
+
+Yes! The **selective reprocessing** feature lets you pick specific stages to re-run. Instead of reprocessing an entire file from scratch, you can choose to redo only speaker diarization, only summarization, or any other individual stage — saving significant time when you just need to tweak one part of the pipeline.
+
+### How does cross-video speaker matching work?
+
+OpenTranscribe uses **GPU-accelerated speaker pre-clustering** to group similar voices across all your transcriptions. Voice embeddings are extracted during diarization and then clustered so the system can suggest matches when the same speaker appears in different recordings. This powers the cross-video speaker identification workflow.
+
+### Can OpenTranscribe automatically tag my transcriptions?
+
+Yes! The **AI auto-labeling** feature uses your configured LLM to analyze transcription content and suggest relevant topics. These suggestions are automatically applied as tags and can be organized into collections, making it easy to categorize and find related content without manual effort.
+
+### Can files be automatically deleted after a certain period?
+
+Yes! Admins can configure **file retention policies** to automatically clean up old files after a specified number of days. This is useful for compliance requirements or simply managing disk space. Retention policies are configured in the admin settings and apply system-wide.
+
+### How can I improve AI summary quality for my organization?
+
+Configure **Organization Context** in **Settings → Transcription**. This lets you provide background information about your organization — such as its mission, common terminology, and typical meeting types. The LLM uses this context when generating summaries, resulting in more relevant and accurate output tailored to your specific domain.
+
+### Can I switch between grid and list view?
+
+Yes! The **gallery view** supports both grid and list layouts. You can toggle between them using the view switcher in the toolbar. Your preference is remembered between sessions. The gallery also includes pagination for efficiently browsing large libraries.
+
+### Does OpenTranscribe detect speaker gender?
+
+Yes! OpenTranscribe includes **automatic gender classification** for detected speakers. Gender predictions are generated from voice embeddings and displayed alongside speaker information. This helps validate speaker clusters and provides additional metadata for organizing and identifying speakers.
+
+### Can I customize export format?
+
+Yes! The **TXT export** feature includes configurable options that let you control what's included in the exported file — such as timestamps, speaker labels, and formatting preferences. Your export settings are saved as persistent preferences so you don't have to reconfigure them each time.
+
 ## Performance & Optimization
 
 ### How can I speed up processing?

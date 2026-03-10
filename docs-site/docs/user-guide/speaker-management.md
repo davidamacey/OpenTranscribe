@@ -23,6 +23,22 @@ OpenTranscribe provides powerful speaker diarization and management features to 
 
 3. Process files - speakers automatically detected
 
+## Speaker Identification Workflow
+
+```mermaid
+flowchart TD
+    A[New Transcription] --> B[PyAnnote Diarization]
+    B --> C[Extract Speaker Embeddings]
+    C --> D[Match Against Global Profiles]
+    D --> E{Match Found?}
+    E -->|Yes, >85%| F[Auto-Assign Speaker Name]
+    E -->|Maybe, 65-85%| G[Suggest with Confidence]
+    E -->|No| H[Create New Unknown Speaker]
+    F & G & H --> I[Gender Classification]
+    I --> J[LLM Speaker ID Optional]
+    J --> K[User Verification]
+```
+
 ## Speaker Profiles
 
 ### Creating Speaker Profiles
@@ -35,6 +51,10 @@ Speakers are automatically identified as "Speaker 1", "Speaker 2", etc. You can 
 
 **Auto-profile creation**: When you label a speaker, OpenTranscribe automatically creates a global profile that can be matched across videos.
 
+### Speaker Profile Avatars
+
+Speaker profiles support profile avatars for easy visual identification. Avatars appear throughout the UI wherever speakers are displayed.
+
 ### Cross-Video Speaker Recognition
 
 OpenTranscribe uses **voice fingerprinting** to identify the same speaker across different media files:
@@ -43,6 +63,7 @@ OpenTranscribe uses **voice fingerprinting** to identify the same speaker across
 - High-confidence matches auto-linked
 - Speaker labels propagate across videos
 - View all appearances of a speaker
+- Speaker profiles are automatically shared when collections are shared with other users
 
 ### LLM-Powered Identification
 
@@ -51,6 +72,33 @@ If LLM is configured, get AI-powered speaker name suggestions based on:
 - Topics discussed
 - Speaking patterns
 - Professional role indicators
+
+## Global Speakers Page
+
+The dedicated **Speakers** page (accessible from the sidebar) provides a centralized view of all speaker profiles and clusters:
+
+### Speakers Tab
+- Browse all named speaker profiles
+- View appearance count across files
+- Edit names, avatars, and details
+- Delete or merge speakers
+
+### Clusters Tab
+- **GPU-accelerated pre-clustering** groups unnamed speakers by voice similarity
+- Review suggested clusters and promote them to named profiles
+- **Play/pause audio** directly from cluster cards to verify speaker identity
+- **Unassign and blacklist** -- remove a mis-clustered segment and prevent it from being re-assigned
+- **Outlier analysis** -- identify segments that don't match the cluster well
+- Trigger manual re-clustering when needed
+
+### Gender Classification
+
+OpenTranscribe can automatically detect speaker gender attributes:
+
+- **Gender badges** displayed on speaker profiles and cluster cards
+- Used for **gender-informed cluster validation** -- prevents merging speakers of different detected genders
+- Configure in **Settings > Speaker Attributes**
+- Gender detection runs during the diarization pipeline
 
 ## Speaker Analytics
 
@@ -84,9 +132,9 @@ If diarization incorrectly splits one speaker:
 
 Track speaker identification confidence:
 - ✅ Verified: Manually confirmed
-- 🤖 AI Suggested: LLM identification
-- 🎯 Auto-Matched: Voice fingerprint match
-- ❓ Unverified: Default detection
+- AI Suggested: LLM identification
+- Auto-Matched: Voice fingerprint match
+- Unverified: Default detection
 
 ## Configuration
 

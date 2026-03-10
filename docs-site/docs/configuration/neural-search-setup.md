@@ -27,6 +27,16 @@ Neural search uses machine learning embeddings to understand the semantic meanin
 OpenTranscribe combines BM25 full-text search with neural search using Reciprocal Rank Fusion (RRF). This gives you the speed of keyword search plus the intelligence of semantic search.
 :::
 
+### Why Hybrid Search Beats Either Approach Alone
+
+Keyword search (BM25) excels at exact matches -- names, dates, technical terms -- but fails when users phrase queries differently from the transcript. Neural search catches synonyms and paraphrases but can return false positives for conceptually adjacent but irrelevant content. The hybrid approach ensures both signals contribute:
+
+- A document ranked #1 in keyword search and #5 in semantic search scores higher than one ranked #3 in both, because RRF rewards strong signal in either dimension.
+- Documents appearing in both result lists get a natural boost, surfacing the most confidently relevant matches.
+- Semantic-only results face additional filtering: the weakest 35% are suppressed, and remaining results must exceed a minimum score threshold. This prevents low-confidence semantic matches from diluting precise keyword results.
+
+In practice, hybrid search eliminates the "I know it's in there but I can't find it" problem common with keyword-only search on conversational transcripts, where speakers rarely use the exact terms a user would search for.
+
 ## Prerequisites
 
 Before enabling neural search, ensure:
@@ -95,6 +105,17 @@ OpenTranscribe supports three embedding models in different performance tiers:
 :::info Model Comparison
 All three models provide semantic search capabilities. Tier 1 (all-MiniLM) offers excellent value for most users. Choose Tier 2 or 3 only if you need higher accuracy and have the VRAM budget.
 :::
+
+### Model Selection Rationale
+
+The default `all-MiniLM-L6-v2` was chosen for several specific reasons:
+
+- **Latency**: At 2-5ms per embedding, it adds negligible overhead to the indexing pipeline and keeps search response times under 50ms even on large indexes. The 768-dim models (mpnet, distilroberta) take 3-4x longer per embedding.
+- **Memory**: At 80MB and 384 dimensions, the HNSW vector index stays small. A 10,000-transcript deployment with ~50,000 chunks uses ~73MB of vector index memory with 384-dim vs ~147MB with 768-dim.
+- **Transcript search characteristics**: Meeting transcripts are conversational English with limited vocabulary diversity. The accuracy gap between MiniLM-L6 and larger models is smaller on this domain than on academic benchmarks, because the semantic space is narrower.
+- **Multilingual alternative**: For non-English deployments, `paraphrase-multilingual-MiniLM-L12-v2` provides 50+ language coverage at the same 384-dim footprint (420MB model, same embedding speed tier).
+
+Changing models requires a full reindex of all transcripts, as the vector dimensions and semantic space differ between models.
 
 ## Configuration Steps
 
@@ -173,6 +194,27 @@ Batch size determines how many texts are embedded simultaneously:
 2. Update **Batch Size**
 3. Click **Save**
 4. Recommendation: Start conservative (16) and increase if you have headroom
+
+### Hybrid Search Pipeline
+
+```mermaid
+flowchart TD
+    Query([User Search Query]) --> BM25 & Neural
+
+    subgraph BM25["BM25 Full-Text Search"]
+        BM25a[Tokenize query] --> BM25b[TF-IDF scoring]
+        BM25b --> BM25c[Ranked results]
+    end
+
+    subgraph Neural["Neural Embedding Search"]
+        Na[Embed query via ML Commons] --> Nb[HNSW approximate\nnearest neighbor]
+        Nb --> Nc[Cosine similarity\nranked results]
+    end
+
+    BM25c & Nc --> RRF["Reciprocal Rank Fusion (RRF)\nscore = 1/(60 + rank)"]
+    RRF --> Filter[Score filtering &\nweak result suppression]
+    Filter --> Results([Merged Ranked Results])
+```
 
 ### Hybrid Search Strategy
 
@@ -291,10 +333,26 @@ Ready for Hybrid Search
 ```
 
 **Key Components:**
-- **ML Commons**: OpenSearch plugin for model management
+- **ML Commons**: OpenSearch plugin for model management -- registers, deploys, and serves embedding models server-side so the backend sends raw text and receives vectors without loading models itself
 - **ONNX Runtime**: Fast inference engine for embeddings
-- **HNSW**: Hierarchical Navigable Small World for vector indexing
+- **HNSW**: Hierarchical Navigable Small World graph for approximate nearest neighbor search
 - **RRF**: Reciprocal Rank Fusion for result merging
+
+#### HNSW Vector Indexing
+
+The vector index uses HNSW (Hierarchical Navigable Small World) with these parameters:
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `ef_construction` | 256 | Build-time quality (higher = more accurate index, slower build) |
+| `m` | 16 | Number of bi-directional links per node (higher = better recall, more memory) |
+| Similarity | Cosine | Distance metric for comparing embeddings |
+
+These settings prioritize search recall over index build speed, which is appropriate because transcripts are indexed once (during post-processing) but searched many times. The index is also sorted by `file_uuid` + `chunk_index` to optimize the collapse-by-file grouping used in search results.
+
+#### Server-Side Embeddings via ML Commons
+
+OpenTranscribe generates embeddings server-side within OpenSearch rather than in the backend application. Documents are sent as raw text through an OpenSearch ingest pipeline that automatically calls the deployed ML model to generate vector embeddings during indexing. This eliminates network round-trips for embedding generation, ensures consistency (one model version across all indexed documents), and keeps the embedding model out of the backend's memory footprint.
 
 ### Database Schema
 

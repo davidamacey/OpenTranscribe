@@ -31,6 +31,19 @@ OpenTranscribe identifies different speakers and segments audio by "who spoke wh
 
 ## How It Works
 
+```mermaid
+flowchart LR
+    Audio([Audio Input]) --> VAD[Silero VAD\nVoice Activity Detection]
+    VAD --> Seg[PyAnnote\nSegmentation]
+    Seg --> Embed[WeSpeaker\nEmbedding Extraction\n256-dim]
+    Embed --> AHC[Agglomerative\nHierarchical Clustering]
+    AHC --> Gender[Gender\nClassification]
+    Gender --> Validate[Cluster\nValidation]
+    Validate --> CrossMatch[Cross-Video\nSpeaker Matching]
+    CrossMatch --> Profiles[(Speaker\nProfiles)]
+    Profiles -.->|optional| LLM[LLM Speaker\nIdentification]
+```
+
 ### Processing Steps
 
 1. **Voice Activity Detection**: Identify speech vs silence
@@ -196,14 +209,75 @@ Identifies when multiple speakers talk simultaneously:
 - **Quality Control**: Identify audio issues or multiple speakers in a single recording
 - **Meeting Insights**: Analyze discussion intensity and participation intensity
 
+### Speaker Attribute Detection (New in v0.3.3)
+
+OpenTranscribe can automatically detect speaker attributes to improve identification and cluster quality:
+
+**Gender Classification**:
+- Neural network-based gender prediction from voice characteristics
+- Runs automatically after transcription (configurable per-user)
+- Confidence scoring for each prediction
+- Results stored on speaker profiles for cross-video consistency
+
+**Gender-Informed Cluster Validation**:
+- Speaker clusters use predicted gender to validate membership
+- Cross-gender cluster assignment requires higher similarity threshold
+- Minority-gender members in a cluster are flagged for review
+- Gender outlier analysis available per cluster
+
+**Configuration**: Enable/disable speaker attribute detection in Settings → Transcription.
+
+### Speaker Pre-Clustering (New in v0.3.3)
+
+GPU-accelerated speaker clustering runs automatically after transcription:
+
+- Groups speakers across files into clusters based on voice similarity
+- Uses embedding comparison for accurate cross-video speaker matching
+- Supports batch re-clustering for global speaker management
+- Cluster assignments update automatically as new files are processed
+
+### Alias-Based Speaker Indices (New in v0.3.3)
+
+```mermaid
+flowchart TD
+    subgraph Migration["Embedding Migration Flow"]
+        direction LR
+        V3["speakers_v3\n512-dim pyannote"] -->|Extract original audio| Extract[Re-extract with\nWeSpeaker model]
+        Extract --> V4["speakers_v4\n256-dim WeSpeaker"]
+        V4 --> Validate[Validate clusters]
+        Validate --> Swap["Atomic alias swap\nspeakers → speakers_v4"]
+    end
+
+    style V3 fill:#9E9E9E,color:#fff
+    style V4 fill:#4CAF50,color:#fff
+    style Swap fill:#2196F3,color:#fff
+```
+
+Speaker embeddings are stored in versioned OpenSearch indices with an alias system for zero-downtime migrations:
+
+- **speakers_v3**: 512-dimensional embeddings (PyAnnote v3 / embedding model)
+- **speakers_v4**: 256-dimensional embeddings (WeSpeaker / PyAnnote v4)
+- **speakers** alias: Points to the active versioned index
+- Atomic alias swap enables seamless migration between embedding versions
+
+### Speaker Embedding Consistency Self-Healing (New in v0.3.3)
+
+Automatic detection and repair of inconsistent speaker embeddings:
+
+- Identifies speakers with missing or mismatched embeddings across indices
+- GPU-accelerated batch repair re-extracts embeddings from original audio
+- Admin-triggered via Settings → Admin → Embedding Consistency
+- Progress tracking with WebSocket notifications
+- Distributed locking prevents concurrent repairs
+
 ### Speaker Verification Status
 
 Track identification confidence:
 
 - ✅ **Verified**: Manually confirmed
-- 🤖 **AI Suggested**: LLM identification
-- 🎯 **Auto-Matched**: Voice fingerprint match (greater than 85%)
-- ❓ **Unverified**: Default detection
+- **AI Suggested**: LLM identification
+- **Auto-Matched**: Voice fingerprint match (greater than 85%)
+- **Unverified**: Default detection
 
 ### Merge & Split (Enhanced in v0.2.0)
 
@@ -343,6 +417,67 @@ ${MODEL_CACHE_DIR}/torch/pyannote/      # PyAnnote voice embeddings
 **User Configuration**:
 - Can be toggled per-user in Settings → Transcription
 - Can be overridden per-file during upload
+
+## Technical Deep Dive
+
+### Why Agglomerative Hierarchical Clustering (AHC)?
+
+PyAnnote's diarization pipeline uses sklearn's `AgglomerativeClustering` for grouping speaker embeddings. This was chosen over several alternatives after evaluating tradeoffs across accuracy, scalability, and operational characteristics ([#144](https://github.com/davidamacey/OpenTranscribe/issues/144)):
+
+| Algorithm | K Required? | Handles Outliers? | Incremental? | Complexity | Verdict |
+|-----------|------------|-------------------|-------------|------------|---------|
+| **AHC (chosen)** | No (threshold-based) | No | No | O(n^2 log n) | Best for per-file diarization with unknown speaker count |
+| K-Means | Yes | No | Limited | O(nKI) | Requires knowing speaker count in advance -- unusable for diarization |
+| Spectral | Yes (or auto-tune) | No | No | O(n^3) | Cubic complexity prohibitive for long files; used internally by PyAnnote for refinement |
+| DBSCAN | No (needs epsilon) | Yes | No | O(n log n) | Good for cross-file batch clustering but epsilon tuning is fragile for variable-quality audio |
+| HDBSCAN | No | Yes (noise points) | No | O(n log n) | Best for periodic batch re-clustering across files; overkill for single-file diarization |
+
+AHC with a cosine similarity distance threshold is the standard approach in speaker diarization research because it does not require pre-specifying the number of speakers (K). Instead, it merges clusters until the inter-cluster distance exceeds a tuned threshold. This matches the real-world scenario where the number of speakers in a recording is unknown. NVIDIA NeMo's speaker verification pipeline uses a similar cosine similarity threshold of 0.7 as a reference point.
+
+For cross-file speaker management at scale, OpenTranscribe uses a hybrid approach: real-time kNN assignment via OpenSearch HNSW (O(log n) per speaker) for immediate cluster routing, with periodic HDBSCAN batch re-clustering to discover groups missed by incremental assignment.
+
+### Cosine Similarity Thresholds
+
+Speaker matching thresholds were calibrated against industry benchmarks from Pindrop (5B+ calls processed), NVIDIA NeMo, and internal testing:
+
+| Threshold | Action | Rationale |
+|-----------|--------|-----------|
+| >= 0.90 | Auto-accept (automated merging) | Extremely high confidence; false positive rate negligible |
+| 0.75 - 0.90 | Strong suggestion, user confirmation | Matches OpenTranscribe's `SPEAKER_CONFIDENCE_HIGH`; conservative to prevent false merges |
+| 0.65 - 0.75 | Cluster formation | Follows WeSpeaker's UMAP + HDBSCAN recipe threshold; groups likely-same speakers |
+| 0.50 - 0.65 | Weak suggestion | Presented as option but not auto-applied |
+| < 0.50 | Different speakers | Industry standard cutoff |
+
+The conservative auto-merge threshold (0.90) was chosen specifically to prevent false positive merges, which are harder to recover from than missed matches. Profile coherence monitoring flags profiles where constituent embeddings have minimum pairwise similarity below 0.60, indicating a potential false merge.
+
+### Why 256-Dimensional WeSpeaker Embeddings
+
+PyAnnote v4 switched from 192-dimensional pyannote/embedding (v3) to 256-dimensional WeSpeaker ResNet34-LM embeddings. This was not simply a version bump -- it reflects a deliberate accuracy-performance tradeoff:
+
+- **Accuracy**: WeSpeaker ResNet34-LM achieves state-of-the-art results on VoxCeleb benchmarks. The 256-dim space provides a richer representation than 192-dim while remaining computationally efficient.
+- **Speed**: 273x faster speaker assignment (from ~3 seconds to ~11ms per speaker) due to optimized ONNX runtime and better clustering algorithms in v4.
+- **Storage**: 256-dim vectors are 33% larger than 192-dim but 50% smaller than the 512-dim embeddings used by the legacy pyannote/embedding model. At scale (30,000 speakers), the full OpenSearch index remains under 32MB.
+- **L2-normalization**: All embeddings are L2-normalized before storage, which means cosine similarity reduces to a simple dot product -- enabling efficient HNSW search in OpenSearch.
+
+The 512-dim pyannote/embedding model is retained in the `speakers_v3` index for backward compatibility and can be used as a fallback. The alias-based index architecture allows atomic switching between v3 and v4 without downtime (see [Embedding Migration](../configuration/embedding-migration.md)).
+
+### Gender Classification Model Selection
+
+Speaker attribute detection uses the `prithivMLmods/Wav2Vec2-Gender-Age-Classification` model ([#141](https://github.com/davidamacey/OpenTranscribe/issues/141)). This model was selected based on three criteria:
+
+1. **Apache 2.0 licensing**: Unlike many voice classification models that use restrictive research-only licenses, this model's Apache 2.0 license permits commercial and production use without legal risk. This was a hard requirement for OpenTranscribe's open-source distribution.
+2. **Language independence**: The model analyzes acoustic features (pitch, formant frequencies, timbre) rather than linguistic content, so it works across all 100+ supported transcription languages without retraining.
+3. **Lightweight inference**: Runs on CPU (~1-3 seconds per speaker) as a separate Celery task on the `cpu` queue, so it never blocks GPU resources needed for transcription and diarization.
+
+### Gender-Informed Cluster Validation
+
+Predicted gender is used as a validation signal for speaker clusters, not as a primary clustering feature. When a speaker cluster contains members with conflicting gender predictions, the system applies a cross-gender penalty:
+
+- **Same predicted gender**: Standard cosine similarity threshold (0.65) for cluster membership.
+- **Cross-gender assignment**: Requires a higher similarity threshold to join the cluster, reducing false merges between speakers of different genders who happen to have similar acoustic profiles.
+- **Minority-gender members**: If a cluster has a dominant gender prediction (e.g., 8 male, 1 female), the minority member is flagged for manual review as a potential mis-assignment.
+
+This approach improves cluster purity without over-relying on gender prediction accuracy, which can be unreliable for children, whispered speech, or heavily processed audio.
 
 ## Troubleshooting
 

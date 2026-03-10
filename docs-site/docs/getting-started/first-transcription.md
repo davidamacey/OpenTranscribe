@@ -74,6 +74,22 @@ OpenTranscribe processes files through 13 stages:
 
 ### Processing Stages
 
+```mermaid
+flowchart LR
+    A[Queued] --> B[Preprocessing]
+    B --> C[Transcribing]
+    C --> D[Diarizing]
+    D --> E[Post-Processing]
+    E --> F[Complete]
+
+    style A fill:#6b7280
+    style B fill:#3b82f6
+    style C fill:#8b5cf6
+    style D fill:#ec4899
+    style E fill:#f59e0b
+    style F fill:#10b981
+```
+
 1. **Queued** - File is waiting in the processing queue
 2. **Starting** - Worker is beginning processing
 3. **Extracting Audio** - Converting video to audio if needed
@@ -217,16 +233,18 @@ Finds related concepts like "financial constraints", "cost overruns", etc.
 ### Export Options
 
 **Export Formats:**
-- **TXT** - Plain text transcript
-- **JSON** - Structured data with timestamps
-- **SRT** - Subtitle file for video
-- **VTT** - WebVTT subtitle format
-- **DOCX** - Microsoft Word document (with speaker labels)
+- **TXT** - Plain text transcript (configurable: timestamps, speaker names, comments)
+- **JSON** - Structured data with timestamps and speaker info
+- **CSV** - Comma-separated values for spreadsheet analysis
+- **SRT** - SubRip subtitle file for video players
+- **VTT** - WebVTT subtitle format for web playback
 
 **Export Methods:**
-1. Click **"Export"** button
-2. Choose **format**
-3. Click **"Download"**
+1. Click the **"Export"** dropdown on the transcript page
+2. Choose your **format**
+3. The file downloads immediately
+
+See [Uploading Files - Export Options](../user-guide/uploading-files.md#export-options) for full details on each format.
 
 ### Organize with Collections
 
@@ -298,4 +316,4 @@ Now that you've created your first transcription, explore:
 - **[GitHub Issues](https://github.com/davidamacey/OpenTranscribe/issues)** - Report bugs or request features
 - **[GitHub Discussions](https://github.com/davidamacey/OpenTranscribe/discussions)** - Ask questions and share tips
 
-Happy transcribing! 🎙️
+Happy transcribing!

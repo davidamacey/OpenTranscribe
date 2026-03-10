@@ -28,6 +28,51 @@ The migration updates the technical foundation of speaker embeddings:
 | Overlap Detection | Not available | Available |
 | Storage Size | Standard | Slightly larger (256-dim vectors) |
 
+### Alias-Based Index Architecture
+
+Since v0.3.3, OpenSearch speaker indices use an alias-based architecture:
+
+- **`speakers_v3`**: Concrete index with 192-dim embeddings (PyAnnote v3)
+- **`speakers_v4`**: Concrete index with 256-dim embeddings (WeSpeaker/PyAnnote v4)
+- **`speakers`**: An OpenSearch alias that points to the currently active versioned index
+
+Finalization (switching from v3 to v4) is an atomic alias swap -- no data copy or downtime. The alias is created automatically on startup. All application code reads/writes through the `speakers` alias, so the switch is transparent.
+
+#### Why Alias-Based Architecture?
+
+The alias-based design was chosen to solve a fundamental problem: v3 embeddings (192-dim) and v4 embeddings (256-dim) are mathematically incompatible and cannot coexist in the same HNSW index. A naive migration approach would require either:
+
+1. **Reindex-and-swap**: Build a complete new index, then delete the old one. This risks data loss if the process fails midway and requires double the storage during migration.
+2. **In-place migration**: Delete all documents and re-insert with new dimensions. This causes downtime and breaks any in-flight queries.
+
+The alias approach avoids both problems. Both `speakers_v3` and `speakers_v4` indices exist simultaneously, each with their own HNSW graph configuration optimized for their respective dimensionalities. The `speakers` alias acts as a stable pointer that all application code references. Migration proceeds as follows:
+
+1. New embeddings are written to `speakers_v4` in batches as files are reprocessed.
+2. The old `speakers_v3` index remains fully operational for reads during migration.
+3. When migration completes, a single atomic OpenSearch API call swaps the alias:
+
+```
+POST /_aliases
+{
+  "actions": [
+    { "remove": { "index": "speakers_v3", "alias": "speakers" } },
+    { "add":    { "index": "speakers_v4", "alias": "speakers" } }
+  ]
+}
+```
+
+This swap is atomic -- there is zero downtime and no window where queries could fail. If issues are discovered after finalization, the alias can be swapped back to `speakers_v3` in the same way, providing instant rollback without data loss.
+
+Key functions implementing this architecture: `swap_speaker_alias()`, `get_active_versioned_index()`, and `get_write_index()` in the OpenSearch service layer.
+
+### Embedding Consistency Self-Healing
+
+The system includes automatic repair for speaker embedding inconsistencies:
+- Detects mismatches between database speaker records and OpenSearch embeddings
+- Runs periodic consistency checks with a distributed lock (2-hour TTL)
+- Repairs orphaned, missing, or stale embeddings automatically
+- Can be triggered manually via the Admin UI (Settings → Embeddings)
+
 ### Timeline
 
 Migration duration varies based on your transcription library size:
@@ -94,6 +139,23 @@ While migration is safe and reversible, it's good practice to:
 3. **Document current speaker data** if you have custom speaker assignments
 
 ## Migration Process
+
+### Migration Workflow
+
+```mermaid
+flowchart TD
+    A[Start Migration] --> B[Create speakers_v4 Index]
+    B --> C[For Each File with Speakers]
+    C --> D[Extract Audio Segments]
+    D --> E[Generate WeSpeaker 256-dim Embeddings]
+    E --> F[Store in speakers_v4]
+    C --> G{All Files Done?}
+    F --> G
+    G -->|No| C
+    G -->|Yes| H[Validate Clusters]
+    H --> I[Atomic Alias Swap]
+    I --> J[speakers alias → speakers_v4]
+```
 
 ### Starting the Migration
 
@@ -327,6 +389,28 @@ Backend startup time improves after migration thanks to warm model caching:
 3. **Caching**: Model cache warms faster with v4 architecture
 4. **Memory efficiency**: 256-dim embeddings compute faster despite larger size
 5. **Overlap detection**: Dedicated algorithm (faster than recalculation)
+
+### Technical Detail: The 273x Speaker Assignment Speedup
+
+The 273x speedup in speaker assignment (from ~3 seconds to ~11ms per speaker) comes from two compounding factors:
+
+**1. WeSpeaker ONNX runtime vs. PyTorch inference**: PyAnnote v3 used a PyTorch-based embedding model (`pyannote/embedding`) that required full framework overhead for each forward pass. v4's WeSpeaker ResNet34-LM runs through ONNX runtime with hardware-specific optimizations (CUDA EP on GPU, CPU EP with vectorization on CPU), eliminating Python-level overhead.
+
+**2. Embedding extraction during diarization**: In v3, speaker embeddings were extracted as a separate post-processing step requiring an additional model load. In v4, WeSpeaker embeddings are extracted as a byproduct of the diarization pipeline itself -- the embedding model is already loaded for clustering, so centroid computation adds negligible overhead.
+
+The combined effect is most pronounced on high-speaker-count files: a recording with 8 speakers that previously took ~24 seconds for speaker assignment now completes in ~88ms.
+
+### GPU VRAM Scaling Characteristics
+
+Profiling on an NVIDIA A6000 (49GB) revealed that PyAnnote diarization VRAM scales with both file duration and speaker count:
+
+| File Duration | Speakers | Peak VRAM (PyAnnote) | Diarization Time |
+|--------------|----------|---------------------|-----------------|
+| 0.5 hours | 5 | +5,100 MB | 89s |
+| 3.2 hours | 3 | +4,475 MB | 299s |
+| 4.7 hours | 8 | +14,771 MB | 511s |
+
+Speaker count is a major factor because PyAnnote performs `num_chunks x num_speakers` embedding forward passes. With PyAnnote's default `embedding_batch_size=1`, a 4.7-hour file with 8 speakers generates approximately 850,000 individual CUDA kernel launches. Increasing the batch size to 32 reduces this to ~26,500 launches with identical diarization results, providing a significant speedup with minimal additional VRAM (+5-20 MB per batch).
 
 ## New Features Unlocked
 

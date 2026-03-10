@@ -31,6 +31,20 @@ AI summarization provides:
 4. Wait for AI processing
 5. View results in Summary tab
 
+### AI Summarization Pipeline
+
+```mermaid
+flowchart TD
+    A[Transcript] --> B{Length Check}
+    B -->|Short| C[Single LLM Call]
+    B -->|Long| D[Chunk at Speaker/Topic Boundaries]
+    D --> E[Section 1 Summary]
+    D --> F[Section 2 Summary]
+    D --> G[Section N Summary]
+    E & F & G --> H[Final Summary Stitch]
+    C & H --> I[BLUF Output]
+```
+
 ### Automatic Processing
 
 For long transcripts, OpenTranscribe automatically:
@@ -79,6 +93,51 @@ Create custom summarization prompts for specific use cases:
 - Podcast highlights
 - Legal deposition summaries
 - Medical consultation notes
+
+### Organization Context
+
+Administrators can configure **organization context** (Settings > Organization Context) that is automatically injected into AI prompts. This provides the LLM with background information about your organization, improving summary relevance:
+
+- Describe your organization, team structure, or domain
+- Choose whether to include context in default prompts, custom prompts, or both
+- Up to 10,000 characters of context text
+
+### Per-Collection Default Prompts
+
+Collections can have a **default AI prompt** assigned. When generating a summary for a file in that collection, the collection's default prompt is automatically selected:
+
+1. Go to **Collections**
+2. Create or edit a collection
+3. Select a **Default Prompt** from your saved custom prompts
+4. Files in the collection will use that prompt by default when generating summaries
+
+This is useful for organizing different types of content (e.g., interviews vs. meetings) that need different summarization approaches.
+
+### Auto-Label Pipeline
+
+```mermaid
+flowchart LR
+    A[Transcript] --> B[LLM Topic Extraction]
+    B --> C[Fuzzy Dedup Against Existing Tags]
+    C --> D{Confidence > Threshold?}
+    D -->|Yes| E[Auto-Apply as Tag]
+    D -->|No| F[Suggest Only]
+    E --> G[Link to Collection if Match]
+```
+
+## Auto-Labeling
+
+When an LLM provider is configured, OpenTranscribe can automatically analyze completed transcriptions and suggest organizational labels:
+
+- **Auto-tag**: AI extracts key topics and applies them as tags
+- **Auto-collect**: AI suggests relevant collections based on content
+- **Bulk grouping**: When uploading multiple files, AI can group them into collections by topic
+
+Configure auto-labeling in **Settings > Auto-Label**:
+- Enable/disable the feature globally
+- Set confidence threshold for suggestions
+- Toggle tags and collections independently
+- Run retroactively on existing files
 
 ## LLM Providers
 
