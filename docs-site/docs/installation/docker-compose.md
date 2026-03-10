@@ -298,7 +298,7 @@ OpenTranscribe consists of 8 Docker services:
 - Port: 8080
 
 **frontend** (Svelte + Vite)
-- React-based UI
+- Svelte/TypeScript SPA
 - Progressive Web App
 - Port: 5173
 
@@ -319,21 +319,23 @@ OpenTranscribe consists of 8 Docker services:
 - Media files, audio, waveforms
 - Port: 9000 (API), 9091 (Console)
 
-**opensearch** (OpenSearch 3.3.1)
+**opensearch** (OpenSearch 3.4.0)
 - Full-text search
-- Vector search for semantic search
+- Vector search for semantic search (neural search with ML Commons)
+- Alias-based speaker indices for zero-downtime upgrades
 - Port: 9200
 
 ### Worker Services
 
 **celery-worker** (Celery)
-- Background AI processing
-- Transcription, diarization, summarization
-- Multi-queue architecture (GPU, CPU, NLP, Download)
+- Background AI processing with 3-stage pipeline (preprocess → transcribe → postprocess)
+- Multi-queue architecture (GPU, CPU, NLP, Download, Embedding, Utility, Cloud-ASR)
+- CPU queue preprocesses next file while GPU processes current file
 
 **flower** (Celery monitoring)
-- Task monitoring dashboard
-- Worker status
+- Industry-standard task monitoring with persistent history
+- Worker status, queue visibility, task inspection
+- Basic auth protection (configured via `FLOWER_USER`/`FLOWER_PASSWORD`)
 - Port: 5555
 
 ## Management Commands

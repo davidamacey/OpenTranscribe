@@ -1,23 +1,28 @@
 /**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+ * OpenTranscribe Documentation - Custom Theme
+ * Clean, professional palette: slate/charcoal with steel blue accent
  */
 
-/* You can override the default Infima variables here. */
 :root {
-  --ifm-color-primary: #3b82f6;
-  --ifm-color-primary-dark: #2563eb;
-  --ifm-color-primary-darker: #1d4ed8;
-  --ifm-color-primary-darkest: #1e40af;
-  --ifm-color-primary-light: #60a5fa;
-  --ifm-color-primary-lighter: #93c5fd;
-  --ifm-color-primary-lightest: #bfdbfe;
+  --ifm-color-primary: #2563eb;
+  --ifm-color-primary-dark: #1d4ed8;
+  --ifm-color-primary-darker: #1e40af;
+  --ifm-color-primary-darkest: #1e3a8a;
+  --ifm-color-primary-light: #3b82f6;
+  --ifm-color-primary-lighter: #60a5fa;
+  --ifm-color-primary-lightest: #93c5fd;
   --ifm-code-font-size: 95%;
+  --ifm-font-family-base: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ifm-heading-font-weight: 700;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ot-accent: #2563eb;
+  --ot-text: #1e293b;
+  --ot-text-muted: #64748b;
+  --ot-surface: #f8fafc;
+  --ot-surface-alt: #f1f5f9;
+  --ot-border: #e2e8f0;
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
   --ifm-color-primary: #60a5fa;
   --ifm-color-primary-dark: #3b82f6;
@@ -27,86 +32,35 @@
   --ifm-color-primary-lighter: #bfdbfe;
   --ifm-color-primary-lightest: #dbeafe;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ot-accent: #60a5fa;
+  --ot-text: #e2e8f0;
+  --ot-text-muted: #94a3b8;
+  --ot-surface: #1e293b;
+  --ot-surface-alt: #0f172a;
+  --ot-border: #334155;
 }
 
-/* Homepage Custom Styles */
-.heroDescription {
-  font-size: 1.2rem;
-  margin: 1.5rem auto;
-  max-width: 700px;
-  opacity: 0.9;
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.quickInstall {
-  margin-top: 2rem;
+.navbar {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-.installCommand {
-  background: rgba(0, 0, 0, 0.2);
+[data-theme='dark'] .navbar {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.menu__link {
+  border-radius: 6px;
+}
+
+.prism-code {
+  border-radius: 8px !important;
+}
+
+.alert {
   border-radius: 8px;
-  padding: 1rem 1.5rem;
-  font-size: 0.9rem;
-  text-align: left;
-  display: inline-block;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-[data-theme='dark'] .installCommand {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.stats {
-  padding: 4rem 0;
-  background: var(--ifm-background-surface-color);
-}
-
-.stat {
-  text-align: center;
-  padding: 2rem 1rem;
-}
-
-.statNumber {
-  font-size: 3rem;
-  font-weight: 700;
-  color: var(--ifm-color-primary);
-  margin-bottom: 0.5rem;
-}
-
-.statLabel {
-  font-size: 1rem;
-  color: var(--ifm-color-emphasis-700);
-  font-weight: 500;
-}
-
-.demo {
-  padding: 4rem 0;
-}
-
-.demoPlaceholder {
-  background: var(--ifm-color-emphasis-100);
-  border-radius: 12px;
-  padding: 4rem 2rem;
-  min-height: 400px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-[data-theme='dark'] .demoPlaceholder {
-  background: var(--ifm-color-emphasis-200);
-}
-
-.cta {
-  padding: 4rem 0;
-  background: linear-gradient(180deg, transparent, var(--ifm-color-primary-lightest));
-}
-
-[data-theme='dark'] .cta {
-  background: linear-gradient(180deg, transparent, rgba(59, 130, 246, 0.1));
-}
-
-.featureEmoji {
-  font-size: 4rem;
-  margin-bottom: 1rem;
 }

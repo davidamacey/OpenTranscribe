@@ -7,6 +7,40 @@ title: Authentication & Security
 
 OpenTranscribe includes enterprise-grade authentication and security features to meet organizational security requirements and compliance standards.
 
+## Authentication Flow
+
+```mermaid
+flowchart TD
+    Login([Login Request]) --> RateLimit{Rate Limit\nCheck}
+    RateLimit -->|Exceeded| Block([429 Too Many Requests])
+    RateLimit -->|OK| Lockout{Account\nLockout Check}
+    Lockout -->|Locked| Denied([Account Locked])
+    Lockout -->|OK| AuthType{AUTH_TYPE\nConfig}
+
+    AuthType -->|local| Bcrypt[Bcrypt Password\nVerification]
+    AuthType -->|ldap| LDAP[LDAP Bind\nto Directory]
+    AuthType -->|keycloak| OIDC[OIDC Redirect\n& Token Exchange]
+    AuthType -->|pki| PKI[X.509 Certificate\nVerification via Nginx]
+
+    Bcrypt --> MFA{MFA\nEnabled?}
+    LDAP --> MapUser[Map/Provision\nLocal User] --> MFA
+    OIDC --> MapUser2[Map/Provision\nLocal User] --> JWT
+    PKI --> ExtractCN[Extract CN\nfrom Certificate] --> JWT
+
+    MFA -->|Yes| TOTP[Verify TOTP\nCode]
+    MFA -->|No| JWT
+    TOTP -->|Valid| JWT
+    TOTP -->|Invalid| Failed
+
+    JWT[Issue JWT Access Token\n+ Refresh Token]
+    JWT --> Audit[Audit Log Entry]
+    Audit --> Success([Authenticated])
+
+    Bcrypt -->|Failed| Failed[Increment\nFailed Attempts]
+    Failed --> Audit2[Audit Log Entry]
+    Audit2 --> Rejected([401 Unauthorized])
+```
+
 ## Authentication Methods
 
 ### Local Authentication
@@ -28,6 +62,7 @@ Single Sign-On via OpenID Connect:
 - Support for identity federation
 - Social login via Keycloak (Google, GitHub, etc.)
 - Role synchronization
+- **Federated logout** (New in v0.3.3): When a user logs out of OpenTranscribe, their Keycloak session is also terminated via the OIDC end-session endpoint, ensuring consistent session state across the identity provider
 
 ### PKI/X.509 Certificates
 Certificate-based authentication:
@@ -35,6 +70,7 @@ Certificate-based authentication:
 - CAC/PIV smart card support
 - No passwords required
 - Government/military environment support
+- **Super admin password fallback** (New in v0.3.3): PKI-authenticated super admin accounts can optionally retain local password authentication as a fallback, ensuring administrative access even if certificate infrastructure is unavailable. Controlled via the `pki_allow_password_fallback` configuration setting
 
 ## Security Features
 
@@ -137,6 +173,29 @@ All enabled methods work together—users can authenticate using any method you'
 **No Restart Required:**
 Configuration changes take effect immediately. There is no need to restart services when modifying authentication settings through the admin UI.
 
+## Design Rationale
+
+### Why Hybrid Authentication?
+
+Enterprise environments frequently require multiple authentication methods operating simultaneously. A government agency may need PKI/CAC for most users while retaining local accounts for service accounts and emergency access. An enterprise deploying Active Directory may also need Keycloak for federated partners. OpenTranscribe's hybrid model supports any combination of its four methods concurrently, so organizations do not need to choose a single provider.
+
+### Database-Driven Configuration vs. Environment Variables
+
+Early versions relied exclusively on `.env` variables for authentication settings. This created operational friction: changing an LDAP bind password or enabling a new auth method required restarting the backend service. The current database-driven approach (`auth_config` table) enables runtime reconfiguration through the admin UI with zero downtime. Environment variables are retained as a secondary override for backward compatibility and initial bootstrapping of new deployments.
+
+### Credential Encryption
+
+All sensitive values stored in the `auth_config` table (LDAP bind passwords, Keycloak client secrets, API keys) are encrypted at rest using **AES-256-GCM** with 96-bit random nonces and 128-bit authentication tags. Encryption keys are derived from the application master secret via PBKDF2-SHA256 with 600,000 iterations. The encrypted format uses a versioned prefix (`v3:salt:nonce:ciphertext+tag`) to support transparent algorithm upgrades. This approach satisfies NIST SP 800-132 key derivation requirements and FedRAMP SC-28 (Protection of Information at Rest).
+
+### Security Audit Findings
+
+A comprehensive security audit identified several authentication-related improvements that have been incorporated:
+
+- **PKI trusted proxy enforcement**: When PKI is enabled in production, `PKI_TRUSTED_PROXIES` must be configured or the backend refuses to start, preventing certificate header injection attacks (CWE-287)
+- **Keycloak audience validation**: Audience verification is enabled by default to prevent token confusion attacks when multiple Keycloak clients share a realm
+- **PKI revocation checking**: Revocation soft-fail defaults to `false` in production, ensuring revoked certificates are properly rejected when OCSP/CRL services are available
+- **Default secret detection**: The backend validates that critical secrets (`JWT_SECRET_KEY`, `ENCRYPTION_KEY`) are not using insecure defaults before starting in production mode
+
 ## Compliance
 
 OpenTranscribe's security features support compliance with:
@@ -144,9 +203,25 @@ OpenTranscribe's security features support compliance with:
 | Standard | Controls | Features |
 |----------|----------|----------|
 | FedRAMP | IA-2 | MFA, PKI authentication |
-| FedRAMP | IA-5 | Password policies |
+| FedRAMP | IA-5 | Password policies, PBKDF2-SHA256 (600k iterations) |
 | FedRAMP | AU-2/AU-3 | Audit logging |
+| FedRAMP | SC-12 | PBKDF2 cryptographic key derivation |
+| FedRAMP | SC-13 | AES-256-GCM encryption, HS512 JWT signing |
+| FedRAMP | SC-28 | Encrypted credentials at rest |
+| FedRAMP | AC-8 | Classification banners, system use notification |
 | NIST 800-53 | AC-7 | Account lockout |
+
+### FIPS 140-3 Support
+
+For federal and high-security deployments, OpenTranscribe supports FIPS 140-3 compliant cryptographic operations:
+
+- **Password hashing**: PBKDF2-SHA256 with 600,000 iterations (NIST SP 800-132 / OWASP 2023)
+- **Data encryption**: AES-256-GCM (replacing legacy Fernet/AES-128-CBC)
+- **JWT signing**: HMAC-SHA512 (replacing legacy HS256)
+- **Token hashing**: SHA-512
+- **Migration**: Transparent auto-upgrade of legacy hashes on user login with dual-verification during transition
+
+Enable via `FIPS_VERSION=140-3` in `.env`. See the FIPS 140-3 Compliance Guide for detailed configuration.
 
 ## Quick Start
 

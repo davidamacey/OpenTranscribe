@@ -250,4 +250,4 @@ If you encounter issues:
 - **Configuration**: Customize [environment variables](../configuration/environment-variables.md)
 - **Development**: Learn to [contribute](../developer-guide/contributing.md)
 
-Welcome to OpenTranscribe! 🎉
+Welcome to OpenTranscribe!

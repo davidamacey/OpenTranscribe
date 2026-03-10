@@ -188,7 +188,7 @@ The following ports must be available:
 | Platform | NVIDIA GPU | Notes |
 |----------|------------|-------|
 | Linux | ✅ Full support | Best performance |
-| macOS | ❌ Not supported | Apple Silicon uses CPU |
+| macOS | Not supported | Apple Silicon uses CPU |
 | Windows | ✅ via WSL2 | CUDA in WSL2 required |
 
 ## Verification Commands

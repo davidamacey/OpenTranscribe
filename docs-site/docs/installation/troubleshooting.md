@@ -265,6 +265,8 @@ sudo chown -R 1000:1000 models/
 - Progress stops at specific percentage
 - No errors in logs
 
+**Understanding the 3-stage pipeline**: Transcription uses a Celery chain with three stages: CPU preprocess (0-20%) → GPU transcribe (20-80%) → CPU postprocess (80-100%). If progress stalls, identify which stage is stuck.
+
 **Solutions**:
 
 **1. Check container status**:
@@ -272,9 +274,9 @@ sudo chown -R 1000:1000 models/
 ./opentr.sh status
 ```
 
-**2. Check worker logs**:
+**2. Check worker logs** (look for TIMING entries to identify the stuck stage):
 ```bash
-./opentr.sh logs celery-worker
+./opentr.sh logs celery-worker | grep -E "TIMING|preprocess|transcribe|postprocess"
 ```
 
 **3. Restart worker**:
@@ -282,11 +284,11 @@ sudo chown -R 1000:1000 models/
 docker restart celery-worker
 ```
 
-**4. Reset failed jobs**:
+**4. Check Flower dashboard for task state**:
 ```bash
-# Access Flower dashboard
 # http://localhost:5175/flower
-# Find and revoke stuck tasks
+# Login with FLOWER_USER/FLOWER_PASSWORD from .env
+# Check queue depths and active tasks
 ```
 
 **5. Full restart**:
@@ -386,7 +388,7 @@ grep POSTGRES_ .env
 psql -U postgres -l
 ```
 
-**5. Reset database** (⚠️ deletes all data):
+**5. Reset database** (WARNING: deletes all data):
 ```bash
 ./opentr.sh reset dev
 ```
@@ -443,6 +445,8 @@ Check Postgres status:
 - `column does not exist`
 - Migration errors
 
+**Cause**: Database schema is managed exclusively by Alembic migrations (no `init_db.sql`). Migrations run automatically on backend startup, but may fail if the database is in an unexpected state.
+
 **Solution**:
 ```bash
 # For development
@@ -452,6 +456,8 @@ Check Postgres status:
 ./opentr.sh shell backend
 alembic upgrade head
 ```
+
+**Note**: Since v0.3.3, all database bootstrapping uses Alembic migrations. If upgrading from an older version, the backend startup will auto-detect the schema version and apply pending migrations.
 
 ## Network/Upload Issues
 
@@ -671,11 +677,11 @@ du -sh models/
 
 Still having issues?
 
-- 📚 **Documentation**: Review all docs in this site
-- 🐛 **GitHub Issues**: [Report bugs](https://github.com/davidamacey/OpenTranscribe/issues)
-- 💬 **Discussions**: [Ask questions](https://github.com/davidamacey/OpenTranscribe/discussions)
-- 📊 **Flower Dashboard**: http://localhost:5175/flower for task debugging
-- 📝 **Logs**: Include relevant logs when asking for help
+- **Documentation**: Review all docs in this site
+- **GitHub Issues**: [Report bugs](https://github.com/davidamacey/OpenTranscribe/issues)
+- **Discussions**: [Ask questions](https://github.com/davidamacey/OpenTranscribe/discussions)
+- **Flower Dashboard**: http://localhost:5175/flower for task debugging
+- **Logs**: Include relevant logs when asking for help
 
 ### Collecting Debug Information
 

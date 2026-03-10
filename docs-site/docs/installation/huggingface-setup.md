@@ -159,9 +159,9 @@ Success indicators:
 
 Error indicators:
 ```
-❌ "Cannot access gated repository"
-❌ "Invalid HuggingFace token"
-❌ "Model agreement not accepted"
+"Cannot access gated repository"
+"Invalid HuggingFace token"
+"Model agreement not accepted"
 ```
 
 ## Troubleshooting
@@ -231,9 +231,9 @@ Your HuggingFace token is **sensitive information**:
 - ✅ **DO**: Store in `.env` file (git-ignored)
 - ✅ **DO**: Use read-only token permissions
 - ✅ **DO**: Regenerate if compromised
-- ❌ **DON'T**: Commit to version control
-- ❌ **DON'T**: Share publicly
-- ❌ **DON'T**: Use write permissions (unnecessary)
+- **DON'T**: Commit to version control
+- **DON'T**: Share publicly
+- **DON'T**: Use write permissions (unnecessary)
 
 ### Revoking Access
 
@@ -275,7 +275,7 @@ Once models are downloaded:
 - ✅ No internet required for transcription
 - ✅ Models cached permanently
 - ✅ Works in airgapped environments
-- ❌ Initial download requires internet
+- Initial download requires internet
 
 ## Alternative: Offline Installation
 

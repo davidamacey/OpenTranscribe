@@ -33,6 +33,48 @@ Generate summaries in 12 different languages:
 
 Configure in Settings → Transcription → LLM Output Language.
 
+### Organization Context (New in v0.3.3)
+
+Inject organization-specific context into AI prompts for more relevant summaries:
+
+- Define organization context text (e.g., team names, project acronyms, domain terminology)
+- Context is automatically included in summarization and speaker identification prompts
+- Configurable per-user in Settings → AI → Organization Context
+- Toggle whether context applies to default prompts, custom prompts, or both
+
+The organization context is injected as a system-level preamble before the transcript content in all LLM calls. This allows the model to correctly resolve ambiguous references -- for example, knowing that "the Board" refers to a specific governance body, or that "Q3" means a particular fiscal quarter for your organization. The context text is stored per-user, so different teams can define their own terminology without conflicting.
+
+### Per-Collection AI Prompts (New in v0.3.3)
+
+Collections can have a default summarization prompt:
+
+- Assign a custom summary prompt to any collection
+- Files in that collection automatically use the collection's prompt when summarized
+- Useful for standardizing output format across related files (e.g., all meeting notes use the same template)
+- Configure via the collection settings or prompt management UI
+
+Prompt inheritance follows a clear priority chain: per-file custom prompt > collection default prompt > user default prompt > system default prompt. When a file belongs to multiple collections, the most recently assigned collection's prompt takes precedence.
+
+### Auto-Label (New in v0.3.3)
+
+AI-powered automatic tagging and collection assignment ([#140](https://github.com/davidamacey/OpenTranscribe/issues/140)):
+
+- After transcription, the LLM suggests topic tags based on content analysis
+- High-confidence suggestions (>= configurable threshold, default 0.75) are automatically applied as tags
+- Related files in a batch upload are grouped into collections by shared topics
+- Configurable confidence threshold for auto-application
+- Enable/disable separately for tags and collections
+- Retroactive auto-labeling available for existing files
+- Configure in Settings → AI → Auto-Label
+
+#### How the Auto-Label Pipeline Works
+
+1. **Topic extraction**: After transcription completes, the LLM analyzes the transcript and produces tag and collection suggestions with confidence scores.
+2. **Fuzzy deduplication**: Before creating new tags, the system normalizes names (lowercasing, whitespace/hyphen normalization) and runs `difflib.SequenceMatcher` (no extra dependencies) with a 0.85 similarity threshold to match against existing tags. This prevents near-duplicates like "machine-learning", "machine learning", and "Machine Learning" from coexisting.
+3. **Auto-apply**: Suggestions at or above the confidence threshold are applied automatically. Below-threshold suggestions remain available for manual review in the UI.
+4. **Batch grouping**: For bulk imports, the system tracks which files were uploaded together via an `upload_batch` table. After all files in a batch complete topic extraction, topics appearing in 2+ files trigger automatic shared collection creation.
+5. **Provenance tracking**: Every tag and collection tracks its `source` ("manual", "auto_ai", or "bulk_group") so users can distinguish AI-applied labels from human ones. The frontend displays a sparkle icon on auto-applied items with confidence tooltips.
+
 ### Speaker Identification
 
 LLM-powered speaker name suggestions based on:
@@ -136,8 +178,9 @@ OLLAMA_MODEL=llama3.2:latest
 OpenTranscribe works without LLM configuration:
 - Transcription: ✅ Full functionality
 - Speaker Diarization: ✅ Full functionality
-- AI Summarization: ❌ Requires LLM
-- Speaker Identification Suggestions: ❌ Requires LLM
+- AI Summarization: No (Requires LLM)
+- Speaker Identification Suggestions: No (Requires LLM)
+- Auto-Label: No (Requires LLM)
 
 Leave `LLM_PROVIDER` empty to disable AI features.
 

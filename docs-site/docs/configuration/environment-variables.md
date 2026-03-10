@@ -10,16 +10,6 @@ Comprehensive reference for all OpenTranscribe environment variables.
 
 Edit `.env` file in installation directory. See `.env.example` for full template.
 
-## Database
-
-```bash
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5176
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=auto_generated_on_install
-POSTGRES_DB=opentranscribe
-```
-
 ## GPU Configuration
 
 ```bash
@@ -52,6 +42,19 @@ HUGGINGFACE_TOKEN=hf_your_token_here
 
 # Warm Cache (Pre-load Models on Startup)
 WARM_CACHE_ENABLED=false
+```
+
+### Transcription Performance Options
+
+```bash
+# Whisper beam_size: lower = faster but slightly less accurate (default: 5)
+# Set to 1 for greedy decoding (~25-40% faster, ~1-2% lower WER for English)
+WHISPER_BEAM_SIZE=5
+
+# Whisper compute_type: quantization for faster inference
+# Default: auto-detected (float16 on CUDA). Options: float16, int8_float16, int8, float32
+# int8_float16 gives ~15-25% speedup with negligible quality loss
+WHISPER_COMPUTE_TYPE=float16
 ```
 
 ### Model Recommendations
@@ -144,6 +147,22 @@ NEURAL_SEARCH_BATCH_SIZE=32
 | bge-large-en-v1.5 | ~1GB | ~2GB | 8-16 |
 | BAAI/bge-large-zh-v1.5 | ~1GB | ~2GB | 8-16 |
 
+### Search Performance Tuning
+
+```bash
+# Collapse optimization: max concurrent group searches (default: 20, 0 = sequential)
+SEARCH_COLLAPSE_MAX_CONCURRENT=20
+
+# Bulk batch size: chunks per OpenSearch bulk request (default: 100)
+SEARCH_BULK_BATCH_SIZE=100
+
+# Neural ingest batch size: documents per embedding call (default: 5)
+SEARCH_NEURAL_BATCH_SIZE=5
+
+# Reindex refresh interval: flush Lucene segments every N files (default: 100)
+SEARCH_REINDEX_REFRESH_INTERVAL=100
+```
+
 ### ML Commons Plugin
 
 The OpenSearch ML Commons plugin enables vector embeddings and semantic search:
@@ -151,13 +170,94 @@ The OpenSearch ML Commons plugin enables vector embeddings and semantic search:
 - **Configuration**: Database-driven via Admin UI
 - **Fallback**: Full-text search if neural search disabled
 
+## Cloud ASR Providers
+
+Configure cloud-based speech recognition as an alternative to local GPU processing.
+
+```bash
+# ASR Provider Selection
+ASR_PROVIDER=local  # local, deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia
+
+# Deepgram
+DEEPGRAM_API_KEY=
+DEEPGRAM_MODEL=nova-3
+
+# AssemblyAI
+ASSEMBLYAI_API_KEY=
+ASSEMBLYAI_MODEL=universal
+
+# OpenAI Whisper / GPT-4o Transcribe (uses OPENAI_API_KEY)
+OPENAI_ASR_MODEL=gpt-4o-transcribe
+
+# Google Cloud Speech
+GOOGLE_CLOUD_CREDENTIALS=  # Path to service account JSON
+GOOGLE_ASR_MODEL=chirp-3
+
+# Azure Speech
+AZURE_SPEECH_KEY=
+AZURE_SPEECH_REGION=eastus
+AZURE_ASR_MODEL=whisper
+
+# Amazon Transcribe
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=us-east-1
+AWS_ASR_MODEL=standard
+AWS_TRANSCRIBE_BUCKET=  # S3 bucket for intermediate output
+
+# Speechmatics
+SPEECHMATICS_API_KEY=
+SPEECHMATICS_MODEL=standard
+
+# Gladia
+GLADIA_API_KEY=
+GLADIA_MODEL=standard
+
+# Cloud ASR Options
+CLOUD_ASR_EXTRACT_EMBEDDINGS=true  # Extract speaker embeddings locally for cross-file matching
+CLOUD_ASR_WORKER_CONCURRENCY=4     # Concurrency for cloud-asr worker
+```
+
+### Deployment Mode
+
+```bash
+DEPLOYMENT_MODE=full  # full (local GPU + optional cloud) or lite (cloud-only, no GPU, ~2GB image)
+BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest
+```
+
 ## LLM Integration
 
 ```bash
 LLM_PROVIDER=  # vllm, openai, anthropic, ollama, openrouter
-VLLM_API_URL=http://localhost:8000/v1
-OPENAI_API_KEY=sk-xxxxx
-ANTHROPIC_API_KEY=sk-ant-xxxxx
+VLLM_BASE_URL=http://localhost:8012/v1
+VLLM_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
+VLLM_API_KEY=
+OPENAI_API_KEY=
+OPENAI_MODEL_NAME=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL_NAME=claude-3-haiku-20240307
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL_NAME=llama2:7b-chat
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL_NAME=anthropic/claude-3-haiku
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+```
+
+## GPU Concurrent Processing
+
+```bash
+# GPU Concurrent Model Sharing (multiple Celery threads share one model copy)
+GPU_CONCURRENT_REQUESTS=1  # auto calculates from VRAM: (total - 9GB) / 2GB, max 4
+GPU_WORKER_POOL=prefork    # Set to "threads" when GPU_CONCURRENT_REQUESTS > 1
+
+# GPU Worker Max Tasks (restart after N tasks for memory safety)
+GPU_MAX_TASKS=100000       # Default: effectively never restart
+GPU_DEFAULT_BATCH_SIZE=12  # Batch size for default GPU worker (auto-detected if unset)
+
+# VRAM Profiling (temporary diagnostic tool)
+ENABLE_VRAM_PROFILING=false  # Captures per-step GPU memory usage and timing data
 ```
 
 ## Multi-GPU Scaling
@@ -166,7 +266,59 @@ ANTHROPIC_API_KEY=sk-ant-xxxxx
 GPU_SCALE_ENABLED=false
 GPU_SCALE_DEVICE_ID=2
 GPU_SCALE_WORKERS=4
+GPU_SCALE_DEFAULT_WORKER=1   # Scale default worker (0 to disable)
+GPU_SCALE_MAX_TASKS=500       # Restart scaled worker after N tasks (memory safety)
 ```
+
+## Worker Concurrency Tuning
+
+```bash
+# Download worker: parallel video/URL downloads
+DOWNLOAD_CONCURRENCY=3   # Default: 3
+DOWNLOAD_MAX_TASKS=10     # Restart after N tasks
+
+# NLP worker: LLM summarization, speaker ID
+NLP_CONCURRENCY=4         # Default: 4
+NLP_MAX_TASKS=50           # Restart after N tasks
+
+# Cloud ASR worker
+CLOUD_ASR_WORKER_CONCURRENCY=4
+```
+
+## Flower Monitoring Dashboard
+
+```bash
+FLOWER_USER=admin
+FLOWER_PASSWORD=auto_generated_on_install
+FLOWER_URL_PREFIX=flower  # URL prefix (must match nginx proxy_pass path)
+```
+
+Flower provides industry-standard Celery task monitoring with persistent task history, queue visibility, and worker status. Access at `http://localhost:5175/flower` (or via NGINX at `/flower/`).
+
+## Storage Encryption
+
+```bash
+# MinIO Server-Side Encryption at Rest (AES-256-GCM)
+# Generate with: echo "opentranscribe-key:$(openssl rand -base64 32)"
+MINIO_KMS_SECRET_KEY=auto_generated_on_install
+MINIO_KMS_AUTO_ENCRYPTION=on  # Set to 'on' to enable
+
+# API Key Encryption (for LLM keys stored in database)
+ENCRYPTION_KEY=auto_generated_on_install  # NEVER change after first use
+```
+
+## Database
+
+```bash
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5176
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=auto_generated_on_install
+POSTGRES_DB=opentranscribe
+POSTGRES_SSLMODE=prefer  # disable/allow/prefer/require/verify-ca/verify-full
+```
+
+Database initialization is handled entirely by Alembic migrations on backend startup. No external SQL init file is needed.
 
 ## Ports
 
@@ -179,6 +331,7 @@ REDIS_PORT=5177
 MINIO_PORT=5178
 MINIO_CONSOLE_PORT=5179
 OPENSEARCH_PORT=5180
+OPENSEARCH_ADMIN_PORT=5181
 ```
 
 ## HTTPS/SSL Configuration
@@ -202,6 +355,34 @@ NGINX_CERT_KEY=./nginx/ssl/server.key
 
 See [NGINX Setup Guide](/docs/configuration/nginx-setup) for full documentation.
 
+## Content Security Policy
+
+OpenTranscribe's production NGINX configuration includes a Content Security Policy header to mitigate cross-site scripting (XSS) and other injection attacks ([#124](https://github.com/davidamacey/OpenTranscribe/issues/124)). The CSP restricts script sources, style sources, connection targets, and frame ancestors. Key directives include:
+
+- `default-src 'self'` -- baseline restriction to same-origin resources
+- `script-src 'self' 'unsafe-inline'` -- inline scripts required by Svelte hydration (nonce-based CSP is a planned improvement)
+- `connect-src 'self' ws: wss:` -- allows WebSocket connections for real-time updates
+- `frame-ancestors 'self'` -- prevents clickjacking
+- `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` -- defense-in-depth directives
+
+CSP is enforced in production via `frontend/nginx.conf`. Development mode (Vite dev server) does not apply CSP headers.
+
+## File Retention
+
+OpenTranscribe does not currently enforce automatic file deletion, but this is a planned feature ([#134](https://github.com/davidamacey/OpenTranscribe/issues/134)). The design calls for an admin-configurable retention period (e.g., delete files older than N days) to support GDPR compliance and storage management in environments with sensitive information. When implemented, this will be an admin-only setting with audit logging of all deletions.
+
+## URL Download Quality Settings
+
+URL downloads (YouTube, TikTok, and 1800+ platforms via yt-dlp) support configurable quality settings ([#122](https://github.com/davidamacey/OpenTranscribe/issues/122)):
+
+```bash
+# These are user-level settings stored in the database, configurable via Settings UI.
+# Per-download overrides are also available in the URL upload tab.
+# Default: "best" for both video and audio (current behavior).
+```
+
+Quality options include video resolution selection (best, 4K, 1440p, 1080p, 720p, 480p, 360p), audio-only mode for podcasts, and audio bitrate selection. The yt-dlp format string builder uses a fallback chain: if the requested quality is unavailable, it automatically downloads the next best option. This is designed for bandwidth-conscious users and storage optimization.
+
 ## Authentication Configuration
 
 OpenTranscribe uses a **database-driven authentication system** with support for multiple simultaneous auth methods (hybrid authentication). See [Authentication Overview](../authentication/overview.md) for detailed configuration.
@@ -213,7 +394,7 @@ Authentication is configured via **Super Admin UI** (Settings → Authentication
 | Configuration Level | Source | Priority | Notes |
 |-------------------|--------|----------|-------|
 | Primary | Database (`auth_config` table) | ✅ Primary | Set via Super Admin UI |
-| Legacy/Override | Environment variables | ⚠️ Secondary | ENV vars override DB for legacy support |
+| Legacy/Override | Environment variables | Secondary | ENV vars override DB for legacy support |
 
 ### Multi-Method Authentication
 

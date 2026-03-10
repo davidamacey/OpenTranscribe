@@ -45,10 +45,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/ai-summarization',
         'user-guide/search-and-filters',
         'user-guide/collections',
-        // TODO: Add more user guide pages
-        // 'user-guide/recording-audio',
-        // 'user-guide/managing-transcriptions',
-        // 'user-guide/export-options',
+        'user-guide/admin-panel',
       ],
     },
     {
@@ -59,10 +56,7 @@ const sidebars: SidebarsConfig = {
         'features/speaker-diarization',
         'features/llm-integration',
         'features/authentication',
-        // TODO: Add more feature pages
-        // 'features/search',
-        // 'features/analytics',
-        // 'features/pwa',
+        'features/pipeline-optimization',
       ],
     },
     {
@@ -79,9 +73,23 @@ const sidebars: SidebarsConfig = {
       items: [
         'configuration/environment-variables',
         'configuration/multi-gpu-scaling',
-        // TODO: Add more configuration pages
-        // 'configuration/llm-providers',
-        // 'configuration/security',
+        'configuration/nginx-setup',
+        'configuration/neural-search-setup',
+        'configuration/embedding-migration',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Operations',
+      items: [
+        'operations/production-deployment',
+        'operations/backup-restore',
+        'operations/upgrading',
+        'operations/monitoring',
+        'operations/performance-tuning',
+        'operations/prompt-engineering',
+        'operations/security-hardening',
+        'operations/runbooks',
       ],
     },
     {
@@ -90,25 +98,9 @@ const sidebars: SidebarsConfig = {
       items: [
         'developer-guide/architecture',
         'developer-guide/contributing',
-        // TODO: Add more developer pages
-        // 'developer-guide/backend-development',
-        // 'developer-guide/frontend-development',
-        // 'developer-guide/testing',
-        // 'developer-guide/code-style',
+        'developer-guide/testing',
       ],
     },
-    // TODO: Add Deployment section
-    // {
-    //   type: 'category',
-    //   label: 'Deployment',
-    //   items: [
-    //     'deployment/production',
-    //     'deployment/docker-build',
-    //     'deployment/reverse-proxy',
-    //     'deployment/monitoring',
-    //     'deployment/backup-restore',
-    //   ],
-    // },
     'faq',
   ],
 

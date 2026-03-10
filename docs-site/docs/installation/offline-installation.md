@@ -13,8 +13,8 @@ In offline mode, OpenTranscribe operates without any internet connectivity:
 - ✅ Speaker diarization works offline
 - ✅ All AI models cached locally
 - ✅ No external API calls
-- ❌ YouTube downloads disabled (requires internet)
-- ❌ Cloud LLM providers disabled (use local LLM instead)
+- Not supported: YouTube downloads (requires internet)
+- Not supported: Cloud LLM providers (use local LLM instead)
 
 ## Prerequisites
 
@@ -211,9 +211,9 @@ docker compose logs | grep -i "connect\|download"
 
 ## Limitations
 
-- ❌ Cannot download YouTube videos
-- ❌ Cannot use cloud LLM providers (OpenAI, Claude, etc.)
-- ❌ Cannot auto-update models
+- Cannot download YouTube videos
+- Cannot use cloud LLM providers (OpenAI, Claude, etc.)
+- Cannot auto-update models
 - ✅ All transcription features work
 - ✅ Speaker diarization works
 - ✅ Local LLM works (if configured)

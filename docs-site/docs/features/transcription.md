@@ -4,16 +4,16 @@ sidebar_position: 1
 
 # Transcription Engine
 
-OpenTranscribe uses WhisperX with the faster-whisper backend for state-of-the-art speech recognition.
+OpenTranscribe uses WhisperX 3.8.1 with the faster-whisper backend for state-of-the-art speech recognition. The transcription pipeline uses a 3-stage architecture that separates CPU and GPU work for maximum throughput, and supports both local Whisper models and cloud ASR providers.
 
 ## WhisperX Technology
 
 **WhisperX** combines multiple AI models for superior transcription:
 
 - **Whisper**: OpenAI's robust speech recognition model
-- **Faster-Whisper**: Optimized inference engine (4-8x faster)
-- **WAV2VEC2**: Word-level timestamp alignment
-- **Voice Activity Detection**: Precise speech detection
+- **Faster-Whisper**: Optimized inference engine (4-8x faster) with BatchedInferencePipeline
+- **Native Word Timestamps**: Cross-attention DTW for word-level timing (no separate alignment model needed)
+- **Voice Activity Detection**: Silero VAD for precise speech detection
 
 ## Performance
 
@@ -84,9 +84,8 @@ OpenTranscribe supports transcription in over 100 languages, including:
    - Useful when you need English output from foreign audio
 
 3. **Word-Level Timestamp Support**:
-   - ~42 languages have full word-level alignment
-   - Languages without alignment fall back to segment-level timestamps
-   - UI shows alignment support indicator for each language
+   - All 100+ languages now support native word-level timestamps via faster-whisper cross-attention DTW (as of WhisperX 3.8.1)
+   - No separate alignment model (WAV2VEC2) required — timestamps are generated during transcription
 
 **Language Settings Location**: Settings → Transcription → Language Settings
 
@@ -108,6 +107,27 @@ Every word gets precise timing:
 - Precise speaker segment boundaries
 - Accurate subtitle generation
 - Time-stamped comments
+
+### Cross-Attention DTW vs. WAV2VEC2 Forced Alignment
+
+OpenTranscribe uses **cross-attention Dynamic Time Warping (DTW)** for word timestamps instead of the WAV2VEC2 forced alignment approach used by older versions of WhisperX. This was a deliberate architectural decision:
+
+**Why cross-attention DTW is better for this use case:**
+
+| Factor | Cross-Attention DTW | WAV2VEC2 Alignment |
+|--------|--------------------|--------------------|
+| Language coverage | All 100+ Whisper languages | ~42 languages only |
+| Extra model required | No (uses Whisper's own attention) | Yes (~300MB per language) |
+| Processing time (3hr file) | Included in transcription | +389 seconds (55% of total) |
+| Speaker assignment accuracy | 95.2% | ~96% |
+
+The key insight is that speaker diarization segments are typically 2-30 seconds long. A word timestamp that is off by 200ms still falls within the correct multi-second diarization segment in >95% of cases. The WhisperX paper (arXiv:2303.00747) measured 78.9% vs 84.1% precision at a **200ms tolerance** -- a gap that matters for subtitle authoring but not for speaker assignment.
+
+**Timestamp drift mitigation**: The WhisperX paper identified cumulative timestamp drift as a critical problem with vanilla Whisper's sequential 30-second window processing. OpenTranscribe eliminates this entirely by using Silero VAD to pre-segment audio into independent chunks processed in parallel via `BatchedInferencePipeline`. Each segment starts fresh with no dependency on previous segments, converting cumulative O(n) drift into independent O(1) per-segment noise.
+
+**Post-processing pipeline**: Without WAV2VEC2 alignment, raw Whisper segments need additional cleanup. OpenTranscribe applies four post-processing stages: (1) word timestamp validation (monotonicity enforcement, duration caps, low-confidence interpolation for words with probability &lt; 0.3), (2) NLTK sentence splitting to break coarse VAD chunks into sentence-level segments, (3) vectorized segment deduplication (&lt;0.2s for 3000+ segments), and (4) timestamp clamping to eliminate 50-220ms overlaps between adjacent segments.
+
+**Benchmark results** (3.3-hour test file on RTX A6000): The native pipeline completes in 332 seconds vs 706 seconds with WAV2VEC2 alignment -- a 2.1x speedup with only ~1% reduction in speaker assignment accuracy.
 
 ## Audio Processing
 
@@ -145,14 +165,126 @@ While `large-v3-turbo` is recommended for most users, other models are available
 
 ## Technical Details
 
-### Processing Pipeline
+### 3-Stage Processing Pipeline (New in v0.3.3)
 
-1. **Audio Extraction**: Extract audio from video files
-2. **Preprocessing**: Normalize, resample to 16kHz
-3. **Voice Activity Detection**: Identify speech segments
-4. **Transcription**: Generate text with timestamps
-5. **Alignment**: Refine word-level timing with WAV2VEC2
-6. **Post-processing**: Format and index results
+OpenTranscribe uses a 3-stage Celery chain architecture that separates CPU-bound and GPU-bound work for maximum hardware utilization:
+
+```mermaid
+flowchart LR
+    Upload([File Upload]) --> S1
+
+    subgraph S1["Stage 1: Preprocess (CPU Queue)"]
+        direction TB
+        S1a[Download from MinIO] --> S1b[Extract audio via FFmpeg]
+        S1b --> S1c[Normalize to WAV]
+        S1c --> S1d[Upload to temp storage]
+    end
+
+    S1 -->|Celery chain| S2
+
+    subgraph S2["Stage 2: Transcribe + Diarize (GPU Queue)"]
+        direction TB
+        S2a[Silero VAD] --> S2b[WhisperX batch transcription]
+        S2b --> S2c[PyAnnote speaker diarization]
+        S2c --> S2d[Segment dedup & speaker assignment]
+        S2d --> S2e[Save segments to DB]
+    end
+
+    S2 -->|Celery chain| S3
+
+    subgraph S3["Stage 3: Postprocess (CPU Queue)"]
+        direction TB
+        S3a[Speaker embedding processing] --> S3b[OpenSearch indexing]
+        S3b --> S3c[Dispatch downstream tasks]
+        S3c --> S3d[Temp file cleanup]
+        S3d --> S3e[WebSocket notification]
+    end
+
+    S3 --> Done([Complete])
+```
+
+**Stage 1 — Preprocess (CPU queue)**:
+1. Download media from storage
+2. Extract audio from video (FFmpeg with presigned URL streaming)
+3. Normalize and convert to WAV
+4. Upload preprocessed audio to temp storage for GPU worker
+
+**Stage 2 — Transcribe + Diarize (GPU queue)**:
+1. Voice Activity Detection (Silero VAD)
+2. Batched transcription with native word-level timestamps (cross-attention DTW)
+3. Speaker diarization with PyAnnote v4
+4. Segment deduplication and speaker assignment
+5. Save segments to database
+
+**Stage 3 — Postprocess (CPU queue)**:
+1. Speaker embedding processing and cross-video matching
+2. OpenSearch indexing (full-text + chunk-level)
+3. Downstream task dispatch (summarization, speaker attributes, clustering)
+4. Temp file cleanup
+
+**Batch Processing Benefits**:
+While the GPU processes file N, the CPU queue preprocesses file N+1 in parallel, ensuring the GPU always has work ready with zero idle time.
+
+```
+File 1:  [CPU preprocess] → [GPU transcribe+diarize] → [CPU postprocess]
+File 2:       [CPU preprocess] → [GPU transcribe+diarize] → ...
+File 3:            [CPU preprocess] → ...
+```
+
+#### Why a 3-Stage Chain?
+
+The 3-stage architecture was designed to solve several concrete problems with the previous monolithic task approach:
+
+1. **CPU/GPU separation for throughput**: Audio extraction (FFmpeg) and search indexing are CPU-bound work that previously blocked the GPU worker. By moving these to separate Celery queues, the GPU processes transcription continuously without idle gaps. For batch imports of hundreds of files, this overlap eliminates the ~15-30 seconds of CPU work per file that previously left the GPU idle.
+
+2. **Fault isolation**: Each stage can fail independently without losing completed work. If OpenSearch indexing fails in Stage 3, the transcript and diarization from Stage 2 are already saved to the database. Only the failed stage needs to be retried.
+
+3. **Selective reprocessing** ([#143](https://github.com/davidamacey/OpenTranscribe/issues/143)): The stage separation enables re-running individual pipeline stages without repeating the full pipeline. Users can re-index search without re-transcribing, or regenerate an AI summary without touching the transcript. This avoids wasting GPU time re-transcribing a 2-hour file just to update its summary.
+
+4. **Retry granularity**: Celery retries apply per-stage. A transient GPU OOM error during transcription retries only Stage 2, not the entire pipeline. Postprocess tasks (search indexing, embedding extraction) have their own retry policies tuned for their failure modes.
+
+### Cloud ASR Providers (New in v0.3.3)
+
+```mermaid
+flowchart TD
+    NewFile([New File Uploaded]) --> CheckMode{Check ASR\nProvider Config}
+
+    CheckMode -->|Local Whisper| GPU["GPU Worker Queue"]
+    CheckMode -->|Cloud Provider| Cloud["Cloud ASR Worker Queue"]
+
+    GPU --> LocalWhisper[WhisperX Transcription]
+    LocalWhisper --> LocalDiarize[PyAnnote Diarization]
+    LocalDiarize --> Segments[(Transcript Segments)]
+
+    Cloud --> ProviderAPI{Cloud Provider}
+    ProviderAPI --> Deepgram[Deepgram]
+    ProviderAPI --> AssemblyAI[AssemblyAI]
+    ProviderAPI --> OpenAIAPI[OpenAI Whisper API]
+    ProviderAPI --> Others[Google / AWS / Azure / ...]
+
+    Deepgram & AssemblyAI & OpenAIAPI & Others --> CloudResult[Cloud Transcript]
+    CloudResult --> LocalEmbed[Local Speaker Embedding\nExtraction via CPU]
+    LocalEmbed --> Segments
+
+    Segments --> Postprocess[Postprocess Stage\nSearch indexing, analytics]
+```
+
+In addition to local Whisper models, OpenTranscribe supports cloud ASR providers for API-lite deployments that don't require a GPU ([#150](https://github.com/davidamacey/OpenTranscribe/issues/150)):
+
+| Provider | Diarization | Translation | Notes |
+|----------|-------------|-------------|-------|
+| **Deepgram** | Yes | Yes | High accuracy, fast |
+| **AssemblyAI** | Yes | No | Strong diarization |
+| **OpenAI Whisper API** | No | Yes | Cloud version of Whisper |
+| **Google Speech-to-Text** | Yes | No | Enterprise-grade |
+| **AWS Transcribe** | Yes | No | AWS ecosystem |
+| **Azure Speech** | Yes | Yes | Microsoft ecosystem |
+| **Speechmatics** | Yes | Yes | Enterprise accuracy |
+| **Gladia** | Yes | Yes | European provider |
+
+**Configuration**: Set the ASR provider per-user in Settings, or via environment variables. The pipeline automatically routes transcription tasks to the appropriate queue (`gpu` for local, `cloud-asr` for cloud providers).
+
+**API-Lite Mode**: Cloud providers require no GPU — the backend runs on CPU-only hardware while offloading transcription to cloud APIs. The API-Lite Docker image is ~2 GB vs 8.9 GB for the full image, making it practical for organizations without GPU hardware. Cloud-transcribed files still get local speaker embedding extraction (CPU-friendly WeSpeaker model) so cross-file speaker matching works identically across local and cloud-transcribed files.
 
 ### Supported Formats
 
@@ -217,10 +349,25 @@ Enable this feature for cleaner transcripts, especially with noisy audio or musi
 
 ### Custom Vocabulary
 
-- Technical terms recognized
-- Industry-specific jargon
-- Proper nouns and acronyms
-- Context-aware recognition
+Improve transcription accuracy for domain-specific terminology by adding custom vocabulary terms. These are used as hotwords for faster-whisper (local transcription) and keyword boosting for cloud ASR providers that support it (Deepgram, AssemblyAI, Speechmatics).
+
+**Supported Domains**: medical, legal, corporate, government, technical, general
+
+**Managing Vocabulary** (Settings > Custom Vocabulary):
+
+- **Add terms** one at a time with a domain and optional category
+- **Bulk import** up to 1,000 terms at once via JSON
+- **Export** your vocabulary as a JSON file for backup or sharing
+- **Activate/deactivate** individual terms without deleting them
+- **System terms** are shared read-only entries visible to all users; user terms are private
+
+**Example use cases**:
+- Medical: drug names, procedures, anatomical terms
+- Legal: case citations, legal Latin phrases, statute numbers
+- Corporate: product names, internal project codenames, acronyms
+- Technical: API names, programming terms, hardware model numbers
+
+**Per-user scope**: Each user manages their own vocabulary. Terms are applied automatically during transcription when the corresponding domain is active
 
 ### Punctuation & Formatting
 
