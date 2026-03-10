@@ -1,0 +1,43 @@
+--- speaker_diarization.py.orig	2026-03-10 03:04:08.005032313 -0400
++++ speaker_diarization.py.patched	2026-03-10 03:04:50.917716457 -0400
+@@ -208,7 +208,7 @@
+             "subfolder": "plda",
+         },
+         clustering: str = "VBxClustering",
+-        embedding_batch_size: int = 1,
++        embedding_batch_size: int = 32,
+         segmentation_batch_size: int = 1,
+         der_variant: Optional[dict] = None,
+         token: Union[Text, None] = None,
+@@ -628,6 +628,15 @@
+
+             return output
+
++
++        # Release cached GPU memory between diarization sub-stages
++        # to reduce peak VRAM usage. The segmentation phase allocates/frees
++        # memory for sliding window batches; the caching allocator holds
++        # freed blocks until explicitly released.
++        import torch
++        if torch.cuda.is_available():
++            torch.cuda.empty_cache()
++
+         embeddings = self.get_embeddings(
+             file,
+             binarized_segmentations,
+@@ -637,6 +646,15 @@
+         hook("embeddings", embeddings)
+         #   shape: (num_chunks, local_num_speakers, dimension)
+
++
++        # Release cached GPU memory between diarization sub-stages
++        # to reduce peak VRAM usage. The segmentation phase allocates/frees
++        # memory for sliding window batches; the caching allocator holds
++        # freed blocks until explicitly released.
++        import torch
++        if torch.cuda.is_available():
++            torch.cuda.empty_cache()
++
+         hard_clusters, _, centroids = self.clustering(
+             embeddings=embeddings,
+             segmentations=binarized_segmentations,
