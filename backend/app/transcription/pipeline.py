@@ -26,6 +26,7 @@ class TranscriptionPipeline:
         self,
         audio_file_path: str,
         progress_callback: Callable[[float, str], None] | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Full pipeline: audio -> transcribed, diarized, speaker-assigned segments.
 
@@ -34,6 +35,7 @@ class TranscriptionPipeline:
             progress_callback: Optional callback(progress: float, message: str)
                 for reporting progress. Progress values match the existing
                 WhisperX pipeline range (0.42 -> 0.70).
+            task_id: Optional Celery task ID for VRAM profile storage.
 
         Returns:
             Dict with keys:
@@ -48,6 +50,8 @@ class TranscriptionPipeline:
         pipeline_start = time.perf_counter()
         profiler = VRAMProfiler()
         hw = detect_hardware()
+
+        profiler.snapshot("pipeline_start")
 
         # Steps 1+2: Load audio and ensure model is warm in parallel
         self._report(progress_callback, 0.42, "Loading audio")
@@ -67,12 +71,20 @@ class TranscriptionPipeline:
         # Start audio loading in background while ensuring model is warm
         audio_thread = threading.Thread(target=_load_audio, name="audio-load", daemon=True)
         audio_thread.start()
-        transcriber = self.manager.get_transcriber(self.config)
+
+        # Wait for VRAM before loading transcriber (concurrent mode)
+        if self.config.concurrent_requests > 1:
+            self._wait_for_vram(1500, "transcriber_load")
+
+        with profiler.step("model_load_transcriber"):
+            transcriber = self.manager.get_transcriber(self.config)
         audio_thread.join()
 
         if audio_error[0]:
             raise audio_error[0]
         audio = audio_result[0]
+
+        profiler.snapshot("after_transcriber_loaded")
 
         # Transcribe
         self._report(progress_callback, 0.43, "Running AI transcription")
@@ -91,7 +103,14 @@ class TranscriptionPipeline:
         self._report(progress_callback, 0.52, "Preparing speaker analysis")
         hw.log_vram_usage("after transcription, before diarizer load")
         total_vram_mb = self._get_total_vram_mb()
-        if total_vram_mb >= 16_000:
+
+        # In concurrent mode, keep both models hot to avoid reload overhead
+        if self.config.concurrent_requests > 1:
+            logger.info(
+                "Concurrent mode (concurrent_requests=%d): keeping transcriber loaded",
+                self.config.concurrent_requests,
+            )
+        elif total_vram_mb >= 16_000:
             # Enough VRAM: keep transcriber warm for next task (saves ~4.7s)
             logger.info(
                 "Keeping transcriber loaded (%dMB VRAM total, both models fit)",
@@ -102,6 +121,10 @@ class TranscriptionPipeline:
             self.manager.release_transcriber()
             hw.log_vram_usage("after transcriber release")
 
+        # Wait for VRAM before diarization (concurrent mode)
+        if self.config.concurrent_requests > 1:
+            self._wait_for_vram(2000, "diarization")
+
         # Step 4: Diarize with PyAnnote v4
         self._report(progress_callback, 0.55, "Analyzing speaker patterns")
         step_start = time.perf_counter()
@@ -111,6 +134,8 @@ class TranscriptionPipeline:
         logger.info(
             f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
         )
+
+        profiler.snapshot("after_diarization")
 
         # Save raw GPU outputs for offline post-processing iteration
         self._save_intermediate(transcript, diarize_df, overlap_info, native_embeddings)
@@ -154,11 +179,17 @@ class TranscriptionPipeline:
 
         # Cleanup
         hw.log_vram_usage("before final pipeline cleanup")
+        audio_duration = len(audio) / 16000 if audio is not None else 0.0
+        num_speakers = diarize_df["speaker"].nunique() if not diarize_df.empty else 0
         del diarize_df, audio
         hw.optimize_memory_usage()
         hw.log_vram_usage("after final pipeline cleanup")
 
         profiler.log_report()
+
+        # Save profile to Redis for admin endpoint
+        if task_id:
+            profiler.save_to_redis(task_id, audio_duration, num_speakers)
 
         elapsed = time.perf_counter() - pipeline_start
         logger.info(
@@ -168,6 +199,43 @@ class TranscriptionPipeline:
         )
 
         return result
+
+    @staticmethod
+    def _wait_for_vram(min_free_mb: int, stage: str, timeout: int = 120) -> None:
+        """Block until device has enough free VRAM for the next stage.
+
+        Used in concurrent mode to prevent OOM when multiple tasks run on
+        the same GPU. Polls torch.cuda.mem_get_info() every 2 seconds.
+
+        Args:
+            min_free_mb: Minimum free device memory in MB to proceed.
+            stage: Label for logging (e.g., "diarization").
+            timeout: Maximum seconds to wait before proceeding anyway.
+        """
+        try:
+            import torch
+
+            if not torch.cuda.is_available():
+                return
+
+            deadline = time.perf_counter() + timeout
+            while time.perf_counter() < deadline:
+                free_mb = torch.cuda.mem_get_info(0)[0] / (1024**2)
+                if free_mb >= min_free_mb:
+                    return
+                logger.info(
+                    f"VRAM gate [{stage}]: {free_mb:.0f}MB free < {min_free_mb}MB required, "
+                    f"waiting..."
+                )
+                time.sleep(2)
+
+            free_mb = torch.cuda.mem_get_info(0)[0] / (1024**2)
+            logger.warning(
+                f"VRAM gate [{stage}]: timeout after {timeout}s, proceeding with "
+                f"{free_mb:.0f}MB free (needed {min_free_mb}MB)"
+            )
+        except Exception as e:
+            logger.debug(f"VRAM gate check skipped: {e}")
 
     @staticmethod
     def _save_intermediate(

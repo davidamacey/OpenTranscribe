@@ -1,8 +1,8 @@
 """Warm model caching for batch processing.
 
 Keeps transcription and diarization models loaded between Celery tasks
-to avoid repeated model loading overhead. Celery GPU worker has concurrency=1
-so only one task runs at a time — safe for singleton model state.
+to avoid repeated model loading overhead. Supports both sequential
+(concurrency=1) and concurrent (--pool=threads) modes.
 
 Pattern matches speaker_embedding_service.py::get_cached_embedding_service().
 """
@@ -24,6 +24,10 @@ class ModelManager:
     Singleton that persists models between tasks in the same worker process.
     When config changes (e.g., different model), the old model is released
     and a new one loaded.
+
+    In concurrent mode (concurrent_requests > 1), both models are kept
+    loaded permanently to avoid reload overhead when multiple threads
+    share the same GPU weights.
     """
 
     _instance: ClassVar["ModelManager | None"] = None
@@ -33,7 +37,7 @@ class ModelManager:
         self._diarizer: SpeakerDiarizer | None = None
         self._transcriber_hash: str | None = None
         self._diarizer_hash: str | None = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     @classmethod
     def get_instance(cls) -> "ModelManager":
@@ -82,11 +86,22 @@ class ModelManager:
             self._diarizer_hash = config_hash
             return diarizer
 
+    def ensure_models_loaded(self, config: TranscriptionConfig) -> None:
+        """Preload both models for concurrent mode.
+
+        Called during worker_process_init to have models ready before
+        any tasks arrive. Both models stay resident for the worker lifetime.
+        """
+        logger.info("Preloading models for concurrent GPU worker...")
+        self.get_transcriber(config)
+        self.get_diarizer(config)
+        logger.info("Both models preloaded and ready")
+
     def release_transcriber(self) -> None:
         """Free transcriber VRAM for sequential mode.
 
         In sequential mode, transcriber is released before loading diarizer
-        to minimize peak VRAM usage.
+        to minimize peak VRAM usage. Skipped in concurrent mode.
         """
         with self._lock:
             if self._transcriber is not None:

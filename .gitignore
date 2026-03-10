@@ -267,3 +267,4 @@ scripts/pki/test-certs/
 
 # Claude Code worktrees
 .claude/worktrees/
+test-results/

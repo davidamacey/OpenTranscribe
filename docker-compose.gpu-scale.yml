@@ -43,8 +43,8 @@ services:
     command: >
       celery -A app.core.celery worker
       -Q gpu
+      --pool=${GPU_SCALE_POOL:-threads}
       --concurrency=${GPU_SCALE_WORKERS:-4}
-      --prefetch-multiplier=${GPU_SCALE_WORKERS:-4}
       --max-tasks-per-child=${GPU_SCALE_MAX_TASKS:-500}
       -n gpu-scaled@%h
       -E
@@ -55,6 +55,8 @@ services:
       # Setting this to the host device ID (e.g., 2) would fail because the container
       # only sees one GPU at index 0.
       - CUDA_VISIBLE_DEVICES=0
+      # Tell TranscriptionConfig how many concurrent tasks share GPU weights
+      - GPU_CONCURRENT_REQUESTS=${GPU_SCALE_WORKERS:-4}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-scaled@$$HOSTNAME"]
       interval: 30s

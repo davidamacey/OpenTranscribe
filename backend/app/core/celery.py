@@ -30,6 +30,7 @@ from celery import Celery  # noqa: E402
 from celery.schedules import crontab  # noqa: E402
 from celery.signals import task_postrun  # noqa: E402
 from celery.signals import worker_process_init  # noqa: E402
+from celery.signals import worker_ready  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 
@@ -230,6 +231,30 @@ def init_worker_process(**kwargs):
     from app.db.base import engine
 
     engine.dispose()
+
+
+@worker_ready.connect
+def preload_gpu_models(**kwargs):
+    """Preload GPU models for concurrent thread pool workers.
+
+    worker_ready fires for all pool types (including threads) after the
+    worker is fully initialized, unlike worker_process_init which only
+    fires for prefork child processes.
+    """
+    try:
+        from app.transcription.config import TranscriptionConfig
+
+        config = TranscriptionConfig.from_environment()
+        if config.concurrent_requests > 1 and config.device == "cuda":
+            from app.transcription.model_manager import ModelManager
+
+            ModelManager.get_instance().ensure_models_loaded(config)
+            logger.info(
+                "GPU models preloaded for concurrent mode "
+                f"(concurrent_requests={config.concurrent_requests})"
+            )
+    except Exception as e:
+        logger.debug(f"Model preloading skipped (not a GPU worker or error): {e}")
 
 
 @task_postrun.connect

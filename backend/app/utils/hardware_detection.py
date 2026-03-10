@@ -218,10 +218,19 @@ class HardwareConfig:
                 total = torch.cuda.get_device_properties(0).total_memory / (1024**2)
                 free = total - allocated
 
+                # NVML device-level memory (captures CTranslate2, CUDA contexts, etc.)
+                from app.utils.nvml_monitor import get_gpu_memory
+
+                nvml = get_gpu_memory()
+                device_used_mb = nvml.used_mb if nvml else allocated
+                device_free_mb = nvml.free_mb if nvml else free
+
                 return {
                     "allocated_mb": round(allocated, 2),
                     "reserved_mb": round(reserved, 2),
                     "free_mb": round(free, 2),
+                    "device_used_mb": round(device_used_mb, 2),
+                    "device_free_mb": round(device_free_mb, 2),
                     "total_mb": round(total, 2),
                     "usage_percent": round((allocated / total) * 100, 2),
                 }
@@ -252,13 +261,15 @@ class HardwareConfig:
             )
             return
 
+        device_used = vram.get("device_used_mb")
+        device_str = f", device={device_used:.0f}MB used" if device_used is not None else ""
         logger.info(
             f"VRAM Usage [{context}]: "
-            f"{vram['allocated_mb']:.0f}MB allocated, "
+            f"pytorch={vram['allocated_mb']:.0f}MB alloc, "
             f"{vram['reserved_mb']:.0f}MB reserved / "
             f"{vram['total_mb']:.0f}MB total "
-            f"({vram['usage_percent']:.1f}% allocated, "
-            f"{vram['reserved_mb'] / vram['total_mb'] * 100:.1f}% reserved)"
+            f"({vram['usage_percent']:.1f}%"
+            f"{device_str})"
         )
 
     def reset_peak_stats(self) -> None:
@@ -319,8 +330,9 @@ class HardwareConfig:
 
                 if aggressive:
                     # Force PyTorch to release unused cached memory back to CUDA
-                    # This is more aggressive than empty_cache() alone
-                    torch.cuda.reset_peak_memory_stats()
+                    # Note: Do NOT call reset_peak_memory_stats() here — it corrupts
+                    # profiler measurements when optimize_memory_usage() is called
+                    # between pipeline stages.
                     torch.cuda.empty_cache()
 
         except Exception as e:

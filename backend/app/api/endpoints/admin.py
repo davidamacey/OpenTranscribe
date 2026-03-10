@@ -1712,6 +1712,39 @@ async def start_embedding_consistency_repair(
     return {"status": "started", "task_id": str(result.id)}
 
 
+# ---------------------------------------------------------------------------
+# GPU VRAM Profiling Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/gpu-profiles")
+async def get_gpu_profiles(
+    current_user: User = Depends(get_current_admin_user),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[dict]:
+    """Return recent GPU VRAM profiles from Redis."""
+    import json
+
+    from app.core.redis import get_redis
+
+    try:
+        r = get_redis()
+        task_ids = r.lrange("gpu:profile:history", 0, limit - 1)
+        if not task_ids:
+            return []
+
+        profiles = []
+        for tid in task_ids:
+            tid_str = tid if isinstance(tid, str) else tid.decode()
+            data = r.get(f"gpu:profile:{tid_str}")
+            if data:
+                raw = data if isinstance(data, str) else data.decode()
+                profiles.append(json.loads(raw))
+        return profiles
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read GPU profiles: {e}") from e
+
+
 @router.post("/embedding-consistency/stop")
 async def stop_embedding_consistency_repair(
     current_user: User = Depends(get_current_admin_user),

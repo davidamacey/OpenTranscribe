@@ -765,7 +765,9 @@ def _run_transcription_pipeline(
         send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
 
     pipeline = TranscriptionPipeline(config)
-    raw_result = pipeline.process(audio_file_path, progress_callback=progress_callback)
+    raw_result = pipeline.process(
+        audio_file_path, progress_callback=progress_callback, task_id=ctx.task_id
+    )
     # Annotate the raw WhisperX result with provider/model metadata so that
     # _process_transcription_result can persist it to media_file.asr_provider /
     # media_file.asr_model.  Without this the local pipeline leaves those columns NULL.

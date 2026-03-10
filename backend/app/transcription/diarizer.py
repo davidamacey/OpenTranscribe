@@ -110,6 +110,12 @@ class SpeakerDiarizer:
         # PyAnnote defaults to 32 which causes OOM on GPUs with ≤12GB VRAM.
         self._configure_segmentation_batch_size()
 
+        # Configure embedding batch_size for speaker embedding extraction.
+        # PyAnnote defaults to 1, causing ~850K individual GPU forward passes for
+        # long audio. Batch size 32 reduces kernel launches 32x with identical results.
+        # See docs/GPU_OPTIMIZATION_PATCHES.md for benchmarks and evidence.
+        self._configure_embedding_batch_size()
+
         elapsed = time.perf_counter() - step_start
         logger.info(f"TIMING: diarizer model loaded in {elapsed:.3f}s on {device}")
 
@@ -156,6 +162,10 @@ class SpeakerDiarizer:
         else:
             batch_size = 4  # CPU
 
+        # In concurrent mode, divide batch size to share GPU bandwidth
+        if self.config.concurrent_requests > 1:
+            batch_size = max(1, batch_size // self.config.concurrent_requests)
+
         current = self._pipeline.segmentation_batch_size
         if batch_size != current:
             self._pipeline.segmentation_batch_size = batch_size
@@ -165,6 +175,45 @@ class SpeakerDiarizer:
             )
         else:
             logger.info(f"Diarization segmentation batch_size: {batch_size} (default OK)")
+
+    def _configure_embedding_batch_size(self) -> None:
+        """Set PyAnnote's embedding batch_size for speaker embedding extraction.
+
+        PyAnnote defaults to embedding_batch_size=1, meaning each speaker chunk
+        is processed individually — up to ~850K GPU forward passes for long audio
+        with many speakers. Increasing to 32 batches these into fewer kernel
+        launches with identical diarization results.
+
+        Evidence: docs/GPU_OPTIMIZATION_PATCHES.md (Patch 1)
+        """
+        if self._pipeline is None:
+            return
+
+        # Allow env override
+        env_batch = os.getenv("DIARIZATION_EMBEDDING_BATCH_SIZE")
+        if env_batch is not None:
+            try:
+                batch_size = int(env_batch)
+                self._pipeline.embedding_batch_size = batch_size
+                logger.info(f"Diarization embedding batch_size set to {batch_size} (from env)")
+                return
+            except ValueError:
+                logger.warning(
+                    f"Invalid DIARIZATION_EMBEDDING_BATCH_SIZE='{env_batch}', using default 32"
+                )
+
+        batch_size = 32
+
+        # In concurrent mode, reduce to share GPU bandwidth
+        if self.config.concurrent_requests > 1:
+            batch_size = max(4, batch_size // self.config.concurrent_requests)
+
+        current = getattr(self._pipeline, "embedding_batch_size", 1)
+        if batch_size != current:
+            self._pipeline.embedding_batch_size = batch_size
+            logger.info(f"Diarization embedding batch_size: {current} → {batch_size}")
+        else:
+            logger.info(f"Diarization embedding batch_size: {batch_size} (already set)")
 
     def diarize(self, audio: np.ndarray) -> tuple[pd.DataFrame, dict, dict[str, np.ndarray] | None]:
         """Run speaker diarization on audio.

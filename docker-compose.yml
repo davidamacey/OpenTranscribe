@@ -177,7 +177,7 @@ services:
     env_file: .env
     security_opt:
       - no-new-privileges:true
-    command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=${GPU_DEFAULT_CONCURRENCY:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcription@%h -E
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu --pool=${GPU_WORKER_POOL:-prefork} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcription@%h -E
     # GPU configuration is provided by docker-compose.gpu.yml overlay
     # when NVIDIA GPU is detected (automatically handled by opentr.sh)
     # This allows the base file to work on macOS and CPU-only Linux systems

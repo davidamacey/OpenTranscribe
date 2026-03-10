@@ -107,11 +107,13 @@ class Transcriber:
             f"device={self.config.device}, compute_type={self.config.compute_type}"
         )
 
+        num_workers = self.config.concurrent_requests if self.config.concurrent_requests > 1 else 1
         self._model = WhisperModel(
             self.config.model_name,
             device=self.config.device,
             device_index=self.config.device_index,
             compute_type=self.config.compute_type,
+            num_workers=num_workers,
         )
         self._pipeline = BatchedInferencePipeline(model=self._model)
 
