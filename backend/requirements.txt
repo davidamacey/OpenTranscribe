@@ -64,9 +64,11 @@ huggingface-hub<1.0.0
 # Triton for optimized attention (Linux x86_64 only)
 triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 
-# PyAnnote v4 - aligned with WhisperX 3.8.1's own pyannote-audio>=4.0.0 requirement
-# Provides VBx clustering, WeSpeaker embeddings, and overlap detection
-pyannote.audio>=4.0.0
+# PyAnnote v4 - GPU-optimized fork with 1.28x speedup and 66% VRAM reduction
+# Fork: https://github.com/davidamacey/pyannote-audio/tree/gpu-optimizations
+# Upstream PR pending: https://github.com/pyannote/pyannote-audio
+# When merged upstream, switch back to: pyannote.audio>=4.x.x
+pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@gpu-optimizations
 # Required by pyannote/embedding model checkpoint (pickle dependency)
 omegaconf>=2.3.0
 

@@ -5,7 +5,9 @@ offline-package-build/
 OT_TEST/
 opentranscribe/
 reference_repos/
+benchmark/
 benchmarks/
+benchmark_thorough_*.json
 PLANS/
 
 # Environment variables

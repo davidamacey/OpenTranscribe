@@ -1,0 +1,16 @@
+--- reference_repos/pyannote-audio/src/pyannote/audio/core/inference.py	2026-03-10 20:02:59.842490255 -0400
++++ reference_repos/pyannote-audio-optimized/src/pyannote/audio/core/inference.py	2026-03-10 23:58:37.534200039 -0400
+@@ -197,7 +197,12 @@
+
+         with torch.inference_mode():
+             try:
+-                outputs = self.model(chunks.to(self.device))
++                if self.device.type == "cuda":
++                    outputs = self.model(
++                        chunks.pin_memory().to(self.device, non_blocking=True)
++                    )
++                else:
++                    outputs = self.model(chunks.to(self.device))
+             except RuntimeError as exception:
+                 if is_oom_error(exception):
+                     raise MemoryError(

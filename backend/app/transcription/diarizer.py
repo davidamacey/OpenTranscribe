@@ -179,17 +179,18 @@ class SpeakerDiarizer:
     def _configure_embedding_batch_size(self) -> None:
         """Set PyAnnote's embedding batch_size for speaker embedding extraction.
 
-        PyAnnote defaults to embedding_batch_size=1, meaning each speaker chunk
-        is processed individually — up to ~850K GPU forward passes for long audio
-        with many speakers. Increasing to 32 batches these into fewer kernel
-        launches with identical diarization results.
+        The optimized PyAnnote fork auto-selects batch size (64-256) based on
+        free GPU VRAM when embedding_batch_size <= 32. We set 32 here as a
+        baseline that triggers the fork's auto-selection. With stock PyAnnote,
+        32 is still a major improvement over the default of 1.
 
-        Evidence: docs/GPU_OPTIMIZATION_PATCHES.md (Patch 1)
+        Env override: DIARIZATION_EMBEDDING_BATCH_SIZE (bypasses auto-selection)
+        Evidence: docs/GPU_OPTIMIZATION_RESULTS.md
         """
         if self._pipeline is None:
             return
 
-        # Allow env override
+        # Allow env override (bypasses auto-selection in optimized fork)
         env_batch = os.getenv("DIARIZATION_EMBEDDING_BATCH_SIZE")
         if env_batch is not None:
             try:
@@ -202,6 +203,9 @@ class SpeakerDiarizer:
                     f"Invalid DIARIZATION_EMBEDDING_BATCH_SIZE='{env_batch}', using default 32"
                 )
 
+        # Set 32 as baseline. The optimized PyAnnote fork auto-elevates
+        # batch_size to 64-256 based on free VRAM when it sees <= 32.
+        # With stock PyAnnote, 32 is still 32x better than the default of 1.
         batch_size = 32
 
         # In concurrent mode, reduce to share GPU bandwidth
@@ -254,7 +258,19 @@ class SpeakerDiarizer:
 
         logger.info(f"Running diarization with kwargs: {pipeline_kwargs}")
 
-        raw_output = self._run_pipeline_with_oom_retry(audio_input, pipeline_kwargs)
+        # Sub-stage timing via hook callback
+        stage_timing: dict[str, dict[str, float]] = {}
+
+        def timing_hook(step_name, step_artefact, **kwargs):
+            now = time.perf_counter()
+            if step_name not in stage_timing:
+                stage_timing[step_name] = {"start": now, "last": now}
+            else:
+                stage_timing[step_name]["last"] = now
+
+        raw_output = self._run_pipeline_with_oom_retry(
+            audio_input, pipeline_kwargs, hook=timing_hook
+        )
 
         centroids = getattr(raw_output, "speaker_embeddings", None)
         output = raw_output
@@ -300,6 +316,18 @@ class SpeakerDiarizer:
             else {}
         )
 
+        # Log per-stage breakdown
+        if stage_timing:
+            stages = sorted(stage_timing.items(), key=lambda x: x[1].get("start", 0))
+            breakdown = []
+            for name, times in stages:
+                duration = times["last"] - times["start"]
+                breakdown.append(f"{name}={duration:.1f}s")
+            logger.info(f"TIMING: diarization stages: {', '.join(breakdown)}")
+            overlap_info["stage_timing"] = {
+                name: round(times["last"] - times["start"], 3) for name, times in stages
+            }
+
         elapsed = time.perf_counter() - step_start
         num_speakers = diarize_df["speaker"].nunique()
         logger.info(
@@ -309,7 +337,7 @@ class SpeakerDiarizer:
 
         return diarize_df, overlap_info, native_embeddings
 
-    def _run_pipeline_with_oom_retry(self, audio_input: dict, pipeline_kwargs: dict):
+    def _run_pipeline_with_oom_retry(self, audio_input: dict, pipeline_kwargs: dict, hook=None):
         """Run the diarization pipeline with automatic batch_size reduction on OOM.
 
         If the segmentation model hits an OOM error due to batch_size being too
@@ -326,7 +354,10 @@ class SpeakerDiarizer:
         for batch_size in retry_sizes:
             try:
                 self._pipeline.segmentation_batch_size = batch_size
-                raw_output = self._pipeline(audio_input, **pipeline_kwargs)  # type: ignore[misc]
+                call_kwargs = dict(pipeline_kwargs)
+                if hook is not None:
+                    call_kwargs["hook"] = hook
+                raw_output = self._pipeline(audio_input, **call_kwargs)  # type: ignore[misc]
                 if batch_size != current_batch:
                     logger.info(
                         f"Diarization succeeded with reduced batch_size={batch_size} "

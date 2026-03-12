@@ -961,8 +961,15 @@ def _process_transcription_result(
 
     # --- Critical path: must complete before GPU worker returns ---
 
-    # Process speakers and segments
+    # Resegment at speaker boundaries and merge adjacent same-speaker segments
+    from app.utils.segment_postprocess import merge_consecutive_segments
+    from app.utils.segment_postprocess import resegment_by_speaker
+
     send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
+    step_start = time.perf_counter()
+    result["segments"] = merge_consecutive_segments(resegment_by_speaker(result["segments"]))
+    logger.info(f"TIMING: resegment+merge completed in {time.perf_counter() - step_start:.3f}s")
+
     step_start = time.perf_counter()
     unique_speakers = extract_unique_speakers(result["segments"])
     logger.info(
@@ -1672,8 +1679,12 @@ def _process_and_save_critical(
 
     post_start = time.perf_counter()
 
-    # Process speakers and segments
+    # Resegment at speaker boundaries and merge adjacent same-speaker segments
+    from app.utils.segment_postprocess import merge_consecutive_segments
+    from app.utils.segment_postprocess import resegment_by_speaker
+
     send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
+    result["segments"] = merge_consecutive_segments(resegment_by_speaker(result["segments"]))
     unique_speakers = extract_unique_speakers(result["segments"])
 
     with session_scope() as db:

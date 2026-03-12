@@ -1,0 +1,96 @@
+"""Post-processing for transcript segments: speaker-based resegmentation and merging."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def resegment_by_speaker(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Split segments at speaker boundaries so each segment has exactly one speaker.
+
+    Words within a segment may have different speaker labels after diarization.
+    This function splits such segments into sub-segments grouped by consecutive
+    same-speaker words.
+
+    Segments without words or with a single speaker pass through unchanged.
+    """
+    result: list[dict[str, Any]] = []
+
+    for segment in segments:
+        words = segment.get("words")
+        if not words:
+            result.append(segment)
+            continue
+
+        # Fast path: check if all words share the same speaker
+        speakers = {w.get("speaker") for w in words if "speaker" in w}
+        if len(speakers) <= 1:
+            result.append(segment)
+            continue
+
+        # Group consecutive words by speaker
+        groups: list[list[dict[str, Any]]] = []
+        current_group: list[dict[str, Any]] = [words[0]]
+
+        for word in words[1:]:
+            if word.get("speaker") == current_group[-1].get("speaker"):
+                current_group.append(word)
+            else:
+                groups.append(current_group)
+                current_group = [word]
+        groups.append(current_group)
+
+        # Build sub-segments from each group
+        confidence = segment.get("confidence", 1.0)
+        for group in groups:
+            text = "".join(w.get("word", "") for w in group).strip()
+            if not text:
+                continue
+            result.append(
+                {
+                    "start": group[0].get("start", segment["start"]),
+                    "end": group[-1].get("end", segment["end"]),
+                    "text": text,
+                    "speaker": group[0].get("speaker"),
+                    "words": group,
+                    "confidence": confidence,
+                }
+            )
+
+    return result
+
+
+def merge_consecutive_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge adjacent segments that share the same speaker.
+
+    After resegmentation, many small consecutive segments from the same speaker
+    may exist. This merges them into larger, more natural segments.
+    """
+    if not segments:
+        return []
+
+    result: list[dict[str, Any]] = []
+    current = _copy_segment(segments[0])
+
+    for segment in segments[1:]:
+        if segment.get("speaker") and segment.get("speaker") == current.get("speaker"):
+            # Merge into current
+            current["end"] = segment["end"]
+            current["text"] = current["text"] + " " + segment.get("text", "")
+            current_words = current.get("words") or []
+            seg_words = segment.get("words") or []
+            current["words"] = current_words + seg_words
+        else:
+            result.append(current)
+            current = _copy_segment(segment)
+
+    result.append(current)
+    return result
+
+
+def _copy_segment(segment: dict[str, Any]) -> dict[str, Any]:
+    """Shallow copy a segment dict, deep-copying the words list."""
+    copied = dict(segment)
+    if copied.get("words"):
+        copied["words"] = list(copied["words"])
+    return copied
