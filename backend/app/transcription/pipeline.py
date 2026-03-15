@@ -104,6 +104,9 @@ class TranscriptionPipeline:
         hw.log_vram_usage("after transcription, before diarizer load")
         total_vram_mb = self._get_total_vram_mb()
 
+        # Snapshot: both models loaded, zero inference overhead (benchmark only)
+        profiler.snapshot("models_warm_no_inference")
+
         # In concurrent mode, keep both models hot to avoid reload overhead
         if self.config.concurrent_requests > 1:
             logger.info(
@@ -120,6 +123,7 @@ class TranscriptionPipeline:
             # Small GPU: release transcriber first to free VRAM for diarizer
             self.manager.release_transcriber()
             hw.log_vram_usage("after transcriber release")
+            profiler.snapshot("diarizer_only_warm")
 
         # Wait for VRAM before diarization (concurrent mode)
         if self.config.concurrent_requests > 1:

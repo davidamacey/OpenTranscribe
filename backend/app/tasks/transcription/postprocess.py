@@ -3,10 +3,16 @@
 Handles speaker embeddings, search indexing, downstream task dispatch,
 and MinIO temp cleanup after GPU processing completes.
 
+Speaker matching runs synchronously before marking COMPLETED so the user
+sees accurate speaker labels immediately. Search indexing and downstream
+tasks (summarization, speaker attributes, clustering) are dispatched as
+background work — they each send their own WebSocket events when done.
+
 Part of the 3-stage chain: preprocess (CPU) → transcribe (GPU) → postprocess (CPU)
 """
 
 import logging
+import os
 import time
 
 import numpy as np
@@ -16,6 +22,7 @@ from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
 from app.services.opensearch_service import index_transcript
 from app.utils.task_utils import update_task_status
+from app.utils.websocket_notify import send_ws_event
 
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
@@ -30,15 +37,35 @@ logger = logging.getLogger(__name__)
     name="transcription.postprocess",
     priority=CPUPriority.PIPELINE_CRITICAL,
     acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=2,
+    autoretry_for=(ConnectionError, TimeoutError, IOError),
+    retry_backoff=True,
+    retry_backoff_max=60,
+    retry_jitter=True,
 )
 def finalize_transcription(self, gpu_result: dict) -> dict:
-    """CPU postprocessing: speaker embeddings, indexing, downstream dispatch.
+    """CPU postprocessing: speaker matching → mark COMPLETED → background enrichment.
 
     Stage 3 of the 3-stage pipeline chain. Receives result from GPU task.
-    All work here is CPU-bound or network I/O — no GPU needed.
-    Segments are already saved to DB by the GPU task, so failures here
-    are non-fatal (logged but do not lose transcription data).
+
+    Speaker matching runs first so the user sees accurate profile names
+    (not generic "Speaker 1") when the file is marked completed.
+
+    Search indexing and downstream tasks (summarization, speaker attributes,
+    clustering) are dispatched as background work after completion. Each
+    sends its own WebSocket event when done.
     """
+    # Record postprocess received timestamp for inter-stage gap measurement
+    if os.getenv("ENABLE_BENCHMARK_TIMING"):
+        task_id_for_bench = gpu_result.get("task_id")
+        if task_id_for_bench:
+            from app.core.redis import get_redis
+
+            get_redis().hset(
+                f"benchmark:{task_id_for_bench}", "postprocess_received", str(time.time())
+            )
+
     if gpu_result.get("status") == "error":
         logger.warning(
             f"Skipping postprocess — GPU task failed for file {gpu_result.get('file_id')}"
@@ -58,7 +85,8 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
     post_start = time.perf_counter()
 
     try:
-        # --- Speaker embedding processing ---
+        # Speaker matching must complete before marking "completed" so the
+        # frontend shows matched profile names, not generic "Speaker 1" labels.
         send_progress_notification(user_id, file_id, 0.80, "Processing speaker identification")
 
         if use_native and native_embeddings:
@@ -70,28 +98,39 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         if native_embeddings and not use_native:
             _store_v4_centroids(file_id, file_uuid, user_id, native_embeddings, speaker_mapping)
 
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.88)
-
-        # --- Search indexing ---
-        send_progress_notification(user_id, file_id, 0.88, "Indexing for search")
-        _index_transcript(file_id, file_uuid, user_id)
-
-        # --- Finalize ---
+        # Mark COMPLETED — speaker labels are now accurate in DB
         send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
         with session_scope() as db:
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
         send_completion_notification(user_id, file_id)
 
-        # --- Dispatch downstream tasks ---
-        from .core import trigger_automatic_summarization
+        completion_elapsed = time.perf_counter() - post_start
+        logger.info(
+            f"TIMING: postprocess speaker matching + completion "
+            f"in {completion_elapsed:.3f}s for file {file_id}"
+        )
 
-        logger.info(f"Transcription pipeline completed for file {file_id}, triggering downstream")
-        trigger_automatic_summarization(file_id, file_uuid, tasks_to_run=downstream_tasks)
+        # Dispatch background enrichment (search indexing + downstream tasks).
+        # Each task sends its own WebSocket event when done.
+        enrichment_tasks = _build_enrichment_task_list(downstream_tasks)
 
-        _dispatch_speaker_attributes(file_uuid, user_id, downstream_tasks)
-        _dispatch_speaker_clustering(file_uuid, user_id, downstream_tasks)
+        enrich_and_dispatch.delay(
+            file_id=file_id,
+            file_uuid=file_uuid,
+            user_id=user_id,
+            downstream_tasks=downstream_tasks,
+        )
+
+        # Notify frontend that background enrichment tasks are running
+        send_ws_event(
+            user_id,
+            "enrichment_started",
+            {
+                "file_id": str(file_uuid),
+                "tasks": enrichment_tasks,
+            },
+        )
 
     except Exception as e:
         logger.error(f"Postprocess failed for file {file_id}: {e}")
@@ -126,6 +165,71 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         "file_id": file_id,
         "segment_count": gpu_result.get("segment_count", 0),
     }
+
+
+def _build_enrichment_task_list(downstream_tasks: list[str] | None) -> list[str]:
+    """Build the list of enrichment task names that will run in background."""
+    tasks = ["search_indexing"]
+    if downstream_tasks is None or "speaker_llm" not in downstream_tasks:
+        tasks.append("speaker_attributes")
+    if downstream_tasks is None or "speaker_clustering" not in downstream_tasks:
+        tasks.append("speaker_clustering")
+    if downstream_tasks is None or "summarization" not in downstream_tasks:
+        tasks.append("summarization")
+    return tasks
+
+
+@celery_app.task(
+    name="transcription.enrich_and_dispatch",
+    queue="cpu",
+    priority=CPUPriority.SYSTEM,
+    max_retries=2,
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=True,
+    ignore_result=True,
+)
+def enrich_and_dispatch(
+    file_id: int,
+    file_uuid: str,
+    user_id: int,
+    downstream_tasks: list[str] | None = None,
+) -> None:
+    """Fire-and-forget: search indexing + downstream task dispatch.
+
+    Runs after the main postprocess marks the file as COMPLETED.
+    Each downstream task sends its own WebSocket event when done.
+    """
+    # Search indexing (invisible to user)
+    try:
+        _index_transcript(file_id, file_uuid, user_id)
+        send_ws_event(
+            user_id,
+            "enrichment_task_complete",
+            {"file_id": str(file_uuid), "task": "search_indexing"},
+        )
+    except Exception as e:
+        logger.warning(f"Search indexing failed for file {file_id}: {e}")
+
+    # Downstream tasks — each wrapped individually so one failure
+    # doesn't prevent the others from dispatching
+    logger.info(f"Dispatching downstream enrichment tasks for file {file_id}")
+
+    try:
+        from .core import trigger_automatic_summarization
+
+        trigger_automatic_summarization(file_id, file_uuid, tasks_to_run=downstream_tasks)
+    except Exception as e:
+        logger.warning(f"Summarization dispatch failed for file {file_id}: {e}")
+
+    try:
+        _dispatch_speaker_attributes(file_uuid, user_id, downstream_tasks)
+    except Exception as e:
+        logger.warning(f"Speaker attribute dispatch failed for file {file_id}: {e}")
+
+    try:
+        _dispatch_speaker_clustering(file_uuid, user_id, downstream_tasks)
+    except Exception as e:
+        logger.warning(f"Speaker clustering dispatch failed for file {file_id}: {e}")
 
 
 def _process_native_embeddings(
@@ -264,7 +368,7 @@ def _dispatch_speaker_clustering(
     file_uuid: str, user_id: int, downstream_tasks: list[str] | None
 ) -> None:
     """Dispatch speaker clustering (fire-and-forget)."""
-    if downstream_tasks and "speaker_clustering" in downstream_tasks:
+    if downstream_tasks is not None and "speaker_clustering" in downstream_tasks:
         return
     try:
         from app.tasks.speaker_clustering import cluster_speakers_for_file

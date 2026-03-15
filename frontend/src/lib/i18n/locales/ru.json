@@ -1277,6 +1277,7 @@
   "fileDetail.unknownSpeaker": "Неизвестный",
   "fileDetail.processingDefault": "Обработка...",
   "fileDetail.processingComplete": "Обработка завершена!",
+  "fileDetail.enrichmentInProgress": "Фоновый анализ выполняется...",
   "fileDetail.analyzingTranscript": "Анализ транскрипции с помощью ИИ...",
   "fileDetail.aiSuggestionsComplete": "ИИ-предложения готовы!",
   "fileDetail.failedToGenerateSummaryGeneric": "Не удалось создать сводку",

@@ -1277,6 +1277,7 @@
   "fileDetail.unknownSpeaker": "Desconhecido",
   "fileDetail.processingDefault": "Processando...",
   "fileDetail.processingComplete": "Processamento concluído!",
+  "fileDetail.enrichmentInProgress": "Análise em segundo plano em andamento...",
   "fileDetail.analyzingTranscript": "Analisando transcrição com IA...",
   "fileDetail.aiSuggestionsComplete": "Sugestões de IA concluídas!",
   "fileDetail.failedToGenerateSummaryGeneric": "Falha ao gerar resumo",

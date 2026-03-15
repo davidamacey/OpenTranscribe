@@ -446,6 +446,7 @@
   "fileDetail.noFileIdProvided": "No se proporcionó ID de archivo",
   "fileDetail.noTranscript": "No hay transcripción disponible para este archivo.",
   "fileDetail.processingComplete": "¡Procesamiento completado!",
+  "fileDetail.enrichmentInProgress": "Análisis en segundo plano en progreso...",
   "fileDetail.processingDefault": "Procesando...",
   "fileDetail.processingFile": "Procesando archivo...",
   "fileDetail.processingInProgress": "Procesamiento en Progreso",

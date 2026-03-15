@@ -1277,6 +1277,7 @@
   "fileDetail.unknownSpeaker": "未知说话人",
   "fileDetail.processingDefault": "处理中",
   "fileDetail.processingComplete": "处理完成",
+  "fileDetail.enrichmentInProgress": "后台分析进行中...",
   "fileDetail.analyzingTranscript": "正在分析转录内容...",
   "fileDetail.aiSuggestionsComplete": "AI 建议已完成",
   "fileDetail.failedToGenerateSummaryGeneric": "生成摘要失败。请稍后重试。",
