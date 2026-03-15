@@ -70,10 +70,12 @@ exclude_dirs = ["tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-n auto --dist loadgroup --tb=short -q"
+addopts = "-n auto --dist loadgroup --tb=short -q -m 'not integration'"
 markers = [
     "slow: marks tests as slow",
     "pki: PKI certificate tests",
     "e2e: end-to-end browser tests",
+    "integration: integration tests requiring running dev environment",
 ]
+filterwarnings = ["ignore::pytest.PytestUnknownMarkWarning"]
 norecursedirs = ["tests/e2e"]

@@ -20,6 +20,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+pytestmark = pytest.mark.integration
+
 BASE_URL = "http://localhost:5174/api"
 LOGIN_EMAIL = "admin@example.com"
 LOGIN_PASSWORD = "password"
@@ -28,10 +30,14 @@ LOGIN_PASSWORD = "password"
 @pytest.fixture(scope="module")
 def auth_token():
     """Get auth token by logging in."""
-    resp = requests.post(
-        f"{BASE_URL}/auth/login",
-        data={"username": LOGIN_EMAIL, "password": LOGIN_PASSWORD},
-    )
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/auth/login",
+            data={"username": LOGIN_EMAIL, "password": LOGIN_PASSWORD},
+            timeout=5,
+        )
+    except requests.ConnectionError:
+        pytest.skip("Dev environment not running — skipping integration test")
     assert resp.status_code == 200, f"Login failed: {resp.text}"
     token = resp.json().get("access_token")
     assert token, "No access_token in login response"

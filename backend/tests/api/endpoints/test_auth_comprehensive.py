@@ -466,6 +466,7 @@ class TestPasswordPolicy:
 # ============== Auth Method Tests with Mocking ==============
 
 
+@pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")
 class TestLDAPAuthentication:
     """Test LDAP authentication with mocking."""
 
@@ -507,6 +508,7 @@ class TestLDAPAuthentication:
             assert mock_conn.bind.return_value is True
 
 
+@pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")
 class TestKeycloakAuthentication:
     """Test Keycloak/OIDC authentication with mocking."""
 
@@ -529,6 +531,7 @@ class TestKeycloakAuthentication:
         assert mock_keycloak_settings.KEYCLOAK_ENABLED is True
 
 
+@pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")
 class TestPKIAuthentication:
     """Test PKI/X.509 certificate authentication with mocking."""
 

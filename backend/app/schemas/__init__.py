@@ -4,10 +4,13 @@ Pydantic schemas for OpenTranscribe API.
 This package contains validation schemas for request/response models.
 """
 
+from .asr_settings import ASRConnectionTestRequest
+from .asr_settings import ASRConnectionTestResult
 from .asr_settings import ASRProvider
 from .asr_settings import ASRProviderCatalog
 from .asr_settings import ASRSettingsList
 from .asr_settings import ASRStatusResponse
+from .asr_settings import SetActiveASRConfigRequest
 from .asr_settings import UserASRSettingsCreate
 from .asr_settings import UserASRSettingsResponse
 from .asr_settings import UserASRSettingsUpdate

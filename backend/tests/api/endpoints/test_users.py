@@ -66,16 +66,28 @@ def test_get_user_by_uuid_unauthorized(client, user_token_headers, admin_user):
     assert response.status_code in (401, 403)  # Either unauthorized or forbidden
 
 
-def test_update_user(client, admin_token_headers, normal_user):
-    """Test updating a user (admin only)"""
+def test_update_user(client, super_admin_token_headers, normal_user):
+    """Test updating a user including privileged fields (super_admin only)"""
     update_data = {"full_name": "Admin Updated User", "is_active": False}
     response = client.put(
-        f"/api/users/{normal_user.uuid}", headers=admin_token_headers, json=update_data
+        f"/api/users/{normal_user.uuid}", headers=super_admin_token_headers, json=update_data
     )
     assert response.status_code == 200
     user_data = response.json()
     assert user_data["full_name"] == "Admin Updated User"
     assert user_data["is_active"] is False
+
+
+def test_update_user_admin_cannot_set_privileged_fields(client, admin_token_headers, normal_user):
+    """Test that regular admin cannot set privileged fields (is_active, role, etc.)"""
+    update_data = {"full_name": "Admin Updated Name", "is_active": False}
+    response = client.put(
+        f"/api/users/{normal_user.uuid}", headers=admin_token_headers, json=update_data
+    )
+    assert response.status_code == 200
+    user_data = response.json()
+    assert user_data["full_name"] == "Admin Updated Name"
+    assert user_data["is_active"] is True  # is_active stripped for non-super_admin
 
 
 def test_update_user_invalid_uuid(client, admin_token_headers):

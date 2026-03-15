@@ -22,6 +22,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
+from app import schemas
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
@@ -68,11 +69,6 @@ def _sanitize_message(message: str, *secrets: str | None) -> str:
 # Input validation helpers
 # ---------------------------------------------------------------------------
 
-# Maximum length for an API key submitted by the user. Cloud provider keys are
-# typically < 256 characters; a generous cap of 8 192 bytes blocks resource-
-# exhaustion attacks while leaving room for long JWT/service-account tokens.
-_MAX_API_KEY_LEN = 8192
-
 # Valid ASR providers as accepted by the factory.
 _VALID_PROVIDERS = frozenset(
     {
@@ -100,99 +96,9 @@ _CLOUD_PROVIDERS = {
     "gladia",
 }
 
-# Azure and AWS regions are curated allowlists — unknown values are rejected.
-_VALID_AZURE_REGIONS = frozenset(
-    {
-        "westus",
-        "westus2",
-        "eastus",
-        "eastus2",
-        "centralus",
-        "northcentralus",
-        "southcentralus",
-        "westeurope",
-        "northeurope",
-        "uksouth",
-        "ukwest",
-        "francecentral",
-        "germanywestcentral",
-        "switzerlandnorth",
-        "australiaeast",
-        "australiasoutheast",
-        "southeastasia",
-        "eastasia",
-        "japaneast",
-        "japanwest",
-        "koreacentral",
-        "koreasouth",
-        "canadacentral",
-        "canadaeast",
-        "brazilsouth",
-        "southafricanorth",
-        "uaenorth",
-    }
-)
-_VALID_AWS_REGIONS = frozenset(
-    {
-        "us-east-1",
-        "us-east-2",
-        "us-west-1",
-        "us-west-2",
-        "ca-central-1",
-        "ca-west-1",
-        "eu-west-1",
-        "eu-west-2",
-        "eu-west-3",
-        "eu-central-1",
-        "eu-north-1",
-        "eu-south-1",
-        "ap-southeast-1",
-        "ap-southeast-2",
-        "ap-southeast-3",
-        "ap-northeast-1",
-        "ap-northeast-2",
-        "ap-northeast-3",
-        "ap-south-1",
-        "ap-east-1",
-        "sa-east-1",
-        "me-south-1",
-        "af-south-1",
-    }
-)
-
-
-def _validate_base_url(base_url: str | None) -> None:
-    """Raise HTTP 400 if *base_url* is not a safe http(s) URL.
-
-    Blocks file://, gopher://, and other non-HTTP schemes that could be used
-    for Server-Side Request Forgery (SSRF).
-    """
-    if not base_url:
-        return
-    stripped = base_url.strip()
-    if not re.match(r"^https?://", stripped, re.IGNORECASE):
-        raise HTTPException(
-            status_code=400,
-            detail="base_url must begin with http:// or https://",
-        )
-
-
-def _validate_api_key_length(api_key: str | None) -> None:
-    """Raise HTTP 400 if the provided API key exceeds the safe maximum length."""
-    if api_key and len(api_key) > _MAX_API_KEY_LEN:
-        raise HTTPException(
-            status_code=400,
-            detail=f"api_key must not exceed {_MAX_API_KEY_LEN} characters",
-        )
-
-
-def _validate_provider(provider: str | None) -> None:
-    """Raise HTTP 400 if *provider* is not a recognised value."""
-    if provider and provider not in _VALID_PROVIDERS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown provider '{provider}'. Must be one of: {', '.join(sorted(_VALID_PROVIDERS))}",
-        )
+# Azure and AWS region allowlists — imported from schemas (single source of truth).
+_VALID_AZURE_REGIONS = schemas.asr_settings.VALID_AZURE_REGIONS
+_VALID_AWS_REGIONS = schemas.asr_settings.VALID_AWS_REGIONS
 
 
 def _validate_region(provider: str | None, region: str | None) -> None:
@@ -539,38 +445,26 @@ def get_asr_config_api_key(
 
 @router.post("", status_code=201)
 def create_asr_config(
-    body: dict,
+    settings_in: schemas.UserASRSettingsCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Create a new ASR configuration. Auto-activates if this is the user's first config."""
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
-    config_name = body.get("name", "My ASR Config")
-    provider = body.get("provider", "local")
-    api_key = body.get("api_key")
-    base_url = body.get("base_url")
-    region = body.get("region")
-
-    # --- Input validation ---
-    _validate_provider(provider)
-    _validate_api_key_length(api_key)
-    _validate_base_url(base_url)
-    _validate_region(provider, region)
-
     # Duplicate name check
     existing = (
         db.query(UserASRSettings)
         .filter(
             UserASRSettings.user_id == current_user.id,
-            UserASRSettings.name == config_name,
+            UserASRSettings.name == settings_in.name,
         )
         .first()
     )
     if existing:
         raise HTTPException(
             status_code=409,
-            detail=f"Configuration named '{config_name}' already exists",
+            detail=f"Configuration named '{settings_in.name}' already exists",
         )
 
     # Test encryption before proceeding
@@ -578,8 +472,8 @@ def create_asr_config(
         raise HTTPException(status_code=500, detail="Encryption system is not working properly")
 
     encrypted_key = None
-    if api_key:
-        encrypted_key = encrypt_api_key(api_key)
+    if settings_in.api_key:
+        encrypted_key = encrypt_api_key(settings_in.api_key)
         if not encrypted_key:
             raise HTTPException(status_code=500, detail="Failed to encrypt API key")
 
@@ -593,16 +487,16 @@ def create_asr_config(
         is not None
     )
 
-    is_shared = bool(body.get("is_shared", False))
+    is_shared = bool(settings_in.is_shared)
     config = UserASRSettings(
         user_id=current_user.id,
-        name=config_name,
-        provider=provider,
-        model_name=body.get("model_name", ""),
+        name=settings_in.name,
+        provider=settings_in.provider.value,
+        model_name=settings_in.model_name,
         api_key=encrypted_key,
-        base_url=base_url,
-        region=region,
-        is_active=body.get("is_active", True),
+        base_url=settings_in.base_url,
+        region=settings_in.region,
+        is_active=settings_in.is_active,
         is_shared=is_shared,
         shared_at=datetime.now(timezone.utc) if is_shared else None,
     )
@@ -620,7 +514,7 @@ def create_asr_config(
 @router.put("/config/{config_uuid}")
 def update_asr_config(  # noqa: C901
     config_uuid: UUID,
-    body: dict,
+    settings_in: schemas.UserASRSettingsUpdate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -629,20 +523,14 @@ def update_asr_config(  # noqa: C901
 
     config = _get_config_or_404(db, config_uuid, current_user.id)
 
-    # --- Input validation for fields that are being updated ---
-    incoming_provider = body.get("provider") if "provider" in body else config.provider
-    if "provider" in body:
-        _validate_provider(body["provider"])
-    if "api_key" in body:
-        _validate_api_key_length(body.get("api_key"))
-    if "base_url" in body:
-        _validate_base_url(body.get("base_url"))
-    if "region" in body:
-        _validate_region(incoming_provider, body.get("region"))
+    # Cross-field region validation needs the effective provider (may be from existing config)
+    if "region" in settings_in.model_fields_set:
+        incoming_provider = settings_in.provider.value if settings_in.provider else config.provider
+        _validate_region(incoming_provider, settings_in.region)
 
     # Name update with duplicate check
-    if "name" in body:
-        new_name = body["name"]
+    if "name" in settings_in.model_fields_set:
+        new_name = settings_in.name
         if new_name != config.name:
             dup = (
                 db.query(UserASRSettings)
@@ -660,8 +548,8 @@ def update_asr_config(  # noqa: C901
                 )
         config.name = new_name  # type: ignore[assignment]
 
-    if "provider" in body:
-        new_provider = body["provider"]
+    if "provider" in settings_in.model_fields_set:
+        new_provider = settings_in.provider.value  # type: ignore[union-attr]
         if new_provider != config.provider:
             # Provider change invalidates the existing API key (it belongs to the old
             # provider's account).  Clear the stored key so the user is prompted to
@@ -673,17 +561,15 @@ def update_asr_config(  # noqa: C901
         config.test_message = None  # type: ignore[assignment]
         config.last_tested = None  # type: ignore[assignment]
 
-    if "model_name" in body:
-        config.model_name = body["model_name"]  # type: ignore[assignment]
+    if "model_name" in settings_in.model_fields_set:
+        config.model_name = settings_in.model_name  # type: ignore[assignment]
 
-    if "api_key" in body:
-        new_key = body["api_key"]
+    if "api_key" in settings_in.model_fields_set:
+        new_key = settings_in.api_key
         if new_key is None or (isinstance(new_key, str) and not new_key.strip()):
             # Empty string or null from the client means "keep the existing key".
             # The frontend sends "" when the user edits other fields without touching
             # the API key field.  Only a deliberate non-empty value replaces the key.
-            # To explicitly clear the key a dedicated endpoint should be used, or the
-            # caller should omit the "api_key" field entirely when not changing it.
             pass  # Existing key is preserved
         else:
             if not test_encryption():
@@ -697,18 +583,18 @@ def update_asr_config(  # noqa: C901
             # Reset test status only when key actually changes
             config.test_status = None  # type: ignore[assignment]
 
-    if "base_url" in body:
-        config.base_url = body["base_url"]  # type: ignore[assignment]
+    if "base_url" in settings_in.model_fields_set:
+        config.base_url = settings_in.base_url  # type: ignore[assignment]
 
-    if "region" in body:
-        config.region = body["region"]  # type: ignore[assignment]
+    if "region" in settings_in.model_fields_set:
+        config.region = settings_in.region  # type: ignore[assignment]
 
-    if "is_active" in body:
-        config.is_active = body["is_active"]  # type: ignore[assignment]
+    if "is_active" in settings_in.model_fields_set:
+        config.is_active = settings_in.is_active  # type: ignore[assignment]
 
     # Handle is_shared toggle with shared_at timestamp
-    if "is_shared" in body:
-        new_shared = body["is_shared"]
+    if "is_shared" in settings_in.model_fields_set:
+        new_shared = settings_in.is_shared
         if new_shared and not config.is_shared:
             config.is_shared = True  # type: ignore[assignment]
             config.shared_at = datetime.now(timezone.utc)  # type: ignore[assignment]
@@ -728,22 +614,16 @@ def update_asr_config(  # noqa: C901
 
 @router.post("/set-active")
 def set_active_asr_config(
-    body: dict,
+    body: schemas.SetActiveASRConfigRequest,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Set the active ASR configuration for the current user."""
-    # Accept both "config_uuid" (internal name) and "uuid" (spec alias)
-    config_uuid = body.get("config_uuid") or body.get("uuid")
+    config_uuid = body.resolved_uuid()
     if not config_uuid:
         raise HTTPException(status_code=400, detail="config_uuid (or uuid) is required")
 
-    try:
-        uuid_obj = UUID(str(config_uuid))
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid UUID format") from None
-
-    config = _get_config_or_404(db, uuid_obj, current_user.id, allow_shared=True)
+    config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
     _set_active_asr_configuration(db, int(current_user.id), int(config.id))
 
     return {
@@ -809,21 +689,15 @@ def delete_all_asr_configs(
 @limiter.limit(get_api_rate_limit())
 def test_asr_connection(
     request: Request,
-    body: dict,
+    settings_in: schemas.ASRConnectionTestRequest,
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Test an ad-hoc ASR connection without saving configuration."""
-    provider_name = body.get("provider", "local")
-    api_key = body.get("api_key")
-    base_url = body.get("base_url")
-    region = body.get("region")
-    model_name = body.get("model_name")
-
-    # --- Input validation ---
-    _validate_provider(provider_name)
-    _validate_api_key_length(api_key)
-    _validate_base_url(base_url)
-    _validate_region(provider_name, region)
+    provider_name = settings_in.provider.value
+    api_key = settings_in.api_key
+    base_url = settings_in.base_url
+    region = settings_in.region
+    model_name = settings_in.model_name
 
     start_time = time.time()
     try:

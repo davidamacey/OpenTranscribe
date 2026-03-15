@@ -220,6 +220,47 @@ def admin_token_headers(client, admin_user):
     return headers
 
 
+@pytest.fixture(scope="function")
+def super_admin_user(db_session):
+    """Fixture that creates a super_admin user in the test database.
+
+    Uses a unique UUID-based email to avoid conflicts between parallel tests.
+    """
+    import uuid
+
+    unique_id = str(uuid.uuid4())[:8]
+    user = User(
+        email=f"testsuperadmin_{unique_id}@example.com",
+        full_name="Super Admin User",
+        hashed_password=get_password_hash("superadminpass"),
+        is_active=True,
+        is_superuser=True,
+        role="super_admin",
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture(scope="function")
+def super_admin_token_headers(client, super_admin_user):
+    """Fixture that returns auth headers for a super_admin user."""
+    response = client.post(
+        "/api/auth/token",
+        data={"username": super_admin_user.email, "password": "superadminpass"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == 200, (
+        f"Login failed for {super_admin_user.email}: {response.json()}"
+    )
+    tokens = response.json()
+    access_token = tokens["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+    headers["_test_user_email"] = super_admin_user.email
+    return headers
+
+
 # --- Fixture aliases for test_media_security.py and other tests ---
 
 

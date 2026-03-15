@@ -1,11 +1,13 @@
 """Pydantic schemas for ASR provider settings."""
 
+import re
 from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import field_validator
+from pydantic import model_validator
 
 
 class ASRProvider(str, Enum):
@@ -18,6 +20,98 @@ class ASRProvider(str, Enum):
     AWS = "aws"
     SPEECHMATICS = "speechmatics"
     GLADIA = "gladia"
+
+
+# Maximum length for an API key. Cloud provider keys are typically < 256 characters;
+# a generous cap of 8192 bytes blocks resource-exhaustion attacks.
+MAX_API_KEY_LEN = 8192
+
+# Azure and AWS regions are curated allowlists — unknown values are rejected.
+VALID_AZURE_REGIONS = frozenset(
+    {
+        "westus",
+        "westus2",
+        "eastus",
+        "eastus2",
+        "centralus",
+        "northcentralus",
+        "southcentralus",
+        "westeurope",
+        "northeurope",
+        "uksouth",
+        "ukwest",
+        "francecentral",
+        "germanywestcentral",
+        "switzerlandnorth",
+        "australiaeast",
+        "australiasoutheast",
+        "southeastasia",
+        "eastasia",
+        "japaneast",
+        "japanwest",
+        "koreacentral",
+        "koreasouth",
+        "canadacentral",
+        "canadaeast",
+        "brazilsouth",
+        "southafricanorth",
+        "uaenorth",
+    }
+)
+VALID_AWS_REGIONS = frozenset(
+    {
+        "us-east-1",
+        "us-east-2",
+        "us-west-1",
+        "us-west-2",
+        "ca-central-1",
+        "ca-west-1",
+        "eu-west-1",
+        "eu-west-2",
+        "eu-west-3",
+        "eu-central-1",
+        "eu-north-1",
+        "eu-south-1",
+        "ap-southeast-1",
+        "ap-southeast-2",
+        "ap-southeast-3",
+        "ap-northeast-1",
+        "ap-northeast-2",
+        "ap-northeast-3",
+        "ap-south-1",
+        "ap-east-1",
+        "sa-east-1",
+        "me-south-1",
+        "af-south-1",
+    }
+)
+
+
+def _validate_base_url_value(base_url: str | None) -> str | None:
+    """Validate that base_url uses http/https scheme (SSRF protection)."""
+    if not base_url:
+        return base_url
+    stripped = base_url.strip()
+    if not re.match(r"^https?://", stripped, re.IGNORECASE):
+        raise ValueError("base_url must begin with http:// or https://")
+    return stripped
+
+
+def _validate_api_key_length_value(api_key: str | None) -> str | None:
+    """Validate that API key does not exceed the safe maximum length."""
+    if api_key and len(api_key) > MAX_API_KEY_LEN:
+        raise ValueError(f"api_key must not exceed {MAX_API_KEY_LEN} characters")
+    return api_key
+
+
+def _validate_region_for_provider(provider: str | None, region: str | None) -> None:
+    """Validate that region is on the allowlist for providers that require one."""
+    if not region:
+        return
+    if provider == "azure" and region not in VALID_AZURE_REGIONS:
+        raise ValueError(f"Unknown Azure region '{region}'")
+    if provider == "aws" and region not in VALID_AWS_REGIONS:
+        raise ValueError(f"Unknown AWS region '{region}'")
 
 
 class ASRModelInfo(BaseModel):
@@ -72,9 +166,24 @@ class UserASRSettingsBase(BaseModel):
             raise ValueError("Name must be 100 characters or less")
         return v
 
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, v: str | None) -> str | None:
+        return _validate_base_url_value(v)
+
 
 class UserASRSettingsCreate(UserASRSettingsBase):
     api_key: str | None = None
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, v: str | None) -> str | None:
+        return _validate_api_key_length_value(v)
+
+    @model_validator(mode="after")
+    def validate_region_for_provider(self) -> "UserASRSettingsCreate":
+        _validate_region_for_provider(self.provider.value, self.region)
+        return self
 
 
 class UserASRSettingsUpdate(BaseModel):
@@ -86,6 +195,16 @@ class UserASRSettingsUpdate(BaseModel):
     region: str | None = None
     is_active: bool | None = None
     is_shared: bool | None = None
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, v: str | None) -> str | None:
+        return _validate_api_key_length_value(v)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, v: str | None) -> str | None:
+        return _validate_base_url_value(v)
 
 
 class UserASRSettingsResponse(UserASRSettingsBase):
@@ -120,6 +239,21 @@ class ASRConnectionTestRequest(BaseModel):
     base_url: str | None = None
     region: str | None = None
     model_name: str | None = None
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, v: str | None) -> str | None:
+        return _validate_api_key_length_value(v)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, v: str | None) -> str | None:
+        return _validate_base_url_value(v)
+
+    @model_validator(mode="after")
+    def validate_region_for_provider(self) -> "ASRConnectionTestRequest":
+        _validate_region_for_provider(self.provider.value, self.region)
+        return self
 
 
 class ASRConnectionTestResult(BaseModel):
