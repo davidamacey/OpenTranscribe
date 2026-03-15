@@ -1314,6 +1314,7 @@
   "fileDetail.unknownSpeaker": "Unknown",
   "fileDetail.processingDefault": "Processing...",
   "fileDetail.processingComplete": "Processing complete!",
+  "fileDetail.enrichmentInProgress": "Background analysis in progress...",
   "fileDetail.analyzingTranscript": "Analyzing transcript with AI...",
   "fileDetail.aiSuggestionsComplete": "AI suggestions complete!",
   "fileDetail.failedToGenerateSummaryGeneric": "Failed to generate summary",

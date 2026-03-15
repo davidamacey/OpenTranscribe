@@ -74,6 +74,7 @@
   let generatingSummary = false;
   let summaryGenerating = false; // WebSocket-driven summary generation status
   let currentProcessingStep = ''; // Current processing step from WebSocket notifications
+  let enrichmentPending: Set<string> = new Set(); // Background enrichment tasks still running
   let lastProcessedNotificationState = ''; // Track processed notification state globally
 
   // Transcript pagination state
@@ -1966,6 +1967,7 @@
 
     if (id) {
       fileId = id;
+      enrichmentPending = new Set();
     } else {
       console.error('FileDetail: No id parameter provided');
       const urlParams = new URLSearchParams(window.location.search);
@@ -2232,6 +2234,15 @@
               loadAISuggestions();
             }
 
+            // Handle background enrichment tracking
+            if (latestNotification.type === 'enrichment_started') {
+              enrichmentPending = new Set(latestNotification.data?.tasks || []);
+            }
+            if (latestNotification.type === 'enrichment_task_complete') {
+              enrichmentPending.delete(latestNotification.data?.task);
+              enrichmentPending = enrichmentPending; // trigger reactivity
+            }
+
           } else {
           }
         } else {
@@ -2346,6 +2357,13 @@
   {:else if file}
     <div class="file-header">
       <FileHeader {file} {currentProcessingStep} />
+
+      {#if enrichmentPending.size > 0}
+        <div class="enrichment-indicator">
+          <Spinner size="small" />
+          <span>{$t('fileDetail.enrichmentInProgress')}</span>
+        </div>
+      {/if}
 
       {#if myPermission}
         <div class="shared-file-notice">
@@ -2778,6 +2796,24 @@
   :global(.dark) .shared-file-notice {
     background: rgba(59, 130, 246, 0.15);
     color: #60a5fa;
+  }
+
+  .enrichment-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.4rem 0.75rem;
+    margin-top: 0.5rem;
+    border-radius: 6px;
+    background: rgba(139, 92, 246, 0.08);
+    color: #8b5cf6;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+
+  :global(.dark) .enrichment-indicator {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
   }
 
   .loading-container,

@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
     name="transcription.preprocess",
     priority=CPUPriority.PIPELINE_CRITICAL,
     acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=2,
+    autoretry_for=(ConnectionError, TimeoutError, IOError),
+    retry_backoff=True,
+    retry_backoff_max=60,
+    retry_jitter=True,
 )
 def preprocess_for_transcription(
     self,
@@ -115,6 +121,12 @@ def preprocess_for_transcription(
             f"TIMING: preprocess completed in {elapsed:.3f}s for file {file_id} "
             f"(audio: {audio_size_mb:.1f}MB)"
         )
+
+        # Record preprocess end timestamp for inter-stage gap measurement
+        if os.getenv("ENABLE_BENCHMARK_TIMING"):
+            from app.core.redis import get_redis
+
+            get_redis().hset(f"benchmark:{task_id}", "preprocess_end", str(time.time()))
 
         send_progress_notification(user_id, file_id, 0.20, "Audio ready for transcription")
 

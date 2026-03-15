@@ -1778,6 +1778,11 @@ def _process_and_save_critical(
     name="transcription.gpu_transcribe",
     priority=GPUPriority.USER_IMPORT,
     acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=1,
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=30,
 )
 def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
     """GPU-only: Whisper transcription + PyAnnote diarization + save to DB.
@@ -1790,6 +1795,12 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
     file_uuid = preprocess_context["file_uuid"]
     file_id = preprocess_context["file_id"]
     user_id = preprocess_context["user_id"]
+
+    # Record GPU received timestamp for inter-stage gap measurement
+    if os.getenv("ENABLE_BENCHMARK_TIMING"):
+        from app.core.redis import get_redis
+
+        get_redis().hset(f"benchmark:{task_id}", "gpu_received", str(time.time()))
 
     ctx = TranscriptionContext(
         task_id=task_id,
@@ -1859,7 +1870,15 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                 }
 
             # Process speakers, save to DB, release GPU
-            return _process_and_save_critical(ctx, result, preprocess_context)
+            gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
+
+            # Record GPU end timestamp for inter-stage gap measurement
+            if os.getenv("ENABLE_BENCHMARK_TIMING"):
+                from app.core.redis import get_redis
+
+                get_redis().hset(f"benchmark:{task_id}", "gpu_end", str(time.time()))
+
+            return gpu_result
 
     except Exception as e:
         logger.error(f"GPU transcription failed for file {file_uuid}: {e}")

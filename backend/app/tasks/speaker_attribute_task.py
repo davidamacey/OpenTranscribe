@@ -258,6 +258,13 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
                     },
                 )
 
+            # Notify enrichment tracker that speaker attributes are done
+            send_ws_event(
+                user_id,
+                "enrichment_task_complete",
+                {"file_id": file_uuid, "task": "speaker_attributes"},
+            )
+
             _dispatch_llm_speaker_identification(file_uuid)
 
             return {

@@ -44,7 +44,9 @@ export type NotificationType =
   | 'collection_share_revoked'
   | 'collection_share_updated'
   | 'group_member_added'
-  | 'group_member_removed';
+  | 'group_member_removed'
+  | 'enrichment_started'
+  | 'enrichment_task_complete';
 
 // Notification interface
 export interface Notification {

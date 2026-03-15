@@ -110,6 +110,13 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
 
             _send_clustering_file_complete(user_id, file_uuid, len(clusters))
 
+            # Notify enrichment tracker that clustering is done
+            send_ws_event(
+                user_id,
+                "enrichment_task_complete",
+                {"file_id": file_uuid, "task": "speaker_clustering"},
+            )
+
             return result
 
         except Exception as e:

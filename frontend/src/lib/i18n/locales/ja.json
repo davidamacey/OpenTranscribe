@@ -1314,6 +1314,7 @@
   "fileDetail.unknownSpeaker": "不明",
   "fileDetail.processingDefault": "処理中...",
   "fileDetail.processingComplete": "処理が完了しました！",
+  "fileDetail.enrichmentInProgress": "バックグラウンド分析中...",
   "fileDetail.analyzingTranscript": "AIで文字起こしを分析中...",
   "fileDetail.aiSuggestionsComplete": "AI提案が完了しました！",
   "fileDetail.failedToGenerateSummaryGeneric": "要約の生成に失敗しました",

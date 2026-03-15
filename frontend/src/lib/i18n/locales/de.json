@@ -446,6 +446,7 @@
   "fileDetail.noFileIdProvided": "Keine Datei-ID angegeben",
   "fileDetail.noTranscript": "Kein Transkript für diese Datei verfügbar.",
   "fileDetail.processingComplete": "Verarbeitung abgeschlossen!",
+  "fileDetail.enrichmentInProgress": "Hintergrundanalyse läuft...",
   "fileDetail.processingDefault": "Wird verarbeitet...",
   "fileDetail.processingFile": "Datei wird verarbeitet...",
   "fileDetail.processingInProgress": "Verarbeitung läuft",

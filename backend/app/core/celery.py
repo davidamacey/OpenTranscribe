@@ -112,6 +112,7 @@ celery_app.conf.update(
         # dispatch.py can route it to either "gpu" or "cloud-asr" at call time.
         "transcription.preprocess": {"queue": "cpu"},
         "transcription.postprocess": {"queue": "cpu"},
+        "transcription.enrich_and_dispatch": {"queue": "cpu"},
         "transcription.pipeline_error": {"queue": "utility"},
         "rediarize": {"queue": "gpu"},
         "update_speaker_embedding_on_reassignment": {"queue": "gpu"},
@@ -215,6 +216,13 @@ celery_app.conf.update(
 def init_worker_process(**kwargs):
     """Initialize worker process - register HF token and dispose connections."""
     import os
+    import warnings
+
+    # Suppress benign warnings from AI libraries (community models, library compat)
+    warnings.filterwarnings("ignore", message=".*loss function.*", category=UserWarning)
+    warnings.filterwarnings("ignore", message=".*not writable.*", category=UserWarning)
+    warnings.filterwarnings("ignore", module="pytorch_lightning")
+    warnings.filterwarnings("ignore", module="lightning_fabric")
 
     # Register HuggingFace token for gated model access (e.g., pyannote)
     # Skip in offline mode — models are pre-downloaded and no network is available
