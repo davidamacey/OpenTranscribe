@@ -110,12 +110,11 @@ class TestBulkWriteV4Embeddings:
         result = _bulk_write_v4_embeddings([{"_id": "abc", "name": "test"}])
         assert result == 0
 
-    @patch("app.tasks.embedding_migration_v4.settings")
+    @patch("app.tasks.embedding_migration_v4.get_speaker_index_v4", return_value="speakers_v4")
     @patch(_OS_CLIENT_PATCH)
-    def test_bulk_writes_documents(self, mock_get_client, mock_settings):
+    def test_bulk_writes_documents(self, mock_get_client, mock_get_v4_index):
         from app.tasks.embedding_migration_v4 import _bulk_write_v4_embeddings
 
-        mock_settings.OPENSEARCH_SPEAKER_INDEX = "speakers"
         mock_client = MagicMock()
         mock_client.bulk.return_value = {"errors": False, "items": []}
         mock_get_client.return_value = mock_client
@@ -135,12 +134,11 @@ class TestBulkWriteV4Embeddings:
         assert bulk_body[0] == {"index": {"_index": "speakers_v4", "_id": "uuid-1"}}
         assert bulk_body[2] == {"index": {"_index": "speakers_v4", "_id": "uuid-2"}}
 
-    @patch("app.tasks.embedding_migration_v4.settings")
+    @patch("app.tasks.embedding_migration_v4.get_speaker_index_v4", return_value="speakers_v4")
     @patch(_OS_CLIENT_PATCH)
-    def test_logs_bulk_errors(self, mock_get_client, mock_settings):
+    def test_logs_bulk_errors(self, mock_get_client, mock_get_v4_index):
         from app.tasks.embedding_migration_v4 import _bulk_write_v4_embeddings
 
-        mock_settings.OPENSEARCH_SPEAKER_INDEX = "speakers"
         mock_client = MagicMock()
         mock_client.bulk.return_value = {
             "errors": True,
