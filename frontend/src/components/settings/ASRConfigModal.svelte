@@ -32,6 +32,7 @@
     region: '',
     base_url: '',
     is_active: true,
+    is_shared: false,
   };
 
   let originalFormData = { ...formData };
@@ -83,6 +84,7 @@
       region: config.region || '',
       base_url: config.base_url || '',
       is_active: config.is_active,
+      is_shared: config.is_shared || false,
     };
     originalFormData = { ...formData };
     testResult = null;
@@ -97,6 +99,7 @@
       region: '',
       base_url: '',
       is_active: true,
+      is_shared: false,
     };
     originalFormData = { ...formData };
     testResult = null;
@@ -126,6 +129,7 @@
         provider: formData.provider,
         model_name: formData.model_name.trim(),
         is_active: formData.is_active,
+        is_shared: formData.is_shared,
       };
       if (formData.api_key.trim()) payload.api_key = formData.api_key.trim();
       if (formData.region.trim()) payload.region = formData.region.trim();
@@ -320,6 +324,15 @@
           <p class="pricing-disclaimer">{$t('settings.asrProvider.pricingDisclaimer')}</p>
         {/if}
 
+        <!-- Share with all users -->
+        <div class="share-toggle-row">
+          <label class="toggle-label">
+            <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
+            <span class="toggle-switch"></span>
+            <span class="toggle-text">{$t('settings.asrProvider.shareGlobally')}</span>
+          </label>
+        </div>
+
   <svelte:fragment slot="footer">
     <div class="footer-row">
         <button
@@ -401,8 +414,8 @@
 
   .cap-badge {
     padding: 0.2rem 0.5rem;
-    background: rgba(99, 102, 241, 0.1);
-    color: #6366f1;
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
     border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 500;
@@ -444,6 +457,63 @@
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
     border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  .share-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    user-select: none;
+  }
+
+  .toggle-input {
+    display: none;
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background: var(--border-color);
+    border-radius: 10px;
+    transition: background-color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .toggle-input:checked + .toggle-switch {
+    background: #3b82f6;
+  }
+
+  .toggle-input:checked + .toggle-switch::after {
+    transform: translateX(16px);
+  }
+
+  .toggle-text {
+    color: var(--text-color);
   }
 
   .footer-row {

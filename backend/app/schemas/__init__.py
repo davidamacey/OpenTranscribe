@@ -67,14 +67,20 @@ from .media import Tag
 from .media import TagBase
 from .media import TranscriptSegment
 from .media import TranscriptSegmentUpdate
+from .media_source import UserMediaSourceCreate
+from .media_source import UserMediaSourceResponse
+from .media_source import UserMediaSourcesList
+from .media_source import UserMediaSourceUpdate
 from .prompt import ActivePromptResponse
 from .prompt import ActivePromptSelection
 from .prompt import ContentTypePromptsResponse
 from .prompt import LinkedCollection
+from .prompt import SharedPromptLibrary
 from .prompt import SummaryPrompt
 from .prompt import SummaryPromptBase
 from .prompt import SummaryPromptCreate
 from .prompt import SummaryPromptList
+from .prompt import SummaryPromptShare
 from .prompt import SummaryPromptUpdate
 from .prompt import SummaryPromptWithCollections
 from .prompt import UserSetting
@@ -142,6 +148,8 @@ __all__ = [
     "ActivePromptSelection",
     "ActivePromptResponse",
     "ContentTypePromptsResponse",
+    "SummaryPromptShare",
+    "SharedPromptLibrary",
     "LLMProvider",
     "ConnectionStatus",
     "UserLLMSettings",
@@ -199,6 +207,11 @@ __all__ = [
     "GroupMember",
     "GroupMemberAdd",
     "GroupMemberUpdate",
+    # Media source schemas
+    "UserMediaSourceCreate",
+    "UserMediaSourceUpdate",
+    "UserMediaSourceResponse",
+    "UserMediaSourcesList",
     # Sharing schemas
     "Share",
     "ShareCreate",

@@ -26,6 +26,8 @@ class SummaryPromptBase(BaseModel):
         description="Content type: meeting, interview, podcast, documentary, general",
     )
     is_active: bool = Field(True, description="Whether the prompt is available for use")
+    is_shared: bool = Field(False, description="Whether this prompt is shared with all users")
+    tags: list[str] = Field(default_factory=list)
 
     @field_validator("content_type")
     @classmethod
@@ -42,6 +44,21 @@ class SummaryPromptBase(BaseModel):
             if v not in valid_types:
                 raise ValueError(f"content_type must be one of: {valid_types}")
         return v
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v):
+        if len(v) > 20:
+            raise ValueError("Maximum 20 tags allowed per prompt")
+        cleaned = []
+        for tag in v:
+            tag = tag.strip().lower()
+            if not tag or len(tag) > 50:
+                continue
+            if not all(c.isalnum() or c in "-_ " for c in tag):
+                raise ValueError(f"Tag '{tag}' contains invalid characters")
+            cleaned.append(tag)
+        return list(dict.fromkeys(cleaned))
 
 
 class SummaryPromptCreate(SummaryPromptBase):
@@ -56,6 +73,7 @@ class SummaryPromptUpdate(BaseModel):
     prompt_text: Optional[str] = None
     content_type: Optional[str] = None
     is_active: Optional[bool] = None
+    tags: Optional[list[str]] = None
 
     @field_validator("content_type")
     @classmethod
@@ -73,6 +91,23 @@ class SummaryPromptUpdate(BaseModel):
                 raise ValueError(f"content_type must be one of: {valid_types}")
         return v
 
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v):
+        if v is None:
+            return v
+        if len(v) > 20:
+            raise ValueError("Maximum 20 tags allowed per prompt")
+        cleaned = []
+        for tag in v:
+            tag = tag.strip().lower()
+            if not tag or len(tag) > 50:
+                continue
+            if not all(c.isalnum() or c in "-_ " for c in tag):
+                raise ValueError(f"Tag '{tag}' contains invalid characters")
+            cleaned.append(tag)
+        return list(dict.fromkeys(cleaned))
+
 
 class SummaryPrompt(SummaryPromptBase, UUIDBaseSchema):
     """Schema for summary prompt responses with UUID as public identifier"""
@@ -81,6 +116,13 @@ class SummaryPrompt(SummaryPromptBase, UUIDBaseSchema):
         None, description="User ID for custom prompts, null for system prompts"
     )
     is_system_default: bool = Field(False, description="Whether this is a system-provided prompt")
+    is_shared: bool = False
+    shared_at: Optional[datetime] = None
+    tags: list[str] = []
+    usage_count: int = 0
+    author_name: Optional[str] = None
+    author_role: Optional[str] = None
+    is_owner: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -157,6 +199,24 @@ class ActivePromptResponse(BaseModel):
     )
 
 
+class SummaryPromptShare(BaseModel):
+    """Schema for toggling prompt sharing"""
+
+    is_shared: bool
+
+
+class SharedPromptLibrary(BaseModel):
+    """Response for the shared prompt browsing endpoint"""
+
+    prompts: list[SummaryPrompt]
+    total: int
+    page: int
+    size: int
+    has_next: bool
+    has_prev: bool
+    available_tags: list[str] = []
+
+
 # Content type specific prompt schemas
 class ContentTypePromptsResponse(BaseModel):
     """Schema for getting prompts by content type"""
@@ -164,4 +224,5 @@ class ContentTypePromptsResponse(BaseModel):
     content_type: str
     system_prompts: list[SummaryPrompt]
     user_prompts: list[SummaryPrompt]
+    shared_prompts: list[SummaryPrompt] = []
     active_prompt_id: Optional[UUID] = None

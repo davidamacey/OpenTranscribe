@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate } from '../../lib/api/prompts';
+  import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '../../lib/api/prompts';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import Spinner from '../ui/Spinner.svelte';
+  import TagInput from '../ui/TagInput.svelte';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -25,6 +26,9 @@
   let showViewModal = false;
   let viewingPrompt: SummaryPrompt | null = null;
 
+  // Shared prompts
+  let sharedPrompts: SummaryPrompt[] = [];
+
   // Delete confirmation modal
   let showDeleteModal = false;
   let promptToDelete: SummaryPrompt | null = null;
@@ -37,11 +41,20 @@
   let originalFormData = {};
   let isDirty = false;
 
-  let formData = {
+  let formData: {
+    name: string;
+    description: string;
+    prompt_text: string;
+    content_type: string;
+    tags: string[];
+    is_shared: boolean;
+  } = {
     name: '',
     description: '',
     prompt_text: '',
-    content_type: 'general'
+    content_type: 'general',
+    tags: [],
+    is_shared: false
   };
 
   $: contentTypes = [
@@ -76,7 +89,10 @@
         include_user: true,
         limit: 100
       });
-      allPrompts = promptsResponse.prompts || [];
+      // Separate own prompts from shared prompts (shared are non-owner, non-system)
+      const allLoaded = promptsResponse.prompts || [];
+      allPrompts = allLoaded.filter(p => p.is_system_default || p.is_owner !== false);
+      sharedPrompts = allLoaded.filter(p => !p.is_system_default && p.is_owner === false);
 
       // Load active prompt
       const activeResponse = await PromptsApi.getActivePrompt();
@@ -118,7 +134,7 @@
       });
 
       selectedPromptId = promptId;
-      activePrompt = allPrompts.find(p => p.uuid === promptId) || null;
+      activePrompt = allPrompts.find(p => p.uuid === promptId) || sharedPrompts.find(p => p.uuid === promptId) || null;
       toastStore.success($t('prompts.activePromptUpdated'));
 
       if (onSettingsChange) {
@@ -141,9 +157,11 @@
       name: '',
       description: '',
       prompt_text: '',
-      content_type: 'general'
+      content_type: 'general',
+      tags: [],
+      is_shared: false
     };
-    originalFormData = { ...formData };
+    originalFormData = { ...formData, tags: [...formData.tags] };
   }
 
   function openEditForm(prompt: SummaryPrompt) {
@@ -158,9 +176,11 @@
       name: prompt.name,
       description: prompt.description || '',
       prompt_text: prompt.prompt_text,
-      content_type: prompt.content_type || 'general'
+      content_type: prompt.content_type || 'general',
+      tags: [...(prompt.tags || [])],
+      is_shared: prompt.is_shared || false
     };
-    originalFormData = { ...formData };
+    originalFormData = { ...formData, tags: [...formData.tags] };
   }
 
   function closeForm(force: boolean = false) {
@@ -181,9 +201,11 @@
       name: '',
       description: '',
       prompt_text: '',
-      content_type: 'general'
+      content_type: 'general',
+      tags: [],
+      is_shared: false
     };
-    originalFormData = { ...formData };
+    originalFormData = { ...formData, tags: [...formData.tags] };
   }
 
   function handleUnsavedChangesConfirm() {
@@ -312,6 +334,46 @@
     }
   }
 
+  async function handleShareToggle(prompt: SummaryPrompt) {
+    if (prompt.is_system_default) return;
+    const newShared = !prompt.is_shared;
+    const idx = allPrompts.findIndex(p => p.uuid === prompt.uuid);
+    const prevSharedAt = prompt.shared_at;
+
+    // Optimistic update — flip toggle immediately for responsive UI
+    if (idx !== -1) {
+      allPrompts[idx] = {
+        ...allPrompts[idx],
+        is_shared: newShared,
+        shared_at: newShared ? new Date().toISOString() : undefined
+      };
+      allPrompts = allPrompts;
+    }
+
+    saving = true;
+    try {
+      await PromptsApi.sharePrompt(prompt.uuid, newShared);
+      toastStore.success(
+        newShared ? $t('prompts.shareEnabled') : $t('prompts.shareDisabled')
+      );
+    } catch (err: any) {
+      // Rollback on failure
+      if (idx !== -1) {
+        allPrompts[idx] = {
+          ...allPrompts[idx],
+          is_shared: !newShared,
+          shared_at: prevSharedAt
+        };
+        allPrompts = allPrompts;
+      }
+      console.error('Error toggling share:', err);
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : $t('prompts.shareFailed'));
+    } finally {
+      saving = false;
+    }
+  }
+
   // Separate prompts by type - exclude speaker_identification from UI
   $: systemPrompts = allPrompts.filter(p => p.is_system_default && p.content_type !== 'speaker_identification');
   $: userPrompts = allPrompts.filter(p => !p.is_system_default);
@@ -328,8 +390,8 @@
 
   $: isFormValid = !!(formData.name && formData.name.trim() && formData.prompt_text && formData.prompt_text.trim());
 
-  // Track form changes for dirty state
-  $: isDirty = JSON.stringify(formData) !== JSON.stringify(originalFormData);
+  // Track form changes for dirty state (tags is an array, so JSON compare works)
+  $: isDirty = JSON.stringify({ ...formData, tags: formData.tags }) !== JSON.stringify(originalFormData);
 
   // Function to prevent native tooltip flicker and position tooltip
   function removeTitle(event) {
@@ -521,7 +583,7 @@
           </svg>
           {$t('prompts.customPrompts')}
         </h4>
-        {#if userPrompts.length > 0}
+        {#if userPrompts.length > 0 || sharedPrompts.length > 0}
           <button class="create-config-button" on:click={openCreateForm} title={$t('prompts.createNew')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
@@ -537,10 +599,20 @@
           {#each userPrompts as prompt}
             <div class="config-item" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
-                <div class="config-name">{prompt.name}</div>
+                <div class="config-name">
+                  {prompt.name}
+                  {#if prompt.is_shared}<span class="share-badge">{$t('prompts.shared')}</span>{/if}
+                </div>
                 <div class="config-provider">{prompt.content_type || 'General'}</div>
                 {#if prompt.description}
                   <div class="config-url">{prompt.description}</div>
+                {/if}
+                {#if prompt.tags && prompt.tags.length > 0}
+                  <div class="tag-pills">
+                    {#each prompt.tags as tag}
+                      <span class="tag-pill">{tag}</span>
+                    {/each}
+                  </div>
                 {/if}
                 {#if prompt.linked_collections && prompt.linked_collections.length > 0}
                   <div class="linked-collections">
@@ -550,6 +622,14 @@
                     {/each}
                   </div>
                 {/if}
+                <div class="share-toggle-row">
+                  <label class="toggle-label">
+                    <input type="checkbox" class="toggle-input" checked={prompt.is_shared}
+                      on:change={() => handleShareToggle(prompt)} disabled={saving} />
+                    <span class="toggle-switch"></span>
+                    <span class="toggle-text">{$t('prompts.shareGlobally')}</span>
+                  </label>
+                </div>
               </div>
               <div class="prompt-actions">
                 {#if selectedPromptId === prompt.uuid}
@@ -644,6 +724,95 @@
         </div>
       {/if}
     </div>
+
+    <!-- Shared Prompts from Others -->
+    {#if sharedPrompts.length > 0}
+      <div class="saved-configs-section">
+        <div class="section-header shared-section-header">
+          <h4>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            {$t('prompts.sharedByOthers')}
+          </h4>
+        </div>
+
+        <div class="config-list">
+          {#each sharedPrompts as prompt}
+            <div class="config-item shared" class:active={selectedPromptId === prompt.uuid}>
+              <div class="config-info">
+                <div class="config-name">
+                  {prompt.name}
+                  <span class="share-badge">{$t('prompts.shared')}</span>
+                  {#if prompt.author_role === 'admin' || prompt.author_role === 'super_admin'}
+                    <span class="admin-badge">{$t('settings.sharing.adminBadge')}</span>
+                  {/if}
+                </div>
+                <div class="config-provider">{prompt.content_type || 'General'}</div>
+                {#if prompt.description}
+                  <div class="config-url">{prompt.description}</div>
+                {/if}
+                {#if prompt.tags && prompt.tags.length > 0}
+                  <div class="tag-pills">
+                    {#each prompt.tags as tag}
+                      <span class="tag-pill">{tag}</span>
+                    {/each}
+                  </div>
+                {/if}
+                {#if prompt.author_name}
+                  <div class="shared-by">{$t('prompts.sharedBy', { name: prompt.author_name })}</div>
+                {/if}
+              </div>
+              <div class="prompt-actions">
+                {#if selectedPromptId === prompt.uuid}
+                  <div class="config-status currently-active">
+                    <div class="status-indicator">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20,6 9,17 4,12"/>
+                      </svg>
+                    </div>
+                    <span class="status-text">{$t('prompts.currentlyActive')}</span>
+                  </div>
+                {:else}
+                  <button
+                    class="activate-button"
+                    on:click={() => setActivePrompt(prompt.uuid)}
+                    disabled={saving}
+                    title={$t('prompts.makeActive')}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                    {$t('prompts.activate')}
+                  </button>
+                {/if}
+
+                <button
+                  class="view-button"
+                  on:click={() => viewPrompt(prompt)}
+                  title={$t('prompts.viewPrompt')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
   {/if}
 
   <!-- Create/Edit Form Modal -->
@@ -713,6 +882,21 @@
               class="form-control"
               placeholder={$t('prompts.descriptionPlaceholder')}
             />
+          </div>
+
+          <div class="form-group">
+            <label for="tags">{$t('prompts.tags')}</label>
+            <TagInput id="tags" bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
+            <small class="form-text">{$t('prompts.tagsHelp')}</small>
+          </div>
+
+          <!-- Share with all users -->
+          <div class="share-toggle-row">
+            <label class="toggle-label">
+              <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
+              <span class="toggle-switch"></span>
+              <span class="toggle-text">{$t('prompts.shareGlobally')}</span>
+            </label>
           </div>
 
           <div class="form-group">
@@ -1714,5 +1898,155 @@
   .close-button:hover {
     background-color: var(--danger-color, #ef4444);
     color: white;
+  }
+
+  /* Shared config styles */
+  .config-item.shared {
+    border-left: 3px solid var(--info-color, #3b82f6);
+    background: rgba(59, 130, 246, 0.04);
+  }
+
+  :global([data-theme='dark']) .config-item.shared,
+  :global(.dark) .config-item.shared {
+    background: rgba(96, 165, 250, 0.06);
+  }
+
+  .share-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  :global([data-theme='dark']) .share-badge,
+  :global(.dark) .share-badge {
+    background: rgba(96, 165, 250, 0.15);
+    color: #60a5fa;
+  }
+
+  .admin-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  :global([data-theme='dark']) .admin-badge,
+  :global(.dark) .admin-badge {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+  }
+
+  .shared-by {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 0.35rem;
+    font-style: italic;
+  }
+
+  .shared-section-header h4 {
+    color: #3b82f6;
+  }
+
+  :global([data-theme='dark']) .shared-section-header h4,
+  :global(.dark) .shared-section-header h4 {
+    color: #60a5fa;
+  }
+
+  /* Tag pills */
+  .tag-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+  }
+
+  .tag-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
+  }
+
+  :global([data-theme='dark']) .tag-pill,
+  :global(.dark) .tag-pill {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+  }
+
+  /* Share toggle */
+  .share-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-weight: 400;
+  }
+
+  .toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background-color: var(--border-color);
+    border-radius: 10px;
+    transition: background-color 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+  }
+
+  .toggle-input:checked + .toggle-switch {
+    background-color: #3b82f6;
+  }
+
+  .toggle-input:checked + .toggle-switch::after {
+    transform: translateX(16px);
+  }
+
+  .toggle-text {
+    font-size: 0.75rem;
+    color: var(--text-muted);
   }
 </style>

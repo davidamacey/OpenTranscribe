@@ -13,6 +13,13 @@ export interface SummaryPrompt {
   user_id: string | null; // UUID
   content_type: string | null;
   is_active: boolean;
+  is_shared?: boolean;
+  shared_at?: string;
+  tags?: string[];
+  usage_count?: number;
+  author_name?: string;
+  author_role?: string;
+  is_owner?: boolean;
   created_at: string;
   updated_at: string;
   linked_collections?: Array<{ uuid: string; name: string }>;
@@ -24,6 +31,17 @@ export interface SummaryPromptCreate {
   prompt_text: string;
   content_type?: string;
   is_active?: boolean;
+  tags?: string[];
+}
+
+export interface SharedPromptLibrary {
+  prompts: SummaryPrompt[];
+  total: number;
+  page: number;
+  size: number;
+  has_next: boolean;
+  has_prev: boolean;
+  available_tags: string[];
 }
 
 export interface SummaryPromptUpdate {
@@ -32,6 +50,7 @@ export interface SummaryPromptUpdate {
   prompt_text?: string;
   content_type?: string;
   is_active?: boolean;
+  tags?: string[];
 }
 
 export interface SummaryPromptList {
@@ -128,6 +147,41 @@ export class PromptsApi {
    */
   static async getPrompt(id: string): Promise<SummaryPrompt> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/${id}`);
+    return response.data;
+  }
+
+  /**
+   * Get the shared prompt library with filtering
+   */
+  static async getSharedLibrary(params?: {
+    content_type?: string;
+    tags?: string;
+    search?: string;
+    sort_by?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<SharedPromptLibrary> {
+    const queryParams = new URLSearchParams();
+    if (params?.content_type) queryParams.append('content_type', params.content_type);
+    if (params?.tags) queryParams.append('tags', params.tags);
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.sort_by) queryParams.append('sort_by', params.sort_by);
+    if (params?.skip !== undefined) queryParams.append('skip', params.skip.toString());
+    if (params?.limit !== undefined) queryParams.append('limit', params.limit.toString());
+
+    const response = await axiosInstance.get(
+      `${this.BASE_PATH}/shared/library?${queryParams.toString()}`
+    );
+    return response.data;
+  }
+
+  /**
+   * Toggle sharing on a prompt
+   */
+  static async sharePrompt(promptId: string, isShared: boolean): Promise<SummaryPrompt> {
+    const response = await axiosInstance.post(`${this.BASE_PATH}/shared/${promptId}/toggle`, {
+      is_shared: isShared,
+    });
     return response.data;
   }
 }

@@ -60,6 +60,10 @@ class UserLLMSettings(Base):
     test_status = Column(String(20), nullable=True)  # success, failed, pending
     test_message = Column(Text, nullable=True)  # Error message or success details
 
+    # Sharing
+    is_shared = Column(Boolean, default=False, nullable=False)
+    shared_at = Column(DateTime(timezone=True), nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

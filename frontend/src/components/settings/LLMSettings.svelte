@@ -18,6 +18,7 @@
   let supportedProviders: ProviderDefaults[] = [];
   let hasSettings = false;
   let savedConfigurations: UserLLMSettings[] = [];
+  let sharedConfigurations: UserLLMSettings[] = [];
   let activeConfigurationId: string | null = null;
   let editingConfiguration: UserLLMSettings | null = null;
 
@@ -57,10 +58,12 @@
       try {
         const configurationsResponse = await LLMSettingsApi.getUserConfigurations();
         savedConfigurations = configurationsResponse.configurations;
+        sharedConfigurations = configurationsResponse.shared_configurations || [];
         activeConfigurationId = configurationsResponse.active_configuration_id || null;
 
-        if (activeConfigurationId && savedConfigurations.length > 0) {
-          currentSettings = savedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
+        if (activeConfigurationId && (savedConfigurations.length > 0 || sharedConfigurations.length > 0)) {
+          currentSettings = savedConfigurations.find(c => c.uuid === activeConfigurationId)
+            || sharedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
           hasSettings = true;
 
           // Check initial status if settings exist and update the central store
@@ -310,11 +313,51 @@
     }
 
     // Update hasSettings flag
-    hasSettings = savedConfigurations.length > 0;
+    hasSettings = savedConfigurations.length > 0 || sharedConfigurations.length > 0;
 
     // Trigger parent component update
     if (onSettingsChange) {
       onSettingsChange();
+    }
+  }
+
+  async function handleShareToggle(config: UserLLMSettings) {
+    const newShared = !config.is_shared;
+    const idx = savedConfigurations.findIndex(c => c.uuid === config.uuid);
+    const prevSharedAt = config.shared_at;
+
+    // Optimistic update — flip toggle immediately for responsive UI
+    if (idx !== -1) {
+      savedConfigurations[idx] = {
+        ...savedConfigurations[idx],
+        is_shared: newShared,
+        shared_at: newShared ? new Date().toISOString() : undefined
+      };
+      savedConfigurations = savedConfigurations;
+    }
+
+    saving = true;
+    try {
+      await LLMSettingsApi.toggleShare(config.uuid, newShared);
+      toastStore.success(
+        newShared ? $t('settings.llmProvider.shareEnabled') : $t('settings.llmProvider.shareDisabled'),
+        3000
+      );
+    } catch (err: any) {
+      // Rollback on failure
+      if (idx !== -1) {
+        savedConfigurations[idx] = {
+          ...savedConfigurations[idx],
+          is_shared: !newShared,
+          shared_at: prevSharedAt
+        };
+        savedConfigurations = savedConfigurations;
+      }
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.shareFailed');
+      toastStore.error(errorMsg, 5000);
+    } finally {
+      saving = false;
     }
   }
 
@@ -375,7 +418,7 @@
           </svg>
           {$t('settings.llmProvider.savedConfigs')}
         </h4>
-        {#if savedConfigurations.length > 0}
+        {#if savedConfigurations.length > 0 || sharedConfigurations.length > 0}
           <button class="create-config-button" on:click={openCreateModal} title={$t('settings.llmProvider.createConfigTooltip')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
@@ -391,11 +434,24 @@
           {#each savedConfigurations as config}
             <div class="config-item" class:active={config.uuid === activeConfigurationId}>
               <div class="config-info">
-                <div class="config-name">{config.name}</div>
+                <div class="config-name">
+                  {config.name}
+                  {#if config.is_shared}
+                    <span class="share-badge">{$t('settings.llmProvider.shared')}</span>
+                  {/if}
+                </div>
                 <div class="config-provider">{getProviderDisplayName(config.provider)} • {config.model_name}</div>
                 {#if config.base_url}
                   <div class="config-url">{config.base_url}</div>
                 {/if}
+                <div class="share-toggle-row">
+                  <label class="toggle-label">
+                    <input type="checkbox" class="toggle-input" checked={config.is_shared}
+                      on:change={() => handleShareToggle(config)} disabled={saving} />
+                    <span class="toggle-switch"></span>
+                    <span class="toggle-text">{$t('settings.llmProvider.shareGlobally')}</span>
+                  </label>
+                </div>
               </div>
 
               <div class="config-actions">
@@ -474,25 +530,93 @@
         </div>
 
         <!-- Delete All Button -->
-        {#if savedConfigurations.length > 0}
-          <div class="delete-all-section">
-            <button
-              class="delete-all-button"
-              on:click={confirmDeleteAll}
-              disabled={saving}
-              title={$t('settings.llmProvider.deleteAllTooltip')}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="3,6 5,6 21,6"/>
-                <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
-                <line x1="10" y1="11" x2="10" y2="17"/>
-                <line x1="14" y1="11" x2="14" y2="17"/>
-              </svg>
-              {$t('settings.llmProvider.deleteAllConfigs')}
-            </button>
-          </div>
-        {/if}
-      {:else}
+        <div class="delete-all-section">
+          <button
+            class="delete-all-button"
+            on:click={confirmDeleteAll}
+            disabled={saving}
+            title={$t('settings.llmProvider.deleteAllTooltip')}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3,6 5,6 21,6"/>
+              <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+              <line x1="10" y1="11" x2="10" y2="17"/>
+              <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+            {$t('settings.llmProvider.deleteAllConfigs')}
+          </button>
+        </div>
+      {/if}
+
+      <!-- Shared by Others -->
+      {#if sharedConfigurations.length > 0}
+        <div class="section-header shared-section-header">
+          <h4>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            {$t('settings.llmProvider.sharedByOthers')}
+          </h4>
+        </div>
+        <div class="config-list">
+          {#each sharedConfigurations as config}
+            <div class="config-item shared" class:active={config.uuid === activeConfigurationId}>
+              <div class="config-info">
+                <div class="config-name">
+                  {config.name}
+                  {#if config.owner_role === 'admin' || config.owner_role === 'super_admin'}
+                    <span class="admin-badge">{$t('settings.sharing.adminBadge')}</span>
+                  {/if}
+                </div>
+                <div class="config-provider">{getProviderDisplayName(config.provider)} • {config.model_name}</div>
+                {#if config.owner_name}
+                  <div class="shared-by">{$t('settings.llmProvider.sharedBy', { name: config.owner_name })}</div>
+                {/if}
+              </div>
+              <div class="config-actions">
+                {#if config.uuid === activeConfigurationId}
+                  <div class="config-status currently-active">
+                    <div class="status-indicator">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20,6 9,17 4,12"/>
+                      </svg>
+                    </div>
+                    <span class="status-text">{$t('settings.llmProvider.currentlyActive')}</span>
+                  </div>
+                {:else}
+                  <button
+                    class="activate-button"
+                    on:click={() => activateConfiguration(config.uuid)}
+                    disabled={saving}
+                    title={$t('settings.llmProvider.activateTooltip')}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    {$t('settings.llmProvider.activate')}
+                  </button>
+                {/if}
+                <button
+                  class="test-connection-button"
+                  on:click={() => testSavedConfiguration(config)}
+                  disabled={testing}
+                  title={$t('settings.llmProvider.testConnection') + ' ' + config.name}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 4 1 10 7 10"/>
+                    <polyline points="23 20 23 14 17 14"/>
+                    <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      {#if savedConfigurations.length === 0 && sharedConfigurations.length === 0}
         <div class="empty-state">
           <div class="empty-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -862,5 +986,122 @@
   button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  /* Shared config styling */
+  .config-item.shared {
+    border-left: 3px solid var(--info-color, #3b82f6);
+    background: rgba(59, 130, 246, 0.04);
+  }
+
+  :global([data-theme='dark']) .config-item.shared {
+    background: rgba(96, 165, 250, 0.06);
+  }
+
+  .shared-section-header {
+    margin-top: 1.5rem;
+  }
+
+  .share-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+
+  :global([data-theme='dark']) .share-badge {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+  }
+
+  .admin-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+
+  :global([data-theme='dark']) .admin-badge {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+  }
+
+  .shared-by {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 0.125rem;
+  }
+
+  .share-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .toggle-input {
+    display: none;
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 28px;
+    height: 16px;
+    background: var(--border-color);
+    border-radius: 8px;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .toggle-input:checked + .toggle-switch {
+    background: #3b82f6;
+  }
+
+  .toggle-input:checked + .toggle-switch::after {
+    transform: translateX(12px);
+  }
+
+  .toggle-text {
+    user-select: none;
   }
 </style>

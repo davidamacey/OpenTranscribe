@@ -1,4 +1,4 @@
-"""SQLAlchemy model for user ASR provider settings."""
+"""SQLAlchemy model for user media source settings."""
 
 import uuid as uuid_pkg
 
@@ -11,6 +11,7 @@ from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -18,28 +19,23 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 
-class UserASRSettings(Base):
-    """User-specific ASR provider configuration. Mirrors UserLLMSettings pattern."""
+class UserMediaSource(Base):
+    """User-specific media source configuration for authenticated downloads."""
 
-    __tablename__ = "user_asr_settings"
+    __tablename__ = "user_media_source"
 
     id = Column(Integer, primary_key=True, index=True)
     uuid = Column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-
-    provider = Column(String(50), nullable=False, index=True)
-    model_name = Column(String(100), nullable=False)
-    api_key = Column(Text, nullable=True)  # AES-256-GCM encrypted
-    base_url = Column(String(500), nullable=True)
-    region = Column(String(50), nullable=True)  # For Azure / AWS
-
+    hostname = Column(String(255), nullable=False)
+    provider_type = Column(String(50), nullable=False, default="mediacms")
+    username = Column(Text, nullable=True)
+    password = Column(Text, nullable=True)  # AES-256-GCM encrypted
+    verify_ssl = Column(Boolean, default=True, nullable=False)
+    label = Column(String(200), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    last_tested = Column(DateTime(timezone=True), nullable=True)
-    test_status = Column(String(20), nullable=True)
-    test_message = Column(Text, nullable=True)
 
     # Sharing
     is_shared = Column(Boolean, default=False, nullable=False)
@@ -48,16 +44,23 @@ class UserASRSettings(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    user = relationship("User", back_populates="asr_settings")
+    user = relationship("User", back_populates="media_sources")
 
     __table_args__ = (
-        UniqueConstraint("user_id", "name", name="_user_asr_config_name_unique"),
-        Index("ix_user_asr_settings_user_prov", "user_id", "provider"),
+        UniqueConstraint("user_id", "hostname", name="_user_media_source_host_unique"),
+        Index(
+            "ix_user_media_source_shared",
+            "is_shared",
+            postgresql_where=text("is_shared = TRUE"),
+        ),
     )
 
     @property
-    def has_api_key(self) -> bool:
-        return bool(self.api_key)
+    def has_credentials(self) -> bool:
+        return bool(self.username and self.password)
 
     def __repr__(self) -> str:
-        return f"<UserASRSettings(user_id={self.user_id}, name={self.name!r}, provider={self.provider})>"
+        return (
+            f"<UserMediaSource(user_id={self.user_id}, hostname={self.hostname!r}, "
+            f"provider={self.provider_type})>"
+        )

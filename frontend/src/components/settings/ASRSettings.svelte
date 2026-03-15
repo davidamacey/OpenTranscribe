@@ -18,6 +18,7 @@
   let testing = false;
 
   let configurations: UserASRSettingsResponse[] = [];
+  let sharedConfigurations: UserASRSettingsResponse[] = [];
   let activeConfigurationId: string | null = null;
   let providers: ASRProviderInfo[] = [];
   let usingLocalDefault = true;
@@ -40,10 +41,11 @@
     try {
       const [providersResp, settingsResp] = await Promise.all([
         ASRSettingsApi.getProviders(),
-        ASRSettingsApi.getSettings().catch(() => ({ configurations: [], active_configuration_id: undefined, total: 0 })),
+        ASRSettingsApi.getSettings().catch(() => ({ configurations: [], shared_configurations: [], active_configuration_id: undefined, total: 0 })),
       ]);
       providers = providersResp.providers;
       configurations = settingsResp.configurations;
+      sharedConfigurations = settingsResp.shared_configurations || [];
       activeConfigurationId = settingsResp.active_configuration_id || null;
       usingLocalDefault = configurations.length === 0 || !activeConfigurationId;
     } catch (err: any) {
@@ -171,7 +173,47 @@
   }
 
   function getActiveConfig(): UserASRSettingsResponse | null {
-    return configurations.find(c => c.uuid === activeConfigurationId) || null;
+    return configurations.find(c => c.uuid === activeConfigurationId)
+      || sharedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
+  }
+
+  async function handleShareToggle(config: UserASRSettingsResponse) {
+    const newShared = !config.is_shared;
+    const idx = configurations.findIndex(c => c.uuid === config.uuid);
+    const prevSharedAt = config.shared_at;
+
+    // Optimistic update — flip toggle immediately for responsive UI
+    if (idx !== -1) {
+      configurations[idx] = {
+        ...configurations[idx],
+        is_shared: newShared,
+        shared_at: newShared ? new Date().toISOString() : undefined
+      };
+      configurations = configurations;
+    }
+
+    saving = true;
+    try {
+      await ASRSettingsApi.toggleShare(config.uuid, newShared);
+      toastStore.success(
+        newShared ? $t('settings.asrProvider.shareEnabled') : $t('settings.asrProvider.shareDisabled'),
+        3000
+      );
+    } catch (err: any) {
+      // Rollback on failure
+      if (idx !== -1) {
+        configurations[idx] = {
+          ...configurations[idx],
+          is_shared: !newShared,
+          shared_at: prevSharedAt
+        };
+        configurations = configurations;
+      }
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : 'Failed to toggle sharing', 5000);
+    } finally {
+      saving = false;
+    }
   }
 
   function getTestStatusIcon(config: UserASRSettingsResponse): string {
@@ -218,7 +260,7 @@
         </svg>
         {$t('settings.asrProvider.title')}
       </h4>
-      {#if configurations.length > 0}
+      {#if configurations.length > 0 || sharedConfigurations.length > 0}
         <button class="add-button" on:click={openCreateModal} disabled={saving}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -242,8 +284,18 @@
                   <span class="badge test-badge {getTestStatusClass(config)}">{getTestStatusIcon(config)} {$t(`settings.asrProvider.status.${config.test_status === 'success' ? 'connected' : 'failed'}`)}</span>
                 {/if}
               </div>
-              <div class="config-name">{config.name}</div>
+              <div class="config-name">{config.name}
+                {#if config.is_shared}<span class="share-badge">{$t('settings.asrProvider.shared')}</span>{/if}
+              </div>
               <div class="config-model">{config.model_name}</div>
+              <div class="share-toggle-row">
+                <label class="toggle-label">
+                  <input type="checkbox" class="toggle-input" checked={config.is_shared}
+                    on:change={() => handleShareToggle(config)} disabled={saving} />
+                  <span class="toggle-switch"></span>
+                  <span class="toggle-text">{$t('settings.asrProvider.shareGlobally')}</span>
+                </label>
+              </div>
             </div>
 
             <div class="config-actions">
@@ -308,7 +360,61 @@
           {$t('settings.asrProvider.deleteAll')}
         </button>
       </div>
-    {:else}
+    {/if}
+
+    <!-- Shared by Others -->
+    {#if sharedConfigurations.length > 0}
+      <div class="section-header shared-section-header">
+        <h4>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+          {$t('settings.asrProvider.sharedByOthers')}
+        </h4>
+      </div>
+      <div class="config-list">
+        {#each sharedConfigurations as config (config.uuid)}
+          <div class="config-card shared" class:active={config.uuid === activeConfigurationId}>
+            <div class="config-info">
+              <div class="config-badges">
+                <span class="badge provider-badge">{ASRSettingsApi.getProviderDisplayName(config.provider)}</span>
+                {#if config.uuid === activeConfigurationId}
+                  <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
+                {/if}
+                {#if config.owner_role === 'admin' || config.owner_role === 'super_admin'}
+                  <span class="badge admin-badge">{$t('settings.sharing.adminBadge')}</span>
+                {/if}
+              </div>
+              <div class="config-name">{config.name}</div>
+              <div class="config-model">{config.model_name}</div>
+              {#if config.owner_name}
+                <div class="shared-by">{$t('settings.asrProvider.sharedBy', { name: config.owner_name })}</div>
+              {/if}
+            </div>
+            <div class="config-actions">
+              {#if config.uuid !== activeConfigurationId}
+                <button class="btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving}>
+                  {$t('settings.asrProvider.setActive')}
+                </button>
+              {/if}
+              <button class="btn-icon btn-test" on:click={() => testConfiguration(config)} disabled={testing}>
+                {#if testing && testingConfigId === config.uuid}
+                  <Spinner size="small" />
+                {:else}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                    <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                  </svg>
+                {/if}
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if configurations.length === 0 && sharedConfigurations.length === 0}
       <div class="empty-state">
         <div class="empty-icon">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -484,8 +590,8 @@
   }
 
   .provider-badge {
-    background: rgba(99, 102, 241, 0.12);
-    color: #6366f1;
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
   }
 
   .active-badge {
@@ -651,4 +757,59 @@
     opacity: 0.6;
     cursor: not-allowed;
   }
+
+  .config-card.shared {
+    border-left: 3px solid var(--info-color, #3b82f6);
+    background: rgba(59, 130, 246, 0.04);
+  }
+  :global([data-theme='dark']) .config-card.shared { background: rgba(96, 165, 250, 0.06); }
+
+  .shared-section-header { margin-top: 1.5rem; }
+
+  .share-badge {
+    display: inline-flex; align-items: center;
+    padding: 1px 6px; border-radius: 10px;
+    font-size: 0.625rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    background: rgba(59, 130, 246, 0.12); color: #3b82f6;
+    margin-left: 0.5rem; vertical-align: middle;
+  }
+  :global([data-theme='dark']) .share-badge { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+
+  .admin-badge {
+    background: rgba(245, 158, 11, 0.12); color: #d97706;
+  }
+  :global([data-theme='dark']) .admin-badge { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+
+  .shared-by {
+    font-size: 0.725rem; color: var(--text-muted);
+    font-style: italic; margin-top: 0.125rem;
+  }
+
+  .share-toggle-row {
+    display: flex; align-items: center; gap: 0.75rem;
+    margin-top: 0.5rem; padding-top: 0.5rem;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .toggle-label {
+    display: flex; align-items: center; gap: 0.5rem;
+    cursor: pointer; font-size: 0.75rem; color: var(--text-muted);
+  }
+
+  .toggle-input { display: none; }
+
+  .toggle-switch {
+    position: relative; width: 28px; height: 16px;
+    background: var(--border-color); border-radius: 8px;
+    transition: background 0.2s; flex-shrink: 0;
+  }
+  .toggle-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 12px; height: 12px; background: white;
+    border-radius: 50%; transition: transform 0.2s;
+  }
+  .toggle-input:checked + .toggle-switch { background: #3b82f6; }
+  .toggle-input:checked + .toggle-switch::after { transform: translateX(12px); }
+  .toggle-text { user-select: none; }
 </style>

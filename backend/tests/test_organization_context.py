@@ -146,10 +146,11 @@ class TestOrgContextPromptTypeToggle:
         context_text = "Greenleaf Analytics healthcare company"
         mock_prompt_info.return_value = ("prompt text", True)  # is_system_default=True
 
-        # First call returns context text, second returns toggle setting
+        # Calls: 1) shared context check, 2) context text, 3) toggle setting
         context_setting = self._make_setting("org_context_text", context_text)
         toggle_setting = self._make_setting("org_context_include_default_prompts", "true")
         mock_db.query.return_value.filter.return_value.first.side_effect = [
+            None,  # org_context_use_shared_from — not using shared
             context_setting,
             toggle_setting,
         ]
@@ -167,6 +168,7 @@ class TestOrgContextPromptTypeToggle:
         context_setting = self._make_setting("org_context_text", "Some context")
         toggle_setting = self._make_setting("org_context_include_default_prompts", "false")
         mock_db.query.return_value.filter.return_value.first.side_effect = [
+            None,  # org_context_use_shared_from — not using shared
             context_setting,
             toggle_setting,
         ]
@@ -187,6 +189,7 @@ class TestOrgContextPromptTypeToggle:
         context_setting = self._make_setting("org_context_text", context_text)
         toggle_setting = self._make_setting("org_context_include_custom_prompts", "true")
         mock_db.query.return_value.filter.return_value.first.side_effect = [
+            None,  # org_context_use_shared_from — not using shared
             context_setting,
             toggle_setting,
         ]
@@ -206,6 +209,7 @@ class TestOrgContextPromptTypeToggle:
         context_setting = self._make_setting("org_context_text", "Some context")
         # No toggle setting stored - defaults to "false" for custom prompts
         mock_db.query.return_value.filter.return_value.first.side_effect = [
+            None,  # org_context_use_shared_from — not using shared
             context_setting,
             None,
         ]
@@ -226,6 +230,7 @@ class TestOrgContextPromptTypeToggle:
         context_setting = self._make_setting("org_context_text", context_text)
         # No toggle setting stored - defaults to "true" for system prompts
         mock_db.query.return_value.filter.return_value.first.side_effect = [
+            None,  # org_context_use_shared_from — not using shared
             context_setting,
             None,
         ]

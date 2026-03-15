@@ -89,12 +89,18 @@ export interface UserASRSettingsResponse {
   test_status?: ASRConnectionStatus;
   test_message?: string;
   has_api_key: boolean;
+  is_shared?: boolean;
+  shared_at?: string;
+  owner_name?: string;
+  owner_role?: string;
+  is_own?: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface ASRSettingsList {
   configurations: UserASRSettingsResponse[];
+  shared_configurations: UserASRSettingsResponse[];
   /** UUID string of the active config — use this for UUID comparisons */
   active_configuration_uuid?: string;
   /**
@@ -212,8 +218,10 @@ export class ASRSettingsApi {
     const configs: UserASRSettingsResponse[] = data.configs ?? data.configurations ?? [];
     const activeUuid: string | undefined =
       data.active_config_uuid ?? data.active_configuration_uuid ?? undefined;
+    const sharedConfigs: UserASRSettingsResponse[] = data.shared_configs ?? [];
     return {
       configurations: configs,
+      shared_configurations: sharedConfigs,
       active_configuration_uuid: activeUuid,
       // backwards-compat alias holds the UUID string (not the integer PK)
       active_configuration_id: activeUuid,
@@ -286,6 +294,16 @@ export class ASRSettingsApi {
   static async setActive(uuid: string): Promise<{ message: string; config_uuid: string }> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/set-active`, {
       config_uuid: uuid,
+    });
+    return response.data;
+  }
+
+  /**
+   * Toggle sharing on an ASR configuration
+   */
+  static async toggleShare(uuid: string, isShared: boolean): Promise<UserASRSettingsResponse> {
+    const response = await axiosInstance.put(`${this.BASE_PATH}/config/${uuid}`, {
+      is_shared: isShared,
     });
     return response.data;
   }

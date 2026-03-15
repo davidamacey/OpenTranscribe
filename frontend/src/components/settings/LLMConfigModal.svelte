@@ -22,7 +22,8 @@
     base_url: '',
     max_tokens: 4096,
     temperature: '0.3',
-    is_active: true
+    is_active: true,
+    is_shared: false
   };
 
   // Form state
@@ -38,7 +39,8 @@
     base_url: '',
     max_tokens: 4096,
     temperature: '0.3',
-    is_active: true
+    is_active: true,
+    is_shared: false
   };
 
   // Ollama model discovery
@@ -156,7 +158,8 @@
       base_url: config.base_url || '',
       max_tokens: config.max_tokens,
       temperature: config.temperature,
-      is_active: config.is_active
+      is_active: config.is_active,
+      is_shared: config.is_shared || false
     };
 
     // Fetch the actual API key if one is stored
@@ -188,7 +191,8 @@
       base_url: '',
       max_tokens: 4096,
       temperature: '0.3',
-      is_active: true
+      is_active: true,
+      is_shared: false
     };
     originalFormData = { ...formData };
     ollamaModels = [];
@@ -817,6 +821,15 @@
           </div>
         {/if}
 
+        <!-- Share with all users -->
+        <div class="share-toggle-row">
+          <label class="toggle-label">
+            <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
+            <span class="toggle-switch"></span>
+            <span class="toggle-text">{$t('settings.llmProvider.shareGlobally')}</span>
+          </label>
+        </div>
+
         <!-- Form Actions -->
         <div class="form-actions">
           <button type="button" class="cancel-button" on:click={() => closeModal()} disabled={saving}>
@@ -1059,6 +1072,63 @@
   .test-connection-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .share-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 400;
+    user-select: none;
+  }
+
+  .toggle-input {
+    display: none;
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background: var(--border-color);
+    border-radius: 10px;
+    transition: background-color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .toggle-input:checked + .toggle-switch {
+    background: #3b82f6;
+  }
+
+  .toggle-input:checked + .toggle-switch::after {
+    transform: translateX(16px);
+  }
+
+  .toggle-text {
+    color: var(--text-color);
   }
 
   .form-actions {

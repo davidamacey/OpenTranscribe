@@ -401,13 +401,18 @@ class ASRProviderFactory:
         )
         if setting and setting.setting_value:
             try:
+                from sqlalchemy import or_
+
                 from app.models.user_asr_settings import UserASRSettings
 
                 cfg = (
                     db.query(UserASRSettings)
                     .filter(
                         UserASRSettings.id == int(setting.setting_value),
-                        UserASRSettings.user_id == user_id,
+                        or_(
+                            UserASRSettings.user_id == user_id,
+                            UserASRSettings.is_shared == True,  # noqa: E712
+                        ),
                         UserASRSettings.is_active == True,  # noqa: E712 — SQLAlchemy requires == not is
                     )
                     .first()

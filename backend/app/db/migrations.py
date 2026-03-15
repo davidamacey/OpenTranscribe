@@ -184,8 +184,22 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'speaker_cluster' AND column_name = 'suggested_name')"
     )
+    has_shared_configs = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user_llm_settings' AND column_name = 'is_shared')"
+    )
+    has_user_media_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'user_media_source')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v340: per-user media sources table
+    if has_user_media_source:
+        return "v340_add_user_media_sources"
+    # v330: sharing columns on LLM/ASR settings and prompts
+    if has_shared_configs:
+        return "v330_add_shared_configs_and_prompts"
     # v320: suggested_name column on speaker_cluster for title-based name extraction
     if has_cluster_suggested_name:
         return "v320_add_cluster_suggested_name"

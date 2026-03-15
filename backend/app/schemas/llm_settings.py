@@ -45,6 +45,7 @@ class UserLLMSettingsBase(BaseModel):
     max_tokens: int = 8192
     temperature: str = "0.3"
     is_active: bool = True
+    is_shared: bool = False
 
     @field_validator("max_tokens")
     @classmethod
@@ -82,6 +83,7 @@ class UserLLMSettingsUpdate(BaseModel):
     max_tokens: Optional[int] = None
     temperature: Optional[str] = None
     is_active: Optional[bool] = None
+    is_shared: Optional[bool] = None
 
     @field_validator("max_tokens")
     @classmethod
@@ -129,6 +131,11 @@ class UserLLMSettingsPublic(UUIDBaseSchema):
     test_status: Optional[ConnectionStatus] = None
     test_message: Optional[str] = None
     has_api_key: bool = False
+    is_shared: bool = False
+    shared_at: Optional[datetime] = None
+    owner_name: Optional[str] = None
+    owner_role: Optional[str] = None
+    is_own: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -175,6 +182,7 @@ class UserLLMConfigurationsList(BaseModel):
     """Response containing all user's LLM configurations"""
 
     configurations: list[UserLLMSettingsPublic]
+    shared_configurations: list[UserLLMSettingsPublic] = []
     active_configuration_id: Optional[UUID] = None
     total: int
 

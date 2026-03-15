@@ -36,15 +36,28 @@ class OrganizationContextSettings(BaseModel):
         default=DEFAULT_ORG_CONTEXT_INCLUDE_CUSTOM_PROMPTS,
         description="Include context when using user-created custom prompts",
     )
+    is_shared: bool = Field(
+        default=False,
+        description="Whether this org context is shared with all users",
+    )
+    using_shared_from: Optional[str] = Field(
+        default=None,
+        description="User ID whose shared context this user is using (null = own)",
+    )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "context_text": "Greenleaf Analytics is a healthcare data company building the Pulse platform...",
-                "include_in_default_prompts": True,
-                "include_in_custom_prompts": False,
-            }
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "context_text": "Greenleaf Analytics is a healthcare data company building the Pulse platform...",
+                    "include_in_default_prompts": True,
+                    "include_in_custom_prompts": False,
+                    "is_shared": False,
+                    "using_shared_from": None,
+                }
+            ]
         }
+    }
 
 
 class OrganizationContextUpdate(BaseModel):
@@ -67,12 +80,38 @@ class OrganizationContextUpdate(BaseModel):
         default=None,
         description="Include context when using user-created custom prompts",
     )
+    is_shared: Optional[bool] = Field(
+        default=None,
+        description="Whether to share this org context with all users",
+    )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "context_text": "Updated organization context...",
-                "include_in_default_prompts": True,
-                "include_in_custom_prompts": True,
-            }
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "context_text": "Updated organization context...",
+                    "include_in_default_prompts": True,
+                    "include_in_custom_prompts": True,
+                    "is_shared": True,
+                }
+            ]
         }
+    }
+
+
+class SharedOrganizationContext(BaseModel):
+    """A shared organization context from another user."""
+
+    user_id: str
+    owner_name: str
+    owner_role: str
+    context_text: str
+    is_active: bool = Field(
+        False, description="Whether the current user is using this shared context"
+    )
+
+
+class SharedOrganizationContextList(BaseModel):
+    """List of shared org contexts from other users."""
+
+    shared_contexts: list[SharedOrganizationContext] = []

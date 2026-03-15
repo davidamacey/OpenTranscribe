@@ -754,11 +754,13 @@ class MediaDownloadService:
     def __init__(self):
         pass
 
-    def _get_protected_provider(self, url: str) -> ProtectedMediaProvider | None:
+    def _get_protected_provider(
+        self, url: str, user_id: int | None = None
+    ) -> ProtectedMediaProvider | None:
         """Return a protected media provider that can handle this URL, if any."""
         for provider in PROTECTED_MEDIA_PROVIDERS:
             try:
-                if provider.can_handle(url):
+                if provider.can_handle(url, user_id=user_id):
                     return provider
             except Exception as e:
                 logger.warning(
@@ -817,6 +819,7 @@ class MediaDownloadService:
         url: str,
         media_username: str | None = None,
         media_password: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Extract video metadata without downloading.
@@ -828,6 +831,7 @@ class MediaDownloadService:
             url: Media URL
             media_username: Optional username for protected media sources
             media_password: Optional password for protected media sources
+            user_id: Optional user ID for per-user credential resolution
 
         Returns:
             Dictionary with video information
@@ -836,9 +840,11 @@ class MediaDownloadService:
             HTTPException: If unable to extract video information
         """
         # Try protected media providers first (authenticated corporate sites, etc.)
-        provider = self._get_protected_provider(url)
+        provider = self._get_protected_provider(url, user_id=user_id)
         if provider is not None:
-            return provider.extract_info(url, username=media_username, password=media_password)
+            return provider.extract_info(
+                url, username=media_username, password=media_password, user_id=user_id
+            )
 
         ydl_opts = {
             **_YT_DLP_BASE_OPTS,
@@ -948,6 +954,7 @@ class MediaDownloadService:
         video_quality: str = "best",
         audio_only: bool = False,
         audio_quality: str = "best",
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Download video from media URL.
@@ -959,6 +966,7 @@ class MediaDownloadService:
             url: Media URL
             output_path: Directory to save downloaded file
             progress_callback: Optional callback for progress updates
+            user_id: Optional user ID for per-user credential resolution
 
         Returns:
             Dictionary with file path, filename, and video info
@@ -968,7 +976,7 @@ class MediaDownloadService:
         """
 
         # First, try pluggable protected-media providers
-        provider = self._get_protected_provider(url)
+        provider = self._get_protected_provider(url, user_id=user_id)
         if provider is not None:
             return provider.download(
                 url,
@@ -976,6 +984,7 @@ class MediaDownloadService:
                 progress_callback=progress_callback,
                 username=media_username,
                 password=media_password,
+                user_id=user_id,
             )
 
         # Create progress hook function
@@ -1393,12 +1402,16 @@ class MediaDownloadService:
         if not self.is_valid_media_url(url):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid media URL")
 
+        # Resolve user_id from the User object
+        resolve_user_id = int(user.id) if user else None
+
         # Extract video info first to get video ID
         logger.debug(f"Extracting video information for URL: {url}")
         video_info = self.extract_video_info(
             url,
             media_username=media_username,
             media_password=media_password,
+            user_id=resolve_user_id,
         )
         video_id = video_info.get("id")
 
@@ -1427,6 +1440,7 @@ class MediaDownloadService:
                 video_quality=video_quality,
                 audio_only=audio_only,
                 audio_quality=audio_quality,
+                user_id=resolve_user_id,
             )
 
             if progress_callback:

@@ -105,8 +105,7 @@ class TopicSuggestionResponse(UUIDBaseSchema):
     # Timestamps
     created_at: datetime = Field(..., description="Creation timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ============================================================================

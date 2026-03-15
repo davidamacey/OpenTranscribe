@@ -37,6 +37,7 @@ from .upload_batch import UploadBatch
 from .user import User
 from .user_asr_settings import UserASRSettings
 from .user_llm_settings import UserLLMSettings
+from .user_media_source import UserMediaSource
 from .user_mfa import UserMFA
 
 __all__ = [
@@ -62,6 +63,7 @@ __all__ = [
     "UserSetting",
     "UserLLMSettings",
     "UserASRSettings",
+    "UserMediaSource",
     "CustomVocabulary",
     "TopicSuggestion",
     "RefreshToken",

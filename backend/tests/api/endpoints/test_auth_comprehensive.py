@@ -94,9 +94,11 @@ class TestLogoutWorkflow:
         assert "message" in data
 
     def test_logout_without_token(self, client):
-        """Logout without token returns 401."""
+        """Logout without token still returns 200 (graceful logout clears cookies)."""
         response = client.post("/api/auth/logout")
-        assert response.status_code == 401
+        # The endpoint intentionally returns 200 even without a token —
+        # "user wanted to logout anyway" — and clears auth cookies.
+        assert response.status_code == 200
 
     def test_logout_all_sessions(self, client, user_token_headers):
         """Logout from all sessions succeeds."""

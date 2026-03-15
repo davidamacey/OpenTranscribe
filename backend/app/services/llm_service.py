@@ -1531,13 +1531,18 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 )
                 return LLMService.create_from_system_settings()
 
-            # Get the active LLM configuration
+            # Get the active LLM configuration (own or shared)
+            from sqlalchemy import or_
+
             active_config_id = int(active_config_setting.setting_value)
             user_settings = (
                 db.query(UserLLMSettings)
                 .filter(
-                    UserLLMSettings.user_id == user_id,
                     UserLLMSettings.id == active_config_id,
+                    or_(
+                        UserLLMSettings.user_id == user_id,
+                        UserLLMSettings.is_shared == True,  # noqa: E712
+                    ),
                 )
                 .first()
             )

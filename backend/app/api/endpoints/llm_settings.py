@@ -6,12 +6,15 @@ import contextlib
 import logging
 import time
 import uuid
+from datetime import datetime
+from datetime import timezone
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
@@ -28,6 +31,45 @@ from app.utils.uuid_helpers import get_llm_config_by_uuid
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _enrich_with_owner(config, owner, is_own: bool) -> dict:
+    """Build a UserLLMSettingsPublic-compatible dict with owner attribution."""
+    return {
+        "uuid": config.uuid,
+        "user_id": owner.uuid if owner else config.user_id,
+        "name": config.name,
+        "provider": config.provider,
+        "model_name": config.model_name,
+        "base_url": config.base_url,
+        "max_tokens": config.max_tokens,
+        "temperature": config.temperature,
+        "is_active": config.is_active,
+        "last_tested": config.last_tested,
+        "test_status": config.test_status,
+        "test_message": config.test_message,
+        "has_api_key": bool(config.api_key),
+        "is_shared": config.is_shared,
+        "shared_at": config.shared_at,
+        "owner_name": owner.full_name if owner else None,
+        "owner_role": owner.role if owner else None,
+        "is_own": is_own,
+        "created_at": config.created_at,
+        "updated_at": config.updated_at,
+    }
+
+
+def _clear_shared_active_references(
+    db: Session, config_id: int, setting_key: str, *, exclude_user_id: int | None = None
+):
+    """Remove UserSetting rows pointing to a deleted/unshared config (for non-owners)."""
+    q = db.query(models.UserSetting).filter(
+        models.UserSetting.setting_key == setting_key,
+        models.UserSetting.setting_value == str(config_id),
+    )
+    if exclude_user_id is not None:
+        q = q.filter(models.UserSetting.user_id != exclude_user_id)
+    q.delete(synchronize_session=False)
 
 
 def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None:
@@ -161,8 +203,31 @@ def get_user_configurations(
         # Let FastAPI handle the conversion automatically
         public_configs.append(config)  # type: ignore[arg-type]
 
+    # Fetch shared configs from OTHER users
+    shared_configs = (
+        db.query(models.UserLLMSettings)
+        .filter(
+            models.UserLLMSettings.is_shared == True,  # noqa: E712
+            models.UserLLMSettings.user_id != current_user.id,
+        )
+        .order_by(models.UserLLMSettings.shared_at.desc())
+        .all()
+    )
+
+    # Batch-fetch owners for attribution
+    owner_ids = {c.user_id for c in shared_configs}
+    owners = (
+        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()}
+        if owner_ids
+        else {}
+    )
+    public_shared = [
+        _enrich_with_owner(c, owners.get(c.user_id), is_own=False) for c in shared_configs
+    ]
+
     return schemas.UserLLMConfigurationsList(
         configurations=public_configs,
+        shared_configurations=public_shared,  # type: ignore[arg-type]
         active_configuration_id=active_config_uuid,
         total=len(public_configs),
     )
@@ -176,19 +241,14 @@ def get_llm_settings_status(
     """
     Get status information about user's LLM settings
     """
-    # Get all configurations
+    # Get all own configurations
     total_configs = (
         db.query(models.UserLLMSettings)
         .filter(models.UserLLMSettings.user_id == current_user.id)
         .count()
     )
 
-    if total_configs == 0:
-        return schemas.LLMSettingsStatus(
-            has_settings=False, total_configurations=0, using_system_default=True
-        )
-
-    # Get active configuration
+    # Get active configuration (may be own or shared)
     active_setting = (
         db.query(models.UserSetting)
         .filter(
@@ -205,8 +265,11 @@ def get_llm_settings_status(
             active_config = (
                 db.query(models.UserLLMSettings)
                 .filter(
-                    models.UserLLMSettings.user_id == current_user.id,
                     models.UserLLMSettings.id == active_config_id,
+                    or_(
+                        models.UserLLMSettings.user_id == current_user.id,
+                        models.UserLLMSettings.is_shared == True,  # noqa: E712
+                    ),
                 )
                 .first()
             )
@@ -218,7 +281,7 @@ def get_llm_settings_status(
         active_public = active_config
 
     return schemas.LLMSettingsStatus(
-        has_settings=True,
+        has_settings=total_configs > 0 or active_config is not None,
         active_configuration=active_public,
         total_configurations=total_configs,
         using_system_default=not bool(active_config),
@@ -236,7 +299,7 @@ def get_user_configuration(
     """
     user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if user_config.user_id != current_user.id:
+    if user_config.user_id != current_user.id and not user_config.is_shared:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to access this configuration",
@@ -286,6 +349,10 @@ def create_user_llm_configuration(
     # Create new configuration
     settings_data = settings_in.model_dump(exclude={"api_key"})
     settings_data.update({"user_id": current_user.id, "api_key": encrypted_api_key})
+
+    # Set shared_at timestamp if shared on creation
+    if settings_data.get("is_shared"):
+        settings_data["shared_at"] = datetime.now(timezone.utc)
 
     user_config = models.UserLLMSettings(**settings_data)
     db.add(user_config)
@@ -361,8 +428,22 @@ def update_user_llm_configuration(
         else:  # Empty API key means remove it
             update_data["api_key"] = None
 
-    # Reset test status when settings change
-    if update_data:
+    # Handle is_shared toggle with shared_at timestamp
+    if settings_in.is_shared is not None:
+        if settings_in.is_shared and not user_config.is_shared:
+            update_data["shared_at"] = datetime.now(timezone.utc)
+        elif not settings_in.is_shared and user_config.is_shared:
+            update_data["shared_at"] = None
+            _clear_shared_active_references(
+                db,
+                int(user_config.id),
+                "active_llm_config_id",
+                exclude_user_id=int(current_user.id),
+            )
+
+    # Reset test status when settings change (but not for share-only updates)
+    non_share_keys = {k for k in update_data if k not in ("is_shared", "shared_at")}
+    if non_share_keys:
         update_data["test_status"] = "untested"
         update_data["test_message"] = None
         update_data["last_tested"] = None
@@ -388,10 +469,10 @@ def set_active_configuration(
     """
     Set the active LLM configuration for the user
     """
-    # Verify the configuration exists and belongs to the user using UUID
+    # Verify the configuration exists and belongs to the user (or is shared) using UUID
     user_config = get_llm_config_by_uuid(db, request.configuration_id)
 
-    if user_config.user_id != current_user.id:
+    if user_config.user_id != current_user.id and not user_config.is_shared:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to access this configuration",
@@ -421,6 +502,15 @@ def delete_user_llm_configuration(
         )
 
     config_id = user_config.id
+
+    # Clean up other users who had this shared config active (preserve owner's for auto-promote)
+    if user_config.is_shared:
+        _clear_shared_active_references(
+            db,
+            int(config_id),
+            "active_llm_config_id",
+            exclude_user_id=int(current_user.id),
+        )
 
     # Check if this is the active configuration
     active_setting = (
@@ -522,7 +612,10 @@ async def test_llm_connection(
                     db.query(models.UserLLMSettings)
                     .filter(
                         models.UserLLMSettings.uuid == test_request.config_id,
-                        models.UserLLMSettings.user_id == current_user.id,
+                        or_(
+                            models.UserLLMSettings.user_id == current_user.id,
+                            models.UserLLMSettings.is_shared == True,  # noqa: E712
+                        ),
                     )
                     .first()
                 )
@@ -612,8 +705,11 @@ async def test_active_configuration(
     user_config = (
         db.query(models.UserLLMSettings)
         .filter(
-            models.UserLLMSettings.user_id == current_user.id,
             models.UserLLMSettings.id == active_config_id,
+            or_(
+                models.UserLLMSettings.user_id == current_user.id,
+                models.UserLLMSettings.is_shared == True,  # noqa: E712
+            ),
         )
         .first()
     )
@@ -641,15 +737,14 @@ async def test_active_configuration(
 
     result = await test_llm_connection(test_request=test_request, current_user=current_user)
 
-    # Update test status in database
-    from sqlalchemy import text
+    # Only write back test status if the current user owns the config
+    if user_config.user_id == current_user.id:
+        user_config.test_status = result.status.value  # type: ignore[assignment]
+        user_config.test_message = result.message  # type: ignore[assignment]
+        user_config.last_tested = datetime.now(timezone.utc)  # type: ignore[assignment]
 
-    user_config.test_status = result.status.value  # type: ignore[assignment]
-    user_config.test_message = result.message  # type: ignore[assignment]
-    user_config.last_tested = db.execute(text("SELECT NOW()")).scalar()  # type: ignore[assignment]
-
-    db.add(user_config)
-    db.commit()
+        db.add(user_config)
+        db.commit()
 
     return result
 
@@ -665,7 +760,7 @@ async def test_specific_configuration(
     """
     user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if user_config.user_id != current_user.id:
+    if user_config.user_id != current_user.id and not user_config.is_shared:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to access this configuration",
@@ -688,15 +783,14 @@ async def test_specific_configuration(
 
     result = await test_llm_connection(test_request=test_request, current_user=current_user)
 
-    # Update test status in database
-    from sqlalchemy import text
+    # Only write back test status if the current user owns the config
+    if user_config.user_id == current_user.id:
+        user_config.test_status = result.status.value  # type: ignore[assignment]
+        user_config.test_message = result.message  # type: ignore[assignment]
+        user_config.last_tested = datetime.now(timezone.utc)  # type: ignore[assignment]
 
-    user_config.test_status = result.status.value  # type: ignore[assignment]
-    user_config.test_message = result.message  # type: ignore[assignment]
-    user_config.last_tested = db.execute(text("SELECT NOW()")).scalar()  # type: ignore[assignment]
-
-    db.add(user_config)
-    db.commit()
+        db.add(user_config)
+        db.commit()
 
     return result
 
@@ -819,14 +913,17 @@ def _model_discovery_response(
 
 
 def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None:
-    """Retrieve and decrypt stored API key for a config."""
+    """Retrieve and decrypt stored API key for a config (own or shared)."""
     try:
         config_uuid = uuid.UUID(config_id)
         config = (
             db.query(models.UserLLMSettings)
             .filter(
                 models.UserLLMSettings.uuid == config_uuid,
-                models.UserLLMSettings.user_id == user_id,
+                or_(
+                    models.UserLLMSettings.user_id == user_id,
+                    models.UserLLMSettings.is_shared == True,  # noqa: E712
+                ),
             )
             .first()
         )

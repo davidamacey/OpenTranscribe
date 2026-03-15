@@ -289,12 +289,14 @@ def _extract_video_info(
     normalized_url: str,
     media_username: str | None = None,
     media_password: str | None = None,
+    user_id: int | None = None,
 ) -> tuple[str, str, dict[str, Any]]:
     """Extract video ID and title from a media URL.
 
     Args:
         media_service: MediaDownloadService instance.
         normalized_url: Normalized media URL.
+        user_id: Optional user ID for per-user credential resolution.
 
     Returns:
         Tuple of (video_id, video_title, video_info).
@@ -307,6 +309,7 @@ def _extract_video_info(
             normalized_url,
             media_username=media_username,
             media_password=media_password,
+            user_id=user_id,
         )
         video_id = video_info.get("id")
         video_title = video_info.get("title", "Media Video")
@@ -651,6 +654,7 @@ async def process_media_url(
             normalized_url,
             media_username=request_data.media_username,
             media_password=request_data.media_password,
+            user_id=int(current_user.id),
         )
 
         # Check for duplicate video

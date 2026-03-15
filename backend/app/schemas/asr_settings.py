@@ -60,6 +60,7 @@ class UserASRSettingsBase(BaseModel):
     base_url: str | None = None
     region: str | None = None
     is_active: bool = True
+    is_shared: bool = False
 
     @field_validator("name")
     @classmethod
@@ -84,6 +85,7 @@ class UserASRSettingsUpdate(BaseModel):
     base_url: str | None = None
     region: str | None = None
     is_active: bool | None = None
+    is_shared: bool | None = None
 
 
 class UserASRSettingsResponse(UserASRSettingsBase):
@@ -94,6 +96,11 @@ class UserASRSettingsResponse(UserASRSettingsBase):
     last_tested: datetime | None = None
     test_status: str | None = None
     test_message: str | None = None
+    is_shared: bool = False
+    shared_at: datetime | None = None
+    owner_name: str | None = None
+    owner_role: str | None = None
+    is_own: bool = True
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -102,6 +109,7 @@ class UserASRSettingsResponse(UserASRSettingsBase):
 
 class ASRSettingsList(BaseModel):
     configs: list[UserASRSettingsResponse]
+    shared_configs: list[UserASRSettingsResponse] = []
     active_config_id: int | None = None
     active_config_uuid: UUID | None = None
 

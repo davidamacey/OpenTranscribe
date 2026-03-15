@@ -79,6 +79,9 @@ class User(Base):
     asr_settings = relationship(
         "UserASRSettings", back_populates="user", cascade="all, delete-orphan"
     )
+    media_sources = relationship(
+        "UserMediaSource", back_populates="user", cascade="all, delete-orphan"
+    )
     custom_vocabulary = relationship(
         "CustomVocabulary", back_populates="user", cascade="all, delete-orphan"
     )

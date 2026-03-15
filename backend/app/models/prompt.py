@@ -11,6 +11,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -41,6 +42,13 @@ class SummaryPrompt(Base):
     content_type = Column(
         String(50), nullable=True, index=True
     )  # 'meeting', 'interview', 'podcast', 'documentary', 'general'
+
+    # Sharing
+    is_shared = Column(Boolean, nullable=False, default=False)
+    shared_at = Column(DateTime(timezone=True), nullable=True)
+    tags = Column(JSONB, nullable=False, default=list)
+    usage_count = Column(Integer, nullable=False, default=0)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

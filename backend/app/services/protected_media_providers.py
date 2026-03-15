@@ -28,7 +28,7 @@ class ProtectedMediaProvider(Protocol):
     require authentication and cannot be processed by yt-dlp alone.
     """
 
-    def can_handle(self, url: str) -> bool:
+    def can_handle(self, url: str, user_id: int | None = None) -> bool:
         """Return True if this provider knows how to handle the given URL."""
 
     def extract_info(
@@ -36,6 +36,7 @@ class ProtectedMediaProvider(Protocol):
         url: str,
         username: str | None = None,
         password: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         """Return a yt-dlp-like info dict for the media without downloading.
 
@@ -55,6 +56,7 @@ class ProtectedMediaProvider(Protocol):
         progress_callback: Callable[[int, str], None] | None = None,
         username: str | None = None,
         password: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         """Download media file for this URL into output_path.
 

@@ -101,12 +101,9 @@ class TestCategorizeError:
     def test_504_error(self):
         assert categorize_error("504 Gateway Timeout") == ErrorCategory.TEMPORARY_SERVICE_ERROR
 
-    # Default to system error for unrecognized messages
+    # Default to UNKNOWN for unrecognized messages
     def test_unknown_error(self):
-        assert (
-            categorize_error("Something completely unexpected happened")
-            == ErrorCategory.SYSTEM_ERROR
-        )
+        assert categorize_error("Something completely unexpected happened") == ErrorCategory.UNKNOWN
 
 
 class TestShouldRetry:

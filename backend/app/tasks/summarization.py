@@ -263,15 +263,50 @@ def send_summary_notification(
 
 
 def _get_organization_context(db: Session, user_id: int) -> str:
-    """Retrieve organization context for a user, respecting prompt type toggles."""
+    """Retrieve organization context for a user, respecting prompt type toggles.
+
+    Resolution order:
+    1. If user is using a shared context (org_context_use_shared_from), use that
+    2. If user has their own context text, use that
+    3. Return empty string
+    """
     from app import models
     from app.utils.prompt_manager import get_user_active_prompt_info
 
-    # Get the context text
-    context_setting = (
+    # Check if user is using someone else's shared context
+    use_shared_setting = (
         db.query(models.UserSetting)
         .filter(
             models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key == "org_context_use_shared_from",
+        )
+        .first()
+    )
+
+    context_owner_id = user_id
+    if use_shared_setting and use_shared_setting.setting_value:
+        shared_from_id = int(use_shared_setting.setting_value)
+        # Verify the shared context is still shared
+        is_still_shared = (
+            db.query(models.UserSetting)
+            .filter(
+                models.UserSetting.user_id == shared_from_id,
+                models.UserSetting.setting_key == "org_context_is_shared",
+                models.UserSetting.setting_value == "true",
+            )
+            .first()
+        )
+        if is_still_shared:
+            context_owner_id = shared_from_id
+            logger.info(f"Using shared org context from user {shared_from_id}")
+        else:
+            logger.info("Shared org context no longer available, falling back to own")
+
+    # Get the context text from the resolved owner
+    context_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == context_owner_id,
             models.UserSetting.setting_key == "org_context_text",
         )
         .first()
@@ -284,10 +319,9 @@ def _get_organization_context(db: Session, user_id: int) -> str:
     if not context_text:
         return ""
 
-    # Determine if the active prompt is a system default or custom
+    # Toggle checks use the CURRENT user's settings (not the sharer's)
     _, is_system_default = get_user_active_prompt_info(user_id, db)
 
-    # Check the relevant toggle
     if is_system_default:
         toggle_key = "org_context_include_default_prompts"
         default_value = "true"

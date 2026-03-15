@@ -106,8 +106,12 @@ def get_user_active_prompt_info(
         if not active_prompt:
             return get_system_default_prompt(db), True
 
-        # Verify user has access to this prompt
-        if not active_prompt.is_system_default and active_prompt.user_id != user_id:
+        # Verify user has access to this prompt (own, system, or shared)
+        if (
+            not active_prompt.is_system_default
+            and active_prompt.user_id != user_id
+            and not active_prompt.is_shared
+        ):
             logger.warning(
                 f"User {user_id} attempted to use inaccessible prompt {active_prompt.id}"
             )

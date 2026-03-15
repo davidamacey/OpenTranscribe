@@ -18,6 +18,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
@@ -312,7 +313,7 @@ def _clear_active_asr_setting(db: Session, user_id: int) -> None:
         db.commit()
 
 
-def _config_to_dict(config: Any) -> dict:
+def _config_to_dict(config: Any, *, owner=None, is_own: bool = True) -> dict:
     """Serialize a UserASRSettings record to a safe public dict (no raw API key)."""
     return {
         "id": config.id,
@@ -328,26 +329,49 @@ def _config_to_dict(config: Any) -> dict:
         "last_tested": config.last_tested.isoformat() if config.last_tested else None,
         "test_status": config.test_status,
         "test_message": config.test_message,
+        "is_shared": config.is_shared,
+        "shared_at": config.shared_at.isoformat() if config.shared_at else None,
+        "owner_name": owner.full_name if owner else None,
+        "owner_role": owner.role if owner else None,
+        "is_own": is_own,
         "created_at": config.created_at.isoformat() if config.created_at else None,
         "updated_at": config.updated_at.isoformat() if config.updated_at else None,
     }
 
 
-def _get_config_or_404(db: Session, config_uuid: UUID, user_id: int) -> Any:
+def _get_config_or_404(
+    db: Session, config_uuid: UUID, user_id: int, *, allow_shared: bool = False
+) -> Any:
     """Fetch UserASRSettings by UUID+user or raise 404."""
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
-    config = (
-        db.query(UserASRSettings)
-        .filter(
-            UserASRSettings.uuid == config_uuid,
-            UserASRSettings.user_id == user_id,
+    filters = [UserASRSettings.uuid == config_uuid]
+    if allow_shared:
+        filters.append(
+            or_(
+                UserASRSettings.user_id == user_id,
+                UserASRSettings.is_shared == True,  # noqa: E712
+            )
         )
-        .first()
-    )
+    else:
+        filters.append(UserASRSettings.user_id == user_id)
+    config = db.query(UserASRSettings).filter(*filters).first()
     if not config:
         raise HTTPException(status_code=404, detail="ASR configuration not found")
     return config
+
+
+def _clear_asr_shared_active_references(
+    db: Session, config_id: int, *, exclude_user_id: int | None = None
+):
+    """Remove UserSetting rows pointing to a deleted/unshared ASR config."""
+    q = db.query(models.UserSetting).filter(
+        models.UserSetting.setting_key == "active_asr_config_id",
+        models.UserSetting.setting_value == str(config_id),
+    )
+    if exclude_user_id is not None:
+        q = q.filter(models.UserSetting.user_id != exclude_user_id)
+    q.delete(synchronize_session=False)
 
 
 # ---------------------------------------------------------------------------
@@ -381,8 +405,19 @@ def get_asr_status(
 
     active_config = None
     if active_config_id:
-        # Resolve from already-fetched list — no additional DB query needed.
+        # Try own configs first, then shared
         active_config = next((c for c in configs if c.id == active_config_id), None)
+        if not active_config:
+            active_config = (
+                db.query(UserASRSettings)
+                .filter(
+                    UserASRSettings.id == active_config_id,
+                    UserASRSettings.is_shared == True,  # noqa: E712
+                )
+                .first()
+            )
+            if active_config:
+                has_settings = True
 
     deployment_mode = os.getenv("DEPLOYMENT_MODE", "full").lower()
     asr_provider = os.getenv("ASR_PROVIDER", "local").lower()
@@ -444,8 +479,28 @@ def list_asr_settings(
         if active:
             active_uuid = str(active.uuid)
 
+    # Fetch shared configs from other users
+    shared_configs = (
+        db.query(UserASRSettings)
+        .filter(
+            UserASRSettings.is_shared == True,  # noqa: E712
+            UserASRSettings.user_id != current_user.id,
+        )
+        .order_by(UserASRSettings.created_at)
+        .all()
+    )
+    owner_ids = {c.user_id for c in shared_configs}
+    owners = (
+        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()}
+        if owner_ids
+        else {}
+    )
+
     return {
         "configs": [_config_to_dict(c) for c in configs],
+        "shared_configs": [
+            _config_to_dict(c, owner=owners.get(c.user_id), is_own=False) for c in shared_configs
+        ],
         "active_config_id": active_config_id,
         "active_config_uuid": active_uuid,
     }
@@ -458,7 +513,7 @@ def get_asr_config(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Get a specific ASR configuration by UUID (API key is never returned)."""
-    config = _get_config_or_404(db, config_uuid, current_user.id)
+    config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
     return _config_to_dict(config)
 
 
@@ -538,6 +593,7 @@ def create_asr_config(
         is not None
     )
 
+    is_shared = bool(body.get("is_shared", False))
     config = UserASRSettings(
         user_id=current_user.id,
         name=config_name,
@@ -547,6 +603,8 @@ def create_asr_config(
         base_url=base_url,
         region=region,
         is_active=body.get("is_active", True),
+        is_shared=is_shared,
+        shared_at=datetime.now(timezone.utc) if is_shared else None,
     )
     db.add(config)
     db.commit()
@@ -648,6 +706,19 @@ def update_asr_config(  # noqa: C901
     if "is_active" in body:
         config.is_active = body["is_active"]  # type: ignore[assignment]
 
+    # Handle is_shared toggle with shared_at timestamp
+    if "is_shared" in body:
+        new_shared = body["is_shared"]
+        if new_shared and not config.is_shared:
+            config.is_shared = True  # type: ignore[assignment]
+            config.shared_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+        elif not new_shared and config.is_shared:
+            config.is_shared = False  # type: ignore[assignment]
+            config.shared_at = None  # type: ignore[assignment]
+            _clear_asr_shared_active_references(
+                db, int(config.id), exclude_user_id=int(current_user.id)
+            )
+
     db.add(config)
     db.commit()
     db.refresh(config)
@@ -672,7 +743,7 @@ def set_active_asr_config(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format") from None
 
-    config = _get_config_or_404(db, uuid_obj, current_user.id)
+    config = _get_config_or_404(db, uuid_obj, current_user.id, allow_shared=True)
     _set_active_asr_configuration(db, int(current_user.id), int(config.id))
 
     return {
@@ -691,6 +762,12 @@ def delete_asr_config(
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     config = _get_config_or_404(db, config_uuid, current_user.id)
+
+    # Clean up other users who had this shared config active (preserve owner's for auto-promote)
+    if config.is_shared:
+        _clear_asr_shared_active_references(
+            db, int(config.id), exclude_user_id=int(current_user.id)
+        )
 
     active_config_id = _get_active_asr_config_id(db, current_user.id)
     was_active = active_config_id == int(config.id)
@@ -788,7 +865,7 @@ def test_saved_asr_config(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Test a saved ASR configuration and persist the result (test_status, test_message, last_tested)."""
-    config = _get_config_or_404(db, config_uuid, current_user.id)
+    config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
 
     # Decrypt the stored key (if any)
     api_key = None
@@ -815,13 +892,13 @@ def test_saved_asr_config(
         response_time_ms = (time.time() - start_time) * 1000
         logger.warning("ASR saved-config test failed for config %s: %s", config_uuid, message)
 
-    # Persist test result — always store the sanitized message so plaintext keys
-    # can never end up persisted in the database.
-    config.test_status = "success" if success else "failed"  # type: ignore[assignment]
-    config.test_message = _sanitize_message(message, api_key)  # type: ignore[assignment]
-    config.last_tested = datetime.now(timezone.utc)  # type: ignore[assignment]
-    db.add(config)
-    db.commit()
+    # Persist test result only if the current user owns the config
+    if config.user_id == current_user.id:
+        config.test_status = "success" if success else "failed"  # type: ignore[assignment]
+        config.test_message = _sanitize_message(message, api_key)  # type: ignore[assignment]
+        config.last_tested = datetime.now(timezone.utc)  # type: ignore[assignment]
+        db.add(config)
+        db.commit()
 
     return {
         "success": success,

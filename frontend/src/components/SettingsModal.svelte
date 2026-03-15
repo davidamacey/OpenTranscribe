@@ -187,7 +187,7 @@
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
         { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' },
-        ...(isAdmin ? [{ id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' }] : [])
+        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' }
       ]
     }
   ];
@@ -1115,7 +1115,7 @@
             </div>
           {/if}
 
-          <!-- Media Sources Settings Section (Admin) -->
+          <!-- Media Sources Settings Section -->
           {#if activeSection === 'media-sources'}
             <div class="content-section">
               <h3 class="section-title">{$t('settings.mediaSources.title')}</h3>

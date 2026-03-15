@@ -35,7 +35,7 @@ class MediacmsProvider(ProtectedMediaProvider):
     """
 
     def _get_db_sources(self) -> list[dict]:
-        """Load MediaCMS sources from database settings."""
+        """Load MediaCMS sources from legacy system settings."""
         try:
             from app.db.base import SessionLocal
             from app.services.system_settings_service import get_media_sources
@@ -49,11 +49,89 @@ class MediacmsProvider(ProtectedMediaProvider):
         except Exception:
             return []
 
+    def _get_user_media_sources(self, user_id: int | None = None) -> list[dict]:
+        """Load MediaCMS sources from per-user media source table.
+
+        Returns all sources visible to the user: own + shared by others.
+        If user_id is None, returns all shared sources.
+        """
+        try:
+            from sqlalchemy import or_
+
+            from app.db.base import SessionLocal
+            from app.models.user_media_source import UserMediaSource
+            from app.utils.encryption import decrypt_api_key
+
+            db = SessionLocal()
+            try:
+                if user_id is not None:
+                    # Order: own sources first, then shared — so own credentials take priority
+                    sources = (
+                        db.query(UserMediaSource)
+                        .filter(
+                            UserMediaSource.provider_type == "mediacms",
+                            UserMediaSource.is_active == True,  # noqa: E712
+                            or_(
+                                UserMediaSource.user_id == user_id,
+                                UserMediaSource.is_shared == True,  # noqa: E712
+                            ),
+                        )
+                        .order_by(
+                            (UserMediaSource.user_id == user_id).desc(),
+                        )
+                        .all()
+                    )
+                else:
+                    # No user context — return all shared sources
+                    sources = (
+                        db.query(UserMediaSource)
+                        .filter(
+                            UserMediaSource.provider_type == "mediacms",
+                            UserMediaSource.is_active == True,  # noqa: E712
+                            UserMediaSource.is_shared == True,  # noqa: E712
+                        )
+                        .all()
+                    )
+
+                result = []
+                for s in sources:
+                    password = None
+                    if s.password:
+                        password = decrypt_api_key(str(s.password))
+                    result.append(
+                        {
+                            "hostname": s.hostname,
+                            "provider_type": s.provider_type,
+                            "username": s.username or "",
+                            "password": password or "",
+                            "verify_ssl": s.verify_ssl,
+                            "label": s.label or "",
+                            "user_id": s.user_id,
+                        }
+                    )
+                return result
+            finally:
+                db.close()
+        except Exception as e:
+            logger.debug("Failed to load per-user media sources: %s", e)
+            return []
+
+    def _get_all_sources(self, user_id: int | None = None) -> list[dict]:
+        """Get combined media sources: per-user + legacy system + env."""
+        # Per-user sources take priority (checked first)
+        user_sources = self._get_user_media_sources(user_id)
+        # Legacy system-level sources
+        system_sources = self._get_db_sources()
+        return user_sources + system_sources
+
     @property
     def allowed_hosts(self) -> set[str]:
+        return self._get_allowed_hosts()
+
+    def _get_allowed_hosts(self, user_id: int | None = None) -> set[str]:
         hosts: set[str] = set()
-        # DB sources (primary)
-        for s in self._get_db_sources():
+        # Per-user + system DB sources
+        for s in self._get_all_sources(user_id):
             h = s.get("hostname", "").strip()
             if h:
                 hosts.add(h)
@@ -65,17 +143,22 @@ class MediacmsProvider(ProtectedMediaProvider):
                 hosts.add(h)
         return hosts
 
-    def _get_verify_ssl_for_host(self, hostname: str) -> bool:
+    def _get_verify_ssl_for_host(self, hostname: str, user_id: int | None = None) -> bool:
         """Get SSL verification setting for a specific host."""
-        for s in self._get_db_sources():
+        for s in self._get_all_sources(user_id):
             if s.get("hostname") == hostname:
                 return bool(s.get("verify_ssl", True))
         # Env fallback
         return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
-    def _get_stored_credentials(self, hostname: str) -> tuple[str | None, str | None]:
-        """Get stored credentials for a specific host from DB."""
-        for s in self._get_db_sources():
+    def _get_stored_credentials(
+        self, hostname: str, user_id: int | None = None
+    ) -> tuple[str | None, str | None]:
+        """Get stored credentials for a specific host.
+
+        Checks per-user sources first (own, then shared), then system-level.
+        """
+        for s in self._get_all_sources(user_id):
             if s.get("hostname") == hostname:
                 username = s.get("username") or None
                 password = s.get("password") or None
@@ -88,12 +171,12 @@ class MediacmsProvider(ProtectedMediaProvider):
         """Global SSL verification fallback (used when host is unknown)."""
         return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
-    def can_handle(self, url: str) -> bool:
+    def can_handle(self, url: str, user_id: int | None = None) -> bool:
         try:
             parsed = urlparse(url)
             if parsed.scheme not in {"http", "https"}:
                 return False
-            if parsed.netloc not in self.allowed_hosts:
+            if parsed.netloc not in self._get_allowed_hosts(user_id):
                 return False
 
             # Either ?m=<token> query param or /api/v1/media/<token> path
@@ -113,13 +196,13 @@ class MediacmsProvider(ProtectedMediaProvider):
 
     # --- internal helpers -------------------------------------------------
 
-    def _get_token_and_base_url(self, url: str) -> tuple[str, str]:
+    def _get_token_and_base_url(self, url: str, user_id: int | None = None) -> tuple[str, str]:
         parsed = urlparse(url)
 
-        if parsed.netloc not in self.allowed_hosts:
+        if parsed.netloc not in self._get_allowed_hosts(user_id):
             raise HTTPException(
                 status_code=400,
-                detail=f"Bad MediaCMS URL: {url}",
+                detail="URL hostname is not in the configured media sources",
             )
 
         query = parse_qs(parsed.query)
@@ -153,15 +236,20 @@ class MediacmsProvider(ProtectedMediaProvider):
         url: str,
         username: str | None = None,
         password: str | None = None,
-    ) -> tuple[str, str, dict[str, Any]]:
-        """Authenticate against MediaCMS and fetch media JSON."""
+        user_id: int | None = None,
+    ) -> tuple[str, str, dict[str, Any], str]:
+        """Authenticate against MediaCMS and fetch media JSON.
+
+        Returns:
+            Tuple of (friendly_token, base_url, info_dict, auth_token).
+        """
         media_user = username
         media_pass = password
 
         # Fall back to stored credentials if none provided in request
         if not media_user or not media_pass:
             parsed = urlparse(url)
-            stored_user, stored_pass = self._get_stored_credentials(parsed.netloc)
+            stored_user, stored_pass = self._get_stored_credentials(parsed.netloc, user_id=user_id)
             if not media_user:
                 media_user = stored_user
             if not media_pass:
@@ -173,13 +261,13 @@ class MediacmsProvider(ProtectedMediaProvider):
                 detail=(
                     "Credentials for this media source are not configured. "
                     "Either provide credentials in the request or configure "
-                    "them in Admin Settings > Media Sources."
+                    "them in Settings > Media Sources."
                 ),
             )
 
-        friendly_token, base_url = self._get_token_and_base_url(url)
+        friendly_token, base_url = self._get_token_and_base_url(url, user_id=user_id)
         parsed = urlparse(url)
-        host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc)
+        host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc, user_id=user_id)
         auth_payload = {"username": media_user, "password": media_pass}
 
         try:
@@ -220,7 +308,7 @@ class MediacmsProvider(ProtectedMediaProvider):
                 detail=f"Failed to fetch media information from MediaCMS: {e}",
             ) from e
 
-        return friendly_token, base_url, info
+        return friendly_token, base_url, info, auth_token
 
     # --- ProtectedMediaProvider implementation ---------------------------
 
@@ -258,16 +346,14 @@ class MediacmsProvider(ProtectedMediaProvider):
             ],
         }
 
-    def extract_info(
+    def _build_media_info(
         self,
+        friendly_token: str,
+        base_url: str,
+        info: dict[str, Any],
         url: str,
-        username: str | None = None,
-        password: str | None = None,
     ) -> dict[str, Any]:
-        friendly_token, base_url, info = self._login_and_get_info(
-            url, username=username, password=password
-        )
-
+        """Build a yt-dlp-compatible media info dict from MediaCMS API response."""
         title = info.get("title") or info.get("name") or friendly_token
 
         # MediaCMS may return relative thumbnail paths like
@@ -277,10 +363,8 @@ class MediacmsProvider(ProtectedMediaProvider):
         if raw_thumbnail:
             parsed_thumb = urlparse(str(raw_thumbnail))
             if parsed_thumb.scheme:
-                # Already an absolute URL
                 thumbnail_url = str(raw_thumbnail)
             else:
-                # Treat as path relative to the MediaCMS base URL
                 thumbnail_url = urljoin(base_url, str(raw_thumbnail))
 
         media_info: dict[str, Any] = {
@@ -299,6 +383,18 @@ class MediacmsProvider(ProtectedMediaProvider):
         media_info["mediacms_base_url"] = base_url
         return media_info
 
+    def extract_info(
+        self,
+        url: str,
+        username: str | None = None,
+        password: str | None = None,
+        user_id: int | None = None,
+    ) -> dict[str, Any]:
+        friendly_token, base_url, info, _token = self._login_and_get_info(
+            url, username=username, password=password, user_id=user_id
+        )
+        return self._build_media_info(friendly_token, base_url, info, url)
+
     def download(
         self,
         url: str,
@@ -306,9 +402,10 @@ class MediacmsProvider(ProtectedMediaProvider):
         progress_callback: Callable[[int, str], None] | None = None,
         username: str | None = None,
         password: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
-        friendly_token, base_url, info = self._login_and_get_info(
-            url, username=username, password=password
+        friendly_token, base_url, info, auth_token = self._login_and_get_info(
+            url, username=username, password=password, user_id=user_id
         )
 
         original_media_url = info.get("original_media_url")
@@ -318,16 +415,31 @@ class MediacmsProvider(ProtectedMediaProvider):
                 detail="MediaCMS media info is missing 'original_media_url'",
             )
 
+        # Validate original_media_url to prevent SSRF via malicious server response
+        if "://" in str(original_media_url) or str(original_media_url).startswith("//"):
+            raise HTTPException(
+                status_code=502,
+                detail="MediaCMS returned an invalid media URL",
+            )
+
         download_url = f"{base_url}{original_media_url}"
         parsed = urlparse(url)
-        host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc)
+        host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc, user_id=user_id)
+
+        # Use the auth token for the download request (protected files need it)
+        download_headers = {"authorization": f"Token {auth_token}"}
+        file_path = ""
 
         try:
             if progress_callback:
                 progress_callback(20, "Downloading media from authenticated source...")
 
             with requests.get(
-                download_url, stream=True, timeout=300, verify=host_verify_ssl
+                download_url,
+                stream=True,
+                timeout=300,
+                verify=host_verify_ssl,
+                headers=download_headers,
             ) as resp:
                 resp.raise_for_status()
                 total_bytes = int(resp.headers.get("Content-Length", "0")) or None
@@ -351,13 +463,16 @@ class MediacmsProvider(ProtectedMediaProvider):
         except HTTPException:
             raise
         except requests.exceptions.RequestException as e:
+            # Clean up partial file on failure
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
             raise HTTPException(
                 status_code=502,
                 detail=f"Failed to download media file from MediaCMS: {e}",
             ) from e
 
-        # Build info dict (consistent with extract_info)
-        media_info = self.extract_info(url, username=username, password=password)
+        # Build info dict from already-fetched data (no redundant second login)
+        media_info = self._build_media_info(friendly_token, base_url, info, url)
 
         return {
             "file_path": file_path,

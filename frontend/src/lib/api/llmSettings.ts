@@ -24,6 +24,11 @@ export interface UserLLMSettings {
   test_status?: ConnectionStatus;
   test_message?: string;
   has_api_key: boolean;
+  is_shared?: boolean;
+  shared_at?: string;
+  owner_name?: string;
+  owner_role?: string;
+  is_own?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +53,7 @@ export interface UserLLMSettingsUpdate {
   max_tokens?: number;
   temperature?: string;
   is_active?: boolean;
+  is_shared?: boolean;
 }
 
 export interface ConnectionTestRequest {
@@ -82,6 +88,7 @@ export interface SupportedProvidersResponse {
 
 export interface UserLLMConfigurationsList {
   configurations: UserLLMSettings[];
+  shared_configurations: UserLLMSettings[];
   active_configuration_id?: string; // UUID
   total: number;
 }
@@ -182,6 +189,16 @@ export class LLMSettingsApi {
    */
   static async testCurrentSettings(): Promise<ConnectionTestResponse> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/test-current`);
+    return response.data;
+  }
+
+  /**
+   * Toggle sharing on a configuration
+   */
+  static async toggleShare(configId: string, isShared: boolean): Promise<UserLLMSettings> {
+    const response = await axiosInstance.put(`${this.BASE_PATH}/config/${configId}`, {
+      is_shared: isShared,
+    });
     return response.data;
   }
 

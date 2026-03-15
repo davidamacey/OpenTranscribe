@@ -47,8 +47,7 @@ class SpeakerClusterMemberResponse(BaseModel):
     has_audio_clip: bool = False
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class GenderComposition(BaseModel):
@@ -79,8 +78,7 @@ class SpeakerClusterResponse(SpeakerClusterBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class SpeakerClusterDetailResponse(SpeakerClusterResponse):
@@ -112,8 +110,7 @@ class SpeakerInboxItem(BaseModel):
     predicted_age_range: Optional[str] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # --- Batch Operations ---

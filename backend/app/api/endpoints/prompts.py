@@ -3,6 +3,9 @@ API endpoints for AI summarization prompt management
 """
 
 import contextlib
+import logging
+from datetime import datetime
+from datetime import timezone
 from typing import Any
 from typing import cast
 
@@ -13,6 +16,7 @@ from fastapi import Query
 from sqlalchemy import and_
 from sqlalchemy import not_
 from sqlalchemy import or_
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import models
@@ -22,6 +26,7 @@ from app.db.base import get_db
 from app.utils.uuid_helpers import get_prompt_by_uuid
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=schemas.SummaryPromptList)
@@ -33,6 +38,7 @@ def get_prompts(
     content_type: str | None = Query(None, description="Filter by content type"),
     include_system: bool = Query(True, description="Include system prompts"),
     include_user: bool = Query(True, description="Include user's custom prompts"),
+    include_shared: bool = Query(True, description="Include shared prompts from other users"),
 ) -> Any:
     """
     Retrieve summary prompts with filtering and pagination.
@@ -71,6 +77,14 @@ def get_prompts(
         ownership_conditions.append(
             and_(  # type: ignore[arg-type]
                 models.SummaryPrompt.user_id == current_user.id,
+                not_(models.SummaryPrompt.is_system_default),
+            )
+        )
+    if include_shared:
+        ownership_conditions.append(
+            and_(  # type: ignore[arg-type]
+                models.SummaryPrompt.is_shared == True,  # noqa: E712
+                models.SummaryPrompt.user_id != current_user.id,
                 not_(models.SummaryPrompt.is_system_default),
             )
         )
@@ -122,11 +136,25 @@ def get_prompts(
                 collection_map[pid] = []
             collection_map[pid].append(schemas.LinkedCollection(uuid=row[1], name=row[2]))
 
-    # Build response with linked collections
+    # Batch-fetch owners for shared prompts
+    shared_owner_ids = {p.user_id for p in prompts if p.user_id and p.user_id != current_user.id}
+    owners = (
+        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(shared_owner_ids)).all()}
+        if shared_owner_ids
+        else {}
+    )
+
+    # Build response with linked collections and author info
     prompt_list = []
     for p in prompts:
         pwc = schemas.SummaryPromptWithCollections.model_validate(p)
         pwc.linked_collections = collection_map.get(p.id, [])
+        pwc.is_owner = p.user_id == current_user.id
+        if p.user_id and p.user_id != current_user.id:
+            owner = owners.get(p.user_id)
+            if owner:
+                pwc.author_name = owner.full_name
+                pwc.author_role = owner.role
         prompt_list.append(pwc)
 
     return schemas.SummaryPromptList(
@@ -225,10 +253,27 @@ def get_prompts_by_content_type(
             if active_prompt:
                 active_prompt_uuid = str(active_prompt.uuid)
 
+    # Get shared prompts for this content type (from other users)
+    shared_prompts = (
+        db.query(models.SummaryPrompt)
+        .filter(
+            and_(
+                models.SummaryPrompt.content_type == content_type,
+                models.SummaryPrompt.is_shared == True,  # noqa: E712
+                models.SummaryPrompt.user_id != current_user.id,
+                not_(models.SummaryPrompt.is_system_default),
+                models.SummaryPrompt.is_active,
+            )
+        )
+        .order_by(models.SummaryPrompt.name)
+        .all()
+    )
+
     return schemas.ContentTypePromptsResponse(
         content_type=content_type,
         system_prompts=cast(list[schemas.SummaryPrompt], system_prompts),  # type: ignore[arg-type]
         user_prompts=cast(list[schemas.SummaryPrompt], user_prompts),  # type: ignore[arg-type]
+        shared_prompts=cast(list[schemas.SummaryPrompt], shared_prompts),  # type: ignore[arg-type]
         active_prompt_id=active_prompt_uuid,  # type: ignore[arg-type]
     )
 
@@ -272,8 +317,12 @@ def create_prompt(
     if user_prompt_count >= 50:  # Reasonable limit
         raise HTTPException(status_code=400, detail="Maximum number of custom prompts reached (50)")
 
-    prompt_data = prompt_in.dict()
+    prompt_data = prompt_in.model_dump()
     prompt_data.update({"user_id": current_user.id, "is_system_default": False})
+
+    # Set shared_at timestamp if shared on creation
+    if prompt_data.get("is_shared"):
+        prompt_data["shared_at"] = datetime.now(timezone.utc)
 
     prompt = models.SummaryPrompt(**prompt_data)
     db.add(prompt)
@@ -398,9 +447,9 @@ def set_active_prompt(
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    # Check access: system prompts are public, user prompts are private
-    if not prompt.is_system_default and prompt.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Cannot use other users' custom prompts")
+    # Check access: system prompts are public, shared prompts are usable, others are private
+    if not prompt.is_system_default and prompt.user_id != current_user.id and not prompt.is_shared:
+        raise HTTPException(status_code=403, detail="Cannot use other users' private prompts")
 
     if not prompt.is_active:
         raise HTTPException(status_code=400, detail="Cannot use inactive prompt")
@@ -434,6 +483,133 @@ def set_active_prompt(
 
 
 # =============================================================================
+# SHARED PROMPT ROUTES - Must come before parameterized /{prompt_uuid} routes
+# =============================================================================
+
+
+@router.get("/shared/library", response_model=schemas.SharedPromptLibrary)
+def get_shared_prompt_library(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+    content_type: str | None = Query(None),
+    tags: str | None = Query(None, description="Comma-separated tags"),
+    search: str | None = Query(None, description="Search name/description"),
+    sort_by: str = Query("newest", description="popular, newest, or name"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> Any:
+    """Browse shared prompts with filtering and pagination."""
+    query = db.query(models.SummaryPrompt).filter(
+        models.SummaryPrompt.is_shared == True,  # noqa: E712
+        models.SummaryPrompt.is_active == True,  # noqa: E712
+        not_(models.SummaryPrompt.is_system_default),
+    )
+
+    if content_type:
+        query = query.filter(models.SummaryPrompt.content_type == content_type)
+
+    if tags:
+        for tag in tags.split(","):
+            tag = tag.strip().lower()
+            if tag:
+                query = query.filter(models.SummaryPrompt.tags.op("@>")(f'["{tag}"]'))
+
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                models.SummaryPrompt.name.ilike(search_pattern),
+                models.SummaryPrompt.description.ilike(search_pattern),
+            )
+        )
+
+    total = query.count()
+
+    if sort_by == "popular":
+        query = query.order_by(models.SummaryPrompt.usage_count.desc())
+    elif sort_by == "name":
+        query = query.order_by(models.SummaryPrompt.name)
+    else:
+        query = query.order_by(models.SummaryPrompt.shared_at.desc())
+
+    prompts = query.offset(skip).limit(limit).all()
+
+    # Batch-fetch owners
+    owner_ids = {p.user_id for p in prompts if p.user_id}
+    owners = (
+        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()}
+        if owner_ids
+        else {}
+    )
+
+    prompt_list = []
+    for p in prompts:
+        sp = schemas.SummaryPrompt.model_validate(p)
+        sp.is_owner = p.user_id == current_user.id
+        owner = owners.get(p.user_id) if p.user_id else None
+        if owner:
+            sp.author_name = owner.full_name
+            sp.author_role = owner.role
+        prompt_list.append(sp)
+
+    # Get available tags
+    available_tags: list[str] = []
+    try:
+        tag_rows = db.execute(
+            text(
+                "SELECT DISTINCT jsonb_array_elements_text(tags) AS tag "
+                "FROM summary_prompt WHERE is_shared = TRUE AND is_active = TRUE "
+                "ORDER BY tag"
+            )
+        ).fetchall()
+        available_tags = [row[0] for row in tag_rows]
+    except Exception:
+        logger.debug("Could not fetch available tags", exc_info=True)
+
+    return schemas.SharedPromptLibrary(
+        prompts=prompt_list,
+        total=total,
+        page=skip // limit + 1 if limit > 0 else 1,
+        size=len(prompt_list),
+        has_next=(skip + limit) < total,
+        has_prev=skip > 0,
+        available_tags=available_tags,
+    )
+
+
+@router.post("/shared/{prompt_uuid}/toggle", response_model=schemas.SummaryPrompt)
+def share_prompt(
+    prompt_uuid: str,
+    share_data: schemas.SummaryPromptShare,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Toggle sharing on a prompt. Owner or admin can toggle."""
+    prompt = get_prompt_by_uuid(db, prompt_uuid)
+
+    if prompt.user_id != current_user.id and current_user.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Not authorized to share this prompt")
+    if prompt.is_system_default:
+        raise HTTPException(status_code=400, detail="Cannot share system prompts")
+
+    prompt.is_shared = share_data.is_shared  # type: ignore[assignment]
+    if share_data.is_shared and not prompt.shared_at:
+        prompt.shared_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+    elif not share_data.is_shared:
+        prompt.shared_at = None  # type: ignore[assignment]
+        # Clean up other users who had this prompt set as active
+        db.query(models.UserSetting).filter(
+            models.UserSetting.setting_key == "active_summary_prompt_id",
+            models.UserSetting.setting_value == str(prompt.id),
+            models.UserSetting.user_id != current_user.id,
+        ).delete(synchronize_session=False)
+
+    db.commit()
+    db.refresh(prompt)
+    return prompt
+
+
+# =============================================================================
 # PARAMETERIZED ROUTES - Must come after static routes
 # =============================================================================
 
@@ -449,8 +625,8 @@ def get_prompt(
     """
     prompt = get_prompt_by_uuid(db, prompt_uuid)
 
-    # Check access: system prompts are public, user prompts are private
-    if not prompt.is_system_default and prompt.user_id != current_user.id:
+    # Check access: system prompts are public, shared are accessible, others are private
+    if not prompt.is_system_default and prompt.user_id != current_user.id and not prompt.is_shared:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
     return prompt
@@ -476,7 +652,7 @@ def update_prompt(
             detail="Cannot modify system prompts or other users' prompts",
         )
 
-    update_data = prompt_in.dict(exclude_unset=True)
+    update_data = prompt_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(prompt, field, value)
 
@@ -505,22 +681,11 @@ def delete_prompt(
             detail="Cannot delete system prompts or other users' prompts",
         )
 
-    # Check if this is the user's active prompt
-    active_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            and_(
-                models.UserSetting.user_id == current_user.id,
-                models.UserSetting.setting_key == "active_summary_prompt_id",
-                models.UserSetting.setting_value == str(prompt_id),
-            )
-        )
-        .first()
-    )
-
-    if active_setting:
-        # Reset to default prompt
-        db.delete(active_setting)
+    # Clean up ALL users who had this prompt set as active (owner + non-owners for shared)
+    db.query(models.UserSetting).filter(
+        models.UserSetting.setting_key == "active_summary_prompt_id",
+        models.UserSetting.setting_value == str(prompt_id),
+    ).delete(synchronize_session=False)
 
     db.delete(prompt)
     db.commit()
