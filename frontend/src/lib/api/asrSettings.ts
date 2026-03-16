@@ -13,7 +13,8 @@ export type ASRProvider =
   | 'azure'
   | 'aws'
   | 'speechmatics'
-  | 'gladia';
+  | 'gladia'
+  | 'pyannote';
 
 export type ASRConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
@@ -324,6 +325,51 @@ export class ASRSettingsApi {
     return response.data;
   }
 
+  // ---- Admin: Local Model Control ----
+
+  /**
+   * Get the active local Whisper model and available downloaded models.
+   */
+  static async getActiveLocalModel(): Promise<{
+    active_model: string;
+    source: 'database' | 'environment';
+    available_models: { short_name: string; repo_id: string; downloaded: boolean }[];
+    model_info?: {
+      display_name: string;
+      description: string;
+      supports_translation: boolean;
+      supports_diarization: boolean;
+      language_support: string;
+    };
+  }> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/local-model/active`);
+    return response.data;
+  }
+
+  /**
+   * Set the active local Whisper model (admin only).
+   */
+  static async setLocalModel(modelName: string): Promise<{ model_name: string; message: string }> {
+    const response = await axiosInstance.post(`${this.BASE_PATH}/local-model/set`, {
+      model_name: modelName,
+    });
+    return response.data;
+  }
+
+  /**
+   * Restart the GPU worker to apply a new local model (admin only).
+   */
+  static async restartGpuWorker(): Promise<{
+    status: string;
+    model: string;
+    workers: string[];
+    active_tasks?: number;
+    message: string;
+  }> {
+    const response = await axiosInstance.post(`${this.BASE_PATH}/local-model/restart`);
+    return response.data;
+  }
+
   /**
    * Get user-friendly display name for a provider
    */
@@ -338,6 +384,7 @@ export class ASRSettingsApi {
       aws: 'Amazon Transcribe',
       speechmatics: 'Speechmatics',
       gladia: 'Gladia',
+      pyannote: 'pyannote.ai',
     };
     return displayNames[provider] || provider;
   }

@@ -8,6 +8,7 @@ import hashlib
 import logging
 import os
 from dataclasses import dataclass
+from typing import ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,10 @@ def _parse_optional_float(value: str) -> float | None:
 @dataclass
 class TranscriptionConfig:
     """Configuration for the transcription pipeline."""
+
+    # Class-level pin: set once at worker startup, used for all subsequent tasks.
+    # Prevents mid-flight model swaps when admin changes the DB setting.
+    _pinned_model_name: ClassVar[str | None] = None
 
     model_name: str = "large-v3-turbo"
     compute_type: str = "float16"
@@ -75,7 +80,7 @@ class TranscriptionConfig:
 
         # Base config from environment and hardware detection
         config = cls(
-            model_name=os.getenv("WHISPER_MODEL", "large-v3-turbo"),
+            model_name=cls._resolve_model_name(),
             compute_type=os.getenv("WHISPER_COMPUTE_TYPE", whisperx_config["compute_type"]),
             beam_size=int(os.getenv("WHISPER_BEAM_SIZE", "5")),
             batch_size=batch_size,
@@ -125,6 +130,50 @@ class TranscriptionConfig:
         )
 
         return config
+
+    @classmethod
+    def pin_model(cls, model_name: str) -> None:
+        """Pin the model name after preloading at worker startup.
+
+        Once pinned, all subsequent ``from_environment()`` calls use this value
+        instead of re-reading the DB.  This prevents mid-flight model swaps when
+        the admin changes the DB setting before restarting the worker — running
+        tasks always use the model that's actually loaded in VRAM.
+
+        The pin is reset on process restart (new worker reads fresh from DB).
+        """
+        cls._pinned_model_name = model_name
+        logger.info("Model name pinned to '%s' for this worker process", model_name)
+
+    @classmethod
+    def _resolve_model_name(cls) -> str:
+        """Resolve the Whisper model name: pinned value -> DB -> env -> default.
+
+        Resolution order:
+        1. Pinned value (set at worker startup after model preload)
+        2. SystemSettings DB key ``asr.local_model`` (admin-set)
+        3. WHISPER_MODEL environment variable
+        4. Hardcoded default ``large-v3-turbo``
+        """
+        # Fast path: use pinned value from worker startup (no DB hit)
+        if cls._pinned_model_name is not None:
+            return cls._pinned_model_name
+
+        # Startup path: read from DB (first call before pin_model is called)
+        try:
+            from app.db.session_utils import session_scope
+            from app.models.system_settings import SystemSettings
+
+            with session_scope() as db:
+                setting = (
+                    db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
+                )
+                if setting and setting.value:
+                    return str(setting.value)
+        except Exception:  # noqa: S110  # nosec B110
+            # DB not available (e.g., during testing, worker startup race) — fall back to env
+            logger.debug("Could not read asr.local_model from DB, using env var")
+        return os.getenv("WHISPER_MODEL", "large-v3-turbo")
 
     @staticmethod
     def _resolve_concurrent_requests() -> int:

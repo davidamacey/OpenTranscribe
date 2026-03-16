@@ -18,6 +18,7 @@ _KEY_REQUIRED: dict[str, str] = {
     "azure": "AZURE_SPEECH_KEY",
     "speechmatics": "SPEECHMATICS_API_KEY",
     "gladia": "GLADIA_API_KEY",
+    "pyannote": "PYANNOTE_API_KEY",
 }
 
 ASR_PROVIDER_CATALOG: dict = {
@@ -375,6 +376,36 @@ ASR_PROVIDER_CATALOG: dict = {
             },
         ],
     },
+    "pyannote": {
+        "id": "pyannote",
+        "display_name": "pyannote.ai",
+        "requires_api_key": True,
+        "requires_region": False,
+        "supports_custom_url": False,
+        "supports_diarization": True,
+        "supports_vocabulary": False,
+        "supports_translation": False,
+        "description": "STT Orchestration — premium diarization + transcription in one API call",
+        "models": [
+            {
+                "id": "parakeet",
+                "display_name": "Parakeet (NVIDIA)",
+                "description": "Fast, accurate, 100 languages, bundled with premium diarization",
+                "price_per_min_batch": 0.027,
+                "languages": 100,
+                "is_default": True,
+                "supports_diarization": True,
+            },
+            {
+                "id": "whisper-large-v3-turbo",
+                "display_name": "Whisper Large V3 Turbo",
+                "description": "OpenAI Whisper via pyannote, bundled with premium diarization",
+                "price_per_min_batch": 0.027,
+                "languages": 100,
+                "supports_diarization": True,
+            },
+        ],
+    },
 }
 
 
@@ -413,7 +444,6 @@ class ASRProviderFactory:
                             UserASRSettings.user_id == user_id,
                             UserASRSettings.is_shared == True,  # noqa: E712
                         ),
-                        UserASRSettings.is_active == True,  # noqa: E712 — SQLAlchemy requires == not is
                     )
                     .first()
                 )
@@ -566,6 +596,12 @@ class ASRProviderFactory:
             return GladiaProvider(
                 os.getenv("GLADIA_API_KEY", ""), os.getenv("GLADIA_MODEL", "standard")
             )
+        if provider == "pyannote":
+            from .pyannote_provider import PyAnnoteProvider
+
+            return PyAnnoteProvider(
+                os.getenv("PYANNOTE_API_KEY", ""), os.getenv("PYANNOTE_MODEL", "parakeet")
+            )
         logger.warning("Unknown ASR provider '%s', falling back to local", provider)
         return LocalASRProvider()
 
@@ -614,6 +650,10 @@ class ASRProviderFactory:
             from .gladia_provider import GladiaProvider
 
             return GladiaProvider(api_key or "", model or "standard")
+        if provider == "pyannote":
+            from .pyannote_provider import PyAnnoteProvider
+
+            return PyAnnoteProvider(api_key or "", model or "parakeet")
         logger.warning("Unknown provider '%s', falling back to local", provider)
         return LocalASRProvider()
 
@@ -686,14 +726,18 @@ class ASRProviderFactory:
         )
         if setting and setting.setting_value:
             try:
+                from sqlalchemy import or_
+
                 from app.models.user_asr_settings import UserASRSettings
 
                 cfg = (
                     db.query(UserASRSettings)
                     .filter(
                         UserASRSettings.id == int(setting.setting_value),
-                        UserASRSettings.user_id == user_id,
-                        UserASRSettings.is_active == True,  # noqa: E712
+                        or_(
+                            UserASRSettings.user_id == user_id,
+                            UserASRSettings.is_shared == True,  # noqa: E712
+                        ),
                     )
                     .first()
                 )

@@ -18,12 +18,14 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.auth import get_current_admin_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.db.base import get_db
@@ -81,6 +83,7 @@ _VALID_PROVIDERS = frozenset(
         "aws",
         "speechmatics",
         "gladia",
+        "pyannote",
     }
 )
 
@@ -94,6 +97,7 @@ _CLOUD_PROVIDERS = {
     "aws",
     "speechmatics",
     "gladia",
+    "pyannote",
 }
 
 # Azure and AWS region allowlists — imported from schemas (single source of truth).
@@ -289,9 +293,38 @@ def _clear_asr_shared_active_references(
 def get_providers(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
-    """Return the full ASR provider catalog with models, pricing, and capabilities."""
+    """Return the full ASR provider catalog with models, pricing, and capabilities.
+
+    For the local provider, each model entry includes a ``downloaded`` boolean
+    indicating whether the model weights are already present on disk.
+    """
     catalog = _get_provider_catalog()
-    return {"providers": list(catalog.values())}
+    providers = list(catalog.values())
+
+    # Annotate local models with download availability
+    try:
+        from app.services.asr.model_discovery import get_downloaded_model_names
+
+        downloaded = get_downloaded_model_names()
+        for p in providers:
+            if p.get("id") == "local":
+                for m in p.get("models", []):
+                    m["downloaded"] = m["id"] in downloaded
+                break
+    except Exception:
+        logger.debug("Model discovery unavailable, skipping download annotations")
+
+    return {"providers": providers}
+
+
+@router.get("/local-models")
+def get_local_models(
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Return locally downloaded Whisper models discovered from the cache directory."""
+    from app.services.asr.model_discovery import discover_local_models
+
+    return {"models": discover_local_models()}
 
 
 @router.get("/status")
@@ -467,12 +500,10 @@ def create_asr_config(
             detail=f"Configuration named '{settings_in.name}' already exists",
         )
 
-    # Test encryption before proceeding
-    if not test_encryption():
-        raise HTTPException(status_code=500, detail="Encryption system is not working properly")
-
     encrypted_key = None
     if settings_in.api_key:
+        if not test_encryption():
+            raise HTTPException(status_code=500, detail="Encryption system is not working properly")
         encrypted_key = encrypt_api_key(settings_in.api_key)
         if not encrypted_key:
             raise HTTPException(status_code=500, detail="Failed to encrypt API key")
@@ -779,4 +810,198 @@ def test_saved_asr_config(
         "message": message,
         "response_time_ms": int(response_time_ms),
         "config_uuid": str(config.uuid),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Admin: local ASR model control
+# ---------------------------------------------------------------------------
+
+
+@router.get("/local-model/active")
+def get_active_local_model(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Return the active local Whisper model name and available downloaded models."""
+    from app.models.system_settings import SystemSettings
+    from app.services.asr.model_discovery import discover_local_models
+
+    setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
+    active_model = (
+        setting.value if setting and setting.value else os.getenv("WHISPER_MODEL", "large-v3-turbo")
+    )
+
+    # Look up catalog info for the active model
+    catalog = _get_provider_catalog()
+    local_models = catalog.get("local", {}).get("models", [])
+    model_info: dict[str, Any] = {}
+    for m in local_models:
+        if m["id"] == active_model:
+            model_info = {
+                "display_name": m.get("display_name", active_model),
+                "description": m.get("description", ""),
+                "supports_translation": m.get("supports_translation", True),
+                "supports_diarization": m.get("supports_diarization", True),
+                "language_support": m.get("language_support", "multilingual"),
+            }
+            break
+    # Substring match for models like "large-v3-turbo" in custom repo names
+    if not model_info:
+        sorted_models = sorted(local_models, key=lambda x: len(x["id"]), reverse=True)
+        for m in sorted_models:
+            if m["id"] in active_model:
+                model_info = {
+                    "display_name": m.get("display_name", active_model),
+                    "description": m.get("description", ""),
+                    "supports_translation": m.get("supports_translation", True),
+                    "supports_diarization": m.get("supports_diarization", True),
+                    "language_support": m.get("language_support", "multilingual"),
+                }
+                break
+
+    return {
+        "active_model": active_model,
+        "source": "database" if (setting and setting.value) else "environment",
+        "available_models": discover_local_models(),
+        "model_info": model_info,
+    }
+
+
+class _SetLocalModelRequest(BaseModel):
+    model_name: str
+
+
+@router.post("/local-model/set")
+@limiter.limit(get_api_rate_limit())
+def set_active_local_model(
+    request: Request,
+    body: _SetLocalModelRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+) -> Any:
+    """Set the active local Whisper model (admin only).
+
+    Stores the model name in SystemSettings so the GPU worker uses it on
+    next startup.  Does NOT restart the worker — call ``/local-model/restart``
+    separately to apply with graceful drain.
+    """
+    model_name = body.model_name.strip()
+    if not model_name:
+        raise HTTPException(status_code=400, detail="model_name is required")
+
+    from app.models.system_settings import SystemSettings
+
+    setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
+    if setting:
+        setting.value = model_name  # type: ignore[assignment]
+    else:
+        setting = SystemSettings(
+            key="asr.local_model",
+            value=model_name,
+            description="Active local Whisper model set by admin",
+        )
+        db.add(setting)
+    db.commit()
+
+    logger.info("Admin %s set local ASR model to '%s'", current_user.email, model_name)
+
+    return {
+        "model_name": model_name,
+        "message": f"Local model set to '{model_name}'. Restart GPU worker to apply.",
+    }
+
+
+@router.post("/local-model/restart")
+@limiter.limit("5/minute")
+def restart_gpu_worker(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+) -> Any:
+    """Gracefully restart the GPU Celery worker to apply a new model (admin only).
+
+    Sends a warm shutdown signal via Celery's control API.  The worker finishes
+    any in-progress tasks before exiting.  Docker ``restart: always`` brings
+    the container back automatically, and the ``worker_ready`` signal handler
+    preloads the new model from the database.
+    """
+    from app.core.celery import celery_app
+    from app.models.system_settings import SystemSettings
+
+    # Read the pending model so we can report it
+    setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
+    pending_model = (
+        setting.value if setting and setting.value else os.getenv("WHISPER_MODEL", "large-v3-turbo")
+    )
+
+    # Discover GPU workers
+    try:
+        inspector = celery_app.control.inspect(timeout=3.0)
+        ping_result = inspector.ping() or {}
+    except Exception as exc:
+        logger.warning("Failed to inspect Celery workers: %s", exc)
+        ping_result = {}
+
+    gpu_workers = [name for name in ping_result if "gpu" in name.lower()]
+
+    if not gpu_workers:
+        # No GPU workers found — might be down already or naming mismatch.
+        # Still send a broadcast shutdown to the 'gpu' queue as best-effort.
+        logger.warning("No GPU workers found via inspect, sending broadcast shutdown")
+        try:
+            celery_app.control.broadcast("shutdown")
+        except Exception as exc:
+            logger.error("Failed to broadcast shutdown: %s", exc)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to signal worker restart: {exc}",
+            ) from exc
+        return {
+            "status": "restart_signaled",
+            "model": pending_model,
+            "workers": [],
+            "message": "Shutdown broadcast sent. No GPU workers were detected — "
+            "they may already be restarting.",
+        }
+
+    # Check for active GPU tasks
+    try:
+        active_result = inspector.active() or {}
+    except Exception:
+        active_result = {}
+
+    active_gpu_tasks = 0
+    for worker_name in gpu_workers:
+        tasks = active_result.get(worker_name, [])
+        active_gpu_tasks += len(tasks)
+
+    # Send warm shutdown to GPU workers only
+    try:
+        celery_app.control.broadcast("shutdown", destination=gpu_workers)
+    except Exception as exc:
+        logger.error("Failed to send shutdown to GPU workers: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to signal worker restart: {exc}",
+        ) from exc
+
+    logger.info(
+        "Admin %s triggered GPU worker restart (model=%s, workers=%s, active_tasks=%d)",
+        current_user.email,
+        pending_model,
+        gpu_workers,
+        active_gpu_tasks,
+    )
+
+    return {
+        "status": "restart_signaled",
+        "model": pending_model,
+        "workers": gpu_workers,
+        "active_tasks": active_gpu_tasks,
+        "message": (
+            f"GPU worker restart signaled. "
+            f"{'Worker will finish ' + str(active_gpu_tasks) + ' active task(s) before restarting.' if active_gpu_tasks > 0 else 'Worker will restart immediately.'} "
+            f"New model: {pending_model}"
+        ),
     }

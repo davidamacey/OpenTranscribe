@@ -1,4 +1,4 @@
-"""ASR provider abstraction layer — 9 providers (1 local + 8 cloud)."""
+"""ASR provider abstraction layer — 10 providers (1 local + 9 cloud)."""
 
 from .factory import ASRProviderFactory
 from .types import ASRConfig

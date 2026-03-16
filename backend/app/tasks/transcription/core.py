@@ -747,7 +747,8 @@ def _run_transcription_pipeline(
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
 
-    config = TranscriptionConfig.from_environment(
+    # Build overrides dict — local model is admin-controlled via WHISPER_MODEL env var
+    overrides: dict = dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
         min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
@@ -761,6 +762,9 @@ def _run_transcription_pipeline(
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
     )
+    # No model_name override — local model is pinned at worker startup via WHISPER_MODEL env var
+
+    config = TranscriptionConfig.from_environment(**overrides)
 
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.4)

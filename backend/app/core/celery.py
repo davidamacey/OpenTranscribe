@@ -243,23 +243,29 @@ def init_worker_process(**kwargs):
 
 @worker_ready.connect
 def preload_gpu_models(**kwargs):
-    """Preload GPU models for concurrent thread pool workers.
+    """Preload GPU models at worker startup.
 
-    worker_ready fires for all pool types (including threads) after the
-    worker is fully initialized, unlike worker_process_init which only
-    fires for prefork child processes.
+    Models are loaded once into VRAM and shared across all worker threads
+    (threaded pool). This avoids cold-start latency on the first task and
+    keeps the model pinned for the worker's lifetime.
     """
     try:
         from app.transcription.config import TranscriptionConfig
 
         config = TranscriptionConfig.from_environment()
-        if config.concurrent_requests > 1 and config.device == "cuda":
+        if config.device == "cuda":
             from app.transcription.model_manager import ModelManager
 
             ModelManager.get_instance().ensure_models_loaded(config)
+
+            # Pin the model name so subsequent tasks use the loaded model,
+            # even if the admin changes the DB setting before restarting.
+            TranscriptionConfig.pin_model(config.model_name)
+
             logger.info(
-                "GPU models preloaded for concurrent mode "
-                f"(concurrent_requests={config.concurrent_requests})"
+                "GPU models preloaded and pinned "
+                f"(model={config.model_name}, "
+                f"concurrent_requests={config.concurrent_requests})"
             )
     except Exception as e:
         logger.debug(f"Model preloading skipped (not a GPU worker or error): {e}")

@@ -12,6 +12,7 @@
   import { t } from '$stores/locale';
 
   export let onSettingsChange: (() => void) | null = null;
+  export let isAdmin = false;
 
   let loading = false;
   let saving = false;
@@ -22,6 +23,21 @@
   let activeConfigurationId: string | null = null;
   let providers: ASRProviderInfo[] = [];
   let usingLocalDefault = true;
+
+  // Local model state (visible to all users; admin can change)
+  let activeLocalModel = '';
+  let activeLocalModelSource: 'database' | 'environment' = 'environment';
+  let availableLocalModels: { short_name: string; repo_id: string; downloaded: boolean }[] = [];
+  let localModelInfo: {
+    display_name: string;
+    description: string;
+    supports_translation: boolean;
+    supports_diarization: boolean;
+    language_support: string;
+  } | null = null;
+  let selectedLocalModel = '';
+  let modelChangeInProgress = false;
+  let restartInProgress = false;
 
   let showConfigModal = false;
   let editingConfiguration: UserASRSettingsResponse | null = null;
@@ -39,15 +55,25 @@
   async function loadData() {
     loading = true;
     try {
-      const [providersResp, settingsResp] = await Promise.all([
+      const [providersResp, settingsResp, localModelResp] = await Promise.all([
         ASRSettingsApi.getProviders(),
         ASRSettingsApi.getSettings().catch(() => ({ configurations: [], shared_configurations: [], active_configuration_id: undefined, total: 0 })),
+        ASRSettingsApi.getActiveLocalModel().catch(() => null),
       ]);
       providers = providersResp.providers;
       configurations = settingsResp.configurations;
       sharedConfigurations = settingsResp.shared_configurations || [];
       activeConfigurationId = settingsResp.active_configuration_id || null;
       usingLocalDefault = configurations.length === 0 || !activeConfigurationId;
+
+      // Load local model info (visible to all users)
+      if (localModelResp) {
+        activeLocalModel = localModelResp.active_model;
+        activeLocalModelSource = localModelResp.source;
+        availableLocalModels = localModelResp.available_models || [];
+        localModelInfo = localModelResp.model_info || null;
+        selectedLocalModel = activeLocalModel;
+      }
     } catch (err: any) {
       console.error('Error loading ASR settings:', err);
       const detail = (err as any).response?.data?.detail;
@@ -114,15 +140,13 @@
     if (!configToDelete) return;
     saving = true;
     try {
+      const deletedName = configToDelete.name;
       await ASRSettingsApi.deleteConfig(configToDelete.uuid);
-      configurations = configurations.filter(c => c.uuid !== configToDelete!.uuid);
-      if (configToDelete.uuid === activeConfigurationId) {
-        activeConfigurationId = null;
-        usingLocalDefault = true;
-      }
-      toastStore.success(`"${configToDelete.name}" deleted`);
       configToDelete = null;
       showDeleteModal = false;
+      // Re-fetch canonical state to pick up auto-promoted active config
+      await loadData();
+      toastStore.success(`"${deletedName}" deleted`);
       if (onSettingsChange) onSettingsChange();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
@@ -150,25 +174,9 @@
     }
   }
 
-  function handleConfigSaved(event: CustomEvent<UserASRSettingsResponse>) {
-    const saved = event.detail;
-    const idx = configurations.findIndex(c => c.uuid === saved.uuid);
-    if (idx !== -1) {
-      configurations[idx] = saved;
-      configurations = [...configurations];
-    } else {
-      configurations = [...configurations, saved];
-    }
-    // When the backend marks this config as active (e.g. first config auto-activates),
-    // update our local active pointer. If it's not active, leave the current active alone.
-    if (saved.is_active) {
-      activeConfigurationId = saved.uuid;
-      usingLocalDefault = false;
-    } else if (configurations.length === 1) {
-      // Only one config and it is not active — revert to local default
-      activeConfigurationId = null;
-      usingLocalDefault = true;
-    }
+  async function handleConfigSaved(event: CustomEvent<UserASRSettingsResponse>) {
+    // Re-fetch canonical state from backend to pick up auto-activation, etc.
+    await loadData();
     if (onSettingsChange) onSettingsChange();
   }
 
@@ -228,6 +236,38 @@
     return '';
   }
 
+  // Admin: set local model and restart worker
+  async function handleSetLocalModel() {
+    if (!selectedLocalModel || selectedLocalModel === activeLocalModel) return;
+    modelChangeInProgress = true;
+    try {
+      await ASRSettingsApi.setLocalModel(selectedLocalModel);
+      activeLocalModel = selectedLocalModel;
+      activeLocalModelSource = 'database';
+      toastStore.success(`Local model set to "${selectedLocalModel}". Restart GPU worker to apply.`);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : 'Failed to set local model', 5000);
+    } finally {
+      modelChangeInProgress = false;
+    }
+  }
+
+  async function handleRestartGpuWorker() {
+    restartInProgress = true;
+    try {
+      const result = await ASRSettingsApi.restartGpuWorker();
+      toastStore.success(result.message, 8000);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : 'Failed to restart GPU worker', 5000);
+    } finally {
+      restartInProgress = false;
+    }
+  }
+
+  $: localModelChanged = selectedLocalModel && selectedLocalModel !== activeLocalModel;
+
   $: if (showConfigModal || showDeleteModal || showDeleteAllModal) {
     document.body.style.overflow = 'hidden';
   } else {
@@ -239,13 +279,109 @@
   {#if loading}
     <div class="loading">{$t('settings.asrProvider.loading')}</div>
   {:else}
+    <!-- Local GPU Model Info (all users) / Controls (admin only) -->
+    {#if activeLocalModel}
+      <div class="local-model-section" class:admin-mode={isAdmin}>
+        <div class="admin-section-header">
+          <h4>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/>
+              <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
+              <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
+              <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
+              <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+            </svg>
+            Local GPU Model
+          </h4>
+          {#if isAdmin}
+            <span class="admin-badge-tag">Admin</span>
+          {/if}
+        </div>
+
+        <!-- Model info — visible to everyone -->
+        <div class="model-info-row">
+          <div class="model-name-display">
+            <span class="model-label">{localModelInfo?.display_name || activeLocalModel}</span>
+            {#if localModelInfo?.description}
+              <span class="model-desc">{localModelInfo.description}</span>
+            {/if}
+          </div>
+          <div class="model-capabilities">
+            {#if localModelInfo}
+              <span class="cap-badge" class:cap-yes={localModelInfo.supports_diarization} class:cap-no={!localModelInfo.supports_diarization}>
+                {localModelInfo.supports_diarization ? '✓' : '✗'} Diarization
+              </span>
+              <span class="cap-badge" class:cap-yes={localModelInfo.supports_translation} class:cap-no={!localModelInfo.supports_translation}>
+                {localModelInfo.supports_translation ? '✓' : '✗'} Translation
+              </span>
+              <span class="cap-badge cap-neutral">
+                {localModelInfo.language_support === 'english_optimized' ? 'English optimized' : 'Multilingual'}
+              </span>
+            {/if}
+          </div>
+        </div>
+
+        {#if isAdmin}
+          <!-- Admin controls -->
+          <p class="admin-description">
+            The local Whisper model is loaded into GPU VRAM at worker startup and shared by all users. Changing the model requires a GPU worker restart.
+          </p>
+          <div class="model-control-row">
+            <div class="model-select-group">
+              <label for="local-model-select">Active Model</label>
+              <div class="model-select-with-source">
+                <select id="local-model-select" bind:value={selectedLocalModel} disabled={modelChangeInProgress || restartInProgress} class="form-select">
+                  {#if availableLocalModels.length > 0}
+                    {#each availableLocalModels as model}
+                      <option value={model.short_name}>{model.short_name}</option>
+                    {/each}
+                    {#if !availableLocalModels.find(m => m.short_name === activeLocalModel)}
+                      <option value={activeLocalModel}>{activeLocalModel} (not downloaded)</option>
+                    {/if}
+                  {:else}
+                    <option value={activeLocalModel}>{activeLocalModel}</option>
+                  {/if}
+                </select>
+                <span class="model-source">Source: {activeLocalModelSource === 'database' ? 'Database' : 'Environment variable'}</span>
+              </div>
+            </div>
+            <div class="model-actions">
+              {#if localModelChanged}
+                <button class="btn btn-primary" on:click={handleSetLocalModel} disabled={modelChangeInProgress}>
+                  {#if modelChangeInProgress}
+                    <Spinner size="small" /> Saving...
+                  {:else}
+                    Save Model
+                  {/if}
+                </button>
+              {/if}
+              <button class="btn btn-warning" on:click={handleRestartGpuWorker} disabled={restartInProgress || modelChangeInProgress}>
+                {#if restartInProgress}
+                  <Spinner size="small" /> Restarting...
+                {:else}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                    <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                  </svg>
+                  Restart GPU Worker
+                {/if}
+              </button>
+            </div>
+          </div>
+          {#if availableLocalModels.length > 0}
+            <div class="downloaded-count">{availableLocalModels.length} model{availableLocalModels.length !== 1 ? 's' : ''} downloaded locally</div>
+          {/if}
+        {/if}
+      </div>
+    {/if}
+
     <!-- Active provider status bar -->
     <div class="status-bar" class:local={usingLocalDefault}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
       </svg>
       {#if usingLocalDefault}
-        {$t('settings.asrProvider.usingLocalDefault')}
+        {$t('settings.asrProvider.usingLocalDefault')}{#if activeLocalModel} — <strong>{activeLocalModel}</strong>{/if}
       {:else}
         {$t('settings.asrProvider.currentProvider')}: <strong>{getActiveConfig()?.name || ''}</strong>
         ({ASRSettingsApi.getProviderDisplayName(getActiveConfig()?.provider || '')} — {getActiveConfig()?.model_name || ''})
@@ -814,4 +950,213 @@
   .toggle-input:checked + .toggle-switch { background: #3b82f6; }
   .toggle-input:checked + .toggle-switch::after { transform: translateX(12px); }
   .toggle-text { user-select: none; }
+
+  /* Local model section (all users) */
+  .local-model-section {
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    margin-bottom: 1.25rem;
+  }
+
+  .model-info-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+  }
+
+  .local-model-section.admin-mode .model-info-row {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px dashed var(--border-color);
+  }
+
+  .model-name-display {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .model-label {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .model-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .model-capabilities {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+  }
+
+  .cap-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .cap-yes {
+    background: var(--success-bg, rgba(16, 185, 129, 0.1));
+    color: var(--success-color, #10b981);
+  }
+
+  .cap-no {
+    background: rgba(239, 68, 68, 0.08);
+    color: var(--error-color, #ef4444);
+  }
+
+  .cap-neutral {
+    background: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--primary-color);
+  }
+
+  .admin-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  .admin-section-header h4 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .admin-badge-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.675rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+  }
+  :global([data-theme='dark']) .admin-badge-tag {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+  }
+
+  .admin-description {
+    margin: 0 0 0.875rem;
+    font-size: 0.775rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .model-control-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+  }
+
+  .model-select-group {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .model-select-group label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 0.375rem;
+  }
+
+  .model-select-with-source {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .model-select-group .form-select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color, var(--card-bg));
+    color: var(--text-color);
+    font-size: 0.8125rem;
+    height: 36px;
+  }
+
+  .model-source {
+    font-size: 0.675rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .model-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-shrink: 0;
+    /* Align with the select element: skip past the label height */
+    margin-top: 1.25rem;
+  }
+
+  .model-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: none;
+    white-space: nowrap;
+  }
+
+  .model-actions .btn-primary {
+    background: var(--primary-color, #3b82f6);
+    color: white;
+  }
+
+  .model-actions .btn-primary:hover:not(:disabled) {
+    background: var(--primary-hover, #2563eb);
+  }
+
+  .model-actions .btn-warning {
+    background: var(--warning-color, #f59e0b);
+    color: white;
+  }
+
+  .model-actions .btn-warning:hover:not(:disabled) {
+    background: #d97706;
+  }
+
+  .model-actions .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .downloaded-count {
+    margin-top: 0.625rem;
+    font-size: 0.725rem;
+    color: var(--text-muted);
+  }
 </style>

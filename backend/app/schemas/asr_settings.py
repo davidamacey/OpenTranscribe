@@ -20,6 +20,7 @@ class ASRProvider(str, Enum):
     AWS = "aws"
     SPEECHMATICS = "speechmatics"
     GLADIA = "gladia"
+    PYANNOTE = "pyannote"
 
 
 # Maximum length for an API key. Cloud provider keys are typically < 256 characters;
