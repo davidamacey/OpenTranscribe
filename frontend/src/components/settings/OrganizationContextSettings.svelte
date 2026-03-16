@@ -447,7 +447,7 @@
   .form-textarea:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .form-textarea::placeholder {
@@ -557,54 +557,8 @@
     padding-top: 0.5rem;
   }
 
-  .btn {
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    border: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .btn-primary {
-    background-color: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .btn-secondary {
-    background-color: var(--background-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
     margin-right: auto;
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--button-hover, #e5e7eb);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   /* Using shared banner */
@@ -614,8 +568,8 @@
     justify-content: space-between;
     gap: 1rem;
     padding: 0.75rem 1rem;
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    border: 1px solid rgba(var(--primary-color-rgb), 0.2);
     border-radius: 8px;
   }
 
@@ -623,28 +577,42 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    color: #3b82f6;
+    color: var(--primary-color);
     font-size: 0.8125rem;
     font-weight: 500;
   }
 
   :global([data-theme='dark']) .banner-content {
-    color: #60a5fa;
+    color: var(--primary-color);
   }
 
   .btn-stop-shared {
     padding: 0.375rem 0.75rem;
-    background: transparent;
-    border: 1px solid var(--border-color);
+    background-color: #ef4444;
+    border: none;
     border-radius: 6px;
     font-size: 0.75rem;
+    font-weight: 500;
     cursor: pointer;
-    color: var(--text-color);
+    color: white;
     transition: all 0.15s;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .btn-stop-shared:hover:not(:disabled) {
-    border-color: var(--text-muted);
+    background-color: #dc2626;
+    color: white;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+  }
+
+  .btn-stop-shared:active:not(:disabled) {
+    transform: scale(1);
+  }
+
+  .btn-stop-shared:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   /* Shared by Others section */
@@ -673,12 +641,12 @@
   }
 
   .shared-card.active {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.04);
+    border-color: var(--primary-color);
+    background: rgba(var(--primary-color-rgb), 0.04);
   }
 
   :global([data-theme='dark']) .shared-card.active {
-    background: rgba(96, 165, 250, 0.06);
+    background: rgba(var(--primary-color-rgb), 0.06);
   }
 
   .shared-card-header {
@@ -753,28 +721,42 @@
   }
 
   .btn-use {
-    background: #3b82f6;
+    background-color: #3b82f6;
     color: white;
     border: none;
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-use:hover:not(:disabled) {
-    background: #2563eb;
+    background-color: #2563eb;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
+  }
+
+  .btn-use:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-stop {
-    background: transparent;
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
+    background-color: #ef4444;
+    color: white;
+    border: none;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .btn-stop:hover:not(:disabled) {
-    border-color: var(--text-muted);
-    color: var(--text-color);
+    background-color: #dc2626;
+    color: white;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+  }
+
+  .btn-stop:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-shared-action:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
   }
 
@@ -783,8 +765,8 @@
     display: flex;
     gap: 1rem;
     padding: 1rem;
-    background: rgba(59, 130, 246, 0.05);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: rgba(var(--primary-color-rgb), 0.05);
+    border: 1px solid rgba(var(--primary-color-rgb), 0.2);
     border-radius: 8px;
     margin-top: 1rem;
   }

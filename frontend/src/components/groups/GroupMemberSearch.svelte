@@ -268,7 +268,7 @@
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     display: flex;
     align-items: center;

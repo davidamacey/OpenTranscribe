@@ -500,8 +500,8 @@
   }
 
   .action-box.running {
-    background: rgba(59, 130, 246, 0.08);
-    border-color: rgba(59, 130, 246, 0.3);
+    background: rgba(var(--primary-color-rgb), 0.08);
+    border-color: rgba(var(--primary-color-rgb), 0.3);
   }
 
   .action-icon {
@@ -517,8 +517,8 @@
   }
 
   .action-box.running .action-icon {
-    background: rgba(59, 130, 246, 0.15);
-    color: #3b82f6;
+    background: rgba(var(--primary-color-rgb), 0.15);
+    color: var(--primary-color);
   }
 
   .action-content {
@@ -578,7 +578,7 @@
 
   .progress-bar-fill {
     height: 100%;
-    background: var(--primary-color);
+    background: #3b82f6;
     border-radius: 4px;
     transition: width 0.3s ease;
   }
@@ -616,60 +616,5 @@
     margin: 0;
   }
 
-  .btn {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    white-space: nowrap;
-  }
 
-  .btn:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background-color: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--background-color);
-    transform: translateY(-1px);
-  }
-
-  .btn-danger {
-    background-color: #ef4444;
-    color: white;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-danger:hover:not(:disabled) {
-    background-color: #dc2626;
-    transform: translateY(-1px);
-  }
 </style>

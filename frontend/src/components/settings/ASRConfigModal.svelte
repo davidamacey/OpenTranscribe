@@ -185,7 +185,13 @@
 
 </script>
 
-<BaseModal isOpen={show} title={editingConfig ? $t('settings.asrProvider.editConfig') : $t('settings.asrProvider.addConfig')} onClose={handleClose} maxWidth="520px">
+<BaseModal isOpen={show} onClose={handleClose} maxWidth="520px">
+  <svelte:fragment slot="header">
+    <h2 class="modal-title">{editingConfig ? $t('settings.asrProvider.editConfig') : $t('settings.asrProvider.addConfig')}</h2>
+    {#if isDirty}
+      <span class="unsaved-dot" title={$t('settings.asrProvider.unsavedChanges')}>●</span>
+    {/if}
+  </svelte:fragment>
         <!-- Name -->
         <div class="form-group">
           <label for="asr-name">{$t('settings.asrProvider.fields.name')}</label>
@@ -357,6 +363,20 @@
 </BaseModal>
 
 <style>
+  .modal-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .unsaved-dot {
+    color: var(--warning-color);
+    font-size: 0.9rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
   .form-group {
     display: flex;
     flex-direction: column;
@@ -373,15 +393,22 @@
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: var(--bg-primary, var(--input-bg, transparent));
+    background: var(--input-background);
     color: var(--text-color);
     font-size: 0.8125rem;
     outline: none;
     transition: border-color 0.15s;
   }
 
+  .form-select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 2.5rem;
+    cursor: pointer;
+  }
+
   .form-input:focus, .form-select:focus {
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
   }
 
   .input-with-toggle {
@@ -415,7 +442,7 @@
   .cap-badge {
     padding: 0.2rem 0.5rem;
     background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    color: var(--primary-color);
     border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 500;
@@ -526,40 +553,57 @@
 
   .footer-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
 
   .btn-test-conn {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.5rem;
     padding: 0.5rem 0.875rem;
-    border: 1px solid #3b82f6;
-    color: #3b82f6;
-    background: transparent;
+    border: none;
+    color: white;
+    background: #3b82f6;
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.8125rem;
-    transition: all 0.15s;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-test-conn:hover:not(:disabled) {
-    background: #3b82f6;
-    color: white;
+    background: #2563eb;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
+  }
+
+  .btn-test-conn:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-cancel {
     padding: 0.5rem 1rem;
     border: 1px solid var(--border-color);
-    background: transparent;
-    color: var(--text-muted);
+    background-color: var(--surface-color);
+    color: var(--text-color);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.8125rem;
     transition: all 0.15s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
-  .btn-cancel:hover { color: var(--text-color); border-color: var(--text-muted); }
+  .btn-cancel:hover:not(:disabled) {
+    background-color: var(--button-hover);
+    border-color: var(--border-color);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .btn-cancel:active:not(:disabled) {
+    transform: scale(1);
+  }
 
   .btn-save {
     padding: 0.5rem 1.25rem;
@@ -571,6 +615,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     transition: background 0.15s;
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-save:hover:not(:disabled) { background: #2563eb; }

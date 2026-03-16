@@ -395,7 +395,7 @@
 
   .overview-card:hover {
     border-color: var(--primary-color);
-    transform: translateY(-1px);
+    transform: scale(1.02);
   }
 
   .card-icon {
@@ -503,7 +503,7 @@
   .speaker-chip:hover {
     border-color: var(--primary-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    transform: translateY(-1px);
+    transform: scale(1.02);
   }
 
   .chip-header {

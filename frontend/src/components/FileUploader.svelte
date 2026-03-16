@@ -2709,7 +2709,7 @@
     left: 0;
     right: 0;
     height: 2px;
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
   }
 
   .drop-zone {
@@ -2938,7 +2938,7 @@
     height: 18px;
     padding: 0 5px;
     border-radius: 9px;
-    background: var(--primary-color, #3b82f6);
+    background: #3b82f6;
     color: white;
     font-size: 0.6875rem;
     font-weight: 600;
@@ -3258,7 +3258,7 @@
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: scale(1);
     }
   }
 
@@ -3381,17 +3381,17 @@
   .cancel-button:hover:not(:disabled) {
     background: var(--button-hover);
     border-color: var(--border-color);
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: var(--card-shadow);
   }
 
   .cancel-button:active {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: var(--card-shadow);
   }
 
   .upload-button {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -3405,18 +3405,18 @@
     justify-content: center;
     gap: 0.5rem;
     min-width: 120px;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .upload-button:hover:not(:disabled) {
     background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .upload-button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transform: scale(1);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .upload-button:disabled,
@@ -3454,7 +3454,7 @@
 
   .progress-fill {
     height: 100%;
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     transition: width 0.2s;
   }
 
@@ -3549,7 +3549,7 @@
 
   .btn-acknowledge:hover {
     background-color: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
@@ -3730,12 +3730,12 @@
   .cancel-url-button:hover:not(:disabled) {
     background: var(--button-hover);
     border-color: var(--border-color);
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: var(--card-shadow);
   }
 
   .cancel-url-button:active {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: var(--card-shadow);
   }
 
@@ -3760,7 +3760,7 @@
 
   .process-url-button:hover:not(:disabled) {
     background-color: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
   }
 
   .process-url-button:disabled {
@@ -3791,7 +3791,7 @@
 
   :global(.dark) .url-input:focus {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.2);
   }
 
   :global(.dark) .paste-button {
@@ -3859,14 +3859,14 @@
   }
 
   .upload-recording-button {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     border-color: var(--primary-color);
     color: white;
   }
 
   .upload-recording-button:hover {
     background-color: #2563eb;
-    border-color: #2563eb;
+    border-color: var(--primary-hover);
   }
 
   .upload-recording-button:disabled {
@@ -3897,7 +3897,7 @@
 
   :global(.dark) .device-select:focus {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.2);
   }
 
 
@@ -3974,12 +3974,12 @@
   .recording-button.primary-button:hover {
     background-color: #b91c1c;
     border-color: #b91c1c;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25);
   }
 
   .recording-button.primary-button:active {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
   }
 
@@ -4092,16 +4092,16 @@
   }
 
   .control-button-compact:hover:not(:disabled) {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     border-color: var(--primary-color);
     color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .control-button-compact:active:not(:disabled) {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transform: scale(1);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .control-button-compact.pause-button:hover:not(:disabled) {
@@ -4171,7 +4171,7 @@
   }
 
   .control-button-compact.primary-action {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     border-color: var(--primary-color);
     color: white;
     font-weight: 600;
@@ -4180,9 +4180,9 @@
 
   .control-button-compact.primary-action:hover:not(:disabled) {
     background-color: #2563eb;
-    border-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    border-color: var(--primary-hover);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .control-button-compact.secondary-action {
@@ -4210,12 +4210,12 @@
     background-color: var(--error-color);
     border-color: var(--error-color);
     color: white;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
 
   .control-button-compact.upload-recording-button {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     border-color: var(--primary-color);
     color: white;
     width: auto;
@@ -4224,9 +4224,9 @@
 
   .control-button-compact.upload-recording-button:hover:not(:disabled) {
     background-color: #2563eb;
-    border-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    border-color: var(--primary-hover);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .control-button-compact.upload-recording-button:disabled {
@@ -4292,7 +4292,7 @@
 
   :global(.dark) .device-select:focus {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.2);
   }
 
   :global(.dark) .recording-controls-main {
@@ -4316,7 +4316,7 @@
   }
 
   :global(.dark) .control-button-compact.upload-recording-button {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     border-color: var(--primary-color);
     color: white;
   }
@@ -4500,7 +4500,7 @@
   }
 
   .download-toggle input:checked + .download-toggle-slider {
-    background-color: var(--primary-color, #3b82f6);
+    background-color: #3b82f6;
   }
 
   .download-toggle input:checked + .download-toggle-slider::before {

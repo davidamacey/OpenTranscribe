@@ -886,7 +886,7 @@
   }
 
   .reset-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .filter-section {
@@ -1088,7 +1088,7 @@
     /* Range selection colors */
     --datepicker-calendar-range-background: rgba(59, 130, 246, 0.2);
     --datepicker-calendar-range-color: var(--text-color, #e2e8f0);
-    --datepicker-calendar-range-start-end-background: var(--primary-color, #3b82f6);
+    --datepicker-calendar-range-start-end-background: #3b82f6;
     --datepicker-calendar-range-start-end-color: #fff;
     --datepicker-calendar-range-included-background: rgba(59, 130, 246, 0.12);
     --datepicker-calendar-range-included-color: var(--text-color, #e2e8f0);
@@ -1217,7 +1217,7 @@
 
   .tag-button.selected,
   .speaker-button.selected {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border-color: var(--primary-color);
   }
@@ -1253,7 +1253,7 @@
 
   .file-type-button.selected,
   .status-button.selected {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border-color: var(--primary-color);
   }
@@ -1285,7 +1285,7 @@
   }
 
   .ownership-button.selected {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border-color: var(--primary-color);
   }

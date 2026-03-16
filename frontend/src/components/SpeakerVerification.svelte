@@ -514,7 +514,7 @@
 
   .accept-button:hover {
     background: color-mix(in srgb, var(--success-color) 85%, black);
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25);
   }
 
@@ -581,7 +581,7 @@
     font-size: 0.75rem;
     font-weight: bold;
     color: white;
-    background: var(--primary-color);
+    background: #3b82f6;
     border-radius: 50%;
   }
 
@@ -650,14 +650,14 @@
   }
 
   .primary-button {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .primary-button:hover {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
+    background: #2563eb;
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }
 
@@ -734,14 +734,14 @@
   }
 
   .confirm-button {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .confirm-button:hover:not(:disabled) {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
+    background: #2563eb;
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }
 

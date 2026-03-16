@@ -256,12 +256,17 @@
     background: var(--card-background);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   }
 
   .secondary-button:hover {
     background: var(--button-hover);
-    transform: translateY(-1px);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .secondary-button:active {
+    transform: scale(1);
   }
 
   .primary-button {
@@ -272,8 +277,12 @@
 
   .primary-button:hover {
     background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb, 59, 130, 246), 0.3);
+  }
+
+  .primary-button:active {
+    transform: scale(1);
   }
 
   /* Responsive design */

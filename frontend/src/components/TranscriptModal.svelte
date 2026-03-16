@@ -500,7 +500,7 @@
 
   .reading-progress-fill {
     height: 100%;
-    background: var(--primary-color);
+    background: #3b82f6;
     transition: width 0.1s ease-out;
     border-radius: 0;
   }

@@ -492,9 +492,9 @@
     border-radius: 6px;
     margin-bottom: 1.25rem;
     font-size: 0.8125rem;
-    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+    background: var(--primary-bg, rgba(var(--primary-color-rgb), 0.08));
     color: var(--primary-color, #3b82f6);
-    border: 1px solid var(--primary-border, rgba(59, 130, 246, 0.2));
+    border: 1px solid var(--primary-border, rgba(var(--primary-color-rgb), 0.2));
   }
 
   .status-bar.local {
@@ -561,7 +561,7 @@
 
   .config-card.active {
     border-color: var(--primary-color, #3b82f6);
-    background: var(--primary-bg, rgba(59, 130, 246, 0.05));
+    background: var(--primary-bg, rgba(var(--primary-color-rgb), 0.05));
   }
 
   .config-card:hover:not(.active) {
@@ -590,8 +590,8 @@
   }
 
   .provider-badge {
-    background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
+    background: rgba(var(--primary-color-rgb), 0.12);
+    color: var(--primary-color);
   }
 
   .active-badge {
@@ -644,16 +644,18 @@
     justify-content: center;
     width: 30px;
     height: 30px;
+    padding: 0;
     border-radius: 5px;
     cursor: pointer;
     transition: all 0.15s;
     border: 1px solid;
+    box-shadow: none;
   }
 
   .btn-test {
     background: transparent;
-    border-color: #3b82f6;
-    color: #3b82f6;
+    border-color: var(--primary-color);
+    color: var(--primary-color);
   }
 
   .btn-test:hover:not(:disabled) {
@@ -669,7 +671,7 @@
 
   .btn-edit:hover:not(:disabled) {
     background: #3b82f6;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -760,7 +762,7 @@
 
   .config-card.shared {
     border-left: 3px solid var(--info-color, #3b82f6);
-    background: rgba(59, 130, 246, 0.04);
+    background: rgba(var(--primary-color-rgb), 0.04);
   }
   :global([data-theme='dark']) .config-card.shared { background: rgba(96, 165, 250, 0.06); }
 
@@ -771,10 +773,10 @@
     padding: 1px 6px; border-radius: 10px;
     font-size: 0.625rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.5px;
-    background: rgba(59, 130, 246, 0.12); color: #3b82f6;
+    background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-color);
     margin-left: 0.5rem; vertical-align: middle;
   }
-  :global([data-theme='dark']) .share-badge { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+  :global([data-theme='dark']) .share-badge { background: rgba(var(--primary-color-rgb), 0.2); color: #60a5fa; }
 
   .admin-badge {
     background: rgba(245, 158, 11, 0.12); color: #d97706;

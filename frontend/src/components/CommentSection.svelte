@@ -842,7 +842,7 @@
   button {
     padding: 0.35rem 0.75rem;
     border: none;
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border-radius: 4px;
     cursor: pointer;
@@ -877,12 +877,12 @@
 
   .submit-button:hover:not(:disabled) {
     background-color: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .submit-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .submit-button:disabled {
@@ -982,12 +982,12 @@
 
   .save-button:hover {
     background: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .save-button:active {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .cancel-button {
@@ -1001,12 +1001,12 @@
   .cancel-button:hover {
     background: #4b5563;
     border: 1px solid #4b5563;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
   }
 
   .cancel-button:active {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
@@ -1032,50 +1032,7 @@
   .loading-state {
     padding: 1rem;
     text-align: center;
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: 0.9rem;
-  }
-
-  /* Modal button styling to match app design */
-  :global(.modal-delete-button) {
-    background-color: #ef4444 !important;
-    color: white !important;
-    border: none !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
-  }
-
-  :global(.modal-delete-button:hover) {
-    background-color: #dc2626 !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
-  }
-
-  :global(.modal-cancel-button) {
-    background-color: var(--card-background) !important;
-    color: var(--text-color) !important;
-    border: 1px solid var(--border-color) !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: var(--card-shadow) !important;
-    /* Ensure text is always visible */
-    opacity: 1 !important;
-  }
-
-  :global(.modal-cancel-button:hover) {
-    background-color: #2563eb !important;
-    color: white !important;
-    border-color: #2563eb !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }
 </style>

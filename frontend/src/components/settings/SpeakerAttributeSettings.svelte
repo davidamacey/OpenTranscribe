@@ -575,47 +575,6 @@
     margin-right: auto;
   }
 
-  .btn {
-    padding: 0.5rem 1.25rem;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background-color: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .btn-secondary {
-    background: transparent;
-    color: var(--text-color, #e0e0e0);
-    border: 1px solid var(--border-color, #444);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--background-color, #333);
-  }
-
   .error-message {
     color: var(--error-color, #ff6b6b);
     font-size: 0.85rem;
@@ -800,23 +759,6 @@
 
   .btn-stop {
     margin-top: 0.75rem;
-  }
-
-  .btn-danger {
-    background-color: #ef4444;
-    color: white;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-danger:hover:not(:disabled) {
-    background-color: var(--error-color, #ef4444);
-    filter: brightness(0.85);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .btn-danger:active:not(:disabled) {
-    transform: translateY(0);
   }
 
   .reextract-confirm {

@@ -443,7 +443,7 @@
   }
 
   .collection-add-button {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border: none;
     border-radius: 4px;

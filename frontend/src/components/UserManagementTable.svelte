@@ -400,7 +400,7 @@
 
     <button
       on:click={toggleAddUserForm}
-      class="add-button"
+      class={showAddUserForm ? 'btn-cancel' : 'add-button'}
       title={showAddUserForm ? $t('userManagement.cancelAddUser') : $t('userManagement.createNewUser')}
     >
       {showAddUserForm ? $t('common.cancel') : $t('userManagement.addUser')}
@@ -730,20 +730,26 @@
     font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .add-button:hover:not(:disabled),
   .add-button:focus:not(:disabled) {
     background-color: #2563eb;
     color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
     text-decoration: none;
   }
 
   .add-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
+  }
+
+  .add-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
   }
 
   .add-user-form {
@@ -789,20 +795,26 @@
     font-weight: 500;
     margin-top: 0.5rem;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .create-button:hover:not(:disabled),
   .create-button:focus:not(:disabled) {
     background-color: #2563eb;
     color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
     text-decoration: none;
   }
 
   .create-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
+  }
+
+  .create-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
   }
 
   .users-table {
@@ -954,49 +966,6 @@
     font-size: 0.8125rem;
   }
 
-  /* Modal button styling to match app design */
-  :global(.modal-delete-button) {
-    background-color: #ef4444 !important;
-    color: white !important;
-    border: none !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.8125rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
-  }
-
-  :global(.modal-delete-button:hover) {
-    background-color: #dc2626 !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
-  }
-
-  :global(.modal-cancel-button) {
-    background-color: var(--card-background) !important;
-    color: var(--text-color) !important;
-    border: 1px solid var(--border-color) !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.8125rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: var(--card-shadow) !important;
-    /* Ensure text is always visible */
-    opacity: 1 !important;
-  }
-
-  :global(.modal-cancel-button:hover) {
-    background-color: #2563eb !important;
-    color: white !important;
-    border-color: #2563eb !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
-  }
-
   /* Password Reset Modal */
   .password-reset-modal-backdrop {
     position: fixed;
@@ -1035,7 +1004,7 @@
       opacity: 0;
     }
     to {
-      transform: translateY(0);
+      transform: scale(1);
       opacity: 1;
     }
   }
@@ -1132,8 +1101,8 @@
 
   .password-reset-form .form-control:focus {
     outline: none;
-    border-color: var(--primary-color, #3b82f6);
-    box-shadow: 0 0 0 3px var(--primary-light, rgba(59, 130, 246, 0.1));
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .password-reset-form .form-text {
@@ -1150,7 +1119,7 @@
   }
 
   .btn-cancel {
-    background-color: var(--card-background, #f3f4f6);
+    background-color: var(--card-background);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
@@ -1159,13 +1128,18 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
+    box-shadow: var(--card-shadow);
   }
 
   .btn-cancel:hover:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
-    border-color: #2563eb;
-    transform: translateY(-1px);
+    background-color: var(--button-hover);
+    border-color: var(--border-color);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .btn-cancel:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-cancel:disabled {
@@ -1183,17 +1157,21 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-confirm:hover:not(:disabled) {
     background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
+  }
+
+  .btn-confirm:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-confirm:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
   }
 </style>

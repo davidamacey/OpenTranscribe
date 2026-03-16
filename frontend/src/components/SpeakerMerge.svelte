@@ -437,17 +437,17 @@
   .btn-primary {
     background-color: #3b82f6;
     color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
     background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .btn-primary:disabled {
@@ -458,12 +458,21 @@
   }
 
   .btn-secondary {
-    background: #6b7280;
-    color: white;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--card-shadow);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: #4b5563;
+    background-color: var(--button-hover);
+    border-color: var(--border-color);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .btn-secondary:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-secondary:disabled {

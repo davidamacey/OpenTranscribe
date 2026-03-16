@@ -602,7 +602,7 @@
 
   .clickable-error:hover {
     background-color: rgba(239, 68, 68, 0.2);
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 

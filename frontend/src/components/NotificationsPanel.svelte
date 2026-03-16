@@ -473,7 +473,7 @@
   }
 
   .unread-badge {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     font-size: 11px;
     font-weight: 600;
@@ -599,7 +599,7 @@
   }
 
   .notification-item.status-info .notification-indicator {
-    background: var(--primary-color);
+    background: #3b82f6;
   }
 
   .notification-item.status-warning .notification-indicator {
@@ -607,11 +607,11 @@
   }
 
   .notification-item.unread .notification-indicator {
-    background: var(--primary-color);
+    background: #3b82f6;
   }
 
   .notification-item.processing .notification-indicator {
-    background: var(--primary-color);
+    background: #3b82f6;
     animation: pulse 1.5s infinite;
   }
 
@@ -773,7 +773,7 @@
 
   .progress-bar-fill {
     height: 100%;
-    background: var(--primary-color);
+    background: #3b82f6;
     border-radius: 2px;
     transition: width 0.3s ease;
     animation: progress-shimmer 1.5s infinite;

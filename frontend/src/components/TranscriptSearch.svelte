@@ -551,7 +551,7 @@
     justify-content: center;
     height: 24px;
     padding: 0 6px;
-    background: var(--primary-color);
+    background: #3b82f6;
     border: 1px solid var(--primary-color);
     border-radius: 3px;
     color: white;
@@ -562,7 +562,7 @@
   }
 
   .jump-button:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: #2563eb;
     border-color: var(--primary-hover);
   }
 

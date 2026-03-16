@@ -306,7 +306,7 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.625rem 1rem;
-    background: var(--card-bg);
+    background: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     font-size: 0.8rem;
@@ -335,13 +335,13 @@
   .domain-tab:hover { color: var(--text-color); border-color: var(--border-hover, #6b7280); }
 
   .domain-tab.active {
-    background: var(--primary-color);
+    background: #3b82f6;
     border-color: var(--primary-color);
     color: white;
   }
 
   .add-form {
-    background: var(--card-bg);
+    background: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 0.875rem;
@@ -377,25 +377,26 @@
 
   .btn-add {
     padding: 0.45rem 1rem;
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 0.8125rem;
+    font-weight: 500;
     white-space: nowrap;
     transition: all 0.15s;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-add:hover:not(:disabled) {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
+    background: #2563eb;
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .btn-add:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .list-loading, .empty-terms {
@@ -418,12 +419,17 @@
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: var(--card-bg);
-    transition: opacity 0.15s;
+    background: var(--card-background);
+    transition: all 0.15s ease;
     gap: 0.75rem;
   }
 
   .term-row.inactive { opacity: 0.5; }
+
+  .term-row:hover {
+    background: var(--hover-color);
+    border-color: var(--input-focus-border);
+  }
 
   .term-info {
     display: flex;
@@ -528,7 +534,7 @@
     background: transparent;
     border: 1px solid var(--error-color, #ef4444);
     color: var(--error-color, #ef4444);
-    border-radius: 5px;
+    border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s;
     flex-shrink: 0;
@@ -550,7 +556,7 @@
     background: var(--error-color, #ef4444);
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
@@ -568,7 +574,7 @@
     background: transparent;
     color: var(--text-secondary, #999);
     border: 1px solid var(--border-color);
-    border-radius: 5px;
+    border-radius: 6px;
     font-size: 0.75rem;
     cursor: pointer;
     white-space: nowrap;
@@ -577,7 +583,7 @@
 
   .btn-cancel-delete:hover {
     color: var(--text-color);
-    border-color: var(--text-secondary, #999);
+    background: var(--button-hover);
   }
 
   .bulk-section {
@@ -626,10 +632,10 @@
 
   .btn-import {
     padding: 0.45rem 1rem;
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 0.8125rem;
     white-space: nowrap;
@@ -638,13 +644,13 @@
   }
 
   .btn-import:hover:not(:disabled) {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
+    background: #2563eb;
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .btn-import:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   button:disabled {

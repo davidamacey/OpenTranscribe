@@ -1511,10 +1511,13 @@
                 </div>
                 <button
                   type="button"
-                  class="btn btn-secondary"
+                  class="btn btn-secondary btn-refresh"
                   on:click={refreshTaskHealth}
                   disabled={taskHealthLoading}
                 >
+                  <svg class="refresh-icon" class:spinning={taskHealthLoading} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                  </svg>
                   {taskHealthLoading ? $t('settings.taskHealth.loading') : $t('settings.taskHealth.refresh')}
                 </button>
               </div>
@@ -1753,7 +1756,7 @@
       opacity: 0;
     }
     to {
-      transform: translateY(0);
+      transform: scale(1);
       opacity: 1;
     }
   }
@@ -2052,36 +2055,42 @@
   .btn-primary {
     background-color: #3b82f6;
     color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
     background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .btn-primary:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
   }
 
   .btn-secondary {
-    background-color: var(--background-color);
+    background-color: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background-color: var(--border-color);
+    background-color: var(--button-hover);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .btn-secondary:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-secondary:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
   }
 
@@ -2093,12 +2102,12 @@
 
   .btn-warning:hover:not(:disabled) {
     background-color: #d97706;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25);
   }
 
   .btn-warning:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .btn-danger {
@@ -2109,12 +2118,12 @@
 
   .btn-danger:hover:not(:disabled) {
     background-color: #dc2626;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
 
   .btn-danger:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .btn-small {
@@ -2191,7 +2200,7 @@
 
   .stat-card-clickable:hover {
     border-color: var(--primary-color);
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .stat-card-with-bar {
@@ -2379,7 +2388,7 @@
 
   .progress-fill {
     height: 100%;
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     transition: width 0.3s ease;
   }
 

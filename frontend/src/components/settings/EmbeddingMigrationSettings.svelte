@@ -559,7 +559,7 @@
               </div>
             {:else}
               <button
-                class="btn btn-secondary"
+                class="btn btn-primary"
                 on:click={() => showForceCompleteConfirm = true}
               >
                 {$t('settings.embeddingMigration.forceComplete')}
@@ -574,13 +574,13 @@
         <div class="finalize-section">
           {#if finalizing}
             <p>{$t('settings.embeddingMigration.finalizing') || 'Finalizing migration — swapping indices...'}</p>
-            <button class="btn btn-secondary" disabled>
-              <Spinner size="small" color="var(--text-color)" />
+            <button class="btn btn-primary" disabled>
+              <Spinner size="small" color="white" />
               {$t('settings.embeddingMigration.finalizeMigration')}
             </button>
           {:else}
             <p>{$t('settings.embeddingMigration.finalizePrompt')}</p>
-            <button class="btn btn-secondary" on:click={finalizeMigration}>
+            <button class="btn btn-primary" on:click={finalizeMigration}>
               {$t('settings.embeddingMigration.finalizeMigration')}
             </button>
           {/if}
@@ -603,7 +603,7 @@
               </div>
             </div>
           {:else}
-            <button class="btn btn-secondary" on:click={() => showForceReextractConfirm = true}>
+            <button class="btn btn-primary" on:click={() => showForceReextractConfirm = true}>
               {$t('settings.embeddingMigration.forceReextract')}
             </button>
             <span class="reextract-hint">{$t('settings.embeddingMigration.forceReextractHint')}</span>
@@ -690,8 +690,8 @@
   }
 
   .migration-box.upgrade {
-    background: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    background: rgba(var(--primary-color-rgb), 0.1);
+    border: 1px solid rgba(var(--primary-color-rgb), 0.3);
   }
 
   .migration-box.complete {
@@ -710,8 +710,8 @@
   }
 
   .migration-box.upgrade .migration-icon {
-    background: rgba(59, 130, 246, 0.2);
-    color: #3b82f6;
+    background: rgba(var(--primary-color-rgb), 0.2);
+    color: var(--primary-color);
   }
 
   .migration-box.complete .migration-icon {
@@ -779,66 +779,6 @@
     color: var(--text-secondary);
   }
 
-  .btn {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .btn:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background-color: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .btn-secondary {
-    background-color: transparent;
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--background-secondary);
-  }
-
-  .btn-danger {
-    background-color: #ef4444;
-    color: white;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-danger:hover:not(:disabled) {
-    background-color: #dc2626;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .btn-danger:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
   .migration-controls {
     display: flex;
     flex-direction: column;
@@ -880,7 +820,7 @@
 
   .progress-bar-fill {
     height: 100%;
-    background: var(--primary-color);
+    background: #3b82f6;
     border-radius: 4px;
     transition: width 0.3s ease;
   }

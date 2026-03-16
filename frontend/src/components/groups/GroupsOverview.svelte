@@ -274,12 +274,12 @@
 
   .btn-create:hover {
     background-color: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .btn-create:active {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .loading-state {
@@ -309,19 +309,25 @@
 
   .btn-retry {
     padding: 0.375rem 0.75rem;
-    background: transparent;
-    color: var(--primary-color);
-    border: 1px solid var(--primary-color);
+    background: #3b82f6;
+    color: white;
+    border: none;
     border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
-  .btn-retry:hover {
-    background: var(--primary-color);
-    color: white;
+  .btn-retry:hover:not(:disabled) {
+    background: #2563eb;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-retry:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .search-wrapper {

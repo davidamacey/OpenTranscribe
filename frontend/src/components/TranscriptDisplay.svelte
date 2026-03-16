@@ -1299,7 +1299,7 @@
 
   .reading-progress-fill {
     height: 100%;
-    background: var(--primary-color);
+    background: #3b82f6;
     transition: width 0.1s ease-out;
     border-radius: 0;
   }
@@ -1395,13 +1395,13 @@
   }
 
   .edit-actions button:first-child {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border: none;
   }
 
   .edit-actions button:first-child:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: #2563eb;
   }
 
   .edit-actions button:first-child:disabled {
@@ -1425,12 +1425,12 @@
   .cancel-button:hover {
     background: #4b5563;
     border-color: #4b5563;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
   }
 
   .cancel-button:active {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
@@ -1625,12 +1625,12 @@
 
   .segment-edit-actions .save-button:hover:not(:disabled) {
     background: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .segment-edit-actions .save-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .segment-edit-actions .save-button:disabled {
@@ -1648,12 +1648,12 @@
   .segment-edit-actions .cancel-button:hover {
     background: #4b5563;
     border-color: #4b5563;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
   }
 
   .segment-edit-actions .cancel-button:active {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
@@ -1892,10 +1892,10 @@
   }
 
   .timestamp-link:hover {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border-color: var(--primary-color);
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
@@ -2048,12 +2048,12 @@
 
   .save-speakers-button:hover {
     background: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .save-speakers-button:active {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .save-speakers-button:disabled {
@@ -2128,7 +2128,7 @@
   }
 
   .download-button.downloading {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border-color: var(--primary-color);
   }
@@ -2452,12 +2452,12 @@
   }
 
   .suggestion-chip:hover {
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
   }
 
   .suggestion-chip.llm-chip {
-    background: var(--primary-color);
+    background: #3b82f6;
   }
 
   .suggestion-chip.llm-chip:hover {
@@ -2594,7 +2594,7 @@
     top: 40px;
     bottom: 8px;
     width: 2px;
-    background: var(--primary-color);
+    background: #3b82f6;
     opacity: 0.3;
     border-radius: 1px;
   }

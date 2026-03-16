@@ -81,6 +81,9 @@
       box-shadow 0.15s;
     cursor: pointer;
     max-width: 300px;
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 2.5rem;
   }
 
   .form-select:focus {

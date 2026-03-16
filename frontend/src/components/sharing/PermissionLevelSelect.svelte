@@ -46,6 +46,8 @@
     cursor: pointer;
     transition: border-color 0.2s ease;
     min-width: 90px;
+    appearance: none;
+    -webkit-appearance: none;
   }
 
   .permission-select:hover:not(:disabled) {
@@ -64,6 +66,6 @@
   }
 
   :global([data-theme='dark']) .permission-select {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--input-background);
   }
 </style>

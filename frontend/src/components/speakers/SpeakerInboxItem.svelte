@@ -289,7 +289,8 @@
   }
 
   .action-btn.skip:hover {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--button-hover, #e5e7eb);
+    border-color: var(--text-secondary, #9ca3af);
     color: var(--text-color, #374151);
     transform: none;
     box-shadow: none;

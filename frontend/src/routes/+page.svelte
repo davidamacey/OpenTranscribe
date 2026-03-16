@@ -1839,27 +1839,12 @@
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
   }
 
-  :global(.modal-cancel-button) {
-    background-color: var(--card-background) !important;
-    color: var(--text-color) !important;
-    border: 1px solid var(--border-color) !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: var(--card-shadow) !important;
-    /* Ensure text is always visible */
-    opacity: 1 !important;
-  }
-
   :global(.modal-cancel-button:hover) {
-    background-color: #2563eb !important;
-    color: white !important;
-    border-color: #2563eb !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
+    background-color: var(--button-hover) !important;
+    color: var(--text-color) !important;
+    border-color: var(--border-color) !important;
+    transform: scale(1.02) !important;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
   }
 
   /* Gallery Header with Sort and Count Chips */

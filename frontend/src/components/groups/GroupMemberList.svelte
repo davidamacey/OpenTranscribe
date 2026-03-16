@@ -192,7 +192,7 @@
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     display: flex;
     align-items: center;

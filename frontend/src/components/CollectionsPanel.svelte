@@ -786,13 +786,13 @@
   .btn-create:hover:not(:disabled) {
     background-color: #2563eb;
     color: white;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
     text-decoration: none;
   }
 
   .btn-create:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .btn-create:disabled {
@@ -934,7 +934,7 @@
 
   .collection-card.selected {
     border-color: var(--primary-color);
-    background: rgba(59, 130, 246, 0.05);
+    background: var(--primary-bg, rgba(59, 130, 246, 0.05));
   }
 
   .collection-info {
@@ -990,7 +990,7 @@
 
   .badge.prompt {
     background: rgba(59, 130, 246, 0.1);
-    color: rgb(59, 130, 246);
+    color: var(--primary-color);
   }
 
   .collection-actions {
@@ -1014,7 +1014,7 @@
   }
 
   .shared-card {
-    border-left: 3px solid #3b82f6;
+    border-left: 3px solid var(--primary-color);
   }
 
   .badge.shared-permission {
@@ -1045,7 +1045,7 @@
 
   .share-button:hover:not(:disabled) {
     background-color: #3b82f6;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -1069,7 +1069,7 @@
 
   .edit-button:hover:not(:disabled) {
     background-color: #3b82f6;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -1083,12 +1083,12 @@
     background-color: var(--error-color);
     border-color: var(--error-color);
     color: white;
-    transform: translateY(-1px);
+    transform: scale(1.02);
   }
 
   .btn-add {
     padding: 6px 12px;
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border: none;
     border-radius: 6px;
@@ -1100,7 +1100,7 @@
   }
 
   .btn-add:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: #2563eb;
   }
 
   .btn-add:disabled {
@@ -1273,12 +1273,12 @@
 
   .save-button:hover:not(:disabled) {
     background: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .save-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .save-button:disabled {
@@ -1337,46 +1337,4 @@
     color: #60a5fa;
   }
 
-  /* Modal button styling to match app design */
-  :global(.modal-delete-button) {
-    background-color: #ef4444 !important;
-    color: white !important;
-    border: none !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 8px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
-  }
-
-  :global(.modal-delete-button:hover) {
-    background-color: #dc2626 !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
-  }
-
-  :global(.modal-cancel-button) {
-    background-color: var(--card-background) !important;
-    color: var(--text-color) !important;
-    border: 1px solid var(--border-color) !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 8px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: var(--card-shadow) !important;
-    /* Ensure text is always visible */
-    opacity: 1 !important;
-  }
-
-  :global(.modal-cancel-button:hover) {
-    background-color: #2563eb !important;
-    color: white !important;
-    border-color: #2563eb !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
-  }
 </style>

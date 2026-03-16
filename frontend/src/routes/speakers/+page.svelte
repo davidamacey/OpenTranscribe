@@ -1329,19 +1329,26 @@
 
   .btn-recluster {
     padding: 8px 16px;
-    border-radius: 6px;
-    border: 1px solid var(--primary-color);
-    background: var(--primary-color);
+    border-radius: 8px;
+    border: none;
+    background: #3b82f6;
     color: white;
     font-size: 14px;
+    font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transition: all 0.2s ease;
   }
 
   .btn-recluster:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: none;
-    box-shadow: none;
+    background: #2563eb;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-recluster:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-recluster:disabled {

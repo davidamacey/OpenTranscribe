@@ -987,7 +987,7 @@
   }
 
   .retry-button {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border: none;
     padding: 8px 16px;

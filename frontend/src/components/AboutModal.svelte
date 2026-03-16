@@ -378,7 +378,7 @@
     flex-shrink: 0;
     width: 32px;
     height: 32px;
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border-radius: 50%;
     display: flex;

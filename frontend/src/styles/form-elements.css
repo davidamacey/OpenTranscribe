@@ -2,7 +2,6 @@
 
 /* Input fields */
 input,
-select,
 textarea {
   background-color: var(--input-background);
   color: var(--text-color);
@@ -14,6 +13,37 @@ textarea {
   transition: all 0.2s ease;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* Select — cross-browser consistent with custom chevron arrow */
+select {
+  background-color: var(--input-background);
+  color: var(--text-color);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  padding-right: 2.5rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.625rem center;
+  background-size: 1rem;
+  cursor: pointer;
+}
+
+[data-theme='dark'] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 input:focus,
@@ -75,27 +105,27 @@ button {
 button:hover:not(:disabled),
 button:focus:not(:disabled) {
   background-color: var(--button-hover);
-  transform: translateY(-1px);
+  transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   text-decoration: none !important;
 }
 
 button:active:not(:disabled) {
-  transform: translateY(0);
+  transform: scale(1);
 }
 
 button.primary {
-  background-color: #3b82f6; /* Use explicit color for consistency */
-  color: white !important; /* Force white text */
+  background-color: #3b82f6;
+  color: white !important;
   border: none;
   box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
 }
 
 button.primary:hover:not(:disabled),
 button.primary:focus:not(:disabled) {
-  background-color: #2563eb; /* Darker blue on hover */
+  background-color: #2563eb;
   color: white !important;
-  transform: translateY(-1px);
+  transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
 }
 
@@ -129,4 +159,199 @@ button:disabled {
 .dialog-footer {
   border-top: 1px solid var(--border-color);
   padding: 16px;
+}
+
+/* ─── Settings Page Buttons (shared across all settings components) ─── */
+/* Base button — compact size for settings panels */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn:active:not(:disabled) {
+  transform: scale(1) !important;
+}
+
+/* Submit / action buttons — exact Add Media style: #3b82f6 base → #2563eb hover + scale */
+.btn-primary {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: #2563eb;
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+}
+.btn-primary:active:not(:disabled) {
+  transform: scale(1) !important;
+}
+
+/* Cancel / reset / secondary buttons — grey, no blue */
+.btn-secondary {
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--button-hover);
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+.btn-secondary:active:not(:disabled) {
+  transform: scale(1) !important;
+}
+
+/* Danger / destructive buttons — red, stays red on hover (darker shade) */
+.btn-danger {
+  background-color: #ef4444;
+  color: white;
+  border: none;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: #dc2626;
+  color: white;
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+}
+.btn-danger:active:not(:disabled) {
+  transform: scale(1) !important;
+}
+
+/* Warning buttons — amber, stays amber on hover */
+.btn-warning {
+  background-color: #f59e0b;
+  color: white;
+  border: none;
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
+}
+.btn-warning:hover:not(:disabled) {
+  background-color: #d97706;
+  color: white;
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3);
+}
+.btn-warning:active:not(:disabled) {
+  transform: scale(1) !important;
+}
+
+/* ─── Modal Action Buttons ──────────────────────────────────────────── */
+/* Base sizing shared by all modal footer buttons */
+.modal-button {
+  padding: 0.6rem 1.2rem;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.modal-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.modal-primary-button {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+}
+.modal-primary-button:hover:not(:disabled) {
+  background-color: #2563eb;
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+}
+.modal-primary-button:active:not(:disabled) {
+  transform: scale(1);
+}
+
+/* CANCEL — grey hover, never blue */
+.modal-cancel-button {
+  background-color: var(--card-background);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--card-shadow);
+}
+.modal-cancel-button:hover:not(:disabled) {
+  background-color: var(--button-hover);
+  border-color: var(--border-color);
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+.modal-cancel-button:active:not(:disabled) {
+  transform: scale(1);
+}
+
+.modal-delete-button {
+  background-color: #ef4444;
+  color: white;
+  border: none;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+}
+.modal-delete-button:hover:not(:disabled) {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
+}
+.modal-delete-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.modal-warning-button {
+  background-color: #f59e0b;
+  color: white;
+  border: none;
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
+}
+.modal-warning-button:hover:not(:disabled) {
+  background-color: #d97706;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25);
+}
+.modal-warning-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* ─── Refresh / Reset button helpers ───────────────────────────────── */
+.btn-refresh,
+.btn-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.refresh-icon {
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+.refresh-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

@@ -334,9 +334,10 @@
     padding: 4px 12px;
     border-radius: 6px;
     border: 1px solid var(--border-color, #d1d5db);
-    background: var(--hover-color, #f9fafb);
-    color: var(--text-color, #374151);
+    background: transparent;
+    color: var(--text-secondary, #6b7280);
     font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
   }
@@ -347,48 +348,96 @@
     pointer-events: none;
   }
 
+  /* Default (uncolored) hover — grey fill */
   .action-btn:hover {
-    background: var(--border-color, #e5e7eb);
+    background: var(--button-hover, #e5e7eb);
+    color: var(--text-color, #374151);
+    transform: scale(1.02);
   }
 
-  .action-btn.promote {
-    background: var(--primary-color, #3b82f6);
+  /* Merge — blue outline → solid blue */
+  .action-btn.merge {
+    color: #3b82f6;
+    border-color: #3b82f6;
+  }
+
+  .action-btn.merge:hover {
+    background: #3b82f6;
+    border-color: #3b82f6;
     color: white;
-    border-color: var(--primary-color, #3b82f6);
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
+  }
+
+  /* Split — purple outline → solid purple */
+  .action-btn.split {
+    color: #8b5cf6;
+    border-color: #8b5cf6;
+  }
+
+  .action-btn.split:hover {
+    background: #7c3aed;
+    border-color: #7c3aed;
+    color: white;
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(124, 58, 237, 0.3);
+  }
+
+  /* Promote — blue outline → solid blue */
+  .action-btn.promote {
+    color: #3b82f6;
+    border-color: #3b82f6;
   }
 
   .action-btn.promote:hover {
-    opacity: 0.9;
+    background: #2563eb;
+    border-color: #2563eb;
+    color: white;
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
   }
 
+  /* Unassign — amber outline → solid amber */
   .action-btn.unassign {
-    color: var(--warning-color, #f59e0b);
-    border-color: var(--warning-color, #f59e0b);
+    color: #f59e0b;
+    border-color: #f59e0b;
   }
 
   .action-btn.unassign:hover {
-    background: var(--warning-color, #f59e0b);
+    background: #d97706;
+    border-color: #d97706;
     color: white;
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(217, 119, 6, 0.3);
   }
 
+  /* Delete — red outline → solid red */
   .action-btn.delete {
-    color: var(--error-color, #ef4444);
-    border-color: var(--error-color, #ef4444);
+    color: #ef4444;
+    border-color: #ef4444;
   }
 
   .action-btn.delete:hover {
-    background: var(--error-color, #ef4444);
+    background: #dc2626;
+    border-color: #dc2626;
     color: white;
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(220, 38, 38, 0.3);
   }
 
+  /* Confirm Unassign — solid red (irreversible action, stays solid) */
   .action-btn.confirm-unassign {
-    background: var(--error-color, #ef4444);
+    background: #ef4444;
     color: white;
-    border-color: var(--error-color, #ef4444);
+    border-color: #ef4444;
   }
 
   .action-btn.confirm-unassign:hover:not(:disabled) {
-    opacity: 0.9;
+    background: #dc2626;
+    border-color: #dc2626;
+    color: white;
+    transform: scale(1.02);
+    box-shadow: 0 3px 8px rgba(220, 38, 38, 0.3);
   }
 
   .outlier-chip {

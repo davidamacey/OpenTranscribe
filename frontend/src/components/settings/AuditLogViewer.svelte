@@ -330,7 +330,7 @@
 
   .btn-apply {
     padding: 0.25rem 0.625rem;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 500;
@@ -341,12 +341,17 @@
     border: none;
     align-self: flex-end;
     transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-apply:hover {
     background: #2563eb;
-    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
+  }
+
+  .btn-apply:active {
+    transform: scale(1);
   }
 
   .export-actions {
@@ -357,19 +362,24 @@
 
   .btn-secondary {
     padding: 0.25rem 0.5rem;
-    border-radius: 3px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 0.75rem;
     height: 1.75rem;
     white-space: nowrap;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    color: var(--color-text);
-    transition: all 0.15s;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    transition: all 0.2s ease;
   }
 
   .btn-secondary:hover {
-    background: var(--color-bg-secondary);
+    background: var(--button-hover);
+    transform: scale(1.02);
+  }
+
+  .btn-secondary:active {
+    transform: scale(1);
   }
 
   /* Compact Table */
@@ -464,20 +474,26 @@
   }
 
   .details-btn {
-    background: none;
-    border: 1px solid var(--color-border);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
     padding: 0.125rem 0.375rem;
-    border-radius: 3px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 0.625rem;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.025em;
+    transition: all 0.2s ease;
   }
 
   .details-btn:hover {
-    background: var(--color-bg-secondary);
-    color: var(--color-text);
+    background: var(--button-hover);
+    color: var(--text-color);
+    transform: scale(1.02);
+  }
+
+  .details-btn:active {
+    transform: scale(1);
   }
 
   .loading {
@@ -543,19 +559,25 @@
   }
 
   .details-modal-close {
-    background: none;
-    border: none;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
     cursor: pointer;
     padding: 0.25rem;
-    color: var(--color-text-secondary);
-    border-radius: 4px;
+    color: var(--text-secondary);
+    border-radius: 6px;
     display: flex;
     align-items: center;
+    transition: all 0.2s ease;
   }
 
   .details-modal-close:hover {
-    color: var(--color-text);
-    background: var(--color-bg-secondary);
+    color: var(--text-color);
+    background: var(--button-hover);
+    transform: scale(1.02);
+  }
+
+  .details-modal-close:active {
+    transform: scale(1);
   }
 
   .details-modal-body {

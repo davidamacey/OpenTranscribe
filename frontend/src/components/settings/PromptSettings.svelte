@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '../../lib/api/prompts';
+  import BaseModal from '../ui/BaseModal.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import Spinner from '../ui/Spinner.svelte';
   import TagInput from '../ui/TagInput.svelte';
@@ -68,15 +69,6 @@
 
   onMount(async () => {
     await loadData();
-  });
-
-  onDestroy(() => {
-    // Cleanup: ensure scrolling is restored and event listeners removed
-    document.body.style.overflow = '';
-    if (keydownHandler) {
-      document.removeEventListener('keydown', keydownHandler);
-      keydownHandler = null;
-    }
   });
 
   async function loadData() {
@@ -434,41 +426,6 @@
     );
   }
 
-  // Prevent body scrolling when modals are open
-  $: {
-    if (showCreateForm || showViewModal || showUnsavedChangesModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-  }
-
-  // Handle keyboard shortcuts for modals
-  let keydownHandler: ((event: KeyboardEvent) => void) | null = null;
-
-  $: {
-    // Clean up previous listener if exists
-    if (keydownHandler) {
-      document.removeEventListener('keydown', keydownHandler);
-      keydownHandler = null;
-    }
-
-    // Add new listener if modal is open
-    if (showCreateForm || showViewModal || showUnsavedChangesModal) {
-      keydownHandler = (event: KeyboardEvent) => {
-        if (event.key === 'Escape') {
-          if (showUnsavedChangesModal) {
-            handleUnsavedChangesCancel();
-          } else if (showCreateForm) {
-            closeForm();
-          } else if (showViewModal) {
-            closeViewModal();
-          }
-        }
-      };
-      document.addEventListener('keydown', keydownHandler);
-    }
-  }
 
 </script>
 
@@ -816,251 +773,203 @@
   {/if}
 
   <!-- Create/Edit Form Modal -->
-  {#if showCreateForm}
-    <div
-      class="modal-overlay"
-      role="presentation"
-      on:click={() => closeForm()}
-      on:keydown={(e) => e.key === 'Escape' && closeForm()}
-    >
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <!-- svelte-ignore a11y_interactive_supports_focus -->
-      <div
-        class="modal-content"
-        role="dialog"
-        aria-modal="true"
-        on:click|stopPropagation
-        on:keydown|stopPropagation
-      >
-        <div class="modal-header">
-          <h3>
-            {editingPrompt ? $t('prompts.editExisting') : $t('prompts.createNew')}
-            {#if isDirty}
-              <span class="unsaved-indicator" title={$t('prompts.unsavedChangesIndicator')}>•</span>
-            {/if}
-          </h3>
-          <button class="close-button" on:click={() => closeForm()} title={isDirty ? $t('prompts.closeUnsaved') : $t('common.close')}>×</button>
-        </div>
+  <BaseModal
+    isOpen={showCreateForm}
+    onClose={() => closeForm()}
+    maxWidth="600px"
+  >
+    <svelte:fragment slot="header">
+      <h2 class="modal-title">{editingPrompt ? $t('prompts.editExisting') : $t('prompts.createNew')}</h2>
+      {#if isDirty}
+        <span class="unsaved-dot" title={$t('prompts.unsavedChanges')}>●</span>
+      {/if}
+    </svelte:fragment>
+    <form id="prompt-form" on:submit|preventDefault={savePrompt} class="prompt-form">
+      <div class="form-group">
+        <label for="name">{$t('prompts.promptName')}</label>
+        <input
+          type="text"
+          id="name"
+          bind:value={formData.name}
+          disabled={saving}
+          class="form-control"
+          placeholder={$t('prompts.promptNamePlaceholder')}
+          required
+        />
+      </div>
 
-        <form on:submit|preventDefault={savePrompt} class="prompt-form">
-          <div class="form-group">
-            <label for="name">{$t('prompts.promptName')}</label>
-            <input
-              type="text"
-              id="name"
-              bind:value={formData.name}
-              disabled={saving}
-              class="form-control"
-              placeholder={$t('prompts.promptNamePlaceholder')}
-              required
-            />
-          </div>
+      <div class="form-group">
+        <label for="content_type">{$t('prompts.contentType')}</label>
+        <select
+          id="content_type"
+          bind:value={formData.content_type}
+          disabled={saving}
+          class="form-control"
+        >
+          {#each contentTypes as type}
+            <option value={type.value}>{type.label}</option>
+          {/each}
+        </select>
+      </div>
 
-          <div class="form-group">
-            <label for="content_type">{$t('prompts.contentType')}</label>
-            <select
-              id="content_type"
-              bind:value={formData.content_type}
-              disabled={saving}
-              class="form-control"
-            >
-              {#each contentTypes as type}
-                <option value={type.value}>{type.label}</option>
-              {/each}
-            </select>
-          </div>
+      <div class="form-group">
+        <label for="description">{$t('prompts.descriptionLabel')}</label>
+        <input
+          type="text"
+          id="description"
+          bind:value={formData.description}
+          disabled={saving}
+          class="form-control"
+          placeholder={$t('prompts.descriptionPlaceholder')}
+        />
+      </div>
 
-          <div class="form-group">
-            <label for="description">{$t('prompts.descriptionLabel')}</label>
-            <input
-              type="text"
-              id="description"
-              bind:value={formData.description}
-              disabled={saving}
-              class="form-control"
-              placeholder={$t('prompts.descriptionPlaceholder')}
-            />
-          </div>
+      <div class="form-group">
+        <label for="tags">{$t('prompts.tags')}</label>
+        <TagInput id="tags" bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
+        <small class="form-text">{$t('prompts.tagsHelp')}</small>
+      </div>
 
-          <div class="form-group">
-            <label for="tags">{$t('prompts.tags')}</label>
-            <TagInput id="tags" bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
-            <small class="form-text">{$t('prompts.tagsHelp')}</small>
-          </div>
+      <!-- Share with all users -->
+      <div class="share-toggle-row">
+        <label class="toggle-label">
+          <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
+          <span class="toggle-switch"></span>
+          <span class="toggle-text">{$t('prompts.shareGlobally')}</span>
+        </label>
+      </div>
 
-          <!-- Share with all users -->
-          <div class="share-toggle-row">
-            <label class="toggle-label">
-              <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
-              <span class="toggle-switch"></span>
-              <span class="toggle-text">{$t('prompts.shareGlobally')}</span>
-            </label>
-          </div>
-
-          <div class="form-group">
-            <div class="textarea-header">
-              <label for="prompt_text">{$t('prompts.promptText')}</label>
-              {#if formData.prompt_text.trim()}
-                <button
-                  type="button"
-                  class="copy-button-header"
-                  class:copied={isCopied}
-                  on:click={() => copyPromptText(formData.prompt_text)}
-                  aria-label={$t('prompts.copy')}
-                  title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
-                >
-                  {#if isCopied}
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
-                    </svg>
-                    {$t('prompts.copied')}
-                  {:else}
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                      <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-                    </svg>
-                    {$t('prompts.copy')}
-                  {/if}
-                </button>
-              {/if}
-            </div>
-            <textarea
-              id="prompt_text"
-              bind:value={formData.prompt_text}
-              disabled={saving}
-              class="form-control textarea"
-              rows="8"
-              placeholder={$t('prompts.promptTextPlaceholder')}
-              required
-            ></textarea>
-            <small class="form-text">
-              {$t('prompts.promptTextHelp')}
-            </small>
-            <div class="llm-hint">
-              <strong>
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tip-icon">
-                  <circle cx="12" cy="12" r="5"></circle>
-                  <line x1="12" y1="1" x2="12" y2="3"></line>
-                  <line x1="12" y1="21" x2="12" y2="23"></line>
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                  <line x1="1" y1="12" x2="3" y2="12"></line>
-                  <line x1="21" y1="12" x2="23" y2="12"></line>
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                </svg>
-                {$t('prompts.llmTip')}
-              </strong> {$t('prompts.llmTipText')}
-            </div>
-          </div>
-
-          <div class="modal-actions">
+      <div class="form-group">
+        <div class="textarea-header">
+          <label for="prompt_text">{$t('prompts.promptText')}</label>
+          {#if formData.prompt_text.trim()}
             <button
               type="button"
-              class="action-button secondary"
-              on:click={() => closeForm()}
-              disabled={saving}
+              class="copy-button-header"
+              class:copied={isCopied}
+              on:click={() => copyPromptText(formData.prompt_text)}
+              aria-label={$t('prompts.copy')}
+              title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
             >
-              {$t('prompts.cancel')}
-            </button>
-            <button
-              type="submit"
-              class="action-button primary"
-              disabled={saving || !isFormValid}
-            >
-              {#if saving}
-                <Spinner size="small" color="white" />
-                {$t('prompts.saving')}
+              {#if isCopied}
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
+                </svg>
+                {$t('prompts.copied')}
               {:else}
-                {editingPrompt ? $t('prompts.updatePrompt') : $t('prompts.createPromptBtn')}
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                  <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                </svg>
+                {$t('prompts.copy')}
               {/if}
             </button>
-          </div>
-        </form>
+          {/if}
+        </div>
+        <textarea
+          id="prompt_text"
+          bind:value={formData.prompt_text}
+          disabled={saving}
+          class="form-control textarea"
+          rows="8"
+          placeholder={$t('prompts.promptTextPlaceholder')}
+          required
+        ></textarea>
+        <small class="form-text">
+          {$t('prompts.promptTextHelp')}
+        </small>
+        <div class="llm-hint">
+          <strong>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tip-icon">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            {$t('prompts.llmTip')}
+          </strong> {$t('prompts.llmTipText')}
+        </div>
       </div>
-    </div>
-  {/if}
+    </form>
+    <svelte:fragment slot="footer">
+      <button type="button" class="modal-button modal-cancel-button"
+              on:click={() => closeForm()} disabled={saving}>
+        {$t('prompts.cancel')}
+      </button>
+      <button type="submit" form="prompt-form"
+              class="modal-button modal-primary-button"
+              disabled={saving || !isFormValid}>
+        {#if saving}<Spinner size="small" color="white" />{/if}
+        {editingPrompt ? $t('prompts.updatePrompt') : $t('prompts.createPromptBtn')}
+      </button>
+    </svelte:fragment>
+  </BaseModal>
 
   <!-- View Prompt Modal -->
-  {#if showViewModal && viewingPrompt}
-    <div
-      class="modal-overlay"
-      role="presentation"
-      on:click={closeViewModal}
-      on:keydown={(e) => e.key === 'Escape' && closeViewModal()}
-    >
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <!-- svelte-ignore a11y_interactive_supports_focus -->
-      <div
-        class="modal-content view-modal"
-        role="dialog"
-        aria-modal="true"
-        on:click|stopPropagation
-        on:keydown|stopPropagation
-      >
-        <div class="modal-header">
-          <h3>{$t('prompts.viewPromptTitle')}: {viewingPrompt.name}</h3>
-          <button class="close-button" on:click={closeViewModal}>×</button>
+  <BaseModal
+    isOpen={showViewModal && !!viewingPrompt}
+    title={viewingPrompt?.name ?? ''}
+    onClose={closeViewModal}
+    maxWidth="700px"
+  >
+    {#if viewingPrompt}
+      <div class="prompt-details">
+        <div class="detail-row">
+          <strong>{$t('prompts.type')}</strong> {viewingPrompt.content_type || $t('prompts.contentTypeGeneral')}
         </div>
-        <div class="modal-body">
-          <div class="prompt-details">
-            <div class="detail-row">
-              <strong>{$t('prompts.type')}</strong> {viewingPrompt.content_type || $t('prompts.contentTypeGeneral')}
-            </div>
-            {#if viewingPrompt.description}
-              <div class="detail-row">
-                <strong>{$t('prompts.descriptionLabel')}:</strong> {viewingPrompt.description}
-              </div>
-            {/if}
-            <div class="detail-row">
-              <strong>{$t('prompts.systemPrompt')}</strong> {viewingPrompt.is_system_default ? $t('common.yes') : $t('common.no')}
-            </div>
-            {#if viewingPrompt.linked_collections && viewingPrompt.linked_collections.length > 0}
-              <div class="detail-row">
-                <strong>{$t('prompts.usedByCollections')}:</strong>
-                <div class="linked-collections-modal">
-                  {#each viewingPrompt.linked_collections as col}
-                    <span class="collection-tag">{col.name}</span>
-                  {/each}
-                </div>
-              </div>
-            {/if}
+        {#if viewingPrompt.description}
+          <div class="detail-row">
+            <strong>{$t('prompts.descriptionLabel')}:</strong> {viewingPrompt.description}
           </div>
-          <div class="prompt-text-container">
-            <div class="prompt-text-header">
-              <strong>{$t('prompts.promptTextLabel')}:</strong>
-              <button
-                type="button"
-                class="copy-button-header"
-                class:copied={isCopied}
-                on:click={() => copyPromptText(viewingPrompt.prompt_text)}
-                aria-label={$t('prompts.copy')}
-                title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
-              >
-                {#if isCopied}
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
-                  </svg>
-                  {$t('prompts.copied')}
-                {:else}
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-                  </svg>
-                  {$t('prompts.copy')}
-                {/if}
-              </button>
-            </div>
-            <div class="prompt-text-display">{viewingPrompt.prompt_text}</div>
-          </div>
+        {/if}
+        <div class="detail-row">
+          <strong>{$t('prompts.systemPrompt')}</strong> {viewingPrompt.is_system_default ? $t('common.yes') : $t('common.no')}
         </div>
+        {#if viewingPrompt.linked_collections && viewingPrompt.linked_collections.length > 0}
+          <div class="detail-row">
+            <strong>{$t('prompts.usedByCollections')}:</strong>
+            <div class="linked-collections-modal">
+              {#each viewingPrompt.linked_collections as col}
+                <span class="collection-tag">{col.name}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
-    </div>
-  {/if}
+      <div class="prompt-text-container">
+        <div class="prompt-text-header">
+          <strong>{$t('prompts.promptTextLabel')}:</strong>
+          <button
+            type="button"
+            class="copy-button-header"
+            class:copied={isCopied}
+            on:click={() => copyPromptText(viewingPrompt.prompt_text)}
+            aria-label={$t('prompts.copy')}
+            title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
+          >
+            {#if isCopied}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
+              </svg>
+              {$t('prompts.copied')}
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+              </svg>
+              {$t('prompts.copy')}
+            {/if}
+          </button>
+        </div>
+        <div class="prompt-text-display">{viewingPrompt.prompt_text}</div>
+      </div>
+    {/if}
+  </BaseModal>
 
   <!-- Delete Confirmation Modal -->
   <ConfirmationModal
@@ -1117,61 +1026,6 @@
     align-items: center;
   }
 
-  .action-button {
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: 1px solid;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-  }
-
-  .action-button.primary {
-    background-color: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .action-button.primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .action-button.primary:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .action-button.secondary {
-    background-color: var(--surface-color);
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .action-button.secondary:hover:not(:disabled) {
-    background-color: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .action-button.secondary:active:not(:disabled) {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .action-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
 
   /* New button styles to match LLM provider page */
   .create-config-button {
@@ -1187,17 +1041,17 @@
     font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .create-config-button:hover {
     background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .create-config-button:active {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .config-status {
@@ -1251,13 +1105,13 @@
 
   .view-button {
     background-color: transparent;
-    border-color: #3b82f6;
-    color: #3b82f6;
+    border-color: var(--primary-color);
+    color: var(--primary-color);
   }
 
   .view-button:hover:not(:disabled) {
     background-color: #3b82f6;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -1269,7 +1123,7 @@
 
   .edit-button:hover:not(:disabled) {
     background-color: #3b82f6;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -1283,12 +1137,12 @@
     background-color: var(--error-color);
     border-color: var(--error-color);
     color: white;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
 
   .delete-config-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
@@ -1440,7 +1294,7 @@
     align-items: center;
     padding: 0.125rem 0.5rem;
     background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    color: var(--primary-color);
     border-radius: 10px;
     font-size: 0.7rem;
     font-weight: 500;
@@ -1455,7 +1309,7 @@
   }
 
   :global(.dark) .collection-tag {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--primary-color-rgb), 0.2);
     color: #60a5fa;
   }
 
@@ -1500,17 +1354,17 @@
     font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .create-first-config-btn:hover {
     background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .create-first-config-btn:active {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   /* Copy button styles - matches SummaryModal */
@@ -1558,179 +1412,6 @@
     background-color: var(--success-bg);
     border-color: var(--success-color);
     color: var(--success-color);
-  }
-
-  /* Modal button styling to match app design */
-  :global(.modal-delete-button) {
-    background-color: #ef4444 !important;
-    color: white !important;
-    border: none !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-  }
-
-  :global(.modal-delete-button:hover) {
-    background-color: #dc2626 !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15) !important;
-  }
-
-  :global(.modal-delete-button:active) {
-    transform: translateY(0) !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-  }
-
-  :global(.modal-delete-button:focus) {
-    outline: 2px solid #fca5a5 !important;
-    outline-offset: 2px !important;
-  }
-
-  :global(.modal-cancel-button) {
-    background-color: var(--surface-color) !important;
-    color: var(--text-color) !important;
-    border: 1px solid var(--border-color) !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
-  }
-
-  :global(.modal-cancel-button:hover) {
-    background-color: #2563eb !important;
-    color: white !important;
-    border-color: #2563eb !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
-  }
-
-  :global(.modal-cancel-button:active) {
-    transform: translateY(0) !important;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2) !important;
-  }
-
-  /* Warning button for unsaved changes */
-  :global(.modal-warning-button) {
-    background-color: #f59e0b !important;
-    color: white !important;
-    border: none !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2) !important;
-  }
-
-  :global(.modal-warning-button:hover) {
-    background-color: #d97706 !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25) !important;
-  }
-
-  :global(.modal-warning-button:active) {
-    transform: translateY(0) !important;
-    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2) !important;
-  }
-
-  :global(.modal-warning-button:focus) {
-    outline: 2px solid #fcd34d !important;
-    outline-offset: 2px !important;
-  }
-
-  /* Primary button for keeping editing */
-  :global(.modal-primary-button) {
-    background-color: #3b82f6 !important;
-    color: white !important;
-    border: none !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2) !important;
-  }
-
-  :global(.modal-primary-button:hover) {
-    background-color: #2563eb !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
-  }
-
-  :global(.modal-primary-button:active) {
-    transform: translateY(0) !important;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2) !important;
-  }
-
-  :global(.modal-primary-button:focus) {
-    outline: 2px solid #93c5fd !important;
-    outline-offset: 2px !important;
-  }
-
-  /* Modal styles */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
-    overscroll-behavior: contain;
-  }
-
-  .modal-content {
-    background-color: var(--background-color);
-    border-radius: 8px;
-    max-width: 600px;
-    width: 100%;
-    max-height: 90vh;
-    overflow-y: auto;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-header h3 {
-    margin: 0;
-    color: var(--text-color);
-  }
-
-  .close-button {
-    background: none;
-    border: none;
-    font-size: 1.125rem;
-    cursor: pointer;
-    color: var(--text-light);
-    padding: 0;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .close-button:hover {
-    color: var(--text-color);
   }
 
   .prompt-form {
@@ -1785,14 +1466,6 @@
     color: var(--text-light);
   }
 
-  .modal-actions {
-    display: flex;
-    gap: 1rem;
-    justify-content: flex-end;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border-color);
-  }
-
   @media (max-width: 768px) {
     .section-header {
       flex-direction: column;
@@ -1803,23 +1476,15 @@
     .prompt-actions {
       justify-content: flex-start;
     }
-
-    .modal-content {
-      margin: 0.5rem;
-      max-height: 95vh;
-    }
-
-    .modal-actions {
-      flex-direction: column;
-    }
   }
 
   /* LLM Hint Styling */
   .llm-hint {
     margin-top: 0.75rem;
     padding: 0.75rem;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: var(--color-info-bg);
+    border: 1px solid var(--color-info-border);
+    color: var(--text-color);
     border-radius: 6px;
     font-size: 0.8rem;
     line-height: 1.3;
@@ -1830,6 +1495,7 @@
     align-items: center;
     gap: 0.5rem;
     margin-bottom: 0.25rem;
+    color: var(--color-info);
   }
 
   .tip-icon {
@@ -1837,11 +1503,6 @@
   }
 
   /* View Modal Styling */
-  .view-modal {
-    max-width: 700px;
-    max-height: 80vh;
-  }
-
   .prompt-details {
     margin-bottom: 1.5rem;
   }
@@ -1881,25 +1542,6 @@
     overflow-y: auto;
   }
 
-  /* Unsaved changes indicator */
-  .unsaved-indicator {
-    color: #f59e0b;
-    font-size: 1.2em;
-    margin-left: 0.5rem;
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  /* Enhanced close button with warning state */
-  .close-button:hover {
-    background-color: var(--danger-color, #ef4444);
-    color: white;
-  }
-
   /* Shared config styles */
   .config-item.shared {
     border-left: 3px solid var(--info-color, #3b82f6);
@@ -1919,7 +1561,7 @@
     font-size: 0.625rem;
     font-weight: 600;
     background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
+    color: var(--primary-color);
     text-transform: uppercase;
     letter-spacing: 0.02em;
   }
@@ -1957,7 +1599,7 @@
   }
 
   .shared-section-header h4 {
-    color: #3b82f6;
+    color: var(--primary-color);
   }
 
   :global([data-theme='dark']) .shared-section-header h4,
@@ -1981,12 +1623,12 @@
     font-size: 0.6875rem;
     font-weight: 500;
     background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
+    color: var(--primary-color);
   }
 
   :global([data-theme='dark']) .tag-pill,
   :global(.dark) .tag-pill {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--primary-color-rgb), 0.2);
     color: #60a5fa;
   }
 
@@ -2048,5 +1690,19 @@
   .toggle-text {
     font-size: 0.75rem;
     color: var(--text-muted);
+  }
+
+  .modal-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .unsaved-dot {
+    color: var(--warning-color);
+    font-size: 0.9rem;
+    line-height: 1;
+    flex-shrink: 0;
   }
 </style>

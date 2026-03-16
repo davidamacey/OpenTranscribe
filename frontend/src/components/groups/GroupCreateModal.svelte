@@ -180,17 +180,18 @@
 
   .confirm-button:hover:not(:disabled) {
     background: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .confirm-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .confirm-button:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
   }
 
   .form-hint {

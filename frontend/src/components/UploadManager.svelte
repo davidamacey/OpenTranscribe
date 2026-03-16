@@ -274,7 +274,7 @@
 
   /* Minimized Badge */
   .upload-badge {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border-radius: 20px;
     padding: 8px 12px;
@@ -337,7 +337,7 @@
   }
 
   .panel-header {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     padding: 12px 16px;
     cursor: grab;
@@ -432,7 +432,7 @@
 
   .progress-fill {
     height: 100%;
-    background: var(--primary-color);
+    background: #3b82f6;
     transition: width 0.3s ease;
   }
 

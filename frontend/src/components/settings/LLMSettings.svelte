@@ -726,17 +726,17 @@
     font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .create-config-button:hover {
     background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .create-config-button:active {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .config-list {
@@ -752,7 +752,7 @@
     padding: 1rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: var(--card-bg);
+    background: var(--card-background);
     transition: all 0.2s ease;
   }
 
@@ -849,13 +849,13 @@
 
   .test-connection-button {
     background-color: transparent;
-    border-color: #3b82f6;
-    color: #3b82f6;
+    border-color: var(--primary-color);
+    color: var(--primary-color);
   }
 
   .test-connection-button:hover:not(:disabled) {
     background-color: #3b82f6;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -867,7 +867,7 @@
 
   .edit-button:hover:not(:disabled) {
     background-color: #3b82f6;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -881,12 +881,12 @@
     background-color: var(--error-color);
     border-color: var(--error-color);
     color: white;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
 
   .delete-config-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
@@ -915,12 +915,12 @@
 
   .delete-all-button:hover:not(:disabled) {
     background: #dc2626;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
 
   .delete-all-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
@@ -934,7 +934,7 @@
     padding: 3rem 2rem;
     border: 2px dashed var(--border-color);
     border-radius: 8px;
-    background: var(--card-bg);
+    background: var(--card-background);
   }
 
   .empty-icon {
@@ -970,17 +970,17 @@
     font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .create-first-config-btn:hover {
     background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
 
   .create-first-config-btn:active {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   button:disabled {
@@ -990,12 +990,8 @@
 
   /* Shared config styling */
   .config-item.shared {
-    border-left: 3px solid var(--info-color, #3b82f6);
-    background: rgba(59, 130, 246, 0.04);
-  }
-
-  :global([data-theme='dark']) .config-item.shared {
-    background: rgba(96, 165, 250, 0.06);
+    border-left: 3px solid var(--primary-color);
+    background: rgba(var(--primary-color-rgb), 0.04);
   }
 
   .shared-section-header {
@@ -1012,13 +1008,13 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
+    color: var(--primary-color);
     margin-left: 0.5rem;
     vertical-align: middle;
   }
 
   :global([data-theme='dark']) .share-badge {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--primary-color-rgb), 0.2);
     color: #60a5fa;
   }
 

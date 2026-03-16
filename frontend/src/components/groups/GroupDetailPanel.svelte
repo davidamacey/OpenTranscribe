@@ -479,13 +479,13 @@
   }
 
   .btn-inline-save {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     border: none;
   }
 
   .btn-inline-save:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: #2563eb;
   }
 
   .btn-inline-save:disabled {
@@ -500,7 +500,7 @@
   }
 
   .btn-inline-cancel:hover {
-    background: var(--background-color);
+    background: var(--button-hover);
   }
 
   .detail-meta {

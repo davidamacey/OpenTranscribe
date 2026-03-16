@@ -320,13 +320,19 @@
     {#if sources.length === 0 && sharedSources.length === 0 && !showAddForm}
       <div class="empty-state">
         <div class="empty-icon">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
             <path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
           </svg>
         </div>
-        <p class="empty-text">{$t('settings.mediaSources.noSources')}</p>
-        <p class="empty-hint">{$t('settings.mediaSources.noSourcesHint')}</p>
+        <h4>{$t('settings.mediaSources.noSources')}</h4>
+        <p>{$t('settings.mediaSources.noSourcesHint')}</p>
+        <button class="btn-add-first" on:click={() => { showAddForm = true; editingUuid = null; deletingUuid = null; }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          {$t('settings.mediaSources.addSource')}
+        </button>
       </div>
     {/if}
 
@@ -376,8 +382,8 @@
       </form>
     {/if}
 
-    <!-- Add Button -->
-    {#if !showAddForm}
+    <!-- Add Button — shown below existing sources list -->
+    {#if (sources.length > 0 || sharedSources.length > 0) && !showAddForm}
       <button class="btn btn-add" on:click={() => { showAddForm = true; editingUuid = null; deletingUuid = null; }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="5" x2="12" y2="19" />
@@ -407,29 +413,53 @@
   }
 
   .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 2rem 1rem;
-    color: var(--text-secondary, #6b7280);
     text-align: center;
+    padding: 2.5rem 2rem;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    background: var(--card-background);
   }
 
   .empty-icon {
-    opacity: 0.4;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.875rem;
+    color: var(--text-secondary);
+    opacity: 0.6;
   }
 
-  .empty-text {
-    font-size: 0.9rem;
+  .empty-state h4 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
     font-weight: 500;
-    margin: 0;
     color: var(--text-color);
   }
 
-  .empty-hint {
-    font-size: 0.8rem;
-    margin: 0.25rem 0 0;
+  .empty-state p {
+    margin: 0 0 1.25rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .btn-add-first {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.5rem 1.1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .btn-add-first:hover {
+    background: #2563eb;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .source-card {
@@ -500,7 +530,7 @@
     font-size: 0.65rem;
     text-transform: uppercase;
     font-weight: 600;
-    background: var(--primary-color, #3b82f6);
+    background: #3b82f6;
     color: white;
     padding: 0.1rem 0.35rem;
     border-radius: 0.25rem;
@@ -670,91 +700,77 @@
     padding-top: 0.25rem;
   }
 
-  .btn {
-    padding: 0.375rem 0.75rem;
-    border-radius: 0.375rem;
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    border: 1px solid transparent;
-    transition: all 0.15s;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .btn-sm {
     padding: 0.25rem 0.5rem;
     font-size: 0.75rem;
+    border-radius: 6px;
   }
 
-  .btn-primary {
-    background: var(--primary-color, #3b82f6);
-    color: white;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  .btn-secondary {
-    background: transparent;
-    color: var(--text-secondary);
-    border-color: var(--border-color, #d1d5db);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--hover-color);
-  }
-
+  /* Pattern B — grey ghost (inline actions like Edit, No) */
   .btn-ghost {
-    background: transparent;
-    color: var(--text-secondary);
-    border: none;
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
   }
 
   .btn-ghost:hover:not(:disabled) {
-    background: var(--hover-color);
-    color: var(--text-color);
+    background: var(--button-hover);
+    transform: scale(1.02);
   }
 
+  /* Destructive text-only indicator */
   .btn-danger-text {
-    color: #dc2626;
+    color: var(--error-color, #ef4444);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
   }
 
   .btn-danger-text:hover:not(:disabled) {
     background: rgba(239, 68, 68, 0.1);
-    color: #dc2626;
+    color: var(--error-color, #ef4444);
+    transform: scale(1.02);
   }
 
+  /* Destructive solid — red confirm */
   .btn-danger {
-    background: #dc2626;
+    background: var(--error-color, #ef4444);
     color: white;
+    border: none;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
   }
 
   .btn-add {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.375rem;
-    width: 100%;
-    padding: 0.5rem;
-    border: 2px dashed var(--border-color, #d1d5db);
-    border-radius: 0.5rem;
-    background: transparent;
-    color: var(--text-secondary, #6b7280);
-    font-size: 0.8rem;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 8px;
+    background: #3b82f6;
+    color: white;
+    font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-add:hover {
-    border-color: var(--primary-color, #3b82f6);
-    color: var(--primary-color, #3b82f6);
-    background: rgba(59, 130, 246, 0.05);
+    background: #2563eb;
+    color: white;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-add:active {
+    transform: scale(1);
   }
 
   .section-hint {

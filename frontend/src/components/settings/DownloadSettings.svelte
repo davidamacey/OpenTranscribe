@@ -243,6 +243,10 @@
     color: var(--text-color);
     font-size: 0.875rem;
     transition: border-color 0.15s;
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 2.5rem;
+    cursor: pointer;
   }
 
   .form-select:focus {
@@ -306,7 +310,7 @@
   }
 
   .toggle-switch input:checked + .toggle-slider {
-    background-color: var(--primary-color, #3b82f6);
+    background-color: #3b82f6;
   }
 
   .toggle-switch input:checked + .toggle-slider::before {
@@ -325,44 +329,5 @@
     margin-right: auto;
   }
 
-  .btn {
-    padding: 0.5rem 1rem;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    border: 1px solid transparent;
-    transition: all 0.2s ease;
-  }
 
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background-color: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .btn-secondary {
-    background-color: transparent;
-    color: var(--text-secondary, #6b7280);
-    border-color: var(--border-color, #d1d5db);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--hover-color);
-  }
 </style>

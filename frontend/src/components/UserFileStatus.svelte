@@ -966,12 +966,12 @@
 
   .recovery-btn:hover, .tasks-toggle-btn:hover {
     background: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .recovery-btn:active, .tasks-toggle-btn:active {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .flower-btn:hover {
@@ -1095,7 +1095,7 @@
 
   .problem-file:hover {
     border-color: var(--border-hover);
-    transform: translateY(-1px);
+    transform: scale(1.02);
   }
 
   .file-info {
@@ -1154,7 +1154,7 @@
   .retry-btn:hover {
     background: var(--success-hover);
     border-color: var(--success-hover);
-    transform: translateY(-1px);
+    transform: scale(1.02);
   }
 
   .retry-btn:disabled {
@@ -1179,7 +1179,7 @@
 
   .status-processing {
     background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    color: var(--primary-color);
   }
 
   .status-pending {
@@ -1256,7 +1256,7 @@
   }
 
   .recent-file-card:hover {
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     border-color: var(--border-hover);
   }

@@ -53,6 +53,13 @@
   --color-info-bg: rgba(59, 130, 246, 0.1);
   --color-info-border: rgba(59, 130, 246, 0.3);
   --color-info: var(--info-color);
+
+  /* Alternate-name aliases used by some components */
+  --bg-primary: var(--surface-color);
+  --text-primary: var(--text-color);
+  --text-muted: var(--text-secondary);
+  --input-bg: var(--input-background);
+  --text-light: var(--text-secondary);
 }
 
 /* Dark Theme */
@@ -108,6 +115,13 @@
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);
   --color-info: var(--info-color);
+
+  /* Alternate-name aliases used by some components - dark mode */
+  --bg-primary: var(--surface-color);
+  --text-primary: var(--text-color);
+  --text-muted: var(--text-secondary);
+  --input-bg: var(--input-background);
+  --text-light: var(--text-secondary);
 }
 
 /* Global styles that should adapt to theme */

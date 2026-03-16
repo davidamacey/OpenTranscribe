@@ -537,7 +537,7 @@
   "settings.orgContext.description": "Provide background context about your organization or project to improve AI-generated summaries.",
   "settings.orgContext.label": "Context Text",
   "settings.orgContext.labelHint": "Describe your organization, project, or domain so the AI can produce more relevant summaries.",
-  "settings.orgContext.placeholder": "Example: Greenleaf Analytics is a healthcare data company building the Pulse platform. Key personnel include Dr. Chen (CTO), Sarah Miller (VP Product). We focus on patient outcome modeling and clinical trial analytics. Common acronyms: EHR, RWE, FDA, HIPAA.",
+  "settings.orgContext.placeholder": "Example: Apex Quant Capital is an algorithmic trading firm specializing in high-frequency equity and derivatives strategies. Key personnel include James Wei (CIO), Maya Patel (Head of Research). We focus on alpha generation, risk-adjusted returns, and execution optimization. Common acronyms: HFT, PnL, VaR, AUM, FIX, VWAP, OMS.",
   "settings.orgContext.includeDefault": "Include with system prompts",
   "settings.orgContext.includeDefaultDesc": "Inject this context when using built-in system summary prompts.",
   "settings.orgContext.includeCustom": "Include with custom prompts",

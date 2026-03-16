@@ -537,7 +537,7 @@
 
   .progress-fill {
     height: 100%;
-    background: var(--primary-color);
+    background: #3b82f6;
     border-radius: 3px;
     transition: width 0.3s;
   }
@@ -600,47 +600,6 @@
     margin-right: auto;
   }
 
-  .btn {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    border: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .btn-primary {
-    background-color: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background-color: var(--background-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--border-color);
-  }
-
   .section-divider {
     margin: 1.25rem 0;
     border-top: 1px solid var(--border-color);
@@ -678,11 +637,11 @@
   }
 
   .progress-bar.reindexing {
-    background: var(--primary-light, rgba(59, 130, 246, 0.2));
+    background: var(--primary-light, rgba(var(--primary-color-rgb), 0.2));
   }
 
   .progress-bar.reindexing .progress-fill {
-    background: var(--primary-color);
+    background: #3b82f6;
     animation: pulse 1.5s ease-in-out infinite;
   }
 
@@ -780,7 +739,7 @@
 
   .stats-mode.cpu {
     background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
+    color: var(--primary-color);
   }
 
   .btn-danger-outline {

@@ -407,7 +407,7 @@
   }
 
   .toggle-switch input:checked + .toggle-slider {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
   }
 
   .toggle-switch input:checked + .toggle-slider:before {
@@ -439,7 +439,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: var(--primary-color);
+    background: #3b82f6;
     cursor: pointer;
   }
 
@@ -447,7 +447,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: var(--primary-color);
+    background: #3b82f6;
     cursor: pointer;
     border: none;
   }
@@ -468,20 +468,26 @@
   }
 
   .btn-save {
-    padding: 0.5rem 1.5rem;
-    border-radius: 8px;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
     border: none;
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     font-weight: 500;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-save:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: translateY(-1px);
+    background: #2563eb;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
+  }
+
+  .btn-save:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-save:disabled {
@@ -500,23 +506,29 @@
 
   .btn-retroactive {
     margin-top: 0.75rem;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    border: 1px solid var(--primary-color);
-    background: transparent;
-    color: var(--primary-color);
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    border: none;
+    background: #3b82f6;
+    color: white;
     font-weight: 500;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
+    transition: all 0.2s ease;
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-retroactive:hover:not(:disabled) {
-    background: var(--primary-color);
-    color: white;
+    background: #2563eb;
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
+  }
+
+  .btn-retroactive:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .btn-retroactive:disabled {

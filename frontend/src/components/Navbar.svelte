@@ -661,7 +661,7 @@
     transform: translateX(-50%);
     width: calc(100% - 1rem);
     height: 3px;
-    background-color: var(--primary-color, #3b82f6);
+    background-color: #3b82f6;
     border-radius: 2px;
   }
 
@@ -835,7 +835,7 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     font-weight: 600;
   }
@@ -1158,7 +1158,7 @@
   .recording-indicator.recording-live:hover {
     background: rgba(220, 38, 38, 0.2);
     border-color: rgba(220, 38, 38, 0.5);
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
   }
 
@@ -1171,7 +1171,7 @@
   .recording-indicator.recording-standby:hover {
     background: rgba(16, 185, 129, 0.2);
     border-color: rgba(16, 185, 129, 0.5);
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
   }
 
@@ -1404,7 +1404,7 @@
     background: var(--hover-color);
     border-color: var(--primary-color);
     color: var(--primary-color);
-    transform: translateY(-1px);
+    transform: scale(1.02);
   }
 
   .pause-btn:hover {

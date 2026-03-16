@@ -321,13 +321,18 @@
 
   .share-btn:hover:not(:disabled) {
     background: #2563eb;
-    transform: translateY(-1px);
+    transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .share-btn:active:not(:disabled) {
+    transform: scale(1);
   }
 
   .share-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
   }
 
   .divider {

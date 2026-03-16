@@ -723,13 +723,13 @@
 
   .step-dot.active {
     border-color: var(--primary-color, #3b82f6);
-    background: var(--primary-color, #3b82f6);
+    background: #3b82f6;
     color: white;
   }
 
   .step-dot.completed {
     border-color: var(--primary-color, #3b82f6);
-    background: var(--primary-color, #3b82f6);
+    background: #3b82f6;
     color: white;
     cursor: pointer;
   }
@@ -775,7 +775,7 @@
   }
 
   .step-line.completed {
-    background: var(--primary-color, #3b82f6);
+    background: #3b82f6;
   }
 
   /* Body */
@@ -918,7 +918,7 @@
   }
 
   .stage-check-custom.checked {
-    background: var(--primary-color, #3b82f6);
+    background: #3b82f6;
     border-color: var(--primary-color, #3b82f6);
     color: white;
   }
@@ -1093,7 +1093,7 @@
   }
 
   .warning-info svg {
-    color: #3b82f6;
+    color: var(--primary-color);
   }
 
   /* Speaker Settings */
@@ -1180,20 +1180,17 @@
     background: var(--card-background);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   }
 
   .cancel-button:hover {
-    background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    background: var(--button-hover);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
   }
 
   .cancel-button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transform: scale(1);
   }
 
   .primary-button {
@@ -1204,24 +1201,25 @@
 
   .primary-button:hover:not(:disabled) {
     background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb, 59, 130, 246), 0.3);
   }
 
   .primary-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1);
   }
 
   .primary-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
   }
 
   /* Dark mode */
   :global([data-theme='dark']) .cancel-button:hover {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
+    background: var(--button-hover);
+    color: var(--text-color);
+    border-color: var(--border-color);
   }
 
   :global([data-theme='dark']) .setting-field input:disabled {
@@ -1268,12 +1266,12 @@
 
   /* Focus styles */
   .modal-button:focus {
-    outline: 2px solid #3b82f6;
+    outline: 2px solid var(--primary-color, #3b82f6);
     outline-offset: 2px;
   }
 
   .cancel-button:focus {
-    outline: 2px solid var(--text-color);
+    outline: 2px solid var(--border-color);
     outline-offset: 2px;
   }
 </style>

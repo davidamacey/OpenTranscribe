@@ -397,7 +397,7 @@
   }
 
   .stage.active:not(:last-child)::after {
-    background: var(--primary-color);
+    background: #3b82f6;
   }
 
   .stage-dot {
@@ -412,7 +412,7 @@
   }
 
   .stage.active .stage-dot {
-    background: var(--primary-color);
+    background: #3b82f6;
     animation: pulse 1.5s infinite;
   }
 

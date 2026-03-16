@@ -920,12 +920,15 @@
     color: var(--text-color);
     font-size: 0.875rem;
     cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 2.5rem;
   }
 
   .form-select:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .input-hint {
@@ -995,7 +998,7 @@
   .form-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
   }
 
   .form-input:disabled {
@@ -1080,7 +1083,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -1129,47 +1132,6 @@
 
   .button-row .btn-secondary {
     margin-right: auto;
-  }
-
-  .btn {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: none;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background-color: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .btn-secondary {
-    background-color: transparent;
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--background-secondary);
   }
 
   /* Collapsible header */
@@ -1249,7 +1211,7 @@
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: var(--primary-color);
+    background: #3b82f6;
     cursor: pointer;
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -1259,7 +1221,7 @@
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: var(--primary-color);
+    background: #3b82f6;
     cursor: pointer;
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
