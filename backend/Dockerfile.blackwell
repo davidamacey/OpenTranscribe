@@ -1,0 +1,199 @@
+# =============================================================================
+# OpenTranscribe GPU Worker for NVIDIA DGX Spark / ARM64 / Blackwell
+# - basiert auf NVIDIA PyTorch Container
+# - ohne appuser, stattdessen USER 1000:1000
+# - mit Blackwell/NVRTC Patches fuer WhisperX / Torchaudio
+# - mit pyannote SemVer Workaround fuer NVIDIA Torch Dev-Versionen
+# =============================================================================
+
+FROM nvcr.io/nvidia/pytorch:25.01-py3
+
+WORKDIR /app
+
+# Blackwell / NVRTC Kompatibilitaet + Cache-Pfade
+ENV TORCH_CUDA_ARCH_LIST="9.0" \
+    CUDA_FORCE_PTX_JIT=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HOME=/home/user/.cache/huggingface \
+    TRANSFORMERS_CACHE=/home/user/.cache/huggingface/transformers \
+    TORCH_HOME=/home/user/.cache/torch \
+    NLTK_DATA=/home/user/.cache/nltk_data \
+    SENTENCE_TRANSFORMERS_HOME=/home/user/.cache/sentence-transformers \
+    XDG_CACHE_HOME=/home/user/.cache \
+    PATH=/usr/local/bin:$PATH
+
+# System-Abhaengigkeiten
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    libimage-exiftool-perl \
+    libgomp1 \
+    git \
+    cmake \
+    build-essential \
+    libopenblas-dev \
+    sox \
+    libsox-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Verzeichnisse fuer Runtime und Caches
+RUN mkdir -p \
+    /app \
+    /app/models \
+    /app/temp \
+    /home/user/.cache/huggingface \
+    /home/user/.cache/torch \
+    /home/user/.cache/nltk_data \
+    /home/user/.cache/sentence-transformers \
+    /home/user/.cache/yt-dlp \
+    && chown -R 1000:1000 /app /home/user
+
+# Requirements zuerst fuer Layer-Cache
+COPY requirements.txt /app/requirements.txt
+
+# Basis Python-Werkzeuge
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    python -m pip install --no-cache-dir pybind11 packaging ninja cmake
+
+# -----------------------------------------------------------------------------
+# Torchaudio gegen NVIDIA Torch bauen
+# -----------------------------------------------------------------------------
+RUN git clone --depth 1 --branch v2.6.0 --recursive https://github.com/pytorch/audio.git /tmp/torchaudio && \
+    cd /tmp/torchaudio && \
+    pip install --no-cache-dir --no-deps --no-build-isolation . && \
+    rm -rf /tmp/torchaudio
+
+# -----------------------------------------------------------------------------
+# CTranslate2 mit CUDA/cuDNN bauen
+# -----------------------------------------------------------------------------
+RUN git clone --recursive --depth 1 --branch v4.4.0 https://github.com/OpenNMT/CTranslate2.git /tmp/ctranslate2 && \
+    cd /tmp/ctranslate2 && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DWITH_CUDA=ON \
+        -DWITH_CUDNN=ON \
+        -DCUDNN_ROOT=/usr \
+        -DCUDA_DYNAMIC_LOADING=ON \
+        -DWITH_MKL=OFF \
+        -DWITH_OPENBLAS=ON \
+        -DOPENMP_RUNTIME=COMP \
+        -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig && \
+    cd /tmp/ctranslate2/python && \
+    pip install --no-cache-dir --no-build-isolation . && \
+    rm -rf /tmp/ctranslate2
+
+# -----------------------------------------------------------------------------
+# NVIDIA Torch-Stack sichern, bevor pip evtl. Dinge ueberschreibt
+# -----------------------------------------------------------------------------
+RUN cp -r /usr/local/lib/python3.12/dist-packages/torch /tmp/torch_nvidia && \
+    cp -r /usr/local/lib/python3.12/dist-packages/torchvision /tmp/torchvision_nvidia && \
+    cp -r /usr/local/lib/python3.12/dist-packages/torchaudio /tmp/torchaudio_custom && \
+    cp -r /usr/local/lib/python3.12/dist-packages/torio /tmp/torio_custom && \
+    cp -r /usr/local/lib/python3.12/dist-packages/numpy /tmp/numpy_nvidia && \
+    cp -r /usr/local/lib/python3.12/dist-packages/numpy.libs /tmp/numpy_libs_nvidia 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# OpenTranscribe-Requirements ohne GPU-kritische Pakete installieren
+# So bleibt der NVIDIA-Torch-Stack erhalten
+# -----------------------------------------------------------------------------
+RUN grep -vE '^(torch==|torch>=|torchaudio==|torchaudio>=|ctranslate2|whisperx==|whisperx>=|pyannote\.audio)' /app/requirements.txt > /tmp/requirements.safe.txt && \
+    pip install --no-cache-dir -r /tmp/requirements.safe.txt
+
+# GPU-/WhisperX-relevante Pakete explizit setzen
+RUN pip install --no-cache-dir \
+    huggingface_hub==0.23.5 \
+    whisperx==3.3.1 \
+    faster-whisper==1.1.0 \
+    pyannote.audio==3.3.2 \
+    python-multipart \
+    nltk \
+    matplotlib
+
+# -----------------------------------------------------------------------------
+# NVIDIA Torch-Stack wiederherstellen
+# -----------------------------------------------------------------------------
+RUN rm -rf /usr/local/lib/python3.12/dist-packages/torch && \
+    rm -rf /usr/local/lib/python3.12/dist-packages/torchvision && \
+    rm -rf /usr/local/lib/python3.12/dist-packages/torchaudio && \
+    rm -rf /usr/local/lib/python3.12/dist-packages/torio && \
+    rm -rf /usr/local/lib/python3.12/dist-packages/numpy && \
+    rm -rf /usr/local/lib/python3.12/dist-packages/numpy.libs && \
+    mv /tmp/torch_nvidia /usr/local/lib/python3.12/dist-packages/torch && \
+    mv /tmp/torchvision_nvidia /usr/local/lib/python3.12/dist-packages/torchvision && \
+    mv /tmp/torchaudio_custom /usr/local/lib/python3.12/dist-packages/torchaudio && \
+    mv /tmp/torio_custom /usr/local/lib/python3.12/dist-packages/torio && \
+    mv /tmp/numpy_nvidia /usr/local/lib/python3.12/dist-packages/numpy && \
+    mv /tmp/numpy_libs_nvidia /usr/local/lib/python3.12/dist-packages/numpy.libs 2>/dev/null || true
+
+# =========================
+# BLACKWELL PATCHES
+# =========================
+
+# Patch 1: get_device_capability fuer SM_121 auf SM_90 umbiegen
+RUN sed -i 's/def get_device_capability/def _original_get_device_capability/g' \
+    /usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py && \
+    printf '\n# BLACKWELL PATCH: Spoof SM_121 as SM_90 for nvrtc compatibility\n' >> /usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py && \
+    printf 'def get_device_capability(device=None):\n' >> /usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py && \
+    printf '    major, minor = _original_get_device_capability(device)\n' >> /usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py && \
+    printf '    if major == 12 and minor == 1:\n' >> /usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py && \
+    printf '        return (9, 0)\n' >> /usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py && \
+    printf '    return (major, minor)\n' >> /usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py
+
+# Patch 2: harte compute_121 / sm_121 Referenzen ersetzen
+RUN sed -i 's/compute_121/compute_90/g' /usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py 2>/dev/null || true && \
+    sed -i 's/sm_121/sm_90/g' /usr/local/lib/python3.12/dist-packages/torch/utils/cpp_extension.py 2>/dev/null || true
+
+# Patch 3: optional Inductor-Codecache patchen
+RUN sed -i 's/compute_121/compute_90/g' /usr/local/lib/python3.12/dist-packages/torch/_inductor/codecache.py 2>/dev/null || true && \
+    sed -i 's/sm_121/sm_90/g' /usr/local/lib/python3.12/dist-packages/torch/_inductor/codecache.py 2>/dev/null || true
+
+# Patch 4: Torchaudio fbank / jiterator Crash umgehen
+RUN sed -i 's/spectrum = torch.fft.rfft(strided_input).abs()/# BLACKWELL PATCH: Avoid jiterator by computing abs manually\n    fft_result = torch.fft.rfft(strided_input)\n    spectrum = torch.sqrt(fft_result.real**2 + fft_result.imag**2)/' \
+    /usr/local/lib/python3.12/dist-packages/torchaudio/compliance/kaldi.py
+
+# Patch 5: pyannote SemVer Check deaktivieren fuer NVIDIA Torch Dev-Versionen
+RUN python - <<'PY'
+from pathlib import Path
+import re
+
+p = Path("/usr/local/lib/python3.12/dist-packages/pyannote/audio/utils/version.py")
+if not p.exists():
+    raise SystemExit("pyannote version.py not found")
+
+text = p.read_text()
+
+patched = re.sub(
+    r"def check_version\(.*?\n(?=def |\Z)",
+    "def check_version(*args, **kwargs):\n    return\n\n",
+    text,
+    flags=re.S,
+)
+
+if patched == text:
+    print("No check_version patch applied; pattern not found exactly, leaving file unchanged")
+else:
+    p.write_text(patched)
+    print("Disabled pyannote check_version")
+PY
+
+# App-Code kopieren
+COPY . /app
+
+# Besitzrechte fuer Runtime-User
+RUN chown -R 1000:1000 /app /home/user
+
+USER 1000:1000
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Default fuer Backend-Container
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

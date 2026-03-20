@@ -79,18 +79,33 @@ def update_gpu_stats(self):
     """
     Periodic task to update GPU statistics in Redis.
 
-    This task runs on the celery worker (which has GPU access) and stores
-    GPU memory stats in Redis so the backend API can retrieve them.
-
-    Uses nvidia-smi to get accurate GPU memory usage including all processes,
-    not just PyTorch allocated memory.
-
-    Returns:
-        Dictionary with GPU stats or error status
+    On DGX Spark / GB10, nvidia-smi framebuffer memory stats can be unavailable
+    because the platform uses unified memory. In that case we fall back to
+    torch.cuda.mem_get_info() and clearly label the source.
     """
+
+    def safe_float(value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        if value in {"[N/A]", "N/A", "", "Unknown", "Not Supported"}:
+            return None
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    def format_bytes(byte_count):
+        if byte_count is None:
+            return "N/A"
+        for unit in ["B", "KB", "MB", "GB", "TB"]:
+            if byte_count < 1024 or unit == "TB":
+                return f"{byte_count:.2f} {unit}"
+            byte_count /= 1024
+        return f"{byte_count:.2f} TB"
+
     try:
         import subprocess
-
         import torch
 
         if not torch.cuda.is_available():
@@ -101,49 +116,78 @@ def update_gpu_stats(self):
                 "memory_used": "N/A",
                 "memory_free": "N/A",
                 "memory_percent": "N/A",
+                "memory_source": "none",
             }
         else:
-            # Get GPU device info from PyTorch
-            device_id = 0  # Primary GPU
+            device_id = 0
             gpu_properties = torch.cuda.get_device_properties(device_id)
 
-            # Use nvidia-smi for accurate memory usage (includes all processes)
-            # Format: memory.used,memory.total,memory.free (in MiB)
-            # Security: Safe subprocess call with hardcoded system command (nvidia-smi).
-            # Only dynamic parameter is device_id (integer), preventing command injection.
-            result = subprocess.run(
-                [  # noqa: S603 S607 # nosec B603 B607 - hardcoded nvidia-smi, integer device_id
-                    "nvidia-smi",
-                    "--query-gpu=memory.used,memory.total,memory.free",
-                    "--format=csv,noheader,nounits",
-                    f"--id={device_id}",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            memory_total = None
+            memory_used = None
+            memory_free = None
+            memory_percent = None
+            memory_source = None
+            memory_note = None
 
-            # Parse the output: "used, total, free" in MiB
-            memory_values = result.stdout.strip().split(", ")
-            memory_used_mib = float(memory_values[0])
-            memory_total_mib = float(memory_values[1])
-            memory_free_mib = float(memory_values[2])
+            # 1) Preferred fallback on DGX Spark / GB10:
+            # CUDA-visible memory via PyTorch
+            try:
+                free_bytes, total_bytes = torch.cuda.mem_get_info(device_id)
+                memory_free = float(free_bytes)
+                memory_total = float(total_bytes)
+                memory_used = memory_total - memory_free
+                if memory_total > 0:
+                    memory_percent = memory_used / memory_total * 100
+                memory_source = "cudaMemGetInfo"
+                memory_note = "CUDA-visible memory on unified-memory system"
+            except Exception:
+                pass
 
-            # Convert MiB to bytes for formatting
-            memory_used = memory_used_mib * 1024 * 1024
-            memory_total = memory_total_mib * 1024 * 1024
-            memory_free = memory_free_mib * 1024 * 1024
+            # 2) Try nvidia-smi only if CUDA mem info did not work
+            if memory_total is None:
+                try:
+                    result = subprocess.run(
+                        [
+                            "nvidia-smi",
+                            "--query-gpu=memory.used,memory.total,memory.free",
+                            "--format=csv,noheader,nounits",
+                            f"--id={device_id}",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
 
-            # Calculate percentage used
-            memory_percent = (memory_used / memory_total * 100) if memory_total > 0 else 0
+                    raw_values = [v.strip() for v in result.stdout.strip().split(",")]
 
-            # Format bytes to human-readable
-            def format_bytes(byte_count):
-                for unit in ["B", "KB", "MB", "GB", "TB"]:
-                    if byte_count < 1024 or unit == "TB":
-                        return f"{byte_count:.2f} {unit}"
-                    byte_count /= 1024
-                return f"{byte_count:.2f} TB"
+                    memory_used_mib = safe_float(raw_values[0]) if len(raw_values) > 0 else None
+                    memory_total_mib = safe_float(raw_values[1]) if len(raw_values) > 1 else None
+                    memory_free_mib = safe_float(raw_values[2]) if len(raw_values) > 2 else None
+
+                    memory_used = (
+                        memory_used_mib * 1024 * 1024 if memory_used_mib is not None else None
+                    )
+                    memory_total = (
+                        memory_total_mib * 1024 * 1024 if memory_total_mib is not None else None
+                    )
+                    memory_free = (
+                        memory_free_mib * 1024 * 1024 if memory_free_mib is not None else None
+                    )
+
+                    if memory_used is not None and memory_total not in (None, 0):
+                        memory_percent = memory_used / memory_total * 100
+
+                    memory_source = "nvidia-smi"
+                except Exception:
+                    pass
+
+            # 3) Final fallback for DGX Spark / GB10 UMA
+            if memory_total is None:
+                memory_source = "unified-memory"
+                memory_note = (
+                    "DGX Spark / GB10 uses unified memory; nvidia-smi framebuffer "
+                    "memory stats may be unavailable"
+                )
 
             gpu_stats = {
                 "available": True,
@@ -151,21 +195,16 @@ def update_gpu_stats(self):
                 "memory_total": format_bytes(memory_total),
                 "memory_used": format_bytes(memory_used),
                 "memory_free": format_bytes(memory_free),
-                "memory_percent": f"{memory_percent:.1f}%",
+                "memory_percent": f"{memory_percent:.1f}%" if memory_percent is not None else "N/A",
+                "memory_source": memory_source or "unknown",
+                "memory_note": memory_note,
             }
 
-        # Store in Redis with 60 second expiration
         redis_client = celery_app.backend.client
-        redis_client.setex(
-            "gpu_stats",
-            60,  # Expire after 60 seconds
-            json.dumps(gpu_stats),
-        )
+        redis_client.setex("gpu_stats", 60, json.dumps(gpu_stats))
 
-        # Broadcast to all connected WebSocket clients
         try:
             import redis as sync_redis
-
             from app.core.config import settings
 
             broadcast_client = sync_redis.from_url(settings.REDIS_URL)
@@ -179,12 +218,10 @@ def update_gpu_stats(self):
                     }
                 ),
             )
-            logger.debug("Broadcast GPU stats update via WebSocket")
         except Exception as broadcast_err:
             logger.warning(f"Failed to broadcast GPU stats: {broadcast_err}")
 
-        # Clear debounce lock (best-effort, non-critical)
-        with contextlib.suppress(Exception):  # noqa: S110
+        with contextlib.suppress(Exception):
             redis_client.delete("gpu_stats_pending")
 
         logger.debug(f"Updated GPU stats in Redis: {gpu_stats}")
@@ -192,15 +229,15 @@ def update_gpu_stats(self):
 
     except ImportError:
         logger.warning("PyTorch not available for GPU monitoring")
-        gpu_stats = {
+        return {
             "available": False,
             "name": "PyTorch Not Installed",
             "memory_total": "N/A",
             "memory_used": "N/A",
             "memory_free": "N/A",
             "memory_percent": "N/A",
+            "memory_source": "none",
         }
-        return gpu_stats
     except Exception as e:
         logger.error(f"Error updating GPU stats: {str(e)}")
         return {
@@ -210,8 +247,8 @@ def update_gpu_stats(self):
             "memory_used": "Unknown",
             "memory_free": "Unknown",
             "memory_percent": "Unknown",
+            "memory_source": "error",
             "error": str(e),
         }
-
-
+        
 # All recovery tasks have been moved to app.tasks.recovery

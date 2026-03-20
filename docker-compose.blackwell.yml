@@ -1,0 +1,43 @@
+services:
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.blackwell
+    image: opentranscribe-backend:blackwell
+    pull_policy: never
+    user: "1000:1000"
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu --pool=solo
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      MINIO_HOST: minio
+      MINIO_PORT: 9000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      OPENSEARCH_HOST: opensearch
+      OPENSEARCH_PORT: 9200
+      MODELS_DIRECTORY: /app/models
+      MODEL_BASE_DIR: /app/models
+      TEMP_DIR: /app/temp
+      TORCH_CUDA_ARCH_LIST: "9.0"
+      CUDA_FORCE_PTX_JIT: "1"
+      HF_HOME: /home/user/.cache/huggingface
+      TRANSFORMERS_CACHE: /home/user/.cache/huggingface/transformers
+      TORCH_HOME: /home/user/.cache/torch
+      NLTK_DATA: /home/user/.cache/nltk_data
+      SENTENCE_TRANSFORMERS_HOME: /home/user/.cache/sentence-transformers
+      XDG_CACHE_HOME: /home/user/.cache
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/user/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/user/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/user/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/user/.cache/sentence-transformers
+      - ${MODEL_CACHE_DIR:-./models}/yt-dlp:/home/user/.cache/yt-dlp
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
