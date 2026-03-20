@@ -46,6 +46,9 @@ torchaudio==2.8.0
 # WhisperX latest version with ctranslate2 4.5+ support
 whisperx==3.7.0
 
+# Hugging Face Hub pinned for compatibility with libraries still using use_auth_token
+huggingface_hub==0.23.5
+
 # CTranslate2 with cuDNN 9 support (required for CUDA 12.8)
 ctranslate2>=4.6.0
 

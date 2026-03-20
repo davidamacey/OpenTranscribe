@@ -115,12 +115,17 @@ get_compose_files() {
         compose_files="$compose_files -f docker-compose.prod.yml"
     fi
 
-    # Add GPU overlay if NVIDIA runtime is available and overlay exists
+    # Add GPU overlay if NVIDIA runtime is available
     local docker_runtime
     docker_runtime=$(detect_nvidia_runtime)
-    if [ "$docker_runtime" = "nvidia" ] && [ -f docker-compose.gpu.yml ]; then
-        compose_files="$compose_files -f docker-compose.gpu.yml"
-        echo -e "${BLUE}🎯 GPU acceleration enabled (NVIDIA Container Toolkit detected)${NC}" >&2
+    if [ "$docker_runtime" = "nvidia" ]; then
+        if [ -f docker-compose.blackwell.yml ]; then
+            compose_files="$compose_files -f docker-compose.blackwell.yml"
+            echo -e "${BLUE}🎯 Blackwell GPU overlay enabled${NC}" >&2
+        elif [ -f docker-compose.gpu.yml ]; then
+            compose_files="$compose_files -f docker-compose.gpu.yml"
+            echo -e "${BLUE}🎯 GPU acceleration enabled (standard NVIDIA overlay)${NC}" >&2
+        fi
     fi
 
     # Add NGINX overlay if NGINX_SERVER_NAME is configured

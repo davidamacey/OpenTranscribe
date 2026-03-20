@@ -8,7 +8,6 @@
 
 services:
   postgres:
-    container_name: opentranscribe-postgres
     image: postgres:17.5-alpine
     restart: always
     env_file: .env
@@ -24,7 +23,6 @@ services:
       retries: 5
 
   minio:
-    container_name: opentranscribe-minio
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
     env_file: .env
@@ -41,7 +39,6 @@ services:
       retries: 5
 
   redis:
-    container_name: opentranscribe-redis
     image: redis:8.2.2-alpine3.22
     restart: always
     env_file: .env
@@ -68,7 +65,6 @@ services:
       retries: 50
 
   opensearch:
-    container_name: opentranscribe-opensearch
     image: opensearchproject/opensearch:3.3.1
     restart: always
     environment:
@@ -92,7 +88,6 @@ services:
       retries: 20
 
   backend:
-    container_name: opentranscribe-backend
     restart: always
     env_file: .env
     # Backend handles API requests only - no AI models needed
@@ -130,7 +125,6 @@ services:
         condition: service_healthy
 
   celery-worker:
-    container_name: opentranscribe-celery-worker
     restart: always
     env_file: .env
     command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=1
@@ -169,7 +163,6 @@ services:
       - opensearch
 
   celery-download-worker:
-    container_name: opentranscribe-celery-download-worker
     restart: always
     env_file: .env
     command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=3 --max-tasks-per-child=10
@@ -200,7 +193,6 @@ services:
       - opensearch
 
   celery-cpu-worker:
-    container_name: opentranscribe-celery-cpu-worker
     restart: always
     env_file: .env
     command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility --concurrency=8 --max-tasks-per-child=20
@@ -228,7 +220,6 @@ services:
       - opensearch
 
   celery-nlp-worker:
-    container_name: opentranscribe-celery-nlp-worker
     restart: always
     env_file: .env
     command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=4 --max-tasks-per-child=50
@@ -256,7 +247,6 @@ services:
       - opensearch
 
   celery-beat:
-    container_name: opentranscribe-celery-beat
     restart: always
     env_file: .env
     command: celery -A app.core.celery beat --loglevel=info
@@ -286,7 +276,6 @@ services:
   # GPU configuration (deploy.resources.reservations) is provided by gpu-scale.yml
   # Image/build/volumes provided by override.yml (dev) or prod.yml/offline.yml
   celery-worker-gpu-scaled:
-    container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-scaled
     profiles:
       - gpu-scale  # Only activated with --gpu-scale flag
     scale: 0  # Disabled by default, gpu-scale.yml sets scale: 1
@@ -314,7 +303,6 @@ services:
       - opensearch
 
   frontend:
-    container_name: opentranscribe-frontend
     restart: always
     env_file: .env
     # Note: ports, healthcheck, and NODE_ENV defined in override files (dev vs prod)
@@ -323,7 +311,6 @@ services:
         condition: service_healthy
 
   flower:
-    container_name: opentranscribe-flower
     restart: always
     env_file: .env
     command: >
