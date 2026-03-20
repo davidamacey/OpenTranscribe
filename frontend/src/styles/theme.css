@@ -1,6 +1,10 @@
 /* Theme Variables */
 
 :root {
+  /* Layout metrics */
+  --navbar-height: 60px;
+  --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px));
+
   /* Default Light Theme */
   --primary-color: #3b82f6; /* Original blue color */
   --primary-color-rgb: 59, 130, 246; /* RGB values for primary color */
@@ -60,6 +64,11 @@
   --text-muted: var(--text-secondary);
   --input-bg: var(--input-background);
   --text-light: var(--text-secondary);
+
+  /* Surface elevation levels (used by file-detail components) */
+  --surface-secondary: #f1f5f9;
+  --surface-hover: rgba(0, 0, 0, 0.04);
+  --background-secondary: #f1f5f9;
 }
 
 /* Dark Theme */
@@ -122,6 +131,11 @@
   --text-muted: var(--text-secondary);
   --input-bg: var(--input-background);
   --text-light: var(--text-secondary);
+
+  /* Surface elevation levels - dark mode */
+  --surface-secondary: #1e293b;
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --background-secondary: #1e293b;
 }
 
 /* Global styles that should adapt to theme */

@@ -1535,7 +1535,7 @@
 <style>
   /* Main Container - Fixed Height Layout */
   .media-library-container {
-    height: calc(100vh - 60px); /* Full viewport minus navbar only */
+    height: calc(100vh - var(--content-top, 60px)); /* Full viewport minus navbar + safe-area */
     display: flex;
     overflow: hidden;
     padding-top: 0;
@@ -1793,10 +1793,10 @@
 
     .filter-sidebar {
       position: fixed;
-      top: 60px;
+      top: var(--content-top, 60px);
       left: -100%;
       width: 100%;
-      height: calc(100vh - 60px);
+      height: calc(100vh - var(--content-top, 60px));
       background: var(--surface-color);
       z-index: 1000;
       transition: left 0.3s ease;
@@ -1858,7 +1858,7 @@
     gap: 1rem;
     margin-bottom: 0.75rem;
     padding: 0.75rem 0;
-    background-color: var(--background-color);
+    background-color: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
     margin-left: -1.5rem;
     margin-right: -1.5rem;

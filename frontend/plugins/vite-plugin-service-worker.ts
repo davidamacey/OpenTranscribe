@@ -4,19 +4,18 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 
 const CACHE_NAME = 'transcribe-app-cache-v1';
+// Vite outputs hashed assets (e.g. /assets/index-[hash].css) — do NOT cache
+// /build/bundle.* paths (those were Svelte Rollup, not Vite). Cache only stable
+// paths that are guaranteed to exist after a Vite build.
 const ASSETS_TO_CACHE = [
   '/',
-  '/index.html',
-  '/global.css',
-  '/build/bundle.css',
-  '/build/bundle.js',
-  '/fonts/Poppins-Light.woff2',
+  '/manifest.json',
+  '/favicon.ico',
   '/fonts/Poppins-Regular.woff2',
   '/fonts/Poppins-Medium.woff2',
-  '/fonts/Poppins-SemiBold.woff2',
   '/fonts/Poppins-Bold.woff2',
-  '/favicon.ico',
-  '/favicon.svg',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
 ];
 
 export default function serviceWorkerPlugin(): Plugin {

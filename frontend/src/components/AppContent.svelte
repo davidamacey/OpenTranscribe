@@ -12,7 +12,7 @@
 <style>
   .content {
     padding: 1rem;
-    margin-top: 60px; /* Navbar height */
+    margin-top: var(--content-top, 60px);
   }
 
   /* Remove padding for gallery page - it handles its own layout */

@@ -15,6 +15,7 @@
   import { locale } from "../stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
   import { networkStore } from "../stores/network";
+  import { register as registerServiceWorker } from "../serviceWorkerRegistration";
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
@@ -31,6 +32,9 @@
 
   // Initialize auth state when the component mounts
   onMount(async () => {
+    // Register service worker for PWA support
+    registerServiceWorker();
+
     // Initialize theme
     document.documentElement.setAttribute('data-theme', get(theme));
 
@@ -137,7 +141,7 @@
   .content {
     flex: 1;
     padding: 1rem;
-    margin-top: 60px; /* Navbar height */
+    margin-top: var(--content-top, 60px);
   }
 
   .content.no-navbar {

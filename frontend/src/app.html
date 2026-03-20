@@ -37,10 +37,18 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png" />
+    <!-- Apple PWA meta tags for iOS standalone mode -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="OpenTranscribe" />
+    <!-- 180x180 is the correct size for Apple touch icons (iOS ignores the sizes attribute) -->
+    <link rel="apple-touch-icon" href="/icons/icon-180x180.png" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#3b82f6" />
+    <!-- viewport-fit=cover enables env(safe-area-inset-*) for iPhone notch/Dynamic Island -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Theme color with media queries for light/dark mode -->
+    <meta name="theme-color" content="#3b82f6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1e293b" media="(prefers-color-scheme: dark)" />
     <title>OpenTranscribe</title>
     <!-- Local fonts -->
     <style>
@@ -140,6 +148,32 @@
       .loading-placeholder {
         background-color: var(--bg-primary);
         color: var(--text-primary);
+      }
+
+      /* iOS PWA improvements */
+      * {
+        /* Prevent iOS blue flash on tap */
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      html,
+      body,
+      #app {
+        /* Prevent horizontal scroll on mobile */
+        overflow-x: hidden;
+        max-width: 100vw;
+      }
+
+      body {
+        /* Prevent pull-to-refresh on the main app container */
+        overscroll-behavior-y: none;
+      }
+
+      /* Prevent iOS input zoom (requires font-size >= 16px) */
+      input,
+      select,
+      textarea {
+        font-size: max(16px, 1rem);
       }
     </style>
   </head>

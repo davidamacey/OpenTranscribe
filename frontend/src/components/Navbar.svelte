@@ -37,6 +37,12 @@
   // About modal state
   let showAboutModal = false;
 
+  // Mobile menu state
+  let mobileMenuOpen = false;
+
+  // Close mobile menu on route change
+  $: if ($page.url.pathname) mobileMenuOpen = false;
+
   // Reactive recording state from store - use store directly
   $: hasActiveRecording = $recordingStore.hasActiveRecording;
   $: isRecording = $recordingStore.isRecording;
@@ -238,6 +244,10 @@
     }
   }
 
+  function closeMobileMenu() {
+    mobileMenuOpen = false;
+  }
+
   // Setup and cleanup event listeners
   onMount(() => {
     document.addEventListener('click', handleClickOutside);
@@ -301,7 +311,7 @@
     <!-- Spacer to push right elements to far right -->
     <div class="navbar-spacer"></div>
 
-    <div class="nav-links">
+    <div class="nav-links" class:open={mobileMenuOpen}>
       <!-- Gallery link - only show when not on gallery/file pages -->
       {#if showGalleryLink}
         <a
@@ -568,17 +578,32 @@
     </div>
 
     <div class="mobile-toggle">
-      <button>
+      <button on:click|stopPropagation={() => (mobileMenuOpen = !mobileMenuOpen)} aria-label={$t('nav.menu')} aria-expanded={mobileMenuOpen}>
         <span class="sr-only">{$t('nav.menu')}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="3" y1="12" x2="21" y2="12"></line>
-          <line x1="3" y1="6" x2="21" y2="6"></line>
-          <line x1="3" y1="18" x2="21" y2="18"></line>
-        </svg>
+        {#if mobileMenuOpen}
+          <!-- X icon when open -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        {:else}
+          <!-- Hamburger icon when closed -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        {/if}
       </button>
     </div>
   </div>
 </nav>
+
+{#if mobileMenuOpen}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="mobile-overlay" on:click={closeMobileMenu}></div>
+{/if}
 
 <!-- Add the NotificationsPanel component -->
 {#if showNotifs}
@@ -594,7 +619,8 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 60px;
+    height: calc(60px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
     background-color: var(--surface-color);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     z-index: 1000;
@@ -1041,6 +1067,20 @@
     display: none;
   }
 
+  .mobile-overlay {
+    display: none;
+  }
+
+  @media (max-width: 768px) {
+    .mobile-overlay {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: 998;
+      background: transparent;
+    }
+  }
+
   .sr-only {
     position: absolute;
     width: 1px;
@@ -1088,6 +1128,33 @@
       display: none;
     }
 
+    .nav-links.open {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.25rem;
+      position: fixed;
+      top: calc(60px + env(safe-area-inset-top, 0px));
+      left: 0;
+      right: 0;
+      background: var(--surface-color);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.75rem 1rem;
+      z-index: 999;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      max-height: calc(100vh - 60px - env(safe-area-inset-top, 0px));
+      overflow-y: auto;
+    }
+
+    /* Make nav items full-width in mobile menu */
+    .nav-links.open :global(.nav-link),
+    .nav-links.open :global(.nav-btn) {
+      width: 100%;
+      justify-content: flex-start;
+      padding: 0.75rem 1rem;
+      min-height: 44px;
+    }
+
     .mobile-toggle {
       display: block;
     }
@@ -1097,6 +1164,11 @@
       border: none;
       cursor: pointer;
       color: var(--text-color);
+      min-width: 44px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     /* Mobile dropdown adjustments */
