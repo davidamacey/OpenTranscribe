@@ -2622,55 +2622,20 @@
       flex-direction: column;
     }
 
-    /* Sidebar becomes horizontal scrollable strip on mobile */
+    /* Hide full sidebar on mobile — use select dropdown */
     .settings-sidebar {
-      width: 100%;
-      max-height: none;
-      border-right: none;
-      border-bottom: 1px solid var(--border-color);
-      padding: 0.5rem 0;
-      overflow-y: hidden;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      flex-shrink: 0;
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 0;
-    }
-
-    .settings-title {
       display: none;
     }
 
-    .sidebar-section {
-      display: contents;
-    }
-
-    .section-heading {
-      display: none;
-    }
-
-    .section-nav {
-      display: flex;
-      flex-direction: row;
-      gap: 0;
-    }
-
-    .nav-item {
-      white-space: nowrap;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.75rem;
-      border-radius: 0;
-      min-height: 40px;
-    }
-
-    .nav-item.active {
-      border-bottom: 2px solid var(--primary-color);
-    }
-
-    /* Hide mobile select dropdown — sidebar is visible */
+    /* Show mobile nav with select dropdown */
     .settings-mobile-nav {
-      display: none;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 3rem 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+      background: var(--surface-color);
     }
 
     .settings-mobile-title {
