@@ -623,7 +623,7 @@
     padding-top: env(safe-area-inset-top, 0px);
     background-color: var(--surface-color);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    z-index: 1000;
+    z-index: 1200;
     overflow: visible; /* Allow button hover effects to display properly */
   }
 
@@ -1076,8 +1076,8 @@
       display: block;
       position: fixed;
       inset: 0;
-      z-index: 998;
-      background: transparent;
+      z-index: 1099;
+      background: rgba(0, 0, 0, 0.2);
     }
   }
 
@@ -1133,7 +1133,7 @@
       background: var(--surface-color);
       border-bottom: 1px solid var(--border-color);
       padding: 0.75rem 1rem;
-      z-index: 999;
+      z-index: 1100;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
       max-height: calc(100vh - 60px - env(safe-area-inset-top, 0px));
       max-height: calc(100dvh - 60px - env(safe-area-inset-top, 0px));

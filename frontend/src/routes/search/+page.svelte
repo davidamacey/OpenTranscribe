@@ -849,16 +849,17 @@
   .search-title-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.375rem;
+    margin-bottom: 1rem;
   }
 
   .back-to-gallery {
-    display: none; /* Hidden on desktop — nav has the link */
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
     color: var(--text-secondary);
     text-decoration: none;
     flex-shrink: 0;
@@ -874,7 +875,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--text-color, #111827);
-    margin: 0 0 1rem;
+    margin: 0;
   }
 
   .search-bar {
@@ -1219,7 +1220,8 @@
     }
 
     .back-to-gallery {
-      display: flex;
+      width: 36px;
+      height: 36px;
     }
 
     .results {
