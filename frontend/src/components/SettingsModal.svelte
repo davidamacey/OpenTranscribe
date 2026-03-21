@@ -2620,6 +2620,7 @@
 
     .settings-modal-container {
       flex-direction: column;
+      overflow: visible;
     }
 
     /* Hide full sidebar on mobile — use select dropdown */
