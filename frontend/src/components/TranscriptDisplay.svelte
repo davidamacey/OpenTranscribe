@@ -50,6 +50,18 @@
   export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
 
+  // Export dropdown state (click-based for mobile touch support)
+  let showExportDropdown = false;
+
+  function toggleExportDropdown(event: MouseEvent) {
+    event.stopPropagation();
+    showExportDropdown = !showExportDropdown;
+  }
+
+  function closeExportDropdown() {
+    showExportDropdown = false;
+  }
+
   // Create a reactive key based on speakerList to force re-renders of speaker sections
   // This ensures Edit Speakers and Merge Speakers sections update when speakers change
   $: speakerListKey = speakerList.map(s => s.uuid).join('-');
@@ -545,6 +557,9 @@
 
 </script>
 
+<!-- Close export dropdown on outside click -->
+<svelte:window on:click={closeExportDropdown} />
+
 <section class="transcript-column">
   <div class="transcript-header">
     <!-- Search component moved to header -->
@@ -815,10 +830,11 @@
 
 
       <div class="transcript-actions">
-        <div class="export-dropdown">
+        <div class="export-dropdown" class:open={showExportDropdown}>
           <button
             class="export-transcript-button"
             title={$t('transcript.exportTitle')}
+            on:click={toggleExportDropdown}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -833,28 +849,32 @@
               <line x1="9" y1="17" x2="11" y2="17"></line>
             </svg>
           </button>
-          <div class="export-dropdown-content">
-            <button
-              on:click={() => exportTranscript('txt')}
-              title={$t('transcript.exportTextTitle')}
-            >{$t('transcript.exportText')}</button>
-            <button
-              on:click={() => exportTranscript('json')}
-              title={$t('transcript.exportJsonTitle')}
-            >{$t('transcript.exportJson')}</button>
-            <button
-              on:click={() => exportTranscript('csv')}
-              title={$t('transcript.exportCsvTitle')}
-            >{$t('transcript.exportCsv')}</button>
-            <button
-              on:click={() => exportTranscript('srt')}
-              title={$t('transcript.exportSrtTitle')}
-            >{$t('transcript.exportSrt')}</button>
-            <button
-              on:click={() => exportTranscript('vtt')}
-              title={$t('transcript.exportVttTitle')}
-            >{$t('transcript.exportVtt')}</button>
-          </div>
+          {#if showExportDropdown}
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <div class="export-dropdown-content" on:click|stopPropagation>
+              <button
+                on:click={() => { exportTranscript('txt'); closeExportDropdown(); }}
+                title={$t('transcript.exportTextTitle')}
+              >{$t('transcript.exportText')}</button>
+              <button
+                on:click={() => { exportTranscript('json'); closeExportDropdown(); }}
+                title={$t('transcript.exportJsonTitle')}
+              >{$t('transcript.exportJson')}</button>
+              <button
+                on:click={() => { exportTranscript('csv'); closeExportDropdown(); }}
+                title={$t('transcript.exportCsvTitle')}
+              >{$t('transcript.exportCsv')}</button>
+              <button
+                on:click={() => { exportTranscript('srt'); closeExportDropdown(); }}
+                title={$t('transcript.exportSrtTitle')}
+              >{$t('transcript.exportSrt')}</button>
+              <button
+                on:click={() => { exportTranscript('vtt'); closeExportDropdown(); }}
+                title={$t('transcript.exportVttTitle')}
+              >{$t('transcript.exportVtt')}</button>
+            </div>
+          {/if}
         </div>
 
         {#if !diarizationDisabled}
@@ -1733,12 +1753,7 @@
     }
   }
 
-  .export-dropdown:hover .export-dropdown-content {
-    display: block;
-  }
-
   .export-dropdown-content {
-    display: none;
     position: absolute;
     top: 100%;
     left: 0;
