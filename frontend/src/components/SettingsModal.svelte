@@ -2630,11 +2630,11 @@
 
     /* Show mobile nav with select dropdown */
     .settings-mobile-nav {
-      display: flex;
+      display: flex !important;
       align-items: center;
       gap: 0.75rem;
       padding: 0.75rem 3rem 0.75rem 1rem;
-      border-bottom: 1px solid var(--border-color);
+      border-bottom: 2px solid var(--primary-color);
       flex-shrink: 0;
       background: var(--surface-color);
     }
