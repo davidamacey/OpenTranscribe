@@ -149,7 +149,7 @@ async def upload_media_file(
         skip_summary_header = request.headers.get("X-Skip-Summary", "")
         skip_summary = skip_summary_header.lower() in ("true", "1", "yes")
 
-    # Process the file upload
+    # Process the file upload (whisper_model is read from the DB record set during prepare)
     db_file = await process_file_upload(
         file,
         db,
@@ -160,7 +160,7 @@ async def upload_media_file(
         speaker_params.max_speakers,
         speaker_params.num_speakers,
         skip_summary=skip_summary,
-    )
+    )  # whisper_model auto-read from db_file.requested_whisper_model inside
 
     # Invalidate caches so gallery picks up the new file
     try:
@@ -890,6 +890,7 @@ async def reprocess_media_file(
     max_speakers = reprocess_request.max_speakers if reprocess_request else None
     num_speakers = reprocess_request.num_speakers if reprocess_request else None
     stages: list[str] = list(reprocess_request.stages) if reprocess_request else []
+    whisper_model = reprocess_request.whisper_model if reprocess_request else None
 
     return await process_file_reprocess(
         file_uuid,
@@ -899,6 +900,7 @@ async def reprocess_media_file(
         max_speakers,
         num_speakers,  # type: ignore[arg-type]
         stages=stages,
+        whisper_model=whisper_model,
     )
 
 

@@ -3323,5 +3323,16 @@
   "summary.adminEnableHint": "AI\u8981\u7d04\u751f\u6210\u3092\u6709\u52b9\u306b\u3059\u308b\u306b\u306f\u7ba1\u7406\u8005\u306b\u304a\u554f\u3044\u5408\u308f\u305b\u304f\u3060\u3055\u3044",
 
   "common.enabled": "\u6709\u52b9",
-  "common.disabled": "\u7121\u52b9"
+  "common.disabled": "\u7121\u52b9",
+
+  "settings.sharing.adminBadge": "管理者",
+  "uploader.whisperModel": "文字起こしモデル",
+  "uploader.whisperModelHint": "この文字起こしに使用するWhisperモデルを選択",
+  "uploader.useSystemDefault": "システムデフォルトを使用",
+  "uploader.systemDefault": "デフォルト",
+  "uploader.notDownloaded": "未ダウンロード",
+  "uploader.turboNoTranslation": "注意: このモデルは翻訳をサポートしていません。このファイルの翻訳は無効になります。",
+  "fileDetail.whisperModel": "ASRモデル",
+  "fileDetail.modelFallback": "フォールバック",
+  "fileDetail.requestedModel": "要求されたモデル"
 }

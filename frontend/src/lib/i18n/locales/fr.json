@@ -3323,5 +3323,15 @@
   "summary.adminEnableHint": "Contactez votre administrateur pour activer la g\u00e9n\u00e9ration de r\u00e9sum\u00e9s IA",
 
   "common.enabled": "Activ\u00e9",
-  "common.disabled": "D\u00e9sactiv\u00e9"
+  "common.disabled": "D\u00e9sactiv\u00e9",
+
+  "uploader.whisperModel": "Modele de transcription",
+  "uploader.whisperModelHint": "Choisir un modele Whisper pour cette transcription",
+  "uploader.useSystemDefault": "Utiliser la valeur par defaut",
+  "uploader.systemDefault": "par defaut",
+  "uploader.notDownloaded": "non telecharge",
+  "uploader.turboNoTranslation": "Remarque : Ce modele ne prend pas en charge la traduction. La traduction sera desactivee pour ce fichier.",
+  "fileDetail.whisperModel": "Modele ASR",
+  "fileDetail.modelFallback": "Repli",
+  "fileDetail.requestedModel": "Modele demande"
 }

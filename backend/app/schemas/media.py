@@ -15,6 +15,23 @@ from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward
 from app.schemas.base import UUIDBaseSchema
 from app.schemas.user import UserBrief
 
+VALID_LOCAL_WHISPER_MODELS = frozenset(
+    {
+        "tiny",
+        "tiny.en",
+        "base",
+        "base.en",
+        "small",
+        "small.en",
+        "medium",
+        "medium.en",
+        "large-v1",
+        "large-v2",
+        "large-v3",
+        "large-v3-turbo",
+    }
+)
+
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -61,6 +78,13 @@ class ReprocessRequest(BaseModel):
         None,
         description="Skip speaker diarization entirely",
     )
+    whisper_model: Optional[str] = Field(
+        None,
+        description="Whisper model to use for reprocessing. "
+        "None = use admin-configured default. "
+        "Only applies to local ASR provider.",
+        examples=["tiny", "medium", "large-v2", "large-v3", "large-v3-turbo"],
+    )
 
     @field_validator("min_speakers", "max_speakers", "num_speakers")
     @classmethod
@@ -69,6 +93,19 @@ class ReprocessRequest(BaseModel):
         if v is not None and v < 1:
             raise ValueError("Speaker count must be at least 1")
         return v
+
+    @field_validator("whisper_model")
+    @classmethod
+    def validate_whisper_model(cls, v: Optional[str]) -> Optional[str]:
+        """Validate that whisper_model is a known local model name."""
+        if v is None:
+            return v
+        v = v.strip()
+        if v and v not in VALID_LOCAL_WHISPER_MODELS:
+            raise ValueError(
+                f"Unknown Whisper model '{v}'. Valid models: {sorted(VALID_LOCAL_WHISPER_MODELS)}"
+            )
+        return v or None
 
     @model_validator(mode="after")
     def validate_min_max_speakers(self) -> "ReprocessRequest":
@@ -138,6 +175,13 @@ class PrepareUploadRequest(BaseModel):
         description="Client-generated UUID to group files uploaded together into a batch. "
         "All files sharing the same upload_batch_id will be linked to the same UploadBatch record.",
     )
+    whisper_model: Optional[str] = Field(
+        None,
+        description="Whisper model to use for this file. "
+        "None = use admin-configured default. "
+        "Only applies to local ASR provider.",
+        examples=["tiny", "medium", "large-v2", "large-v3", "large-v3-turbo"],
+    )
 
     @field_validator("min_speakers", "max_speakers", "num_speakers")
     @classmethod
@@ -146,6 +190,19 @@ class PrepareUploadRequest(BaseModel):
         if v is not None and v < 1:
             raise ValueError("Speaker count must be at least 1")
         return v
+
+    @field_validator("whisper_model")
+    @classmethod
+    def validate_whisper_model(cls, v: Optional[str]) -> Optional[str]:
+        """Validate that whisper_model is a known local model name."""
+        if v is None:
+            return v
+        v = v.strip()
+        if v and v not in VALID_LOCAL_WHISPER_MODELS:
+            raise ValueError(
+                f"Unknown Whisper model '{v}'. Valid models: {sorted(VALID_LOCAL_WHISPER_MODELS)}"
+            )
+        return v or None
 
     @model_validator(mode="after")
     def validate_min_max_speakers(self) -> "PrepareUploadRequest":

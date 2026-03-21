@@ -3323,5 +3323,15 @@
   "summary.adminEnableHint": "Contate seu administrador para ativar a gera\u00e7\u00e3o de resumos IA",
 
   "common.enabled": "Ativado",
-  "common.disabled": "Desativado"
+  "common.disabled": "Desativado",
+
+  "uploader.whisperModel": "Modelo de transcricao",
+  "uploader.whisperModelHint": "Escolher um modelo Whisper para esta transcricao",
+  "uploader.useSystemDefault": "Usar padrao do sistema",
+  "uploader.systemDefault": "padrao",
+  "uploader.notDownloaded": "nao baixado",
+  "uploader.turboNoTranslation": "Nota: Este modelo nao suporta traducao. A traducao sera desativada para este arquivo.",
+  "fileDetail.whisperModel": "Modelo ASR",
+  "fileDetail.modelFallback": "Fallback",
+  "fileDetail.requestedModel": "Modelo solicitado"
 }

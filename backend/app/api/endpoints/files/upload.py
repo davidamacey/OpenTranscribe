@@ -138,6 +138,7 @@ def start_transcription_task(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    whisper_model: str | None = None,
     user_id: int | None = None,
     db=None,
     disable_diarization: bool | None = None,
@@ -154,6 +155,7 @@ def start_transcription_task(
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
+        whisper_model: Optional Whisper model override for this transcription
         user_id: Unused (kept for backward compatibility)
         db: Unused (kept for backward compatibility)
     """
@@ -168,6 +170,7 @@ def start_transcription_task(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             disable_diarization=disable_diarization,
+            whisper_model=whisper_model,
         )
         # Launch CPU waveform generation task in parallel
         generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
@@ -334,6 +337,7 @@ async def process_file_upload(
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     skip_summary: bool = False,
+    whisper_model: str | None = None,
 ) -> MediaFile:
     """
     Complete file upload processing pipeline with chunked upload support for large files.
@@ -348,6 +352,7 @@ async def process_file_upload(
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
+        whisper_model: Optional Whisper model override for this transcription
 
     Returns:
         Created MediaFile object with storage path updated
@@ -418,6 +423,10 @@ async def process_file_upload(
         db.commit()
         db.refresh(db_file)
 
+        # Read requested model from the prepare step if not explicitly provided
+        if not whisper_model and db_file.requested_whisper_model:
+            whisper_model = db_file.requested_whisper_model
+
         # Start background transcription and waveform generation in parallel
         start_transcription_task(
             int(db_file.id),
@@ -425,6 +434,7 @@ async def process_file_upload(
             min_speakers,
             max_speakers,
             num_speakers,
+            whisper_model=whisper_model,
             user_id=int(current_user.id),
             db=db,
         )

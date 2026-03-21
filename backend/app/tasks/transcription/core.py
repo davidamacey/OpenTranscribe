@@ -39,6 +39,68 @@ from .storage import update_media_file_transcription_status
 
 logger = logging.getLogger(__name__)
 
+_VALID_LOCAL_MODELS = frozenset(
+    {
+        "tiny",
+        "tiny.en",
+        "base",
+        "base.en",
+        "small",
+        "small.en",
+        "medium",
+        "medium.en",
+        "large-v1",
+        "large-v2",
+        "large-v3",
+        "large-v3-turbo",
+    }
+)
+
+
+class _ModelNotAvailableError(Exception):
+    """Raised when a requested model is not available on this worker."""
+
+    def __init__(self, model_name: str) -> None:
+        self.model_name = model_name
+        super().__init__(f"Model '{model_name}' not available on this worker")
+
+
+def _validate_model_override(model_name: str) -> None:
+    """Validate a per-task model override and check availability.
+
+    Args:
+        model_name: The requested Whisper model name.
+
+    Raises:
+        _ModelNotAvailableError: If the model is not downloaded.
+    """
+    if model_name not in _VALID_LOCAL_MODELS:
+        logger.warning(
+            "Unknown model override '%s', ignoring and using admin default",
+            model_name,
+        )
+        raise _ModelNotAvailableError(model_name)
+
+    # Best-effort check if model is downloaded on this worker
+    try:
+        from app.services.asr.model_discovery import get_downloaded_model_names
+
+        downloaded = get_downloaded_model_names()
+        if model_name not in downloaded:
+            logger.warning(
+                "Requested model '%s' is not downloaded on this worker; "
+                "falling back to admin-pinned model.",
+                model_name,
+            )
+            raise _ModelNotAvailableError(model_name)
+    except _ModelNotAvailableError:
+        raise
+    except Exception as e:
+        logger.debug(
+            "Model availability check failed (%s), proceeding optimistically",
+            e,
+        )
+
 
 # Deprecation warning for legacy TRANSCRIPTION_ENGINE env var
 _engine = os.getenv("TRANSCRIPTION_ENGINE", "")
@@ -735,6 +797,7 @@ def _run_transcription_pipeline(
     source_language: str | None = None,
     translate_to_english: bool | None = None,
     disable_diarization: bool = False,
+    whisper_model: str | None = None,
 ) -> dict:
     """Run the unified transcription pipeline."""
     from app.transcription import TranscriptionConfig
@@ -769,7 +832,29 @@ def _run_transcription_pipeline(
         repetition_penalty=user_settings["repetition_penalty"],
         enable_diarization=not disable_diarization,
     )
-    # No model_name override — local model is pinned at worker startup via WHISPER_MODEL env var
+
+    # Apply per-task model override if provided
+    if whisper_model:
+        # Guard: disallow in concurrent GPU mode to prevent model-swap crashes
+        concurrent_requests = int(os.environ.get("GPU_CONCURRENT_REQUESTS", "1"))
+        if concurrent_requests > 1:
+            logger.warning(
+                "Per-task model override ('%s') is not supported in concurrent "
+                "GPU mode (concurrent_requests=%d). Using admin-pinned model.",
+                whisper_model,
+                concurrent_requests,
+            )
+        else:
+            try:
+                _validate_model_override(whisper_model)
+                overrides["model_name"] = whisper_model
+                logger.info(
+                    "Per-task model override: '%s' (admin default: '%s')",
+                    whisper_model,
+                    TranscriptionConfig._pinned_model_name,
+                )
+            except _ModelNotAvailableError as e:
+                logger.warning("Falling back to admin default: %s", e)
 
     config = TranscriptionConfig.from_environment(**overrides)
 
@@ -1936,7 +2021,15 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                     media_file.diarization_disabled = disable_diarization
                     db.commit()
 
+            whisper_model = preprocess_context.get("whisper_model")
+
             if provider is not None and provider.provider_name != "local":
+                # Per-task model override is only for local ASR
+                if whisper_model:
+                    logger.info(
+                        "whisper_model override '%s' ignored for cloud ASR provider",
+                        whisper_model,
+                    )
                 result = _run_cloud_asr_pipeline(
                     ctx,
                     local_audio_path,
@@ -1955,6 +2048,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                     source_language=preprocess_context.get("source_language"),
                     translate_to_english=preprocess_context.get("translate_to_english"),
                     disable_diarization=disable_diarization,
+                    whisper_model=whisper_model,
                 )
 
             # Annotate result with diarization_disabled flag for downstream

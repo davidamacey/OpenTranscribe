@@ -66,6 +66,7 @@ def dispatch_transcription_pipeline(
     translate_to_english: bool | None = None,
     gpu_queue: str | None = None,
     disable_diarization: bool | None = None,
+    whisper_model: str | None = None,
 ) -> str:
     """Build and dispatch a 3-stage transcription chain.
 
@@ -83,6 +84,7 @@ def dispatch_transcription_pipeline(
         translate_to_english: Override translation setting.
         gpu_queue: Queue for GPU task. None = auto-resolve from user's ASR
             provider ('gpu' for local, 'cloud-asr' for cloud providers).
+        whisper_model: Optional per-task Whisper model override (local ASR only).
     """
     from .core import transcribe_gpu_task
     from .postprocess import finalize_transcription
@@ -119,6 +121,7 @@ def dispatch_transcription_pipeline(
             source_language=source_language,
             translate_to_english=translate_to_english,
             disable_diarization=disable_diarization,
+            whisper_model=whisper_model,
         ).set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
         transcribe_gpu_task.s().set(queue=gpu_queue, priority=GPUPriority.USER_IMPORT),
         finalize_transcription.s().set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),

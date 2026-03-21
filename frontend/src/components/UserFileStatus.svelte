@@ -811,8 +811,15 @@
               </div>
               {#if detailedStatus.file.whisper_model}
                 <div class="metadata-item">
-                  <span class="metadata-label">Whisper Model:</span>
-                  <span class="metadata-value model-name-value">{detailedStatus.file.whisper_model}</span>
+                  <span class="metadata-label">{$t('fileDetail.whisperModel')}:</span>
+                  <span class="metadata-value model-name-value">
+                    {detailedStatus.file.whisper_model}
+                    {#if detailedStatus.file.model_fallback_occurred}
+                      <span class="fallback-badge" title="{$t('fileDetail.requestedModel')}: {detailedStatus.file.requested_whisper_model}">
+                        {$t('fileDetail.modelFallback')}
+                      </span>
+                    {/if}
+                  </span>
                 </div>
               {/if}
               {#if detailedStatus.file.diarization_model}
@@ -1633,6 +1640,21 @@
   .model-name-value {
     font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
     font-size: 0.85rem;
+  }
+
+  .fallback-badge {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.7rem;
+    font-family: inherit;
+    font-weight: 500;
+    border-radius: 4px;
+    background-color: rgba(var(--warning-color-rgb, 217, 119, 6), 0.15);
+    color: var(--warning-color, #d97706);
+    border: 1px solid rgba(var(--warning-color-rgb, 217, 119, 6), 0.3);
+    vertical-align: middle;
+    cursor: help;
   }
 
   .task-metadata-grid {

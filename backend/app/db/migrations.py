@@ -199,8 +199,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     has_ai_summary_setting = "system_settings" in tables and _check_exists(
         "SELECT EXISTS(SELECT 1 FROM system_settings WHERE key = 'ai.summary_enabled')"
     )
+    has_requested_whisper_model = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'requested_whisper_model')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v352: per-transcription whisper model selection
+    if has_requested_whisper_model:
+        return "v352_add_requested_whisper_model"
     # v351: AI summary enabled system setting
     if has_ai_summary_setting:
         return "v351_add_ai_summary_settings"

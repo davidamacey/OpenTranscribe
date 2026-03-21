@@ -55,6 +55,7 @@ def preprocess_for_transcription(
     source_language: str | None = None,
     translate_to_english: bool | None = None,
     disable_diarization: bool | None = None,
+    whisper_model: str | None = None,
 ) -> dict:
     """Download media, extract audio, upload to MinIO temp for GPU worker.
 
@@ -155,6 +156,7 @@ def preprocess_for_transcription(
             "source_language": source_language,
             "translate_to_english": translate_to_english,
             "disable_diarization": disable_diarization,
+            "whisper_model": whisper_model,
         }
 
     except Exception as e:

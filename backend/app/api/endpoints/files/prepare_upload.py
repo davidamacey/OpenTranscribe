@@ -205,6 +205,11 @@ async def prepare_upload(
             request.filename, int(current_user.id), int(db_file.id)
         )
         db_file.storage_path = storage_path  # type: ignore[assignment]
+
+        # Store the user's requested whisper model (if any)
+        if request.whisper_model:
+            db_file.requested_whisper_model = request.whisper_model  # type: ignore[assignment]
+
         db.flush()
 
         # If this is extracted audio, store the video metadata in metadata_important

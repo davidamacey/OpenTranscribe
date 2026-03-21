@@ -3323,5 +3323,15 @@
   "summary.adminEnableHint": "Kontaktieren Sie Ihren Administrator, um die KI-Zusammenfassungserstellung zu aktivieren",
 
   "common.enabled": "Aktiviert",
-  "common.disabled": "Deaktiviert"
+  "common.disabled": "Deaktiviert",
+
+  "uploader.whisperModel": "Transkriptionsmodell",
+  "uploader.whisperModelHint": "Whisper-Modell fuer diese Transkription waehlen",
+  "uploader.useSystemDefault": "Systemstandard verwenden",
+  "uploader.systemDefault": "Standard",
+  "uploader.notDownloaded": "nicht heruntergeladen",
+  "uploader.turboNoTranslation": "Hinweis: Dieses Modell unterstuetzt keine Uebersetzung. Die Uebersetzung wird fuer diese Datei deaktiviert.",
+  "fileDetail.whisperModel": "ASR-Modell",
+  "fileDetail.modelFallback": "Fallback",
+  "fileDetail.requestedModel": "Angefordertes Modell"
 }

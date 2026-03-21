@@ -108,6 +108,7 @@ class MediaFile(Base):
 
     # Processing model tracking
     whisper_model = Column(String, nullable=True)  # e.g., "large-v3-turbo", "large-v3"
+    requested_whisper_model = Column(String, nullable=True)  # Model user asked for at upload
     diarization_model = Column(String, nullable=True)  # e.g., "pyannote/speaker-diarization-3.1"
     embedding_mode = Column(String, nullable=True)  # "v3" (512d) or "v4" (256d)
 

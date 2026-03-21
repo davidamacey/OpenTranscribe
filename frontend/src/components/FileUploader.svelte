@@ -34,6 +34,9 @@
   // Import download quality settings API
   import { getDownloadSettings, getDownloadSystemDefaults, type DownloadSettings, type DownloadSystemDefaults } from '$lib/api/downloadSettings';
 
+  // Import ASR settings for model selection
+  import { ASRSettingsApi, type LocalWhisperModel } from '$lib/api/asrSettings';
+
   // Import network connectivity store
   import { isOnline } from '../stores/network';
 
@@ -128,6 +131,11 @@
   let transcriptionSettings: TranscriptionSettings | null = null;
   let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
   let userHasManuallyToggledSettings = false; // Track if user manually expanded/collapsed
+
+  // Whisper model selection
+  let selectedWhisperModel: string | null = null;
+  let availableWhisperModels: LocalWhisperModel[] = [];
+  let adminDefaultModel = '';
 
   // Organization state (collections and tags for upload)
   let showOrganizeSection = false;
@@ -228,6 +236,20 @@
           hallucination_silence_threshold: null,
           repetition_penalty: 1.0
         };
+      }
+    })();
+
+    // Load available Whisper models and admin default
+    (async () => {
+      try {
+        const [models, activeInfo] = await Promise.all([
+          ASRSettingsApi.getLocalWhisperModels(),
+          ASRSettingsApi.getActiveLocalModel(),
+        ]);
+        availableWhisperModels = models;
+        adminDefaultModel = activeInfo.active_model || '';
+      } catch (err) {
+        console.error('Failed to load Whisper models:', err);
       }
     })();
 
@@ -1168,7 +1190,8 @@
           filename: file.name,
           file_size: file.size,
           content_type: file.type,
-          file_hash: fileHash
+          file_hash: fileHash,
+          whisper_model: selectedWhisperModel || undefined,
         });
         // Store the file ID as soon as we get it
         currentFileId = prepareResponse.data.file_id;
@@ -2186,6 +2209,37 @@
               </label>
               <span class="setting-hint">{$t('upload.skipSummaryHint')}</span>
             </div>
+
+            <!-- Whisper Model Selection -->
+            {#if availableWhisperModels.length > 0}
+              <div class="setting-field whisper-model-field">
+                <label for="whisper-model-select">
+                  {$t('uploader.whisperModel')}
+                  <span class="setting-hint">{$t('uploader.whisperModelHint')}</span>
+                </label>
+                <select id="whisper-model-select" bind:value={selectedWhisperModel} class="model-select">
+                  <option value={null}>
+                    {$t('uploader.useSystemDefault')}{adminDefaultModel ? ` (${adminDefaultModel})` : ''}
+                  </option>
+                  {#each availableWhisperModels as model}
+                    <option value={model.id} disabled={!model.downloaded}>
+                      {model.display_name}
+                      {#if !model.downloaded} ({$t('uploader.notDownloaded')}){/if}
+                      {#if model.id === adminDefaultModel} ({$t('uploader.systemDefault')}){/if}
+                    </option>
+                  {/each}
+                </select>
+                {#if selectedWhisperModel}
+                  {@const modelInfo = availableWhisperModels.find(m => m.id === selectedWhisperModel)}
+                  {#if modelInfo}
+                    <p class="model-hint-text">{modelInfo.description}</p>
+                    {#if !modelInfo.supports_translation}
+                      <p class="model-warning-text">{$t('uploader.turboNoTranslation')}</p>
+                    {/if}
+                  {/if}
+                {/if}
+              </div>
+            {/if}
           </div>
         {/if}
       </div>
@@ -3386,6 +3440,47 @@
     height: 16px;
     cursor: pointer;
     accent-color: var(--primary-color);
+  }
+
+  .whisper-model-field {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .model-select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--input-bg, var(--surface-color));
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .model-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.15);
+  }
+
+  .model-select option:disabled {
+    color: var(--text-light);
+  }
+
+  .model-hint-text {
+    margin: 0.35rem 0 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.3;
+  }
+
+  .model-warning-text {
+    margin: 0.25rem 0 0;
+    font-size: 0.8rem;
+    color: var(--warning-color, #d97706);
+    line-height: 1.3;
   }
 
   .validation-error {

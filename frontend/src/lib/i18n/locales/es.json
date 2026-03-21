@@ -3323,5 +3323,15 @@
   "summary.adminEnableHint": "Contacte a su administrador para activar la generaci\u00f3n de res\u00famenes IA",
 
   "common.enabled": "Activado",
-  "common.disabled": "Desactivado"
+  "common.disabled": "Desactivado",
+
+  "uploader.whisperModel": "Modelo de transcripcion",
+  "uploader.whisperModelHint": "Elegir un modelo Whisper para esta transcripcion",
+  "uploader.useSystemDefault": "Usar predeterminado del sistema",
+  "uploader.systemDefault": "predeterminado",
+  "uploader.notDownloaded": "no descargado",
+  "uploader.turboNoTranslation": "Nota: Este modelo no soporta traduccion. La traduccion se desactivara para este archivo.",
+  "fileDetail.whisperModel": "Modelo ASR",
+  "fileDetail.modelFallback": "Alternativa",
+  "fileDetail.requestedModel": "Modelo solicitado"
 }

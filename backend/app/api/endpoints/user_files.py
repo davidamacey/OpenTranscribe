@@ -296,6 +296,12 @@ def get_file_detailed_status(
                     media_file.status.value
                 ),
                 "whisper_model": media_file.whisper_model,
+                "requested_whisper_model": media_file.requested_whisper_model,
+                "model_fallback_occurred": (
+                    media_file.requested_whisper_model is not None
+                    and media_file.whisper_model is not None
+                    and media_file.requested_whisper_model != media_file.whisper_model
+                ),
                 "diarization_model": media_file.diarization_model,
                 "embedding_mode": media_file.embedding_mode,
             },

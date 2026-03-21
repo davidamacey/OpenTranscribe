@@ -18,6 +18,15 @@ export type ASRProvider =
 
 export type ASRConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
+export interface LocalWhisperModel {
+  id: string;
+  display_name: string;
+  description: string;
+  downloaded: boolean;
+  supports_translation: boolean;
+  language_support: string;
+}
+
 export interface ASRModelInfo {
   id: string;
   /** display_name from the backend catalog */
@@ -413,6 +422,26 @@ export class ASRSettingsApi {
       default:
         return 'status-neutral';
     }
+  }
+
+  /**
+   * Fetch the list of local Whisper models with download status.
+   *
+   * Reuses the /api/asr-settings/providers endpoint and extracts
+   * the 'local' provider's model catalog.
+   */
+  static async getLocalWhisperModels(): Promise<LocalWhisperModel[]> {
+    const { providers } = await this.getProviders();
+    const localProvider = providers.find((p) => p.id === 'local');
+    if (!localProvider) return [];
+    return localProvider.models.map((m) => ({
+      id: m.id,
+      display_name: m.display_name ?? m.name ?? m.id,
+      description: m.description ?? '',
+      downloaded: (m as any).downloaded ?? true,
+      supports_translation: m.supports_translation ?? false,
+      language_support: (m as any).language_support ?? 'multilingual',
+    }));
   }
 
   /**

@@ -84,6 +84,7 @@ def start_reprocessing_task(
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     downstream_tasks: list[str] | None = None,
+    whisper_model: str | None = None,
     user_id: int | None = None,
     db=None,
     disable_diarization: bool | None = None,
@@ -100,6 +101,7 @@ def start_reprocessing_task(
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
         downstream_tasks: Optional list of downstream pipeline stage names to run after transcription
+        whisper_model: Optional Whisper model override for this transcription
         user_id: Unused (kept for backward compatibility)
         db: Unused (kept for backward compatibility)
     """
@@ -117,6 +119,7 @@ def start_reprocessing_task(
             num_speakers=num_speakers,
             downstream_tasks=downstream_tasks,
             disable_diarization=disable_diarization,
+            whisper_model=whisper_model,
         )
     else:
         logger.info("Skipping Celery task in test environment")
@@ -278,6 +281,7 @@ def dispatch_selective_tasks(
     num_speakers: int | None = None,
     file_id: int | None = None,
     user_id: int | None = None,
+    whisper_model: str | None = None,
 ) -> None:
     """Dispatch Celery tasks for selected pipeline stages.
 
@@ -289,6 +293,7 @@ def dispatch_selective_tasks(
         num_speakers: Optional fixed speaker count for diarization.
         file_id: Internal file ID (passed to tasks that need it).
         user_id: Owner user ID (passed to tasks that need it).
+        whisper_model: Optional Whisper model override for transcription.
     """
     import os
 
@@ -305,6 +310,7 @@ def dispatch_selective_tasks(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             downstream_tasks=downstream if downstream else None,
+            whisper_model=whisper_model,
             user_id=user_id,
         )
     elif "rediarize" in stages:
@@ -332,6 +338,7 @@ async def process_file_reprocess(
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     stages: list[str] | None = None,
+    whisper_model: str | None = None,
 ) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
@@ -344,6 +351,7 @@ async def process_file_reprocess(
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
         stages: Optional list of pipeline stages to re-run. Empty/None = full reprocess.
+        whisper_model: Optional Whisper model override for this transcription.
 
     Returns:
         Updated MediaFile object
@@ -391,6 +399,11 @@ async def process_file_reprocess(
                 detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
             )
 
+        # Store the user's requested whisper model before dispatching
+        if whisper_model:
+            media_file.requested_whisper_model = whisper_model  # type: ignore[assignment]
+            db.commit()
+
         logger.info(
             f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}"
         )
@@ -423,6 +436,7 @@ async def process_file_reprocess(
                 num_speakers,
                 file_id=file_id,
                 user_id=int(current_user.id),
+                whisper_model=whisper_model,
             )
 
             logger.info(
@@ -447,6 +461,7 @@ async def process_file_reprocess(
                 min_speakers,
                 max_speakers,
                 num_speakers,
+                whisper_model=whisper_model,
                 user_id=int(current_user.id),
                 db=db,
             )

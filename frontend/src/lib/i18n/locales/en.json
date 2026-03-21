@@ -3327,5 +3327,15 @@
   "summary.adminEnableHint": "Contact your administrator to enable AI summary generation",
 
   "common.enabled": "Enabled",
-  "common.disabled": "Disabled"
+  "common.disabled": "Disabled",
+
+  "uploader.whisperModel": "Transcription Model",
+  "uploader.whisperModelHint": "Choose a Whisper model for this transcription",
+  "uploader.useSystemDefault": "Use system default",
+  "uploader.systemDefault": "default",
+  "uploader.notDownloaded": "not downloaded",
+  "uploader.turboNoTranslation": "Note: This model does not support translation. Translation will be disabled for this file.",
+  "fileDetail.whisperModel": "ASR Model",
+  "fileDetail.modelFallback": "Fallback",
+  "fileDetail.requestedModel": "Requested model"
 }
