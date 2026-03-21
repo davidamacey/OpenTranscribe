@@ -115,6 +115,9 @@ class MediaFile(Base):
     asr_provider = Column(String, nullable=True)  # Provider used (local/deepgram/etc.)
     asr_model = Column(String, nullable=True)  # Model used for transcription
     diarization_provider = Column(String, nullable=True)  # Provider used for diarization
+    diarization_disabled = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )  # True when user explicitly skipped diarization
 
     # Upload batch tracking
     upload_batch_id = Column(

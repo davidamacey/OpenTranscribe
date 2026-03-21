@@ -99,33 +99,77 @@ class TranscriptionPipeline:
             logger.warning("Transcription produced no segments")
             return transcript
 
+        if self.config.enable_diarization:
+            result, diarize_df = self._run_diarization(
+                audio,
+                transcript,
+                profiler,
+                hw,
+                progress_callback,
+            )
+        else:
+            result, diarize_df = self._skip_diarization(transcript)
+
+        # Save final result for comparison
+        self._save_intermediate_result(result, "final_result")
+
+        # Cleanup
+        hw.log_vram_usage("before final pipeline cleanup")
+        audio_duration = len(audio) / 16000 if audio is not None else 0.0
+        if diarize_df is not None and not diarize_df.empty:
+            num_speakers = diarize_df["speaker"].nunique()
+        else:
+            num_speakers = 1 if not self.config.enable_diarization else 0
+        del diarize_df, audio
+        hw.optimize_memory_usage()
+        hw.log_vram_usage("after final pipeline cleanup")
+
+        profiler.log_report()
+
+        # Save profile to Redis for admin endpoint
+        if task_id:
+            profiler.save_to_redis(task_id, audio_duration, num_speakers)
+
+        elapsed = time.perf_counter() - pipeline_start
+        logger.info(
+            f"TIMING: TranscriptionPipeline.process TOTAL completed in {elapsed:.3f}s - "
+            f"{len(result.get('segments', []))} segments, "
+            f"language={result.get('language', 'unknown')}"
+        )
+
+        return result
+
+    def _run_diarization(
+        self,
+        audio: Any,
+        transcript: dict,
+        profiler: Any,
+        hw: Any,
+        progress_callback: Callable[[float, str], None] | None,
+    ) -> tuple[dict, Any]:
+        """Run PyAnnote diarization and assign speakers to segments."""
         # Step 3: Load diarizer — skip transcriber release if VRAM allows both
         self._report(progress_callback, 0.52, "Preparing speaker analysis")
         hw.log_vram_usage("after transcription, before diarizer load")
         total_vram_mb = self._get_total_vram_mb()
 
-        # Snapshot: both models loaded, zero inference overhead (benchmark only)
         profiler.snapshot("models_warm_no_inference")
 
-        # In concurrent mode, keep both models hot to avoid reload overhead
         if self.config.concurrent_requests > 1:
             logger.info(
                 "Concurrent mode (concurrent_requests=%d): keeping transcriber loaded",
                 self.config.concurrent_requests,
             )
         elif total_vram_mb >= 16_000:
-            # Enough VRAM: keep transcriber warm for next task (saves ~4.7s)
             logger.info(
                 "Keeping transcriber loaded (%dMB VRAM total, both models fit)",
                 total_vram_mb,
             )
         else:
-            # Small GPU: release transcriber first to free VRAM for diarizer
             self.manager.release_transcriber()
             hw.log_vram_usage("after transcriber release")
             profiler.snapshot("diarizer_only_warm")
 
-        # Wait for VRAM before diarization (concurrent mode)
         if self.config.concurrent_requests > 1:
             self._wait_for_vram(2000, "diarization")
 
@@ -138,15 +182,11 @@ class TranscriptionPipeline:
         logger.info(
             f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
         )
-
         profiler.snapshot("after_diarization")
 
-        # Save raw GPU outputs for offline post-processing iteration
         self._save_intermediate(transcript, diarize_df, overlap_info, native_embeddings)
 
         # Step 5: Segment dedup BEFORE speaker assignment
-        # Splits coarse VAD chunks (20-30s) into sentence-level segments (~3-5s)
-        # so each sentence gets its own speaker assignment.
         if self.config.enable_dedup:
             step_start = time.perf_counter()
             from app.utils.segment_dedup import clean_segments
@@ -170,39 +210,25 @@ class TranscriptionPipeline:
             f"TIMING: speaker assignment completed in {time.perf_counter() - step_start:.3f}s"
         )
 
-        # Add overlap metadata
         if overlap_info.get("count", 0) > 0:
             result["overlap_info"] = overlap_info
-
-        # Pass native speaker embeddings to downstream processing
         if native_embeddings:
             result["native_speaker_embeddings"] = native_embeddings
 
-        # Save final result for comparison
-        self._save_intermediate_result(result, "final_result")
+        return result, diarize_df
 
-        # Cleanup
-        hw.log_vram_usage("before final pipeline cleanup")
-        audio_duration = len(audio) / 16000 if audio is not None else 0.0
-        num_speakers = diarize_df["speaker"].nunique() if not diarize_df.empty else 0
-        del diarize_df, audio
-        hw.optimize_memory_usage()
-        hw.log_vram_usage("after final pipeline cleanup")
+    @staticmethod
+    def _skip_diarization(transcript: dict) -> tuple[dict, None]:
+        """Skip diarization and assign SPEAKER_00 to all segments."""
+        logger.info("Diarization disabled — assigning SPEAKER_00 to all segments")
+        from app.utils.segment_dedup import clean_segments
 
-        profiler.log_report()
-
-        # Save profile to Redis for admin endpoint
-        if task_id:
-            profiler.save_to_redis(task_id, audio_duration, num_speakers)
-
-        elapsed = time.perf_counter() - pipeline_start
-        logger.info(
-            f"TIMING: TranscriptionPipeline.process TOTAL completed in {elapsed:.3f}s - "
-            f"{len(result.get('segments', []))} segments, "
-            f"language={result.get('language', 'unknown')}"
-        )
-
-        return result
+        transcript["segments"] = clean_segments(transcript["segments"])
+        for seg in transcript.get("segments", []):
+            seg["speaker"] = "SPEAKER_00"
+            for word in seg.get("words", []):
+                word["speaker"] = "SPEAKER_00"
+        return transcript, None
 
     @staticmethod
     def _wait_for_vram(min_free_mb: int, stage: str, timeout: int = 120) -> None:

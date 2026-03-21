@@ -140,6 +140,7 @@ def start_transcription_task(
     num_speakers: int | None = None,
     user_id: int | None = None,
     db=None,
+    disable_diarization: bool | None = None,
 ) -> None:
     """
     Start the background transcription and waveform generation tasks in parallel.
@@ -166,6 +167,7 @@ def start_transcription_task(
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             num_speakers=num_speakers,
+            disable_diarization=disable_diarization,
         )
         # Launch CPU waveform generation task in parallel
         generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)

@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.constants import GPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
+from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.minio_service import download_file
 from app.utils.task_utils import create_task_record
@@ -327,9 +328,14 @@ def rediarize_task(  # noqa: C901
             except Exception as e:
                 logger.warning(f"v4 staging error during rediarize (non-fatal): {e}")
 
-        # Step 8: Finalize
+        # Step 8: Finalize — clear diarization_disabled since we just ran diarization
         send_progress_notification(user_id, file_id, 0.95, "Finalizing re-diarization")
         with session_scope() as db:
+            from app.db.session_utils import get_refreshed_object
+
+            media_file_obj = get_refreshed_object(db, MediaFile, file_id)
+            if media_file_obj and hasattr(media_file_obj, "diarization_disabled"):
+                media_file_obj.diarization_disabled = False
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
             update_media_file_status(db, file_id, FileStatus.COMPLETED)
 

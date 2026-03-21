@@ -118,6 +118,7 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "transcription_repetition_penalty",
         "transcription_min_speakers",
         "transcription_max_speakers",
+        "transcription_disable_diarization",
     ]
     user_settings = (
         db.query(models.UserSetting)
@@ -155,6 +156,10 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "max_speakers": int(
             settings_map.get("transcription_max_speakers", str(settings.MAX_SPEAKERS))
         ),
+        "disable_diarization": settings_map.get(
+            "transcription_disable_diarization", "false"
+        ).lower()
+        == "true",
     }
 
 
@@ -729,6 +734,7 @@ def _run_transcription_pipeline(
     num_speakers: int | None,
     source_language: str | None = None,
     translate_to_english: bool | None = None,
+    disable_diarization: bool = False,
 ) -> dict:
     """Run the unified transcription pipeline."""
     from app.transcription import TranscriptionConfig
@@ -761,6 +767,7 @@ def _run_transcription_pipeline(
         vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
         hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
         repetition_penalty=user_settings["repetition_penalty"],
+        enable_diarization=not disable_diarization,
     )
     # No model_name override — local model is pinned at worker startup via WHISPER_MODEL env var
 
@@ -851,45 +858,53 @@ def _run_post_gpu_background(
     logger.info(f"Background post-processing started for file {ctx.file_id}")
 
     try:
-        # Speaker embeddings — choose path based on ASR provider
-        is_cloud_asr = result.get("asr_provider") and result.get("asr_provider") != "local"
+        diarization_disabled = result.get("diarization_disabled", False)
 
-        if is_cloud_asr:
-            # Cloud ASR: no native embeddings available, dispatch GPU task to extract them
-            send_progress_notification(
-                ctx.user_id, ctx.file_id, 0.78, "Dispatching speaker embedding extraction"
-            )
-            try:
-                from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
+        # Speaker embeddings (skip when diarization disabled — single speaker)
+        if not diarization_disabled:
+            # Choose path based on ASR provider
+            is_cloud_asr = result.get("asr_provider") and result.get("asr_provider") != "local"
 
-                extract_speaker_embeddings_task.apply_async(
-                    args=[str(ctx.file_uuid), speaker_mapping],
-                    queue="gpu",
+            if is_cloud_asr:
+                # Cloud ASR: no native embeddings available, dispatch GPU task
+                send_progress_notification(
+                    ctx.user_id, ctx.file_id, 0.78, "Dispatching speaker embedding extraction"
                 )
-                logger.info(
-                    f"Dispatched speaker embedding extraction to GPU queue for "
-                    f"cloud-transcribed file {ctx.file_id}"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to dispatch speaker embedding task: {e}")
-        else:
-            # Local ASR: embeddings available inline or via native centroids
-            send_progress_notification(
-                ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification"
-            )
-            _run_speaker_embeddings_with_retry(
-                ctx, result, audio_file_path, processed_segments, speaker_mapping
-            )
-
-            # Store native centroids in v4 staging index (fire-and-forget)
-            native_embeddings_for_v4 = result.get("native_speaker_embeddings")
-            if native_embeddings_for_v4 and not _should_use_native_embeddings(result):
                 try:
-                    _store_native_centroids_in_v4_staging(
-                        ctx, native_embeddings_for_v4, speaker_mapping
+                    from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
+
+                    extract_speaker_embeddings_task.apply_async(
+                        args=[str(ctx.file_uuid), speaker_mapping],
+                        queue="gpu",
+                    )
+                    logger.info(
+                        f"Dispatched speaker embedding extraction to GPU queue for "
+                        f"cloud-transcribed file {ctx.file_id}"
                     )
                 except Exception as e:
-                    logger.warning(f"v4 staging: Error (non-fatal): {e}")
+                    logger.warning(f"Failed to dispatch speaker embedding task: {e}")
+            else:
+                # Local ASR: embeddings available inline or via native centroids
+                send_progress_notification(
+                    ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification"
+                )
+                _run_speaker_embeddings_with_retry(
+                    ctx, result, audio_file_path, processed_segments, speaker_mapping
+                )
+
+                # Store native centroids in v4 staging index (fire-and-forget)
+                native_embeddings_for_v4 = result.get("native_speaker_embeddings")
+                if native_embeddings_for_v4 and not _should_use_native_embeddings(result):
+                    try:
+                        _store_native_centroids_in_v4_staging(
+                            ctx, native_embeddings_for_v4, speaker_mapping
+                        )
+                    except Exception as e:
+                        logger.warning(f"v4 staging: Error (non-fatal): {e}")
+        else:
+            logger.info(
+                f"Skipping speaker embeddings for file {ctx.file_id} (diarization disabled)"
+            )
 
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=0.85)
@@ -1053,7 +1068,8 @@ def _process_transcription_result(
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
     step_start = time.perf_counter()
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
-    diarization_model = "pyannote/speaker-diarization-3.1"
+    diarization_disabled = result.get("diarization_disabled", False)
+    diarization_model = None if diarization_disabled else "pyannote/speaker-diarization-3.1"
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 
@@ -1073,6 +1089,7 @@ def _process_transcription_result(
             embedding_mode=embedding_mode,
             asr_provider=result.get("asr_provider"),
             asr_model=result.get("asr_model"),
+            diarization_disabled=diarization_disabled,
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
 
@@ -1739,7 +1756,8 @@ def _process_and_save_critical(
     # Save to database
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
-    diarization_model = "pyannote/speaker-diarization-3.1"
+    diarization_disabled = result.get("diarization_disabled", False)
+    diarization_model = None if diarization_disabled else "pyannote/speaker-diarization-3.1"
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 
@@ -1759,6 +1777,7 @@ def _process_and_save_critical(
             embedding_mode=embedding_mode,
             asr_provider=result.get("asr_provider"),
             asr_model=result.get("asr_model"),
+            diarization_disabled=diarization_disabled,
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
 
@@ -1866,6 +1885,14 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             except Exception:
                 provider = None
 
+            # Read and persist diarization_disabled flag
+            disable_diarization = preprocess_context.get("disable_diarization", False)
+            with session_scope() as db:
+                media_file = get_refreshed_object(db, MediaFile, file_id)
+                if media_file:
+                    media_file.diarization_disabled = disable_diarization
+                    db.commit()
+
             if provider is not None and provider.provider_name != "local":
                 result = _run_cloud_asr_pipeline(
                     ctx,
@@ -1884,7 +1911,12 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                     preprocess_context.get("num_speakers"),
                     source_language=preprocess_context.get("source_language"),
                     translate_to_english=preprocess_context.get("translate_to_english"),
+                    disable_diarization=disable_diarization,
                 )
+
+            # Annotate result with diarization_disabled flag for downstream
+            if isinstance(result, dict):
+                result["diarization_disabled"] = disable_diarization
 
             # Validate result
             validation_error = _validate_transcription_result(result, ctx, task_id)

@@ -86,47 +86,57 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
     post_start = time.perf_counter()
 
     try:
+        diarization_disabled = gpu_result.get("diarization_disabled", False)
         is_cloud_asr = asr_provider and asr_provider != "local"
 
-        if is_cloud_asr:
-            # Cloud ASR: no native embeddings, dispatch GPU task to extract them
-            send_progress_notification(
-                user_id, file_id, 0.80, "Dispatching speaker embedding extraction"
-            )
-            try:
-                from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
+        # Speaker matching must complete before marking "completed" so the
+        # frontend shows matched profile names, not generic "Speaker 1" labels.
+        if not diarization_disabled:
+            if is_cloud_asr:
+                # Cloud ASR: no native embeddings, dispatch GPU task to extract them
+                send_progress_notification(
+                    user_id, file_id, 0.80, "Dispatching speaker embedding extraction"
+                )
+                try:
+                    from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
 
-                extract_speaker_embeddings_task.apply_async(
-                    args=[str(file_uuid), speaker_mapping],
-                    queue="gpu",
+                    extract_speaker_embeddings_task.apply_async(
+                        args=[str(file_uuid), speaker_mapping],
+                        queue="gpu",
+                    )
+                    logger.info(
+                        f"Dispatched speaker embedding extraction to GPU queue for "
+                        f"cloud-transcribed file {file_id}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to dispatch speaker embedding task: {e}")
+            else:
+                # Local ASR: process embeddings inline
+                send_progress_notification(
+                    user_id, file_id, 0.80, "Processing speaker identification"
                 )
-                logger.info(
-                    f"Dispatched speaker embedding extraction to GPU queue for "
-                    f"cloud-transcribed file {file_id}"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to dispatch speaker embedding task: {e}")
+
+                if use_native and native_embeddings:
+                    _process_native_embeddings(
+                        file_id, user_id, task_id, native_embeddings, speaker_mapping
+                    )
+
+                # Store v4 centroids if applicable
+                if native_embeddings and not use_native:
+                    _store_v4_centroids(
+                        file_id, file_uuid, user_id, native_embeddings, speaker_mapping
+                    )
         else:
-            # Local ASR: process embeddings inline
-            send_progress_notification(user_id, file_id, 0.80, "Processing speaker identification")
+            logger.info(f"Skipping speaker embeddings for file {file_id} (diarization disabled)")
 
-            if use_native and native_embeddings:
-                _process_native_embeddings(
-                    file_id, user_id, task_id, native_embeddings, speaker_mapping
-                )
-
-            # Store v4 centroids if applicable (native available but not used for matching)
-            if native_embeddings and not use_native:
-                _store_v4_centroids(file_id, file_uuid, user_id, native_embeddings, speaker_mapping)
-
-        if is_cloud_asr:
+        if is_cloud_asr and not diarization_disabled:
             # Cloud ASR: embedding task runs async on GPU — keep at 90% until it finishes
             send_progress_notification(user_id, file_id, 0.90, "Processing speaker identification")
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.90)
             # Completion notification will be sent by extract_speaker_embeddings_task
         else:
-            # Local ASR: embeddings already done inline — mark completed
+            # Local ASR or diarization disabled: embeddings already done — mark completed
             send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
             with session_scope() as db:
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)

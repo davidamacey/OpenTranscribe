@@ -122,6 +122,7 @@ def update_media_file_transcription_status(
     embedding_mode: str | None = None,
     asr_provider: str | None = None,
     asr_model: str | None = None,
+    diarization_disabled: bool = False,
 ) -> None:
     """
     Update media file with transcription completion metadata.
@@ -164,6 +165,10 @@ def update_media_file_transcription_status(
         media_file.asr_provider = asr_provider
     if asr_model is not None and hasattr(media_file, "asr_model"):
         media_file.asr_model = asr_model
+
+    # Record diarization disabled state
+    if hasattr(media_file, "diarization_disabled"):
+        media_file.diarization_disabled = diarization_disabled
 
     db.commit()
     logger.info(f"Updated media file {file_id} transcription status")

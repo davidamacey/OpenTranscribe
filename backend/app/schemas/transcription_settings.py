@@ -110,6 +110,13 @@ class TranscriptionSettings(BaseModel):
         le=2.0,
         description="Penalize repetitive output (1.0=off, 1.1-1.3=recommended)",
     )
+    # Diarization control
+    disable_diarization: bool = Field(
+        default=False,
+        description=(
+            "Skip speaker diarization entirely; all segments assigned to a single speaker"
+        ),
+    )
 
     class Config:
         json_schema_extra = {
@@ -128,6 +135,7 @@ class TranscriptionSettings(BaseModel):
                 "vad_speech_pad_ms": 400,
                 "hallucination_silence_threshold": None,
                 "repetition_penalty": 1.0,
+                "disable_diarization": False,
             }
         }
 
@@ -197,6 +205,11 @@ class TranscriptionSettingsUpdate(BaseModel):
     repetition_penalty: Optional[float] = Field(
         default=None, ge=1.0, le=2.0, description="Penalize repetitive output"
     )
+    # Diarization control
+    disable_diarization: Optional[bool] = Field(
+        default=None,
+        description="Skip speaker diarization entirely",
+    )
 
     class Config:
         json_schema_extra = {
@@ -211,6 +224,7 @@ class TranscriptionSettingsUpdate(BaseModel):
                 "llm_output_language": "es",
                 "vad_threshold": 0.3,
                 "repetition_penalty": 1.2,
+                "disable_diarization": False,
             }
         }
 
@@ -259,6 +273,11 @@ class TranscriptionSystemDefaults(BaseModel):
         description="System default hallucination threshold (null=disabled)"
     )
     repetition_penalty: float = Field(description="System default repetition penalty")
+    # Diarization default
+    disable_diarization_default: bool = Field(
+        default=False,
+        description="System default for disable_diarization",
+    )
 
     class Config:
         json_schema_extra = {

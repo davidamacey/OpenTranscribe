@@ -42,6 +42,7 @@ class TranscriptionConfig:
     num_speakers: int | None = None
     hf_token: str | None = None
     enable_native_embeddings: bool = True
+    enable_diarization: bool = True  # False to skip PyAnnote entirely
     enable_overlap_detection: bool = True
     overlap_min_duration: float = 0.25
 
@@ -88,6 +89,7 @@ class TranscriptionConfig:
             device_index=whisperx_config.get("device_index", 0),
             source_language=os.getenv("SOURCE_LANGUAGE", "auto"),
             translate_to_english=False,
+            enable_diarization=os.getenv("ENABLE_DIARIZATION", "true").lower() == "true",
             enable_dedup=os.getenv("ENABLE_SEGMENT_DEDUP", "true").lower() == "true",
             min_speakers=int(os.getenv("MIN_SPEAKERS", "1")),
             max_speakers=int(os.getenv("MAX_SPEAKERS", "20")),

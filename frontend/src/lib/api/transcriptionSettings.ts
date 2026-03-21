@@ -63,6 +63,7 @@ export interface TranscriptionSettings {
   vad_speech_pad_ms: number;
   hallucination_silence_threshold: number | null;
   repetition_penalty: number;
+  disable_diarization: boolean;
 }
 
 /**
@@ -83,6 +84,7 @@ export interface TranscriptionSettingsUpdate {
   vad_speech_pad_ms?: number;
   hallucination_silence_threshold?: number | null;
   repetition_penalty?: number;
+  disable_diarization?: boolean;
 }
 
 /**
@@ -112,6 +114,7 @@ export const DEFAULT_TRANSCRIPTION_SETTINGS: TranscriptionSettings = {
   vad_speech_pad_ms: 400,
   hallucination_silence_threshold: null,
   repetition_penalty: 1.0,
+  disable_diarization: false,
 };
 
 /**

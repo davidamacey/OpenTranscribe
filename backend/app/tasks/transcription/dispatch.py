@@ -65,6 +65,7 @@ def dispatch_transcription_pipeline(
     source_language: str | None = None,
     translate_to_english: bool | None = None,
     gpu_queue: str | None = None,
+    disable_diarization: bool | None = None,
 ) -> str:
     """Build and dispatch a 3-stage transcription chain.
 
@@ -117,6 +118,7 @@ def dispatch_transcription_pipeline(
             downstream_tasks=downstream_tasks,
             source_language=source_language,
             translate_to_english=translate_to_english,
+            disable_diarization=disable_diarization,
         ).set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
         transcribe_gpu_task.s().set(queue=gpu_queue, priority=GPUPriority.USER_IMPORT),
         finalize_transcription.s().set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),

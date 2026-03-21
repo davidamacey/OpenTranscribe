@@ -38,6 +38,7 @@
   let hallucinationEnabled = false;
   let hallucinationValue = 2.0;
   let repetitionPenalty = 1.0;
+  let disableDiarization = false;
 
   // Original values for change tracking
   let originalMinSpeakers = 1;
@@ -55,6 +56,7 @@
   let originalHallucinationEnabled = false;
   let originalHallucinationValue = 2.0;
   let originalRepetitionPenalty = 1.0;
+  let originalDisableDiarization = false;
 
   // Advanced section collapsed state
   let advancedExpanded = false;
@@ -99,7 +101,8 @@
     vadSpeechPadMs !== originalVadSpeechPadMs ||
     hallucinationEnabled !== originalHallucinationEnabled ||
     (hallucinationEnabled && hallucinationValue !== originalHallucinationValue) ||
-    repetitionPenalty !== originalRepetitionPenalty;
+    repetitionPenalty !== originalRepetitionPenalty ||
+    disableDiarization !== originalDisableDiarization;
 
   // Update dirty state in store
   $: {
@@ -205,6 +208,7 @@
     hallucinationEnabled = settings.hallucination_silence_threshold !== null;
     hallucinationValue = settings.hallucination_silence_threshold ?? 2.0;
     repetitionPenalty = settings.repetition_penalty;
+    disableDiarization = settings.disable_diarization;
   }
 
   function storeOriginalValues(settings: TranscriptionSettings) {
@@ -223,6 +227,7 @@
     originalHallucinationEnabled = settings.hallucination_silence_threshold !== null;
     originalHallucinationValue = settings.hallucination_silence_threshold ?? 2.0;
     originalRepetitionPenalty = settings.repetition_penalty;
+    originalDisableDiarization = settings.disable_diarization;
   }
 
   async function saveSettings() {
@@ -247,7 +252,8 @@
         vad_min_speech_ms: vadMinSpeechMs,
         vad_speech_pad_ms: vadSpeechPadMs,
         hallucination_silence_threshold: hallucinationSilenceThreshold,
-        repetition_penalty: repetitionPenalty
+        repetition_penalty: repetitionPenalty,
+        disable_diarization: disableDiarization
       });
 
       storeOriginalValues(updatedSettings);
@@ -303,6 +309,23 @@
         </div>
         <p class="section-desc">{$t('settings.transcription.speakerDetectionDesc')}</p>
 
+        <!-- Disable Diarization Toggle -->
+        <div class="form-group toggle-group">
+          <label class="toggle-label">
+            <input
+              type="checkbox"
+              bind:checked={disableDiarization}
+              class="toggle-input"
+            />
+            <span class="toggle-switch"></span>
+            <span class="toggle-text">{$t('settings.transcription.disableDiarization')}</span>
+          </label>
+          <p class="field-desc">{$t('settings.transcription.disableDiarizationDesc')}</p>
+          {#if disableDiarization}
+            <p class="field-warning">{$t('settings.transcription.disableDiarizationWarning')}</p>
+          {/if}
+        </div>
+
         <!-- Speaker Behavior -->
         <div class="form-group">
           <label for="speaker-behavior" class="form-label">
@@ -333,7 +356,7 @@
         </div>
 
         <!-- Min/Max Speakers -->
-        {#if speakerBehavior === 'use_custom'}
+        {#if speakerBehavior === 'use_custom' && !disableDiarization}
           <div class="speaker-range-row">
             <div class="form-group compact">
               <label for="min-speakers" class="form-label">{$t('settings.transcription.minSpeakers')}</label>
@@ -358,6 +381,9 @@
               />
             </div>
           </div>
+        {/if}
+        {#if disableDiarization}
+          <p class="field-desc dimmed">{$t('settings.transcription.speakerDetectionDisabled')}</p>
         {/if}
 
         <!-- System Defaults Info -->
@@ -1285,5 +1311,25 @@
 
   .disabled-toggle .toggle-input {
     pointer-events: none;
+  }
+
+  .field-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0.25rem 0 0 0;
+  }
+
+  .field-desc.dimmed {
+    font-style: italic;
+    opacity: 0.7;
+  }
+
+  .field-warning {
+    font-size: 0.75rem;
+    color: var(--warning-color, #b45309);
+    margin: 0.375rem 0 0 0;
+    padding: 0.25rem 0.5rem;
+    background: var(--warning-bg, rgba(245, 158, 11, 0.1));
+    border-radius: 4px;
   }
 </style>

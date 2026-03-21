@@ -192,8 +192,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
         "WHERE table_name = 'user_media_source')"
     )
+    has_diarization_disabled = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'diarization_disabled')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v350: diarization_disabled flag on media_file
+    if has_diarization_disabled:
+        return "v350_add_diarization_disabled"
     # v340: per-user media sources table
     if has_user_media_source:
         return "v340_add_user_media_sources"

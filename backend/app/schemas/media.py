@@ -57,6 +57,10 @@ class ReprocessRequest(BaseModel):
     num_speakers: Optional[int] = Field(
         None, description="Fixed number of speakers for diarization (overrides min/max when set)"
     )
+    disable_diarization: Optional[bool] = Field(
+        None,
+        description="Skip speaker diarization entirely",
+    )
 
     @field_validator("min_speakers", "max_speakers", "num_speakers")
     @classmethod
@@ -116,6 +120,12 @@ class PrepareUploadRequest(BaseModel):
     )
     num_speakers: Optional[int] = Field(
         None, description="Fixed number of speakers for diarization (overrides min/max when set)"
+    )
+    disable_diarization: Optional[bool] = Field(
+        None,
+        description=(
+            "Skip speaker diarization entirely; all segments assigned to a single speaker"
+        ),
     )
     collection_ids: Optional[list[UUID]] = Field(
         None, description="Collection UUIDs to add the file to after creation"
@@ -371,6 +381,7 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     asr_provider: Optional[str] = None  # Provider used (local/deepgram/etc.)
     asr_model: Optional[str] = None  # Model used for transcription
     diarization_provider: Optional[str] = None  # Provider used for diarization
+    diarization_disabled: bool = Field(default=False)
 
     # Error handling fields
     error_category: Optional[str] = None  # Error category for user-friendly handling

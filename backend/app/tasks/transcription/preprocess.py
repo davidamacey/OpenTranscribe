@@ -54,6 +54,7 @@ def preprocess_for_transcription(
     downstream_tasks: list[str] | None = None,
     source_language: str | None = None,
     translate_to_english: bool | None = None,
+    disable_diarization: bool | None = None,
 ) -> dict:
     """Download media, extract audio, upload to MinIO temp for GPU worker.
 
@@ -113,6 +114,14 @@ def preprocess_for_transcription(
             audio_size_mb = os.path.getsize(temp_audio_path) / (1024 * 1024)
             audio_temp_path = upload_temp_audio(file_uuid, temp_audio_path)
 
+        # Resolve disable_diarization: explicit arg > user DB setting
+        if disable_diarization is None:
+            from .core import _get_user_transcription_settings
+
+            with session_scope() as db_settings:
+                user_ts = _get_user_transcription_settings(db_settings, user_id)
+                disable_diarization = user_ts.get("disable_diarization", False)
+
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.20)
 
@@ -145,6 +154,7 @@ def preprocess_for_transcription(
             "downstream_tasks": downstream_tasks,
             "source_language": source_language,
             "translate_to_english": translate_to_english,
+            "disable_diarization": disable_diarization,
         }
 
     except Exception as e:

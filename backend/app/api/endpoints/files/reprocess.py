@@ -86,6 +86,7 @@ def start_reprocessing_task(
     downstream_tasks: list[str] | None = None,
     user_id: int | None = None,
     db=None,
+    disable_diarization: bool | None = None,
 ) -> None:
     """
     Start the background reprocessing task.
@@ -115,6 +116,7 @@ def start_reprocessing_task(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             downstream_tasks=downstream_tasks,
+            disable_diarization=disable_diarization,
         )
     else:
         logger.info("Skipping Celery task in test environment")
