@@ -200,8 +200,13 @@
                 {#if speaker?.predicted_gender && speaker.predicted_gender !== 'unknown'}
                   <div class="gender-attribute-row">
                     <span class="gender-badge-inline">
-                      {speaker.predicted_gender === 'male' ? '♂' : '♀'}
-                      {speaker.predicted_gender === 'male' ? 'Male' : 'Female'}
+                      {#if speaker.predicted_gender === 'male'}
+                        <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
+                        Male
+                      {:else}
+                        <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
+                        Female
+                      {/if}
                       {#if speaker.attribute_confidence?.gender}
                         <span class="gender-confidence">({Math.round((speaker.attribute_confidence.gender as number) * 100)}%)</span>
                       {/if}
@@ -808,6 +813,12 @@
     gap: 0.25rem;
     font-size: 0.75rem;
     color: var(--text-secondary, #888);
+  }
+
+  .gender-svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
   }
 
   .gender-confidence {

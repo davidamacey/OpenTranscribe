@@ -162,7 +162,14 @@
         <span class="member-file">{member.media_file_title || ''}</span>
         <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
         {#if member.predicted_gender}
-          <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">{member.predicted_gender === 'male' ? '\u2642' : '\u2640'}{#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>{'\u2713'}</span>{/if}</span>
+          <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">
+            {#if member.predicted_gender === 'male'}
+              <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
+            {:else}
+              <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
+            {/if}
+            {#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>{'\u2713'}</span>{/if}
+          </span>
         {/if}
         {#if outlierMap.has(member.speaker_uuid)}
           {@const analysis = outlierMap.get(member.speaker_uuid)}
@@ -208,7 +215,14 @@
       <span class="member-file">{member.media_file_title || ''}</span>
       <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
       {#if member.predicted_gender}
-        <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">{member.predicted_gender === 'male' ? '\u2642' : '\u2640'}{#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>{'\u2713'}</span>{/if}</span>
+        <span class="gender-icon" title="{member.predicted_gender === 'male' ? $t('speakers.member.male') : $t('speakers.member.female')}{member.gender_confidence != null ? ` (${(member.gender_confidence * 100).toFixed(0)}%)` : ''}">
+          {#if member.predicted_gender === 'male'}
+            <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
+          {:else}
+            <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
+          {/if}
+          {#if member.gender_confirmed_by_user}<span class="gender-confirmed-tick" title={$t('speakers.member.genderConfirmed')}>{'\u2713'}</span>{/if}
+        </span>
       {/if}
       {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
     </div>
@@ -274,8 +288,15 @@
     color: var(--text-secondary, #6b7280);
     display: inline-flex;
     align-items: center;
+    gap: 2px;
     line-height: 1;
     vertical-align: middle;
+  }
+
+  .gender-svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
   }
 
   .gender-confirmed-tick {

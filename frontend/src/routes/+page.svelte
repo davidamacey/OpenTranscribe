@@ -1940,13 +1940,11 @@
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.75rem;
-    padding: 0.75rem 0;
+    padding: 0.75rem 1.5rem;
     background-color: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
     margin-left: -1.5rem;
     margin-right: -1.5rem;
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
   }
 
   .gallery-header-left {

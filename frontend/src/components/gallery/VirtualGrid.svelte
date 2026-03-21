@@ -18,7 +18,7 @@
 
   // Virtual scrolling config
   const ROW_HEIGHT = 340; // approximate card height including gap
-  const CARD_MIN_WIDTH = 300;
+  const CARD_MIN_WIDTH = typeof window !== 'undefined' && window.innerWidth < 768 ? 140 : 300;
   const GAP = 24; // 1.5rem
   const OVERSCAN = 2;
 
@@ -670,7 +670,39 @@
 
   @media (max-width: 768px) {
     .file-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+
+    .file-name {
+      font-size: 0.875rem;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
+
+    .file-date,
+    .file-duration {
+      font-size: 0.75rem;
+    }
+
+    .file-meta {
+      gap: 0.25rem;
+      font-size: 0.75rem;
+    }
+
+    .file-status {
+      font-size: 0.6rem;
+      padding: 0.1rem 0.4rem;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .file-grid {
       grid-template-columns: 1fr;
+    }
+
+    .file-name {
+      font-size: 1rem;
     }
   }
 

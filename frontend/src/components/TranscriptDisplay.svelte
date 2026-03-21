@@ -991,7 +991,13 @@
                         class="gender-badge"
                         title="AI predicted gender: {speaker.predicted_gender} ({Math.round((speaker.attribute_confidence?.gender ?? 0) * 100)}% confidence)"
                       >
-                        {speaker.predicted_gender === 'male' ? '♂ Male' : '♀ Female'}
+                        {#if speaker.predicted_gender === 'male'}
+                          <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
+                          Male
+                        {:else}
+                          <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
+                          Female
+                        {/if}
                       </span>
                     {/if}
                     <div class="speaker-input-wrapper">
@@ -1996,6 +2002,7 @@
   .gender-badge {
     display: inline-flex;
     align-items: center;
+    gap: 3px;
     font-size: 0.65rem;
     font-weight: 500;
     padding: 0.15rem 0.4rem;
@@ -2006,6 +2013,12 @@
     background: rgba(128, 128, 128, 0.1);
     color: var(--text-secondary, #777);
     border: 1px solid rgba(128, 128, 128, 0.25);
+  }
+
+  .gender-svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
   }
 
   :global([data-theme='dark']) .gender-badge {
@@ -2145,10 +2158,29 @@
       align-items: stretch;
     }
 
+    .speaker-header {
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
     .speaker-original {
       font-size: 11px;
       padding: 2px 6px;
       min-width: auto;
+    }
+
+    .gender-badge {
+      font-size: 0.6rem;
+    }
+
+    .speaker-input-wrapper {
+      flex: 1 1 100%;
+      width: 100%;
+    }
+
+    .speaker-profile-badge {
+      font-size: 0.6rem;
+      padding: 0.15rem 0.35rem;
     }
   }
 

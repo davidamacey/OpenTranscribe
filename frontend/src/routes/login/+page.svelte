@@ -22,6 +22,7 @@
   let formSubmitted = false;
   let showPassword = false;
   let successMessage = "";
+  let loginSuccess = false;
 
   // MFA state
   let mfaRequired = false;
@@ -90,6 +91,7 @@
         keycloakLoading = false;
 
         if (result.success) {
+          loginSuccess = true;
           successMessage = $t('auth.loginSuccess');
           toastStore.success($t('auth.loginSuccess'));
           setTimeout(() => {
@@ -235,6 +237,7 @@
       }
 
       if (result.success) {
+        loginSuccess = true;
         successMessage = $t('auth.loginSuccess');
         toastStore.success($t('auth.loginSuccess'));
 
@@ -307,6 +310,7 @@
     pkiLoading = false;
 
     if (result.success) {
+      loginSuccess = true;
       successMessage = $t('auth.loginSuccess');
       toastStore.success($t('auth.loginSuccess'));
       setTimeout(() => {
@@ -330,6 +334,7 @@
       const result = await verifyMFA(mfaToken, mfaCode.trim(), useBackupCode);
 
       if (result.success) {
+        loginSuccess = true;
         successMessage = $t('auth.loginSuccess');
         toastStore.success($t('auth.loginSuccess'));
         setTimeout(() => {
@@ -403,6 +408,14 @@
       <p>{$t('auth.signInToAccount')}</p>
     </div>
 
+    {#if loginSuccess}
+      <!-- Login success transition state -->
+      <div class="login-success-state">
+        <img src="/icons/icon-192x192.png" class="login-success-logo" alt="" />
+        <Spinner size="small" />
+        <p class="login-success-text">{$t('auth.signingIn') || 'Signing in...'}</p>
+      </div>
+    {:else}
     <!-- MFA Verification Form -->
     {#if mfaRequired}
       <div class="mfa-form">
@@ -629,6 +642,7 @@
         class="auth-link"
       >{$t('auth.register')}</a></span>
     </div>
+    {/if}
     {/if}
   </div>
 </div>
@@ -978,5 +992,34 @@
 
   .text-button.cancel-button:hover {
     color: var(--text-color);
+  }
+
+  /* Login success transition state */
+  .login-success-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    padding: 2rem 0;
+  }
+
+  .login-success-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    animation: login-success-pulse 1.5s ease-in-out infinite;
+  }
+
+  .login-success-text {
+    color: var(--text-light);
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin: 0;
+  }
+
+  @keyframes login-success-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(0.97); }
   }
 </style>
