@@ -1,0 +1,92 @@
+# docker-compose.blackwell.yml
+# Optional overlay for NVIDIA Blackwell / DGX Spark GPU systems (SM_121)
+#
+# Replaces the standard backend/worker images with Blackwell-compatible
+# builds that include SM_121 -> SM_90 compatibility patches and unified
+# memory support.
+#
+# Automatically loaded by opentranscribe.sh and opentr.sh when a Blackwell
+# GPU (compute capability 12.x) is detected via nvidia-smi.
+#
+# For dev mode: builds from backend/Dockerfile.blackwell locally.
+# For production: uses the pre-built :blackwell tag from Docker Hub
+#   (set by docker-compose.prod.yml + this overlay).
+#
+# Usage:
+#   Automatic (recommended):
+#     ./opentr.sh start dev        # Auto-detects Blackwell, builds locally
+#     ./opentranscribe.sh start    # Auto-detects Blackwell, uses Docker Hub
+#   Manual (dev):
+#     docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#       -f docker-compose.gpu.yml -f docker-compose.blackwell.yml up
+#
+# Note: The Blackwell Dockerfile uses /home/user/ cache paths (NVIDIA base
+# image convention) instead of /home/appuser/ used by Dockerfile.prod.
+# Both map to UID 1000; the volume mounts below reflect this difference.
+
+services:
+  # Override backend to use Blackwell image
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.blackwell
+    image: davidamacey/opentranscribe-backend:blackwell
+
+  # Override GPU worker to use Blackwell image with SM_121 patches
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.blackwell
+    image: davidamacey/opentranscribe-backend:blackwell
+    command: >
+      celery -A app.core.celery worker
+      --loglevel=info
+      -Q gpu
+      --concurrency=1
+      --max-tasks-per-child=${GPU_MAX_TASKS:-100000}
+      --hostname gpu-transcription@%h
+      -E
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ['${GPU_DEVICE_ID:-0}']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    volumes:
+      # Model caches — /home/user/ paths (NVIDIA base image, not appuser)
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/user/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/user/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/user/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/user/.cache/sentence-transformers
+      - ${MODEL_CACHE_DIR:-./models}/yt-dlp:/home/user/.cache/yt-dlp
+      # Temp directory for processing intermediate files
+      - ${TEMP_DIR:-./temp}:/app/temp
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcription@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # CPU worker also needs Blackwell-compatible image for nvidia-smi
+  # stats collection and CUDA-accelerated speaker clustering
+  celery-cpu-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.blackwell
+    image: davidamacey/opentranscribe-backend:blackwell
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: all

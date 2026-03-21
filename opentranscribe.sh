@@ -107,6 +107,14 @@ detect_nvidia_runtime() {
     fi
 }
 
+is_blackwell_gpu() {
+    # Detect Blackwell architecture (compute capability 12.x)
+    # DGX Spark / GB10 GPUs report compute_cap=12.1 via nvidia-smi
+    local compute_cap
+    compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '[:space:]')
+    [[ "$compute_cap" == 12.* ]]
+}
+
 get_compose_files() {
     local compose_files="-f docker-compose.yml"
 
@@ -118,9 +126,14 @@ get_compose_files() {
     # Add GPU overlay if NVIDIA runtime is available and overlay exists
     local docker_runtime
     docker_runtime=$(detect_nvidia_runtime)
-    if [ "$docker_runtime" = "nvidia" ] && [ -f docker-compose.gpu.yml ]; then
-        compose_files="$compose_files -f docker-compose.gpu.yml"
-        echo -e "${BLUE}🎯 GPU acceleration enabled (NVIDIA Container Toolkit detected)${NC}" >&2
+    if [ "$docker_runtime" = "nvidia" ]; then
+        if is_blackwell_gpu && [ -f docker-compose.blackwell.yml ]; then
+            compose_files="$compose_files -f docker-compose.blackwell.yml"
+            echo -e "${BLUE}Blackwell GPU overlay enabled (SM_12x detected)${NC}" >&2
+        elif [ -f docker-compose.gpu.yml ]; then
+            compose_files="$compose_files -f docker-compose.gpu.yml"
+            echo -e "${BLUE}GPU acceleration enabled (NVIDIA Container Toolkit detected)${NC}" >&2
+        fi
     fi
 
     # Add NGINX overlay if NGINX_SERVER_NAME is configured
@@ -292,6 +305,12 @@ case "${1:-help}" in
             mv docker-compose.gpu.yml.new docker-compose.gpu.yml && \
             echo -e "  ${GREEN}✓${NC} docker-compose.gpu.yml" || \
             echo -e "  ${YELLOW}⚠️${NC} docker-compose.gpu.yml (skipped)"
+
+        echo "  Downloading docker-compose.blackwell.yml..."
+        curl -fsSL "$GITHUB_RAW/docker-compose.blackwell.yml" -o docker-compose.blackwell.yml.new && \
+            mv docker-compose.blackwell.yml.new docker-compose.blackwell.yml && \
+            echo -e "  ${GREEN}✓${NC} docker-compose.blackwell.yml" || \
+            echo -e "  ${YELLOW}⚠️${NC} docker-compose.blackwell.yml (skipped)"
 
         # Update NGINX configuration
         mkdir -p nginx/ssl

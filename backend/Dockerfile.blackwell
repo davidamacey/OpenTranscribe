@@ -1,0 +1,144 @@
+# =============================================================================
+# OpenTranscribe Backend - Blackwell / DGX Spark Dockerfile
+#
+# Specialized image for NVIDIA Blackwell architecture (SM_121 / GB10) GPUs.
+# Based on NVIDIA's PyTorch container which bundles the correct CUDA 12.x
+# toolkit and ARM64-native torch builds.
+#
+# Key differences from Dockerfile.prod:
+#   - Uses NVIDIA PyTorch base image (nvcr.io/nvidia/pytorch) instead of
+#     python:3.13-slim to get ARM64 CUDA support
+#   - Applies SM_121 -> SM_90 compatibility patches via scripts/blackwell_patches.py
+#   - Pins huggingface_hub to avoid deprecated API calls in NVIDIA stack
+#   - Sets CUDA_FORCE_PTX_JIT=1 for forward-compatible PTX execution
+#
+# Usage:
+#   docker build -t opentranscribe-backend-blackwell -f Dockerfile.blackwell .
+#   (Then reference in docker-compose.blackwell.yml)
+# =============================================================================
+
+FROM nvcr.io/nvidia/pytorch:25.01-py3
+
+LABEL org.opencontainers.image.title="OpenTranscribe Backend (Blackwell)" \
+      org.opencontainers.image.description="AI-powered transcription backend for NVIDIA Blackwell/DGX Spark" \
+      org.opencontainers.image.vendor="OpenTranscribe" \
+      org.opencontainers.image.authors="OpenTranscribe Contributors" \
+      org.opencontainers.image.licenses="AGPL-3.0" \
+      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe"
+
+WORKDIR /app
+
+# ---------------------------------------------------------------------------
+# Blackwell SM_121 compatibility environment variables
+# ---------------------------------------------------------------------------
+# CUDA_FORCE_PTX_JIT: Forces PTX JIT compilation for forward compatibility
+#   when the installed CUDA toolkit doesn't know SM_121 natively.
+# TORCH_CUDA_ARCH_LIST: Tells PyTorch extensions to compile for SM_90
+#   (Hopper), which is binary-compatible with Blackwell via PTX fallback.
+ENV CUDA_FORCE_PTX_JIT=1 \
+    TORCH_CUDA_ARCH_LIST="9.0" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONWARNINGS=ignore::UserWarning:pyannote.audio.core.io \
+    DEBIAN_FRONTEND=noninteractive
+
+# ---------------------------------------------------------------------------
+# System dependencies (runtime only)
+# ---------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    libimage-exiftool-perl \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# ---------------------------------------------------------------------------
+# Create directories for runtime and caches
+# ---------------------------------------------------------------------------
+# Note: The NVIDIA base image uses 'user' (UID 1000), not 'appuser'.
+# Cache volume mounts in docker-compose.blackwell.yml use /home/user/ paths.
+RUN mkdir -p /app/models /app/temp \
+    /home/user/.cache/huggingface \
+    /home/user/.cache/torch \
+    /home/user/.cache/nltk_data \
+    /home/user/.cache/sentence-transformers \
+    /home/user/.cache/yt-dlp
+
+# ---------------------------------------------------------------------------
+# Save NVIDIA-stack torch packages before pip installs can overwrite them
+# ---------------------------------------------------------------------------
+# The NVIDIA base image bundles a custom torch/torchaudio/torchvision built
+# against their CUDA toolkit.  pip installs below might pull in PyPI versions
+# that lack the NVIDIA-specific patches.  We save and restore.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN pip freeze | grep -iE '^(torch|torchaudio|torchvision)==' > /tmp/nvidia_torch_versions.txt
+
+# ---------------------------------------------------------------------------
+# Base Python tools
+# ---------------------------------------------------------------------------
+# hadolint ignore=DL3013
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# ---------------------------------------------------------------------------
+# Install application dependencies
+# ---------------------------------------------------------------------------
+COPY requirements.txt .
+RUN pip install --no-cache-dir --no-warn-script-location -r requirements.txt
+
+# ---------------------------------------------------------------------------
+# Restore NVIDIA torch stack (overwrite any PyPI versions pulled by deps)
+# ---------------------------------------------------------------------------
+# hadolint ignore=DL3013,SC2046
+RUN pip install --no-cache-dir --force-reinstall \
+    "$(cat /tmp/nvidia_torch_versions.txt | tr '\n' ' ')"
+
+# ---------------------------------------------------------------------------
+# Pin huggingface_hub for NVIDIA base image compatibility
+# ---------------------------------------------------------------------------
+# The NVIDIA PyTorch 25.01 base bundles libraries that still use the
+# deprecated `use_auth_token` parameter removed in huggingface_hub>=0.24.
+# This pin is Blackwell-specific and intentionally NOT in requirements.txt.
+RUN pip install --no-cache-dir "huggingface_hub==0.23.5"
+
+# ---------------------------------------------------------------------------
+# Install WhisperX (with --no-deps to preserve NVIDIA torch stack)
+# ---------------------------------------------------------------------------
+RUN pip install --no-cache-dir --no-deps "whisperx==3.8.1"
+
+# ---------------------------------------------------------------------------
+# Install PyAnnote fork with GPU optimizations
+# ---------------------------------------------------------------------------
+# Custom fork with vectorized chunking, adaptive batch size, TF32, CUDA
+# streams, and memory-safe batch indexing.
+RUN pip install --no-cache-dir --no-deps \
+    "pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@gpu-optimizations"
+
+# ---------------------------------------------------------------------------
+# Apply Blackwell SM_121 -> SM_90 compatibility patches
+# ---------------------------------------------------------------------------
+# Patches torch, torchaudio, and pyannote for SM_121 compatibility.
+# See scripts/blackwell_patches.py for details.
+COPY scripts/blackwell_patches.py scripts/blackwell_patches.py
+RUN python scripts/blackwell_patches.py
+
+# ---------------------------------------------------------------------------
+# Set cache environment variables
+# ---------------------------------------------------------------------------
+ENV HF_HOME=/home/user/.cache/huggingface \
+    TORCH_HOME=/home/user/.cache/torch \
+    NLTK_DATA=/home/user/.cache/nltk_data \
+    SENTENCE_TRANSFORMERS_HOME=/home/user/.cache/sentence-transformers
+
+# ---------------------------------------------------------------------------
+# Copy application code
+# ---------------------------------------------------------------------------
+COPY . .
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

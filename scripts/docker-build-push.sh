@@ -152,6 +152,33 @@ run_security_scan() {
     fi
 }
 
+# Function to build and push Blackwell backend image (ARM64 only)
+# Uses Dockerfile.blackwell with SM_121 compatibility patches for DGX Spark / GB10
+build_backend_blackwell() {
+    print_info "Building Blackwell backend image..."
+    print_info "Platform: linux/arm64 (DGX Spark / Blackwell is ARM64-only)"
+    print_info "Version: ${VERSION_FULL}"
+    print_info "Tags: blackwell, blackwell-${VERSION_FULL}"
+
+    cd backend
+
+    docker buildx build \
+        --platform "linux/arm64" \
+        --file Dockerfile.blackwell \
+        --tag "${REPO_BACKEND}:blackwell" \
+        --tag "${REPO_BACKEND}:blackwell-${VERSION_FULL}" \
+        ${CACHE_FLAG} \
+        --push \
+        .
+
+    cd ..
+
+    print_success "Blackwell backend image built and pushed successfully"
+    print_info "Tags pushed:"
+    print_info "  - ${REPO_BACKEND}:blackwell"
+    print_info "  - ${REPO_BACKEND}:blackwell-${VERSION_FULL}"
+}
+
 # Function to build and push backend (no scan - scan runs separately)
 build_backend() {
     print_info "Building backend image..."
@@ -384,6 +411,7 @@ Build and push Docker images to Docker Hub
 Options:
     backend     Build and push only backend image
     frontend    Build and push only frontend image
+    blackwell   Build and push Blackwell backend image (ARM64, :blackwell tag)
     all         Build and push both images (default)
     auto        Auto-detect changes and build only changed components
     scan        Security scan only (pull latest images, scan, push reports)
@@ -555,6 +583,10 @@ main() {
             print_info "Building frontend only..."
             build_frontend
             BUILT_COMPONENTS+=("frontend")
+            ;;
+        blackwell)
+            print_info "Building Blackwell backend only (ARM64)..."
+            build_backend_blackwell
             ;;
         all)
             print_info "Building both backend and frontend..."

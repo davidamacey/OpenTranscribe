@@ -139,6 +139,17 @@ detect_and_configure_hardware() {
     # Check for NVIDIA Container Toolkit (efficient method)
     if docker info 2>/dev/null | grep -q nvidia; then
       echo "✅ NVIDIA Container Toolkit available"
+
+      # Detect Blackwell architecture (compute capability 12.x)
+      local compute_cap
+      compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null \
+        | head -1 | tr -d '[:space:]')
+      if [[ "$compute_cap" == 12.* ]]; then
+        export IS_BLACKWELL_GPU="true"
+        echo "✅ Blackwell GPU detected (SM_${compute_cap//./_})"
+      else
+        export IS_BLACKWELL_GPU=""
+      fi
     else
       echo "⚠️  NVIDIA GPU detected but Container Toolkit not available"
       echo "   Falling back to CPU mode"
@@ -169,6 +180,25 @@ detect_and_configure_hardware() {
   echo "  Device: $TORCH_DEVICE"
   echo "  Compute Type: $COMPUTE_TYPE"
   echo "  Docker Runtime: ${DOCKER_RUNTIME:-default}"
+}
+
+# Add GPU compose overlay(s) to COMPOSE_FILES.
+# Handles Blackwell detection — must be called after detect_environment().
+# Usage: add_gpu_overlay
+add_gpu_overlay() {
+  if [ "$DOCKER_RUNTIME" != "nvidia" ]; then
+    return
+  fi
+
+  if [ -n "$IS_BLACKWELL_GPU" ] && [ -f "docker-compose.blackwell.yml" ]; then
+    # Blackwell overlay includes GPU resources AND image override — no need
+    # for docker-compose.gpu.yml on top.
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.blackwell.yml"
+    echo "🎯 Adding Blackwell GPU overlay (SM_12x detected)"
+  elif [ -f "docker-compose.gpu.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
+    echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
+  fi
 }
 
 # Function to start the environment
@@ -316,10 +346,7 @@ start_app() {
   fi
 
   # Add GPU overlay if NVIDIA GPU is detected and Container Toolkit is available
-  if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
-    echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
-  fi
+  add_gpu_overlay
 
   # Add GPU scaling overlay if requested
   if [ -n "$GPU_SCALE_FLAG" ]; then
@@ -622,10 +649,7 @@ reset_and_init() {
   fi
 
   # Add GPU overlay if NVIDIA GPU is detected and Container Toolkit is available
-  if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
-    echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
-  fi
+  add_gpu_overlay
 
   # Add GPU scaling overlay if requested
   if [ -n "$GPU_SCALE_FLAG" ]; then
@@ -900,13 +924,15 @@ restart_all() {
 stop_all_containers() {
   # Dev compose chain
   docker compose -f docker-compose.yml -f docker-compose.override.yml \
-    -f docker-compose.gpu.yml -f docker-compose.gpu-scale.yml \
+    -f docker-compose.gpu.yml -f docker-compose.blackwell.yml \
+    -f docker-compose.gpu-scale.yml \
     -f docker-compose.nas.yml "$@" 2>/dev/null || true
 
   # Prod compose chain
   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
     -f docker-compose.local.yml -f docker-compose.gpu.yml \
-    -f docker-compose.gpu-scale.yml -f docker-compose.nas.yml \
+    -f docker-compose.blackwell.yml -f docker-compose.gpu-scale.yml \
+    -f docker-compose.nas.yml \
     -f docker-compose.nginx.yml -f docker-compose.pki.yml "$@" 2>/dev/null || true
 
   # Catch stragglers by container name pattern
@@ -1080,9 +1106,7 @@ case "$1" in
     COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml"
 
     # Add GPU overlay if NVIDIA GPU is detected
-    if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
-    fi
+    add_gpu_overlay
 
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES up -d --build backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat flower
@@ -1127,10 +1151,7 @@ case "$1" in
     COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml"
 
     # Add GPU overlay if NVIDIA GPU is detected
-    if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
-      echo "🎯 Including GPU overlay for build"
-    fi
+    add_gpu_overlay
 
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES build
