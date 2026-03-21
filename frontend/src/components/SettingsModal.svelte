@@ -783,33 +783,18 @@
     role="presentation"
   >
     <div class="settings-modal" bind:this={modalElement} role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-      <!-- Close button -->
-      <button class="modal-close-button" on:click={attemptClose} aria-label={$t('settings.modal.closeSettings')} title={$t('settings.modal.closeSettingsTitle')}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
+      <!-- Mobile header with close button -->
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:0.75rem 1rem; border-bottom:1px solid var(--border-color); flex-shrink:0; min-height:48px;">
+        <span style="font-weight:600; font-size:1.1rem; color:var(--text-color);">{$t('settings.title')}</span>
+        <button class="modal-close-button" on:click={attemptClose} aria-label={$t('settings.modal.closeSettings')} title={$t('settings.modal.closeSettingsTitle')} style="position:static; margin:0; padding:0.5rem;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
 
       <div class="settings-modal-container">
-        <!-- Mobile section selector (replaces sidebar on small screens) -->
-        <div class="settings-mobile-nav">
-          <h2 class="settings-mobile-title">{$t('settings.title')}</h2>
-          <select
-            class="settings-section-select"
-            value={activeSection}
-            on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
-          >
-            {#each sidebarSections as section}
-              <optgroup label={section.title}>
-                {#each section.items as item}
-                  <option value={item.id}>{item.label}{$settingsModalStore.dirtyState[item.id] ? ' ●' : ''}</option>
-                {/each}
-              </optgroup>
-            {/each}
-          </select>
-        </div>
-
         <!-- Desktop sidebar -->
         <aside class="settings-sidebar">
           <h2 id="settings-modal-title" class="settings-title">{$t('settings.title')}</h2>
@@ -838,6 +823,25 @@
 
         <!-- Content Area -->
         <main class="settings-content">
+          <!-- Section navigation -->
+          <div style="margin-bottom:1rem; padding:0.5rem; background:var(--background-color); border:1px solid var(--border-color); border-radius:8px;">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label style="display:block; font-size:0.75rem; font-weight:600; margin-bottom:0.25rem; color:var(--text-secondary);">Select a section</label>
+            <select
+              style="width:100%; padding:0.5rem; border:1px solid var(--border-color); border-radius:6px; background:var(--surface-color); color:var(--text-color); font-size:1rem; min-height:44px;"
+              value={activeSection}
+              on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
+            >
+              {#each sidebarSections as section}
+                <optgroup label={section.title}>
+                  {#each section.items as item}
+                    <option value={item.id}>{item.label}</option>
+                  {/each}
+                </optgroup>
+              {/each}
+            </select>
+          </div>
+
           <!-- Profile Section -->
           {#if activeSection === 'profile'}
             <div class="content-section">
@@ -1766,6 +1770,8 @@
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     overflow: hidden;
     animation: slideUp 0.3s ease-out;
+    display: flex;
+    flex-direction: column;
   }
 
   @keyframes slideUp {
@@ -1803,7 +1809,8 @@
 
   .settings-modal-container {
     display: flex;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -2601,10 +2608,6 @@
   }
 
   /* Responsive Design */
-  /* Mobile nav selector — hidden on desktop */
-  .settings-mobile-nav {
-    display: none;
-  }
 
   @media (max-width: 768px) {
     .settings-modal {
@@ -2628,42 +2631,10 @@
       display: none;
     }
 
-    /* Show mobile nav with select dropdown */
-    .settings-mobile-nav {
-      display: flex !important;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.75rem 3rem 0.75rem 1rem;
-      border-bottom: 2px solid var(--primary-color);
-      flex-shrink: 0;
-      background: var(--surface-color);
-    }
-
-    .settings-mobile-title {
-      font-size: 1rem;
-      font-weight: 600;
-      color: var(--text-color);
-      margin: 0;
-      white-space: nowrap;
-    }
-
-    .settings-section-select {
-      flex: 1;
-      min-width: 0;
-      padding: 0.5rem 0.75rem;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      background: var(--surface-color);
-      color: var(--text-color);
-      font-size: 0.875rem;
-      font-family: inherit;
-      min-height: 44px;
-      cursor: pointer;
-    }
-
     .settings-content {
       padding: 1rem;
-      flex: 1;
+      flex: 1 1 0;
+      min-height: 0;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       overflow-x: hidden;
