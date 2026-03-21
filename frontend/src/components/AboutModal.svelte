@@ -406,6 +406,8 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-wrap: nowrap;
+    white-space: nowrap;
   }
 
   .header-version-number {
