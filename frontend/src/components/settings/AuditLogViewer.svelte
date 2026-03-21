@@ -156,6 +156,7 @@
           </select>
         </label>
         <button class="btn-apply" on:click={loadAuditLogs}>{$t('settings.auditLog.apply')}</button>
+        <button class="btn-clear" on:click={() => { filters = { startDate: '', endDate: '', eventType: '', outcome: '' }; loadAuditLogs(); }}>{$t('common.clear')}</button>
         <div class="export-actions">
           <button class="btn-secondary" on:click={() => exportLogs('csv')}>CSV</button>
           <button class="btn-secondary" on:click={() => exportLogs('json')}>JSON</button>
@@ -352,6 +353,23 @@
 
   .btn-apply:active {
     transform: scale(1);
+  }
+
+  .btn-clear {
+    padding: 0.25rem 0.625rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    height: 1.75rem;
+    white-space: nowrap;
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+  }
+
+  .btn-clear:hover {
+    background: var(--button-hover);
   }
 
   .export-actions {
@@ -620,9 +638,11 @@
       width: 100%;
     }
 
-    .btn-apply {
+    .btn-apply,
+    .btn-clear {
       width: 100%;
       min-height: 44px;
+      height: auto;
     }
 
     .export-actions {

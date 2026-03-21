@@ -769,9 +769,9 @@
       const compactMap: Record<string, string> = {
         'completed': '✓',
         'success': '✓',
-        'processing': '⟳',
-        'in_progress': '⟳',
-        'pending': '⏳',
+        'processing': '...',
+        'in_progress': '...',
+        'pending': '--',
         'error': '✗',
         'failed': '✗',
       };
