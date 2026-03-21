@@ -798,6 +798,11 @@
 
     .form-actions .btn {
       flex: 1;
+      min-height: 44px;
+    }
+
+    .subsection-actions .btn {
+      min-height: 44px;
     }
   }
 </style>

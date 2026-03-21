@@ -621,4 +621,32 @@
     0%, 100% { opacity: 0.4; }
     50% { opacity: 0.8; }
   }
+
+  @media (max-width: 768px) {
+    .setting-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .toggle-switch {
+      margin-left: 0;
+    }
+
+    .slider-container {
+      margin-left: 0;
+      width: 100%;
+    }
+
+    .threshold-slider {
+      flex: 1;
+      width: auto;
+    }
+
+    .btn-save,
+    .btn-retroactive {
+      width: 100%;
+      min-height: 44px;
+    }
+  }
 </style>

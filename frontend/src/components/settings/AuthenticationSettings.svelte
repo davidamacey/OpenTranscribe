@@ -346,5 +346,11 @@
     .config-methods {
       grid-template-columns: 1fr;
     }
+
+    .tab {
+      min-height: 44px;
+      flex: 1;
+      text-align: center;
+    }
   }
 </style>

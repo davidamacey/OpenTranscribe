@@ -666,6 +666,7 @@
 
     .action-buttons .btn {
       width: 100%;
+      min-height: 44px;
     }
 
     .overview-grid {

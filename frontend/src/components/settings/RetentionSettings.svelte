@@ -900,6 +900,7 @@
 
     .action-row .btn {
       width: 100%;
+      min-height: 44px;
     }
 
     .run-confirm-text {
@@ -916,6 +917,7 @@
 
     .button-row .btn {
       flex: 1;
+      min-height: 44px;
     }
 
     .preview-table-wrap {

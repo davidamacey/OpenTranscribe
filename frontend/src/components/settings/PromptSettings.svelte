@@ -1476,6 +1476,16 @@
     .prompt-actions {
       justify-content: flex-start;
     }
+
+    .prompt-actions button {
+      min-height: 44px;
+    }
+
+    .create-config-button {
+      width: 100%;
+      justify-content: center;
+      min-height: 44px;
+    }
   }
 
   /* LLM Hint Styling */

@@ -761,8 +761,22 @@
   }
 
   // Helper function for formatting status text
+  // Uses compact symbols on small screens
+  const isMobileView = typeof window !== 'undefined' && window.innerWidth < 768;
+
   function formatStatus(status: string): string {
-    // Translate status values
+    if (isMobileView) {
+      const compactMap: Record<string, string> = {
+        'completed': '✓',
+        'success': '✓',
+        'processing': '⟳',
+        'in_progress': '⟳',
+        'pending': '⏳',
+        'error': '✗',
+        'failed': '✗',
+      };
+      return compactMap[status.toLowerCase()] || status.slice(0, 4);
+    }
     const statusMap: Record<string, string> = {
       'completed': $t('common.completed'),
       'processing': $t('common.processing'),
@@ -783,9 +797,9 @@
     role="presentation"
   >
     <div class="settings-modal" bind:this={modalElement} role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-      <!-- Mobile header with close button -->
-      <div style="display:flex; align-items:center; justify-content:space-between; padding:0.75rem 1rem; border-bottom:1px solid var(--border-color); flex-shrink:0; min-height:48px;">
-        <span style="font-weight:600; font-size:1.1rem; color:var(--text-color);">{$t('settings.title')}</span>
+      <!-- Header bar (close button always visible, title shown on mobile) -->
+      <div class="settings-header-bar">
+        <span class="settings-header-title">{$t('settings.title')}</span>
         <button class="modal-close-button" on:click={attemptClose} aria-label={$t('settings.modal.closeSettings')} title={$t('settings.modal.closeSettingsTitle')} style="position:static; margin:0; padding:0.5rem;">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -823,12 +837,12 @@
 
         <!-- Content Area -->
         <main class="settings-content">
-          <!-- Section navigation -->
-          <div style="margin-bottom:1rem; padding:0.5rem; background:var(--background-color); border:1px solid var(--border-color); border-radius:8px;">
+          <!-- Mobile section navigation (hidden on desktop where sidebar is visible) -->
+          <div class="mobile-section-nav">
             <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label style="display:block; font-size:0.75rem; font-weight:600; margin-bottom:0.25rem; color:var(--text-secondary);">Select a section</label>
+            <label class="mobile-nav-label">{$t('settings.title')}</label>
             <select
-              style="width:100%; padding:0.5rem; border:1px solid var(--border-color); border-radius:6px; background:var(--surface-color); color:var(--text-color); font-size:1rem; min-height:44px;"
+              class="mobile-nav-select"
               value={activeSection}
               on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
             >
@@ -1785,6 +1799,24 @@
     }
   }
 
+  .settings-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    min-height: 44px;
+  }
+
+  .settings-header-title {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text-color);
+    display: none;
+    margin-right: auto;
+  }
+
   .modal-close-button {
     position: absolute;
     top: 0.75rem;
@@ -1901,6 +1933,35 @@
     overflow-y: auto;
     padding: 1.5rem;
     overscroll-behavior: contain;
+  }
+
+  /* Mobile section navigation - hidden when sidebar is visible */
+  .mobile-section-nav {
+    display: none;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+
+  .mobile-nav-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: var(--text-secondary);
+  }
+
+  .mobile-nav-select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-size: 1rem;
+    min-height: 44px;
   }
 
   .content-section {
@@ -2631,6 +2692,18 @@
       display: none;
     }
 
+    .mobile-section-nav {
+      display: block;
+    }
+
+    .settings-header-title {
+      display: block;
+    }
+
+    .settings-header-bar {
+      padding: 0.75rem 1rem;
+    }
+
     .settings-content {
       padding: 1rem;
       flex: 1 1 0;
@@ -2660,6 +2733,76 @@
 
     .stats-grid {
       grid-template-columns: 1fr;
+    }
+
+    .section-header-row {
+      flex-direction: column;
+      align-items: flex-start;
+      padding-right: 0;
+      gap: 0.5rem;
+    }
+
+    .section-header-row .btn-refresh {
+      width: 100%;
+      justify-content: center;
+      min-height: 44px;
+    }
+
+    .stat-card {
+      padding: 0.75rem;
+    }
+
+    .stat-value {
+      font-size: 1.25rem;
+    }
+
+    .model-value {
+      word-break: break-all;
+    }
+
+    .action-buttons {
+      flex-direction: column;
+    }
+
+    .action-buttons .btn {
+      width: 100%;
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    .task-health-grid .health-card {
+      padding: 0.75rem;
+    }
+
+    .status-badge {
+      padding: 0.1rem 0.35rem;
+      font-size: 0.75rem;
+      min-width: 24px;
+      text-align: center;
+    }
+
+    .data-table th,
+    .data-table td {
+      padding: 0.4rem 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    .settings-subsection {
+      padding: 0.75rem;
+    }
+
+    .form-actions {
+      flex-direction: column-reverse;
+    }
+
+    .form-actions .btn {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+    }
+
+    .form-actions .btn-secondary {
+      margin-right: 0;
     }
   }
 </style>

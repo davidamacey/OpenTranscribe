@@ -1183,6 +1183,38 @@
   }
 
   @media (max-width: 768px) {
+    .table-controls {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .search-container {
+      margin-right: 0;
+    }
+
+    .search-container input {
+      min-height: 44px;
+      font-size: 1rem;
+    }
+
+    .add-button,
+    .btn-cancel {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+    }
+
+    .add-user-form input,
+    .add-user-form select {
+      min-height: 44px;
+      font-size: 1rem;
+    }
+
+    .create-button {
+      width: 100%;
+      min-height: 44px;
+    }
+
     .users-table {
       min-width: 600px;
     }
@@ -1197,6 +1229,17 @@
     .icon-button {
       width: 36px;
       height: 36px;
+    }
+
+    .modal-actions {
+      flex-direction: column-reverse;
+    }
+
+    .modal-actions .btn-cancel,
+    .modal-actions .btn-confirm {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
     }
   }
 </style>

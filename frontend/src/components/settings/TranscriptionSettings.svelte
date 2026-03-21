@@ -1285,6 +1285,12 @@
 
     .btn {
       width: 100%;
+      min-height: 44px;
+    }
+
+    .number-input {
+      min-height: 44px;
+      font-size: 1rem;
     }
   }
 

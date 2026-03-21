@@ -819,6 +819,7 @@
     .btn {
       width: 100%;
       justify-content: center;
+      min-height: 44px;
     }
 
     .info-box {

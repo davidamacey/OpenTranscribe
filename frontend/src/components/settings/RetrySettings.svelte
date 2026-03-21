@@ -304,5 +304,32 @@
     margin-right: auto;
   }
 
+  @media (max-width: 768px) {
+    .setting-controls {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+      width: 100%;
+    }
 
+    .button-row {
+      width: 100%;
+      flex-direction: column-reverse;
+    }
+
+    .button-row .btn {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+    }
+
+    .button-row .btn-secondary {
+      margin-right: 0;
+    }
+
+    .number-input {
+      min-height: 44px;
+      font-size: 1rem;
+    }
+  }
 </style>

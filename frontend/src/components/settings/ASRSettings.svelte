@@ -1223,6 +1223,7 @@
 
     .model-actions .btn {
       flex: 1;
+      min-height: 44px;
     }
 
     .model-info-row {
@@ -1232,6 +1233,11 @@
     .section-header {
       flex-wrap: wrap;
       gap: 0.5rem;
+    }
+
+    .config-actions .btn-icon,
+    .config-actions .btn-activate {
+      min-height: 44px;
     }
   }
 </style>

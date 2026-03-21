@@ -673,5 +673,15 @@
     .code-input {
       max-width: none;
     }
+
+    .backup-actions button {
+      min-height: 44px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .mfa-section button {
+      min-height: 44px;
+    }
   }
 </style>

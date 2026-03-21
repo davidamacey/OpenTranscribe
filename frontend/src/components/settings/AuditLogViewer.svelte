@@ -622,6 +622,7 @@
 
     .btn-apply {
       width: 100%;
+      min-height: 44px;
     }
 
     .export-actions {

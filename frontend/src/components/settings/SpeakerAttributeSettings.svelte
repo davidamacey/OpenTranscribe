@@ -795,6 +795,7 @@
 
     .button-group .btn {
       flex: 1;
+      min-height: 44px;
     }
 
     .confirm-buttons {
@@ -803,6 +804,7 @@
 
     .confirm-buttons .btn {
       flex: 1;
+      min-height: 44px;
     }
   }
 </style>

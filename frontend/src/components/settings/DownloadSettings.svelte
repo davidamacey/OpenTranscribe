@@ -329,5 +329,19 @@
     margin-right: auto;
   }
 
+  @media (max-width: 768px) {
+    .form-actions {
+      flex-direction: column-reverse;
+    }
 
+    .form-actions .btn-secondary {
+      margin-right: 0;
+    }
+
+    .form-actions .btn {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+    }
+  }
 </style>

@@ -474,5 +474,11 @@
     .info-box {
       flex-direction: column;
     }
+
+    .save-button {
+      width: 100%;
+      min-height: 44px;
+      justify-content: center;
+    }
   }
 </style>

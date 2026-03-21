@@ -801,5 +801,10 @@
     .share-toggle {
       margin-left: 0;
     }
+
+    .source-actions .btn,
+    .source-actions button {
+      min-height: 44px;
+    }
   }
 </style>

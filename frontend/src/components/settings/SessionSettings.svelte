@@ -405,5 +405,14 @@
     .recommendations {
       grid-template-columns: 1fr;
     }
+
+    .actions {
+      flex-direction: column-reverse;
+    }
+
+    .actions button {
+      width: 100%;
+      min-height: 44px;
+    }
   }
 </style>

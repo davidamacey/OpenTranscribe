@@ -938,6 +938,7 @@
 
     .migration-actions .btn {
       width: 100%;
+      min-height: 44px;
     }
 
     .migration-controls {
@@ -946,6 +947,7 @@
 
     .migration-controls .btn {
       width: 100%;
+      min-height: 44px;
     }
 
     .finalize-section {
@@ -954,6 +956,7 @@
 
     .finalize-section .btn {
       width: 100%;
+      min-height: 44px;
     }
 
     .stalled-actions {
@@ -962,6 +965,7 @@
 
     .stalled-actions .btn {
       width: 100%;
+      min-height: 44px;
     }
 
     .confirm-buttons {
@@ -970,6 +974,7 @@
 
     .confirm-buttons .btn {
       flex: 1;
+      min-height: 44px;
     }
   }
 </style>
