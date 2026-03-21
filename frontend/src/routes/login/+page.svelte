@@ -394,6 +394,14 @@
 {/if}
 
 <!-- Login Banner Modal (shows consent dialog before login) -->
+{#if loginSuccess}
+  <!-- Full-page login success transition -->
+  <div class="login-success-fullpage">
+    <img src="/icons/icon-192x192.png" class="login-success-logo" alt="" />
+    <Spinner size="small" />
+    <p class="login-success-text">{$t('auth.signingIn') || 'Signing in...'}</p>
+  </div>
+{:else}
 {#if showLoginBanner && !bannerAcknowledged}
   <LoginBanner onAcknowledge={handleBannerAcknowledge} />
 {/if}
@@ -407,15 +415,6 @@
       <h1>{$t('auth.login')}</h1>
       <p>{$t('auth.signInToAccount')}</p>
     </div>
-
-    {#if loginSuccess}
-      <!-- Login success transition state -->
-      <div class="login-success-state">
-        <img src="/icons/icon-192x192.png" class="login-success-logo" alt="" />
-        <Spinner size="small" />
-        <p class="login-success-text">{$t('auth.signingIn') || 'Signing in...'}</p>
-      </div>
-    {:else}
     <!-- MFA Verification Form -->
     {#if mfaRequired}
       <div class="mfa-form">
@@ -643,9 +642,9 @@
       >{$t('auth.register')}</a></span>
     </div>
     {/if}
-    {/if}
   </div>
 </div>
+{/if}
 
 <style>
   .auth-container {
@@ -995,13 +994,15 @@
   }
 
   /* Login success transition state */
-  .login-success-state {
+  .login-success-fullpage {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 1.25rem;
-    padding: 2rem 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--bg-primary, #f8fafc);
   }
 
   .login-success-logo {
