@@ -92,11 +92,7 @@
 
         if (result.success) {
           loginSuccess = true;
-          successMessage = $t('auth.loginSuccess');
-          toastStore.success($t('auth.loginSuccess'));
-          setTimeout(() => {
-            window.location.href = "/";
-          }, 1000);
+          goto('/', { replaceState: true });
           return;
         } else {
           // Only show error if it's not a state-related issue (likely double-request)
@@ -238,17 +234,13 @@
 
       if (result.success) {
         loginSuccess = true;
-        successMessage = $t('auth.loginSuccess');
-        toastStore.success($t('auth.loginSuccess'));
 
         // Start prefetching dashboard data immediately (auth cookie already set)
         const { prefetchDashboardData } = await import('$lib/prefetch');
         prefetchDashboardData();
 
-        // Navigate via SvelteKit to preserve in-memory cache (prefetched data)
-        setTimeout(() => {
-          goto('/');
-        }, 1000);
+        // Navigate immediately — the fullpage success state prevents any flicker
+        await goto('/', { replaceState: true });
       } else {
         console.error('Login.svelte: Login failed:', result.message);
         toastStore.error(result.message || $t('auth.loginFailed'));
@@ -311,11 +303,7 @@
 
     if (result.success) {
       loginSuccess = true;
-      successMessage = $t('auth.loginSuccess');
-      toastStore.success($t('auth.loginSuccess'));
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 1000);
+      goto('/', { replaceState: true });
     } else {
       toastStore.error(result.message || $t('auth.loginFailed'));
     }
@@ -335,11 +323,7 @@
 
       if (result.success) {
         loginSuccess = true;
-        successMessage = $t('auth.loginSuccess');
-        toastStore.success($t('auth.loginSuccess'));
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 1000);
+        goto('/', { replaceState: true });
       } else {
         toastStore.error(result.message || $t('auth.mfaVerificationFailed') || 'Verification failed');
         mfaCode = "";
