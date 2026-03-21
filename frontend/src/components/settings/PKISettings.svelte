@@ -467,5 +467,10 @@
     border-top: 1px solid var(--color-border);
   }
 
-
+  @media (max-width: 768px) {
+    .form-row {
+      flex-direction: column;
+      gap: 0;
+    }
+  }
 </style>

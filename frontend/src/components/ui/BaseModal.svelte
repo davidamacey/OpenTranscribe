@@ -173,4 +173,42 @@
       transform: translateY(0) scale(1);
     }
   }
+
+  @media (max-width: 768px) {
+    .modal-container {
+      width: 100%;
+      max-width: 100% !important;
+      max-height: 100%;
+      max-height: 100dvh;
+      border-radius: 0;
+      margin: 0;
+    }
+
+    .modal-backdrop {
+      align-items: stretch;
+    }
+
+    .modal-header {
+      padding: 1rem;
+      padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    }
+
+    .modal-header h2 {
+      font-size: 1.1rem;
+    }
+
+    .modal-body {
+      padding: 1rem;
+    }
+
+    .modal-footer {
+      padding: 0.75rem 1rem;
+      padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+      flex-wrap: wrap;
+    }
+
+    .modal-footer :global(button) {
+      min-height: 44px;
+    }
+  }
 </style>

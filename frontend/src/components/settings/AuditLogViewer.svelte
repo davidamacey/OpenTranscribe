@@ -593,4 +593,49 @@
     background: var(--color-bg-secondary, #f9fafb);
     border-radius: 0 0 8px 8px;
   }
+
+  @media (max-width: 768px) {
+    .filter-row {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .filter-row label {
+      width: 100%;
+    }
+
+    .filter-row input,
+    .filter-row select {
+      height: auto;
+      min-height: 44px;
+      font-size: 1rem;
+      padding: 0.5rem 0.75rem;
+    }
+
+    .filter-row input[type="date"] {
+      width: 100%;
+    }
+
+    .filter-row select {
+      width: 100%;
+    }
+
+    .btn-apply {
+      width: 100%;
+    }
+
+    .export-actions {
+      margin-left: 0;
+      width: 100%;
+    }
+
+    .export-actions .btn-secondary {
+      flex: 1;
+    }
+
+    .audit-table-container {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
 </style>

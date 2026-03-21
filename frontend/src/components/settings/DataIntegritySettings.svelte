@@ -655,5 +655,30 @@
     text-align: right;
   }
 
+  @media (max-width: 768px) {
+    .action-box {
+      flex-direction: column;
+    }
 
+    .action-buttons {
+      width: 100%;
+    }
+
+    .action-buttons .btn {
+      width: 100%;
+    }
+
+    .overview-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .results-row {
+      grid-template-columns: 1fr 60px 60px 60px;
+      font-size: 0.7rem;
+    }
+
+    .col-index {
+      word-break: break-all;
+    }
+  }
 </style>

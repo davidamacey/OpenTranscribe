@@ -36,6 +36,11 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
+      // Don't intercept Enter when user is typing in an input/textarea
+      const target = event.target as HTMLElement;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT') {
+        return;
+      }
       handleConfirm();
     }
   }
@@ -152,9 +157,10 @@
   }
 
   /* Responsive design */
-  @media (max-width: 480px) {
+  @media (max-width: 768px) {
     .modal-button {
       width: 100%;
+      min-height: 44px;
     }
   }
 

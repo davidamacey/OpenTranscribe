@@ -625,4 +625,30 @@
     cursor: not-allowed;
   }
 
+  @media (max-width: 768px) {
+    .footer-row {
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .footer-actions {
+      width: 100%;
+      flex-direction: column;
+    }
+
+    .btn-test-conn,
+    .btn-cancel,
+    .btn-save {
+      width: 100%;
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    .form-group input,
+    .form-group select {
+      min-height: 44px;
+      font-size: 1rem;
+    }
+  }
+
 </style>

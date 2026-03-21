@@ -1337,4 +1337,63 @@
     color: #60a5fa;
   }
 
+  /* Mobile: fullscreen modals and tap-friendly buttons */
+  @media (max-width: 768px) {
+    .modal-backdrop {
+      align-items: stretch;
+      padding: 0;
+    }
+
+    .modal-container {
+      width: 100%;
+      max-width: 100% !important;
+      max-height: 100%;
+      max-height: 100dvh;
+      border-radius: 0;
+      margin: 0;
+    }
+
+    .modal-header {
+      padding: 1rem;
+      padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    }
+
+    .modal-header h2 {
+      font-size: 1.1rem;
+    }
+
+    .config-form {
+      padding: 1rem;
+    }
+
+    .form-actions {
+      flex-direction: column;
+      gap: 0.75rem;
+      padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .cancel-button,
+    .save-button {
+      width: 100%;
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    .modal-close-button {
+      min-width: 44px;
+      min-height: 44px;
+    }
+
+    /* Collections panel itself */
+    .collection-actions button {
+      min-width: 44px;
+      min-height: 44px;
+    }
+
+    .btn-add {
+      min-height: 44px;
+      padding: 0.5rem 1rem;
+    }
+  }
+
 </style>

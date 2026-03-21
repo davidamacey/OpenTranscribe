@@ -2090,39 +2090,50 @@
   }
 
   @media (max-width: 768px) {
+    /* Stack: [time | speaker] on row 1, [text spanning full width] on row 2 */
     .segment-content {
-      grid-template-columns: auto auto minmax(0, 1fr);
-      gap: 8px;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto auto;
+      gap: 4px 8px;
       padding: 8px;
     }
 
     .segment-content.monologue {
-      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-columns: auto 1fr;
+    }
+
+    /* Time stays in column 1 */
+    .segment-time {
+      font-size: 11px;
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    /* Speaker stays in column 2 */
+    .segment-speaker-wrapper {
+      grid-column: 2;
+      grid-row: 1;
     }
 
     .segment-speaker {
-      font-size: 11px;
-      padding: 2px 6px;
+      font-size: 10px;
+      padding: 1px 6px;
+      white-space: normal;
+      max-width: none;
+      text-align: center;
+      line-height: 1.3;
     }
 
+    /* Text spans full width on row 2 */
     .segment-text {
-      padding-left: 8px;
+      grid-column: 1 / -1;
+      grid-row: 2;
+      padding-left: 0;
+      font-size: 13px;
     }
 
     .segment-text::before {
-      height: 16px;
-    }
-
-    .segment-time {
-      font-size: 11px;
-    }
-
-    .segment-speaker {
-      font-size: 12px;
-    }
-
-    .segment-text {
-      font-size: 13px;
+      display: none;
     }
 
     .transcript-actions {

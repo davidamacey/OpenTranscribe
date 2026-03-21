@@ -492,23 +492,43 @@
 
   /* Mobile responsive */
   @media (max-width: 768px) {
+    .gallery-action-buttons {
+      min-width: 0;
+      overflow: visible;
+    }
+
     .normal-actions,
     .selection-actions {
       gap: 0.375rem;
+      flex-wrap: wrap;
     }
 
     .action-btn {
-      padding: 0.3rem 0.6rem;
-      font-size: 0.75rem;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.8rem;
+    }
+
+    .action-btn svg {
+      width: 16px;
+      height: 16px;
     }
 
     .cancel-btn {
-      padding: 0.3rem 0.4rem;
+      padding: 0.35rem 0.5rem;
+    }
+
+    .action-separator {
+      height: 20px;
     }
   }
 
   @media (max-width: 480px) {
-    .action-btn span {
+    .action-btn {
+      padding: 0.35rem 0.6rem;
+      font-size: 0.75rem;
+    }
+
+    .action-separator {
       display: none;
     }
   }

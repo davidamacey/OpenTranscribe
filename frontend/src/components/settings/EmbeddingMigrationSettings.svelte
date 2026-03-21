@@ -926,4 +926,50 @@
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
+
+  @media (max-width: 768px) {
+    .migration-box {
+      flex-direction: column;
+    }
+
+    .migration-actions {
+      width: 100%;
+    }
+
+    .migration-actions .btn {
+      width: 100%;
+    }
+
+    .migration-controls {
+      width: 100%;
+    }
+
+    .migration-controls .btn {
+      width: 100%;
+    }
+
+    .finalize-section {
+      flex-direction: column;
+    }
+
+    .finalize-section .btn {
+      width: 100%;
+    }
+
+    .stalled-actions {
+      flex-direction: column;
+    }
+
+    .stalled-actions .btn {
+      width: 100%;
+    }
+
+    .confirm-buttons {
+      flex-wrap: wrap;
+    }
+
+    .confirm-buttons .btn {
+      flex: 1;
+    }
+  }
 </style>

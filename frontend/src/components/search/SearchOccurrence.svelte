@@ -72,6 +72,8 @@
     background: rgba(79, 70, 229, 0.12);
     padding: 0.125rem 0.375rem;
     border-radius: 4px;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .speaker :global(mark) {
@@ -103,6 +105,8 @@
     font-size: 0.8125rem;
     line-height: 1.5;
     color: var(--text-color, #374151);
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .snippet :global(mark) {

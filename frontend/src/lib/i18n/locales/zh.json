@@ -972,6 +972,7 @@
   "common.error": "错误",
   "common.success": "成功",
   "common.close": "关闭",
+  "common.clear": "清除",
   "common.confirm": "确认",
   "common.yes": "是",
   "common.no": "否",
@@ -3001,7 +3002,6 @@
   "settings.dataIntegrity.docMetadata": "元数据",
   "settings.dataIntegrity.docChunks": "搜索分块",
   "settings.dataIntegrity.docTotal": "总计",
-
   "settings.embeddingConsistency.title": "Embedding Consistency",
   "settings.embeddingConsistency.description": "Detects speakers in the database that are missing from the OpenSearch speaker index and re-extracts their embeddings. Runs automatically every 10 minutes.",
   "settings.embeddingConsistency.loading": "Loading embedding consistency status...",
@@ -3044,7 +3044,6 @@
   "settings.embeddingConsistency.completedIn": "Completed in {{duration}}",
   "settings.embeddingConsistency.allSpeakersIndexed": "All speakers are indexed",
   "settings.embeddingConsistency.repairSummary": "{{repaired}} repaired, {{failed}} failed",
-
   "settings.session.introText": "配置会话和令牌的生命周期，以在安全性和用户便利性之间取得平衡。较短的持续时间可提高安全性，但可能需要更频繁地重新认证。",
   "settings.session.tokenLifetimes": "令牌生命周期",
   "settings.session.accessTokenLifetime": "访问令牌生命周期",
@@ -3085,7 +3084,6 @@
   "settings.session.days": "天",
   "settings.session.week": "周",
   "settings.session.weeks": "周",
-
   "settings.localAuth.enableLocal": "启用本地（用户名/密码）认证",
   "settings.localAuth.registrationSettings": "注册设置",
   "settings.localAuth.allowSelfRegistration": "允许自助注册",
@@ -3119,9 +3117,7 @@
   "settings.localAuth.lowercase": "小写字母",
   "settings.localAuth.numbers": "数字",
   "settings.localAuth.specialChars": "特殊字符",
-
   "loginBanner.consentText": "点击\"我确认\"即表示您同意上述条款，并确认您已获授权访问此系统。",
-
   "settings.accountStatus.overview": "账户状态概览",
   "settings.accountStatus.dashboard": "账户状态仪表板",
   "settings.accountStatus.loadingStatus": "正在加载账户状态...",
@@ -3135,7 +3131,6 @@
   "settings.accountStatus.sectionTitle": "账户状态",
   "settings.accountStatus.sectionDescription": "用户账户、MFA 采用率和安全状态概览。",
   "settings.accountStatus.navLabel": "账户状态",
-
   "settings.auditLog.sectionTitle": "审计日志",
   "settings.auditLog.sectionDescription": "查看和导出身份验证及配置变更日志。",
   "settings.auditLog.navLabel": "审计日志",
@@ -3178,7 +3173,6 @@
   "settings.auditLog.events.userDelete": "用户删除",
   "settings.auditLog.events.roleChange": "角色变更",
   "settings.auditLog.events.settingsChange": "设置变更",
-
   "settings.authentication.heading": "身份验证配置",
   "settings.authentication.dbBackedTitle": "数据库支持的身份验证配置",
   "settings.authentication.comingSoonDesc": "此功能即将推出。目前请通过环境变量配置身份验证：",
@@ -3198,14 +3192,11 @@
   "settings.authentication.method.keycloak": "Keycloak/OIDC",
   "settings.authentication.method.pki": "PKI/X.509 证书",
   "settings.authentication.method.mfa": "MFA/TOTP",
-
   "settings.statistics.previousGpu": "上一个 GPU",
   "settings.statistics.nextGpu": "下一个 GPU",
-
   "common.testing": "测试中...",
   "common.show": "显示",
   "common.hide": "隐藏",
-
   "settings.ldap.enable": "启用 LDAP/Active Directory 身份验证",
   "settings.ldap.serverConnection": "服务器连接",
   "settings.ldap.server": "LDAP 服务器",
@@ -3239,7 +3230,6 @@
   "settings.ldap.allowedUserGroupsHelp": "留空以允许所有已验证用户，或指定组进行访问控制",
   "settings.ldap.testConnection": "测试连接",
   "settings.ldap.saveConfiguration": "保存配置",
-
   "settings.keycloak.enable": "启用 OIDC/Keycloak 身份验证",
   "settings.keycloak.oidcTitle": "OpenID Connect (OIDC)",
   "settings.keycloak.oidcDescription": "此集成支持 Keycloak 及其他符合 OIDC 标准的身份提供商，包括 Azure AD、Okta、Auth0 和 Google Workspace。",
@@ -3271,7 +3261,6 @@
   "settings.keycloak.adminRoleHelp": "令牌中具有此角色的用户将获得管理员权限",
   "settings.keycloak.testConnection": "测试连接",
   "settings.keycloak.saveConfiguration": "保存配置",
-
   "settings.pki.enable": "启用 PKI/证书身份验证",
   "settings.pki.advancedConfiguration": "高级配置",
   "settings.pki.advancedConfigurationDesc": "PKI 身份验证需要适当的基础设施设置，包括证书管理、反向代理配置和 CA 证书分发。请参阅文档获取详细的设置说明。",
@@ -3303,28 +3292,23 @@
   "settings.pki.allowPasswordFallback": "允许密码回退",
   "settings.pki.allowPasswordFallbackHelp": "启用后，没有证书的用户可以使用用户名/密码进行身份验证",
   "settings.pki.saveConfiguration": "保存配置",
-  "settings.sharing.adminBadge": "\u7ba1\u7406\u5458",
-
-  "settings.llm.autoSummarySection": "AI\u6458\u8981\u8bbe\u7f6e",
-  "settings.llm.autoSummary": "\u81ea\u52a8\u751f\u6210\u6458\u8981",
-  "settings.llm.autoSummaryDesc": "\u6bcf\u6b21\u8f6c\u5f55\u5b8c\u6210\u540e\u81ea\u52a8\u751f\u6210AI\u6458\u8981",
-  "settings.llm.autoSummaryDisabledHint": "\u6458\u8981\u5c06\u4e0d\u4f1a\u81ea\u52a8\u751f\u6210\u3002\u60a8\u4ecd\u53ef\u4ee5\u6309\u6587\u4ef6\u624b\u52a8\u751f\u6210\u3002",
-  "settings.llm.systemSummary": "\u7cfb\u7edf\u7ea7AI\u6458\u8981",
-  "settings.llm.systemSummaryDesc": "\u4e3a\u6240\u6709\u7528\u6237\u542f\u7528\u6216\u7981\u7528AI\u6458\u8981\u751f\u6210\uff08\u4ec5\u7ba1\u7406\u5458\uff09",
-  "settings.llm.systemSummaryDisabledHint": "AI\u6458\u8981\u5df2\u88ab\u7ba1\u7406\u5458\u7981\u7528\u3002",
-  "settings.llm.systemSummaryDisabledWarning": "AI\u6458\u8981\u5df2\u5bf9\u6240\u6709\u7528\u6237\u7981\u7528\u3002\u975e\u7ba1\u7406\u5458\u7528\u6237\u7684\u624b\u52a8\u751f\u6210\u4e5f\u88ab\u963b\u6b62\u3002",
-
-  "upload.skipSummary": "\u8df3\u8fc7\u6b64\u4e0a\u4f20\u7684AI\u6458\u8981",
-  "upload.skipSummaryHint": "\u8f6c\u5f55\u5c06\u5728\u4e0d\u751f\u6210AI\u6458\u8981\u7684\u60c5\u51b5\u4e0b\u5b8c\u6210",
-
-  "summary.statusDisabled": "\u6458\u8981\u751f\u6210\u5df2\u7981\u7528",
-  "summary.generateAnyway": "\u4ecd\u7136\u751f\u6210\u6458\u8981",
-  "summary.systemDisabled": "AI\u6458\u8981\u5df2\u88ab\u7ba1\u7406\u5458\u7981\u7528",
-  "summary.adminEnableHint": "\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u542f\u7528AI\u6458\u8981\u751f\u6210",
-
-  "common.enabled": "\u5df2\u542f\u7528",
-  "common.disabled": "\u5df2\u7981\u7528",
-
+  "settings.sharing.adminBadge": "管理员",
+  "settings.llm.autoSummarySection": "AI摘要设置",
+  "settings.llm.autoSummary": "自动生成摘要",
+  "settings.llm.autoSummaryDesc": "每次转录完成后自动生成AI摘要",
+  "settings.llm.autoSummaryDisabledHint": "摘要将不会自动生成。您仍可以按文件手动生成。",
+  "settings.llm.systemSummary": "系统级AI摘要",
+  "settings.llm.systemSummaryDesc": "为所有用户启用或禁用AI摘要生成（仅管理员）",
+  "settings.llm.systemSummaryDisabledHint": "AI摘要已被管理员禁用。",
+  "settings.llm.systemSummaryDisabledWarning": "AI摘要已对所有用户禁用。非管理员用户的手动生成也被阻止。",
+  "upload.skipSummary": "跳过此上传的AI摘要",
+  "upload.skipSummaryHint": "转录将在不生成AI摘要的情况下完成",
+  "summary.statusDisabled": "摘要生成已禁用",
+  "summary.generateAnyway": "仍然生成摘要",
+  "summary.systemDisabled": "AI摘要已被管理员禁用",
+  "summary.adminEnableHint": "请联系管理员启用AI摘要生成",
+  "common.enabled": "已启用",
+  "common.disabled": "已禁用",
   "uploader.whisperModel": "转录模型",
   "uploader.whisperModelHint": "为此转录选择 Whisper 模型",
   "uploader.useSystemDefault": "使用系统默认",
@@ -3337,10 +3321,9 @@
   "fileDetail.whisperModel": "ASR 模型",
   "fileDetail.modelFallback": "回退",
   "fileDetail.requestedModel": "请求的模型",
-
   "metadata.diarizationDisabled": "已禁用",
   "gallery.diarizationDisabledTooltip": "此文件已禁用说话人分离",
   "gallery.monologue": "独白",
-  "reprocess.diarizationWasDisabled": "此文件在未启用说话人分离的情况下处理。选择\u300c重新分离\u300d以启用说话人检测。",
+  "reprocess.diarizationWasDisabled": "此文件在未启用说话人分离的情况下处理。选择「重新分离」以启用说话人检测。",
   "exportOptions.diarizationDisabledHint": "无可用的说话人数据"
 }

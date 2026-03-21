@@ -773,4 +773,31 @@
     flex: 1;
   }
 
+  @media (max-width: 768px) {
+    .subsection-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .subsection-actions {
+      width: 100%;
+      flex-wrap: wrap;
+    }
+
+    .subsection-actions .btn {
+      flex: 1;
+    }
+
+    .form-actions {
+      flex-wrap: wrap;
+    }
+
+    .form-actions .btn-secondary {
+      margin-right: 0;
+    }
+
+    .form-actions .btn {
+      flex: 1;
+    }
+  }
 </style>

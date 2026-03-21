@@ -44,7 +44,7 @@
       keyboard: { global: false },
       tooltips: { controls: true },
       captions: { active: true, language: 'auto', update: true },
-      fullscreen: { iosNative: true },
+      fullscreen: { iosNative: false, fallback: true },
     });
 
     let hasStartedPlayback = false;
@@ -151,9 +151,11 @@
 
   {#if isVideo}
     <!-- svelte-ignore a11y-media-has-caption -->
+    <!-- playsinline prevents iOS from forcing fullscreen on play -->
     <video
       bind:this={mediaElement}
       preload="auto"
+      playsinline
     >
       <source src={mediaUrl} />
     </video>

@@ -154,6 +154,11 @@
       });
     }
 
+    // Collapse filters on mobile by default
+    if (window.innerWidth < 768) {
+      showFilters = false;
+    }
+
     // Enable sidebar transitions only after initial render is complete
     requestAnimationFrame(() => {
       sidebarMounted = true;
@@ -728,7 +733,8 @@
 <style>
   .search-page {
     display: flex;
-    height: calc(100vh - 60px);
+    height: calc(100vh - var(--content-top, 60px));
+    height: calc(100dvh - var(--content-top, 60px));
     overflow: hidden;
     padding-top: 0;
   }
@@ -913,6 +919,7 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
+    white-space: nowrap;
   }
 
   .mode-btn.active {
@@ -1125,25 +1132,45 @@
   @media (max-width: 768px) {
     .search-page {
       flex-direction: column;
+      overflow-x: hidden;
     }
 
+    /* Slide-in overlay sidebar — matches gallery page pattern */
     .filter-sidebar {
+      position: fixed;
+      top: var(--content-top, 60px);
+      left: -100%;
       width: 100% !important;
       min-width: 100% !important;
-      height: auto;
-      max-height: 50vh;
+      height: calc(100vh - var(--content-top, 60px));
+      height: calc(100dvh - var(--content-top, 60px));
+      background: var(--surface-color);
+      z-index: 1000;
+      transition: left 0.3s ease;
       border-right: none;
-      border-bottom: 1px solid var(--border-color, #e5e7eb);
+      border-top: 1px solid var(--border-color, #e5e7eb);
+    }
+
+    .filter-sidebar.show {
+      left: 0;
     }
 
     .filter-sidebar:not(.show) {
-      width: 100% !important;
-      min-width: 100% !important;
-      max-height: none;
+      width: auto !important;
+      min-width: auto !important;
+      position: static;
+      height: auto;
+    }
+
+    .content-area {
+      width: 100%;
+      overflow-x: hidden;
+      min-width: 0;
     }
 
     .scrollable-content {
-      padding: 1rem;
+      padding: 0.75rem;
+      overflow-x: hidden;
     }
 
     .results-info {
@@ -1151,14 +1178,36 @@
       align-items: flex-start;
     }
 
+    .results-controls {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
     .search-title {
       font-size: 1.25rem;
+    }
+
+    .results {
+      min-width: 0;
+    }
+
+    .results-list {
+      min-width: 0;
     }
 
     .sticky-preview {
       width: calc(100vw - 1rem);
       right: 0.5rem;
       bottom: 0.5rem;
+    }
+
+    .preview-header {
+      flex-wrap: wrap;
+      gap: 0.25rem;
+    }
+
+    .preview-actions {
+      margin-left: 0;
     }
   }
 

@@ -498,5 +498,22 @@
     margin-right: auto;
   }
 
+  @media (max-width: 768px) {
+    .form-row {
+      flex-direction: column;
+      gap: 0;
+    }
 
+    .actions {
+      flex-wrap: wrap;
+    }
+
+    .actions .btn-secondary {
+      margin-right: 0;
+    }
+
+    .actions .btn {
+      flex: 1;
+    }
+  }
 </style>

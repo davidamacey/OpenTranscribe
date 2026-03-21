@@ -125,7 +125,11 @@
           class:gender-conflict={cluster.gender_composition.has_gender_conflict}
           title={cluster.gender_composition.has_gender_conflict ? $t('speakers.cluster.genderConflict') : $t('speakers.cluster.genderCoherent')}
         >
-          {cluster.gender_composition.dominant_gender === 'male' ? '\u2642' : '\u2640'}
+          {#if cluster.gender_composition.dominant_gender === 'male'}
+            <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
+          {:else}
+            <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
+          {/if}
           {cluster.gender_composition.gender_label}
         </span>
       {/if}
@@ -210,6 +214,8 @@
     padding: 12px 16px;
     cursor: pointer;
     user-select: none;
+    gap: 8px;
+    min-width: 0;
   }
 
   .card-header:hover {
@@ -263,13 +269,18 @@
     background: var(--card-background, #ffffff);
     color: var(--text-color, #111827);
     outline: none;
+    min-width: 0;
+    flex: 1;
+    box-sizing: border-box;
   }
 
   .header-right {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .quality-badge {
@@ -285,9 +296,20 @@
   .gender-chip {
     font-size: 11px;
     font-weight: 600;
-    padding: 2px 8px;
+    padding: 3px 8px;
     border-radius: 10px;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    line-height: 1;
+    vertical-align: middle;
+  }
+
+  .gender-svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
   }
 
   .gender-coherent {
@@ -313,6 +335,9 @@
     background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
     color: var(--success-color, #059669);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
   }
 
   .card-body {
@@ -525,5 +550,79 @@
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
+  }
+
+  @media (max-width: 768px) {
+    .card-header {
+      padding: 10px 12px;
+      flex-wrap: wrap;
+    }
+
+    .header-left {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .header-right {
+      flex-shrink: 1;
+      min-width: 0;
+      gap: 6px;
+    }
+
+    .cluster-label {
+      font-size: 14px;
+    }
+
+    .quality-badge,
+    .gender-chip,
+    .outlier-chip {
+      font-size: 10px;
+      padding: 1px 6px;
+    }
+
+    .member-count {
+      font-size: 12px;
+    }
+
+    .promoted-badge {
+      max-width: 100px;
+      font-size: 10px;
+      padding: 1px 6px;
+    }
+
+    .card-body {
+      padding: 10px 12px;
+    }
+
+    .card-actions {
+      gap: 6px;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+    }
+
+    .action-btn {
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    .selection-chip {
+      font-size: 11px;
+    }
+
+    .blacklist-toggle {
+      font-size: 11px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .header-right {
+      flex-basis: 100%;
+      justify-content: flex-start;
+      margin-top: 4px;
+    }
+
+    .promoted-badge {
+      max-width: 140px;
+    }
   }
 </style>

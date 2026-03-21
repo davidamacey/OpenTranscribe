@@ -780,4 +780,29 @@
     gap: 0.5rem;
   }
 
+  @media (max-width: 768px) {
+    .setting-row.sub-setting {
+      margin-left: 0;
+    }
+
+    .button-group {
+      flex-wrap: wrap;
+    }
+
+    .button-group .btn-secondary {
+      margin-right: 0;
+    }
+
+    .button-group .btn {
+      flex: 1;
+    }
+
+    .confirm-buttons {
+      flex-wrap: wrap;
+    }
+
+    .confirm-buttons .btn {
+      flex: 1;
+    }
+  }
 </style>

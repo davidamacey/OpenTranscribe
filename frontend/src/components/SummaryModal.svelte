@@ -494,6 +494,8 @@
               {searchQuery}
               {currentMatchIndex}
             />
+          </div>
+          <div class="summary-actions-fixed">
             <SummaryActions
               {summary}
               {generating}
@@ -536,6 +538,16 @@
     flex: 1;
     overflow-y: auto;
     padding: 1.5rem;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .summary-actions-fixed {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color, #e0e0e0);
+    padding: 0.75rem 1.5rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-primary, #ffffff);
   }
 
   .modal-title {
@@ -640,6 +652,33 @@
   .error-message p {
     margin: 0;
     color: var(--text-secondary);
+  }
+
+  @media (max-width: 768px) {
+    .modal-title {
+      font-size: 1.1rem;
+    }
+
+    .header-actions {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .copy-button-header,
+    .reprocess-button-header {
+      min-height: 44px;
+      padding: 0.5rem 0.625rem;
+      font-size: 0.8rem;
+    }
+
+    .summary-scroll-area {
+      padding: 0.75rem;
+    }
+
+    .summary-actions-fixed {
+      padding: 0.5rem 0.75rem;
+      padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    }
   }
 
 </style>

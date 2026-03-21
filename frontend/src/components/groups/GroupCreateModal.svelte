@@ -202,4 +202,16 @@
     font-style: italic;
   }
 
+  @media (max-width: 768px) {
+    .modal-button {
+      min-height: 44px;
+      width: 100%;
+    }
+
+    .form-control {
+      min-height: 44px;
+      font-size: 1rem;
+    }
+  }
+
 </style>

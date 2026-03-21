@@ -945,11 +945,11 @@
 
   @media (max-width: 768px) {
     .modal-title {
-      font-size: 1.25rem;
+      font-size: 1.1rem;
     }
 
     .search-section {
-      padding: 1rem;
+      padding: 0.75rem 1rem;
     }
 
     .search-container {
@@ -962,12 +962,36 @@
       justify-content: space-between;
     }
 
+    .search-input {
+      min-height: 44px;
+    }
+
+    .nav-button {
+      min-width: 44px;
+      min-height: 44px;
+    }
+
+    .copy-button-header {
+      min-height: 44px;
+      padding: 0.5rem 0.625rem;
+    }
+
     .modal-content {
       padding: 1rem;
     }
 
     .transcript-content {
       font-size: 0.85rem;
+    }
+
+    .transcript-segment:not(.monologue) {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .segment-header {
+      flex-direction: row;
+      gap: 0.5rem;
     }
   }
 </style>

@@ -337,4 +337,14 @@
   .note strong {
     color: var(--color-info, var(--primary-color));
   }
+
+  @media (max-width: 768px) {
+    .tabs {
+      flex-wrap: wrap;
+    }
+
+    .config-methods {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>

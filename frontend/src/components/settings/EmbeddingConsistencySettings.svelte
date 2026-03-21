@@ -616,5 +616,18 @@
     margin: 0;
   }
 
+  @media (max-width: 768px) {
+    .action-box {
+      flex-direction: column;
+    }
 
+    .action-buttons {
+      width: 100%;
+      flex-wrap: wrap;
+    }
+
+    .action-buttons .btn {
+      flex: 1;
+    }
+  }
 </style>

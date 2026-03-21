@@ -466,6 +466,7 @@
   {:else if !users || users.length === 0}
     <EmptyState title={$t('userManagement.noUsersFound')} padding="2rem" />
   {:else}
+    <div class="table-scroll-wrapper">
     <table class="users-table user-management-table">
       <thead>
         <tr>
@@ -561,6 +562,7 @@
         {/each}
       </tbody>
     </table>
+    </div>
   {/if}
 </div>
 
@@ -1173,5 +1175,28 @@
   .btn-confirm:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .table-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  @media (max-width: 768px) {
+    .users-table {
+      min-width: 600px;
+    }
+
+    .users-table th,
+    .users-table td {
+      white-space: nowrap;
+      padding: 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    .icon-button {
+      width: 36px;
+      height: 36px;
+    }
   }
 </style>

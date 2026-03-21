@@ -1196,4 +1196,42 @@
     font-size: 0.725rem;
     color: var(--text-muted);
   }
+
+  @media (max-width: 768px) {
+    .status-bar {
+      flex-wrap: wrap;
+    }
+
+    .config-card {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .config-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    .model-control-row {
+      flex-direction: column;
+    }
+
+    .model-actions {
+      margin-top: 0;
+      width: 100%;
+    }
+
+    .model-actions .btn {
+      flex: 1;
+    }
+
+    .model-info-row {
+      flex-direction: column;
+    }
+
+    .section-header {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  }
 </style>

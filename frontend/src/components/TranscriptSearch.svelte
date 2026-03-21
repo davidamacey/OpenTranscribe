@@ -290,6 +290,7 @@
         bind:this={searchInput}
         bind:value={searchQuery}
         on:input={handleSearchInput}
+        on:keydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearchInput(); } }}
         type="text"
         placeholder={$t('transcriptSearch.placeholder')}
         class="search-input"

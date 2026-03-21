@@ -507,6 +507,10 @@
 
   /* Mobile responsive */
   @media (max-width: 768px) {
+    .about-modal-wrapper :global(.modal-body) {
+      padding: 1rem !important;
+    }
+
     .features-grid {
       grid-template-columns: 1fr;
       gap: 1rem;
@@ -522,6 +526,10 @@
     .credits-grid {
       grid-template-columns: 1fr;
       gap: 1rem;
+    }
+
+    .credit-link {
+      min-height: 44px;
     }
   }
 </style>

@@ -1254,15 +1254,42 @@
 
   @media (max-width: 768px) {
     .modal-title {
-      font-size: 1.1rem;
+      font-size: 1rem;
+    }
+
+    .match-legend {
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
 
     .nav-bar {
       padding: 0.5rem 1rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .nav-query {
+      max-width: 100%;
+      flex: 1 1 100%;
+    }
+
+    .nav-btn {
+      min-width: 44px;
+      min-height: 44px;
     }
 
     .modal-content {
       padding: 1rem;
+    }
+
+    .transcript-segment {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .segment-header {
+      flex-direction: row;
+      gap: 0.5rem;
     }
   }
 </style>

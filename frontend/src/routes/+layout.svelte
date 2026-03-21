@@ -118,7 +118,12 @@
     {/if}
   </div>
 {:else}
-  <div class="loading-app">Loading...</div>
+  <div class="loading-app">
+    <div class="loading-brand">
+      <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />
+      <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -126,6 +131,7 @@
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    min-height: 100dvh;
   }
 
   /* Offset for classification banner (approx 28px) */
@@ -159,7 +165,50 @@
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    color: var(--text-muted, #6c757d);
-    font-size: 1rem;
+    min-height: 100dvh;
+    background-color: var(--bg-primary, #f8fafc);
+  }
+
+  .loading-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  .loading-logo {
+    border-radius: 16px;
+    animation: loading-pulse 1.8s ease-in-out infinite;
+  }
+
+  .loading-bar {
+    width: 120px;
+    height: 3px;
+    background: var(--border-color, #e2e8f0);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .loading-bar-fill {
+    width: 40%;
+    height: 100%;
+    background: var(--primary-color, #3b82f6);
+    border-radius: 3px;
+    animation: loading-slide 1.2s ease-in-out infinite;
+  }
+
+  @keyframes loading-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  @keyframes loading-slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .loading-logo { animation: none; }
+    .loading-bar-fill { animation: none; width: 100%; }
   }
 </style>

@@ -286,9 +286,10 @@
   }
 
   /* Responsive design */
-  @media (max-width: 480px) {
+  @media (max-width: 768px) {
     .modal-button {
       width: 100%;
+      min-height: 44px;
     }
 
     .comparison-section {

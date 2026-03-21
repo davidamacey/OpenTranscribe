@@ -354,4 +354,27 @@
   :global([data-theme='dark']) .pending-item {
     background: rgba(255, 255, 255, 0.03);
   }
+
+  @media (max-width: 768px) {
+    .pending-item {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.5rem;
+    }
+
+    .pending-actions {
+      justify-content: flex-end;
+    }
+
+    .share-btn {
+      width: 100%;
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    .remove-btn {
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
 </style>

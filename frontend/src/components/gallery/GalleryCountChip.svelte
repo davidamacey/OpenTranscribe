@@ -110,5 +110,18 @@
       padding: 0.3rem 0.625rem;
       gap: 0.3rem;
     }
+
+    .count-chip span {
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .count-chip {
+      display: none;
+    }
   }
 </style>

@@ -598,6 +598,7 @@
     <input
       type="text"
       bind:value={searchQuery}
+      on:keydown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
       placeholder={$t('filter.searchPlaceholder')}
       class="filter-input"
       title={$t('filter.searchTooltip')}

@@ -225,10 +225,11 @@
   .member-row {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     padding: 6px 8px;
     border-radius: 4px;
     font-size: 13px;
+    min-width: 0;
   }
 
   .member-row:hover {
@@ -238,12 +239,18 @@
   .member-name {
     font-weight: 500;
     color: var(--text-color);
-    min-width: 120px;
+    min-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+    max-width: 200px;
   }
 
   .member-file {
     color: var(--text-secondary);
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -265,6 +272,10 @@
   .gender-icon {
     font-size: 12px;
     color: var(--text-secondary, #6b7280);
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    vertical-align: middle;
   }
 
   .gender-confirmed-tick {
@@ -335,6 +346,8 @@
     font-size: 12px;
     font-weight: 600;
     color: var(--warning-color, #f59e0b);
+    flex-wrap: wrap;
+    min-width: 0;
   }
 
   .separator-hint {
@@ -444,5 +457,72 @@
   .btn-confirm:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  @media (max-width: 768px) {
+    .member-row {
+      gap: 6px;
+      padding: 6px 4px;
+      font-size: 12px;
+    }
+
+    .member-name {
+      min-width: 60px;
+      max-width: 120px;
+      font-size: 12px;
+    }
+
+    .member-confidence {
+      font-size: 11px;
+    }
+
+    .gender-icon {
+      font-size: 11px;
+    }
+
+    .outlier-badge {
+      font-size: 9px;
+      padding: 1px 4px;
+    }
+
+    .verified-badge {
+      font-size: 10px;
+      padding: 1px 4px;
+    }
+
+    .mode-banner {
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+
+    .mode-actions {
+      gap: 6px;
+    }
+
+    .btn-cancel,
+    .btn-confirm {
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    .gender-separator {
+      font-size: 11px;
+      gap: 4px;
+    }
+
+    .separator-hint {
+      font-size: 10px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .member-name {
+      min-width: 40px;
+      max-width: 90px;
+    }
+
+    .member-file {
+      display: none;
+    }
   }
 </style>

@@ -306,6 +306,7 @@
   "common.audio": "Audio",
   "common.cancel": "Annuler",
   "common.close": "Fermer",
+  "common.clear": "Effacer",
   "common.completed": "Terminé",
   "common.confirm": "Confirmer",
   "common.date": "Date",
@@ -3001,7 +3002,6 @@
   "settings.dataIntegrity.docMetadata": "Métadonnées",
   "settings.dataIntegrity.docChunks": "Fragments de recherche",
   "settings.dataIntegrity.docTotal": "Total",
-
   "settings.embeddingConsistency.title": "Embedding Consistency",
   "settings.embeddingConsistency.description": "Detects speakers in the database that are missing from the OpenSearch speaker index and re-extracts their embeddings. Runs automatically every 10 minutes.",
   "settings.embeddingConsistency.loading": "Loading embedding consistency status...",
@@ -3044,7 +3044,6 @@
   "settings.embeddingConsistency.completedIn": "Completed in {{duration}}",
   "settings.embeddingConsistency.allSpeakersIndexed": "All speakers are indexed",
   "settings.embeddingConsistency.repairSummary": "{{repaired}} repaired, {{failed}} failed",
-
   "settings.session.introText": "Configurez la durée de vie des sessions et des jetons pour équilibrer sécurité et confort utilisateur. Des durées plus courtes améliorent la sécurité mais peuvent nécessiter une ré-authentification plus fréquente.",
   "settings.session.tokenLifetimes": "Durée de Vie des Jetons",
   "settings.session.accessTokenLifetime": "Durée de Vie du Jeton d'Accès",
@@ -3085,7 +3084,6 @@
   "settings.session.days": "jours",
   "settings.session.week": "semaine",
   "settings.session.weeks": "semaines",
-
   "settings.localAuth.enableLocal": "Activer l'Authentification Locale (Nom d'utilisateur/Mot de passe)",
   "settings.localAuth.registrationSettings": "Paramètres d'Inscription",
   "settings.localAuth.allowSelfRegistration": "Autoriser l'auto-inscription",
@@ -3119,9 +3117,7 @@
   "settings.localAuth.lowercase": "minuscules",
   "settings.localAuth.numbers": "chiffres",
   "settings.localAuth.specialChars": "caractères spéciaux",
-
   "loginBanner.consentText": "En cliquant sur \"J'accepte\", vous consentez aux conditions ci-dessus et confirmez que vous êtes autorisé à accéder à ce système.",
-
   "settings.accountStatus.overview": "Aperçu du statut des comptes",
   "settings.accountStatus.dashboard": "Tableau de bord du statut des comptes",
   "settings.accountStatus.loadingStatus": "Chargement du statut des comptes...",
@@ -3135,7 +3131,6 @@
   "settings.accountStatus.sectionTitle": "Statut des comptes",
   "settings.accountStatus.sectionDescription": "Aperçu des comptes utilisateurs, adoption du MFA et statut de sécurité.",
   "settings.accountStatus.navLabel": "Statut des comptes",
-
   "settings.auditLog.sectionTitle": "Journaux d'audit",
   "settings.auditLog.sectionDescription": "Afficher et exporter les journaux d'authentification et de modification de configuration.",
   "settings.auditLog.navLabel": "Journaux d'audit",
@@ -3178,7 +3173,6 @@
   "settings.auditLog.events.userDelete": "Suppression d'utilisateur",
   "settings.auditLog.events.roleChange": "Changement de rôle",
   "settings.auditLog.events.settingsChange": "Modification des paramètres",
-
   "settings.authentication.heading": "Configuration de l'authentification",
   "settings.authentication.dbBackedTitle": "Configuration d'authentification en base de données",
   "settings.authentication.comingSoonDesc": "Cette fonctionnalité sera bientôt disponible. Pour l'instant, configurez l'authentification via les variables d'environnement :",
@@ -3198,14 +3192,11 @@
   "settings.authentication.method.keycloak": "Keycloak/OIDC",
   "settings.authentication.method.pki": "PKI/Certificats X.509",
   "settings.authentication.method.mfa": "MFA/TOTP",
-
   "settings.statistics.previousGpu": "GPU précédent",
   "settings.statistics.nextGpu": "GPU suivant",
-
   "common.testing": "Test en cours...",
   "common.show": "Afficher",
   "common.hide": "Masquer",
-
   "settings.ldap.enable": "Activer l'authentification LDAP/Active Directory",
   "settings.ldap.serverConnection": "Connexion au serveur",
   "settings.ldap.server": "Serveur LDAP",
@@ -3239,7 +3230,6 @@
   "settings.ldap.allowedUserGroupsHelp": "Laissez vide pour autoriser tous les utilisateurs authentifiés, ou spécifiez des groupes pour le contrôle d'accès",
   "settings.ldap.testConnection": "Tester la connexion",
   "settings.ldap.saveConfiguration": "Enregistrer la configuration",
-
   "settings.keycloak.enable": "Activer l'authentification OIDC/Keycloak",
   "settings.keycloak.oidcTitle": "OpenID Connect (OIDC)",
   "settings.keycloak.oidcDescription": "Cette intégration prend en charge Keycloak et d'autres fournisseurs d'identité compatibles OIDC, notamment Azure AD, Okta, Auth0 et Google Workspace.",
@@ -3271,7 +3261,6 @@
   "settings.keycloak.adminRoleHelp": "Les utilisateurs ayant ce rôle dans leur jeton se verront accorder les privilèges administrateur",
   "settings.keycloak.testConnection": "Tester la connexion",
   "settings.keycloak.saveConfiguration": "Enregistrer la configuration",
-
   "settings.pki.enable": "Activer l'authentification PKI/Certificat",
   "settings.pki.advancedConfiguration": "Configuration avancée",
   "settings.pki.advancedConfigurationDesc": "L'authentification PKI nécessite une configuration d'infrastructure appropriée, incluant la gestion des certificats, la configuration du proxy inverse et la distribution des certificats CA. Consultez la documentation pour les instructions détaillées.",
@@ -3304,27 +3293,22 @@
   "settings.pki.allowPasswordFallbackHelp": "Lorsque activé, les utilisateurs sans certificat peuvent s'authentifier par nom d'utilisateur/mot de passe",
   "settings.pki.saveConfiguration": "Enregistrer la configuration",
   "settings.sharing.adminBadge": "Admin",
-
-  "settings.llm.autoSummarySection": "Param\u00e8tres de r\u00e9sum\u00e9 IA",
-  "settings.llm.autoSummary": "G\u00e9n\u00e9rer automatiquement les r\u00e9sum\u00e9s",
-  "settings.llm.autoSummaryDesc": "G\u00e9n\u00e9rer automatiquement des r\u00e9sum\u00e9s IA apr\u00e8s chaque transcription",
-  "settings.llm.autoSummaryDisabledHint": "Les r\u00e9sum\u00e9s ne seront pas g\u00e9n\u00e9r\u00e9s automatiquement. Vous pouvez toujours les g\u00e9n\u00e9rer manuellement par fichier.",
-  "settings.llm.systemSummary": "R\u00e9sum\u00e9s IA au niveau syst\u00e8me",
-  "settings.llm.systemSummaryDesc": "Activer ou d\u00e9sactiver la g\u00e9n\u00e9ration de r\u00e9sum\u00e9s IA pour tous les utilisateurs (admin uniquement)",
-  "settings.llm.systemSummaryDisabledHint": "Les r\u00e9sum\u00e9s IA ont \u00e9t\u00e9 d\u00e9sactiv\u00e9s par l'administrateur.",
-  "settings.llm.systemSummaryDisabledWarning": "Les r\u00e9sum\u00e9s IA sont d\u00e9sactiv\u00e9s pour TOUS les utilisateurs. La g\u00e9n\u00e9ration manuelle est aussi bloqu\u00e9e pour les non-administrateurs.",
-
-  "upload.skipSummary": "Ignorer le r\u00e9sum\u00e9 IA pour cet envoi",
-  "upload.skipSummaryHint": "La transcription se terminera sans g\u00e9n\u00e9rer de r\u00e9sum\u00e9 IA",
-
-  "summary.statusDisabled": "G\u00e9n\u00e9ration de r\u00e9sum\u00e9 d\u00e9sactiv\u00e9e",
-  "summary.generateAnyway": "G\u00e9n\u00e9rer le r\u00e9sum\u00e9 quand m\u00eame",
-  "summary.systemDisabled": "Les r\u00e9sum\u00e9s IA ont \u00e9t\u00e9 d\u00e9sactiv\u00e9s par l'administrateur",
-  "summary.adminEnableHint": "Contactez votre administrateur pour activer la g\u00e9n\u00e9ration de r\u00e9sum\u00e9s IA",
-
-  "common.enabled": "Activ\u00e9",
-  "common.disabled": "D\u00e9sactiv\u00e9",
-
+  "settings.llm.autoSummarySection": "Paramètres de résumé IA",
+  "settings.llm.autoSummary": "Générer automatiquement les résumés",
+  "settings.llm.autoSummaryDesc": "Générer automatiquement des résumés IA après chaque transcription",
+  "settings.llm.autoSummaryDisabledHint": "Les résumés ne seront pas générés automatiquement. Vous pouvez toujours les générer manuellement par fichier.",
+  "settings.llm.systemSummary": "Résumés IA au niveau système",
+  "settings.llm.systemSummaryDesc": "Activer ou désactiver la génération de résumés IA pour tous les utilisateurs (admin uniquement)",
+  "settings.llm.systemSummaryDisabledHint": "Les résumés IA ont été désactivés par l'administrateur.",
+  "settings.llm.systemSummaryDisabledWarning": "Les résumés IA sont désactivés pour TOUS les utilisateurs. La génération manuelle est aussi bloquée pour les non-administrateurs.",
+  "upload.skipSummary": "Ignorer le résumé IA pour cet envoi",
+  "upload.skipSummaryHint": "La transcription se terminera sans générer de résumé IA",
+  "summary.statusDisabled": "Génération de résumé désactivée",
+  "summary.generateAnyway": "Générer le résumé quand même",
+  "summary.systemDisabled": "Les résumés IA ont été désactivés par l'administrateur",
+  "summary.adminEnableHint": "Contactez votre administrateur pour activer la génération de résumés IA",
+  "common.enabled": "Activé",
+  "common.disabled": "Désactivé",
   "uploader.whisperModel": "Modele de transcription",
   "uploader.whisperModelHint": "Choisir un modele Whisper pour cette transcription",
   "uploader.useSystemDefault": "Utiliser la valeur par defaut",
@@ -3337,7 +3321,6 @@
   "fileDetail.whisperModel": "Modele ASR",
   "fileDetail.modelFallback": "Repli",
   "fileDetail.requestedModel": "Modele demande",
-
   "metadata.diarizationDisabled": "Désactivé",
   "gallery.diarizationDisabledTooltip": "La diarisation des locuteurs a été désactivée pour ce fichier",
   "gallery.monologue": "Monologue",

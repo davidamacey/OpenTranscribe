@@ -1292,4 +1292,75 @@
     background: rgba(245, 158, 11, 0.08);
     border-left: 3px solid var(--warning-color);
   }
+
+  @media (max-width: 768px) {
+    .llm-settings {
+      max-width: 100%;
+    }
+
+    .section-header {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .section-header h4 {
+      font-size: 1rem;
+    }
+
+    .create-config-button,
+    .create-first-config-btn {
+      width: 100%;
+      justify-content: center;
+      min-height: 44px;
+    }
+
+    .config-item {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.75rem;
+    }
+
+    .config-info {
+      min-width: 0;
+    }
+
+    .config-name {
+      word-break: break-word;
+    }
+
+    .config-url {
+      word-break: break-all;
+    }
+
+    .config-actions {
+      flex-wrap: wrap;
+      gap: 0.375rem;
+    }
+
+    .activate-button,
+    .edit-button,
+    .delete-config-button,
+    .test-connection-button {
+      flex: 1;
+      justify-content: center;
+      min-height: 44px;
+      height: auto;
+    }
+
+    .config-status {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .delete-all-button {
+      width: 100%;
+      justify-content: center;
+      min-height: 44px;
+    }
+
+    .empty-state {
+      padding: 2rem 1rem;
+    }
+
+  }
 </style>

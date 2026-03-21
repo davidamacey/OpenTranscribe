@@ -1336,9 +1336,10 @@
   }
 
   /* Responsive design */
-  @media (max-width: 480px) {
+  @media (max-width: 768px) {
     .modal-button {
       width: 100%;
+      min-height: 44px;
     }
 
     .settings-row {
@@ -1351,6 +1352,25 @@
 
     .step-line {
       min-width: 30px;
+    }
+
+    .step-indicator {
+      padding: 0.75rem 1rem;
+    }
+
+    .modal-body {
+      padding: 1rem;
+    }
+
+    .stage-item {
+      padding: 0.75rem;
+    }
+
+    .setting-field input,
+    .setting-field select,
+    .model-select {
+      min-height: 44px;
+      font-size: 1rem;
     }
   }
 

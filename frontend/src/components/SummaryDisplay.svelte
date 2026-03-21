@@ -320,6 +320,7 @@
   .summary-content {
     padding: 1.5rem;
     max-height: calc(100vh - 200px);
+    max-height: calc(100dvh - 200px);
     overflow-y: auto;
   }
 

@@ -290,7 +290,7 @@
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
-          {$t('nav.gallery')}
+          <span class="tab-label">{$t('nav.gallery')}</span>
         </button>
         <button
           class="tab-button {$galleryState.activeTab === 'status' ? 'active' : ''}"
@@ -303,7 +303,7 @@
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
-          {$t('nav.fileStatus')}
+          <span class="tab-label">{$t('nav.fileStatus')}</span>
         </button>
       </div>
     {/if}
@@ -1096,32 +1096,25 @@
   @media (max-width: 768px) {
     .navbar-container {
       gap: 0.5rem;
-      flex-wrap: wrap;
       padding: 0.5rem;
     }
 
     .gallery-tabs {
-      order: 1;
-      flex-basis: 100%;
-      gap: 0.4rem;
-    }
-
-    .navbar-brand {
-      order: 2;
-    }
-
-    .nav-links {
-      order: 3;
+      gap: 0.25rem;
     }
 
     .tab-button {
-      padding: 0.3rem 0.6rem;
-      font-size: 0.85rem;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.8rem;
     }
 
     .tab-button.active::after {
       bottom: -6px;
       height: 2px;
+    }
+
+    .logo-banner {
+      height: 28px;
     }
 
     .nav-links {
@@ -1143,6 +1136,7 @@
       z-index: 999;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
       max-height: calc(100vh - 60px - env(safe-area-inset-top, 0px));
+      max-height: calc(100dvh - 60px - env(safe-area-inset-top, 0px));
       overflow-y: auto;
     }
 
@@ -1185,6 +1179,107 @@
 
     .dropdown-item:hover {
       transform: none; /* Disable transform on mobile for better touch experience */
+    }
+
+    /* Hide username text on mobile, show avatar only */
+    .username {
+      display: none;
+    }
+
+    .dropdown-icon {
+      display: none;
+    }
+
+    .user-button {
+      gap: 0.25rem;
+      padding: 0.25rem;
+    }
+
+    /* Mobile: user dropdown flows inline in the mobile menu */
+    .nav-links.open .user-dropdown {
+      width: 100%;
+    }
+
+    .nav-links.open .user-button {
+      width: 100%;
+      justify-content: flex-start;
+      padding: 0.75rem 1rem;
+      min-height: 44px;
+      gap: 0.5rem;
+    }
+
+    /* Show username in the mobile menu for clarity */
+    .nav-links.open .username {
+      display: inline;
+    }
+
+    .nav-links.open .dropdown-icon {
+      display: inline;
+      margin-left: auto;
+    }
+
+    .nav-links.open .dropdown-menu {
+      position: relative;
+      width: 100%;
+      top: auto;
+      right: auto;
+      box-shadow: none;
+      border: none;
+      border-top: 1px solid var(--border-color);
+      border-radius: 0;
+      margin-top: 0.25rem;
+      background: transparent;
+    }
+
+    .nav-links.open .dropdown-item {
+      width: 100%;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      margin: 0;
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+    }
+
+    .nav-links.open .dropdown-header {
+      padding: 0.75rem 1rem;
+    }
+
+    .nav-links.open .dropdown-divider {
+      margin: 0.25rem 0;
+    }
+  }
+
+  /* Extra-small screens (iPhone SE, 375px and below) */
+  @media (max-width: 480px) {
+    /* Hide tab label text, show icon-only tabs */
+    .tab-label {
+      display: none;
+    }
+
+    .tab-button {
+      padding: 0.3rem 0.4rem;
+    }
+
+    .logo-banner {
+      height: 24px;
+    }
+
+    .navbar-container {
+      gap: 0.25rem;
+      padding: 0.5rem 0.375rem;
+    }
+
+    .recording-time {
+      display: none;
+    }
+
+    .recording-indicator {
+      padding: 0.4rem 0.5rem;
+    }
+
+    .theme-toggle-container {
+      margin: 0 2px;
     }
   }
 

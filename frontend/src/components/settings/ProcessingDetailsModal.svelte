@@ -317,13 +317,25 @@
     font-style: italic;
   }
 
-  @media (max-width: 480px) {
+  @media (max-width: 768px) {
     .detail-tabs {
       overflow-x: auto;
     }
 
     .tab {
       white-space: nowrap;
+      min-height: 44px;
+      padding: 0.5rem 0.625rem;
+    }
+
+    .detail-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.25rem;
+    }
+
+    .detail-value {
+      text-align: left;
     }
   }
 

@@ -167,6 +167,9 @@
     font-weight: 500;
     color: var(--text-color, #111827);
     font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .suggestion {
@@ -175,6 +178,8 @@
     gap: 6px;
     margin-top: 2px;
     font-size: 13px;
+    flex-wrap: wrap;
+    min-width: 0;
   }
 
   .suggestion-label {
@@ -184,6 +189,10 @@
   .suggestion-name {
     color: var(--primary-color, #3b82f6);
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
   }
 
   .confidence {
@@ -221,6 +230,8 @@
     margin-top: 3px;
     font-size: 12px;
     color: var(--text-secondary, #9ca3af);
+    flex-wrap: wrap;
+    min-width: 0;
   }
 
   .file-title {
@@ -294,5 +305,70 @@
     color: var(--text-color, #374151);
     transform: none;
     box-shadow: none;
+  }
+
+  @media (max-width: 768px) {
+    .inbox-row {
+      padding: 8px 12px;
+      gap: 8px;
+    }
+
+    .item-left {
+      gap: 8px;
+    }
+
+    .speaker-name {
+      font-size: 13px;
+    }
+
+    .suggestion {
+      font-size: 12px;
+      gap: 4px;
+    }
+
+    .suggestion-name {
+      max-width: 140px;
+    }
+
+    .file-title {
+      max-width: 120px;
+    }
+
+    .meta {
+      font-size: 11px;
+      gap: 4px;
+    }
+
+    .item-actions {
+      gap: 4px;
+    }
+
+    .action-btn {
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .inbox-row {
+      flex-wrap: wrap;
+    }
+
+    .item-left {
+      flex-basis: 100%;
+      min-width: 0;
+    }
+
+    .item-actions {
+      margin-left: auto;
+    }
+
+    .suggestion-name {
+      max-width: 120px;
+    }
+
+    .file-title {
+      max-width: 100px;
+    }
   }
 </style>

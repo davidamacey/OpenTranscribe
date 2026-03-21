@@ -779,4 +779,27 @@
     margin: 0.25rem 0 0;
     line-height: 1.4;
   }
+
+  @media (max-width: 768px) {
+    .form-row {
+      flex-direction: column;
+    }
+
+    .source-header {
+      flex-direction: column;
+    }
+
+    .source-meta {
+      flex-wrap: wrap;
+    }
+
+    .source-actions {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .share-toggle {
+      margin-left: 0;
+    }
+  }
 </style>

@@ -796,13 +796,29 @@
   {#if activeTab === 'clusters'}
     <div class="tab-content">
       <div class="toolbar">
-        <input
-          type="text"
-          class="search-input"
-          placeholder={$t('speakers.searchPlaceholder')}
-          bind:value={clusterSearch}
-          on:input={handleClusterSearch}
-        />
+        <div class="search-input-wrapper">
+          <input
+            type="text"
+            class="search-input"
+            placeholder={$t('speakers.searchPlaceholder')}
+            bind:value={clusterSearch}
+            on:input={handleClusterSearch}
+          />
+          {#if clusterSearch}
+            <button
+              class="search-clear-btn"
+              on:click={() => { clusterSearch = ''; handleClusterSearch(); }}
+              title={$t('common.clear')}
+              aria-label={$t('common.clear')}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+            </button>
+          {/if}
+        </div>
         <button class="btn-recluster" on:click={handleRecluster} disabled={reclustering} title={$t('speakers.tooltip.recluster')}>
           {reclustering ? $t('speakers.clusters.reclustering') : $t('speakers.clusters.recluster')}
         </button>
@@ -1242,6 +1258,15 @@
     max-width: 1000px;
     margin: 0 auto;
     padding: 24px 16px;
+    overflow-x: hidden;
+    max-width: 100vw;
+    box-sizing: border-box;
+  }
+
+  @media (min-width: 769px) {
+    .speakers-page {
+      max-width: 1000px;
+    }
   }
 
   .page-header h1 {
@@ -1305,16 +1330,48 @@
     display: flex;
     gap: 12px;
     margin-bottom: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .search-input-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .search-clear-btn {
+    position: absolute;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 4px;
+    border-radius: 50%;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .search-clear-btn:hover {
+    color: var(--text-color);
+    background: var(--hover-color, rgba(0, 0, 0, 0.05));
   }
 
   .search-input {
-    flex: 1;
-    padding: 8px 12px;
+    width: 100%;
+    min-width: 0;
+    padding: 8px 32px 8px 12px;
     border: 1px solid var(--input-border);
     border-radius: 6px;
     background: var(--input-background);
     color: var(--text-color);
     font-size: 14px;
+    box-sizing: border-box;
   }
 
   .search-input::placeholder {
@@ -1511,6 +1568,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 12px;
+    max-width: 100%;
   }
 
   .profile-card {
@@ -1519,6 +1577,8 @@
     border-radius: 8px;
     background: var(--card-background, #fff);
     transition: box-shadow 0.15s ease;
+    overflow: hidden;
+    min-width: 0;
   }
 
   .profile-card:hover {
@@ -1586,6 +1646,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
   }
 
   .profile-name {
@@ -1594,12 +1655,17 @@
     color: var(--text-color);
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .profile-desc {
     margin-top: 4px;
     font-size: 13px;
     color: var(--text-secondary);
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 
   .profile-meta {
@@ -1639,6 +1705,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
+    max-width: 100%;
   }
 
   .pagination {
@@ -1778,6 +1845,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     padding: 8px 16px;
     background: color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
     border: 1px solid var(--primary-color, #3b82f6);
@@ -1785,6 +1853,13 @@
     margin-bottom: 12px;
     font-size: 14px;
     color: var(--primary-color, #3b82f6);
+  }
+
+  .merge-banner span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .btn-cancel-merge {
@@ -1854,6 +1929,7 @@
 
   .profile-edit-input {
     flex: 1;
+    min-width: 0;
     padding: 4px 8px;
     border: 2px solid var(--primary-color, #3b82f6);
     border-radius: 6px;
@@ -1863,6 +1939,7 @@
     font-weight: 600;
     outline: none;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #3b82f6) 10%, transparent);
+    box-sizing: border-box;
   }
 
   /* member-play-btn styles moved to ClusterMemberList.svelte */
@@ -1991,5 +2068,143 @@
   :global(.dark) .shared-badge {
     background: rgba(99, 102, 241, 0.2);
     color: #a5b4fc;
+  }
+
+  @media (max-width: 768px) {
+    .speakers-page {
+      padding: 16px 12px;
+    }
+
+    .page-header h1 {
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+
+    .tabs {
+      gap: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .tabs::-webkit-scrollbar {
+      display: none;
+    }
+
+    .tab {
+      padding: 8px 14px;
+      font-size: 13px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .toolbar {
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .search-input {
+      flex-basis: 100%;
+      min-width: 0;
+    }
+
+    .btn-recluster {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .last-clustered-chip {
+      font-size: 0.7rem;
+      flex-basis: 100%;
+      text-align: center;
+    }
+
+    .merge-banner {
+      flex-wrap: wrap;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .merge-banner span {
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .section-heading-btn {
+      font-size: 12px;
+      padding: 4px 2px;
+    }
+
+    .profile-list {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .profile-card {
+      padding: 12px;
+    }
+
+    .profile-header {
+      gap: 8px;
+    }
+
+    .profile-avatar-wrapper,
+    .profile-avatar,
+    .avatar-initials,
+    .avatar-spinner {
+      width: 40px;
+      height: 40px;
+    }
+
+    .avatar-initials {
+      font-size: 14px;
+    }
+
+    .profile-name {
+      font-size: 14px;
+    }
+
+    .profile-meta {
+      gap: 8px;
+    }
+
+    .inbox-hint {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .pagination {
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .pagination button {
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+
+    .sticky-preview {
+      left: 0.5rem;
+      right: 0.5rem;
+      bottom: 0.5rem;
+      width: auto;
+      max-width: none;
+    }
+
+    .preview-header {
+      padding: 0.375rem 0.5rem;
+    }
+
+    .preview-detail-link {
+      font-size: 0.6875rem;
+      padding: 0.25rem 0.375rem;
+    }
+
+    .promote-modal {
+      padding: 16px;
+      width: 92%;
+    }
   }
 </style>

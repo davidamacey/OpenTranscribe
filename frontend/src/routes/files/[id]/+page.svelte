@@ -3021,6 +3021,41 @@
     .main-content-grid {
       gap: 20px;
     }
+
+    .video-header {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .header-buttons {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    .view-transcript-btn,
+    .view-summary-btn,
+    .generate-summary-btn {
+      font-size: 0.8rem;
+      padding: 0.4rem 0.6rem;
+      height: 36px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .view-transcript-btn,
+    .view-summary-btn,
+    .generate-summary-btn {
+      font-size: 0.75rem;
+      padding: 0.35rem 0.5rem;
+      height: 32px;
+      gap: 0.25rem;
+    }
+
+    .reprocess-button-header {
+      width: 32px;
+      height: 32px;
+      padding: 0.4rem;
+    }
   }
 
   /* Transcript segment highlighting styles */

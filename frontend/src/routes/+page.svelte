@@ -1102,6 +1102,11 @@
     // Update document title
     document.title = $t('gallery.pageTitle');
 
+    // Collapse filter sidebar on mobile to avoid covering the content
+    if (window.innerWidth <= 768 && $galleryState.showFilters) {
+      galleryStore.toggleFilters();
+    }
+
     // Setup WebSocket subscription for real-time updates
     setupWebSocketUpdates();
 
@@ -1246,6 +1251,17 @@
 <div class="media-library-container">
   {#if activeTab === 'gallery'}
     <div class="gallery-tab-wrapper">
+      <!-- Mobile filter overlay backdrop -->
+      {#if showFilters}
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <div
+          class="filter-overlay-backdrop"
+          on:click={toggleFilters}
+          transition:fade={{ duration: 200 }}
+        ></div>
+      {/if}
+
       <!-- Left Sidebar: Filters (Sticky) -->
       <div class="filter-sidebar {showFilters ? 'show' : ''}">
         <!-- Filters Toggle Button (always visible) -->
@@ -1293,6 +1309,21 @@
       <!-- Gallery Header (sticky) - always visible for action buttons -->
       <div class="gallery-header">
         <div class="gallery-header-left">
+          <!-- Mobile filter toggle button (visible only on mobile) -->
+          <button
+            class="mobile-filter-toggle"
+            on:click={toggleFilters}
+            title={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
+            aria-label={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
+              <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
+              <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line>
+              <line x1="17" y1="16" x2="23" y2="16"></line>
+            </svg>
+          </button>
           <GalleryActionButtons {files} />
         </div>
         {#if files.length > 0}
@@ -1536,6 +1567,7 @@
   /* Main Container - Fixed Height Layout */
   .media-library-container {
     height: calc(100vh - var(--content-top, 60px)); /* Full viewport minus navbar + safe-area */
+    height: calc(100dvh - var(--content-top, 60px));
     display: flex;
     overflow: hidden;
     padding-top: 0;
@@ -1628,6 +1660,18 @@
     flex: 1;
     overflow-y: auto;
     padding: 0 1rem;
+  }
+
+  /* Mobile filter overlay backdrop - hidden on desktop */
+  .filter-overlay-backdrop {
+    display: none;
+    position: fixed;
+    top: var(--content-top, 60px);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 999;
   }
 
   /* Right Content Area - Scrollable */
@@ -1795,17 +1839,24 @@
       position: fixed;
       top: var(--content-top, 60px);
       left: -100%;
-      width: 100%;
+      width: 85%;
+      max-width: 320px;
       height: calc(100vh - var(--content-top, 60px));
+      height: calc(100dvh - var(--content-top, 60px));
       background: var(--surface-color);
       z-index: 1000;
       transition: left 0.3s ease;
-      border-right: none;
+      border-right: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);
+      box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
     }
 
     .filter-sidebar.show {
       left: 0;
+    }
+
+    .filter-overlay-backdrop {
+      display: block;
     }
 
     .content-area {
@@ -1814,6 +1865,38 @@
 
     .scrollable-content {
       padding: 1rem;
+    }
+
+    /* Upload & Collections modals: fullscreen on mobile */
+    .modal-backdrop {
+      align-items: stretch;
+    }
+
+    .modal-container {
+      width: 100%;
+      max-width: 100% !important;
+      max-height: 100%;
+      max-height: 100dvh;
+      border-radius: 0;
+      margin: 0;
+    }
+
+    .modal-header {
+      padding: 1rem;
+      padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    }
+
+    .modal-header h2 {
+      font-size: 1.1rem;
+    }
+
+    .modal-body {
+      padding: 1rem;
+    }
+
+    .modal-close {
+      min-width: 44px;
+      min-height: 44px;
     }
   }
 
@@ -1881,8 +1964,40 @@
     flex-shrink: 0;
   }
 
+  /* Mobile-only filter toggle button in gallery header */
+  .mobile-filter-toggle {
+    display: none; /* Hidden on desktop */
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .mobile-filter-toggle:hover {
+    border-color: var(--primary-color);
+    color: var(--text-primary);
+    background: var(--hover-color);
+  }
+
+  .mobile-filter-toggle svg {
+    flex-shrink: 0;
+  }
+
   @media (max-width: 768px) {
+    .mobile-filter-toggle {
+      display: flex; /* Visible on mobile */
+    }
+
     .gallery-header {
+      flex-wrap: wrap;
       gap: 0.5rem;
       margin-left: -1rem;
       margin-right: -1rem;
@@ -1890,8 +2005,31 @@
       padding-right: 1rem;
     }
 
+    .gallery-header-left {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
     .gallery-header-right {
+      flex: 0 0 auto;
       gap: 0.375rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .gallery-header {
+      gap: 0.375rem;
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+
+    .gallery-header-left {
+      flex: 1 1 100%;
+    }
+
+    .gallery-header-right {
+      flex: 1 1 auto;
+      justify-content: flex-end;
     }
   }
 

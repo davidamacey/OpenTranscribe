@@ -1259,4 +1259,23 @@
     gap: 0.5rem;
   }
 
+  @media (max-width: 768px) {
+    .form-actions {
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .cancel-button,
+    .save-button {
+      width: 100%;
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    .form-control {
+      min-height: 44px;
+      font-size: 1rem;
+    }
+  }
+
 </style>

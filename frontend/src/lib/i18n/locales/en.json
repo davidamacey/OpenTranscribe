@@ -972,6 +972,7 @@
   "common.error": "Error",
   "common.success": "Success",
   "common.close": "Close",
+  "common.clear": "Clear",
   "common.confirm": "Confirm",
   "common.yes": "Yes",
   "common.no": "No",
@@ -2744,7 +2745,7 @@
   "speakers.members.loading": "Loading members...",
   "speakers.profiles.unnamed": "Unnamed",
   "speakers.profiles.embeddings": "embeddings",
-  "speakers.keyboard.hint": "Keyboard shortcuts: A Accept \u00b7 S/N Skip \u00b7 P Play",
+  "speakers.keyboard.hint": "Keyboard shortcuts: A Accept · S/N Skip · P Play",
   "speakers.searchPlaceholder": "Search clusters...",
   "speakers.pagination.prev": "Prev",
   "speakers.pagination.pageOf": "Page {{page}} of {{pages}}",
@@ -3005,7 +3006,6 @@
   "settings.dataIntegrity.docMetadata": "Metadata",
   "settings.dataIntegrity.docChunks": "Search Chunks",
   "settings.dataIntegrity.docTotal": "Total",
-
   "settings.embeddingConsistency.title": "Embedding Consistency",
   "settings.embeddingConsistency.description": "Detects speakers in the database that are missing from the OpenSearch speaker index and re-extracts their embeddings. Runs automatically every 10 minutes.",
   "settings.embeddingConsistency.loading": "Loading embedding consistency status...",
@@ -3048,7 +3048,6 @@
   "settings.embeddingConsistency.completedIn": "Completed in {{duration}}",
   "settings.embeddingConsistency.allSpeakersIndexed": "All speakers are indexed",
   "settings.embeddingConsistency.repairSummary": "{{repaired}} repaired, {{failed}} failed",
-
   "settings.session.introText": "Configure session and token lifetimes to balance security with user convenience. Shorter durations improve security but may require more frequent re-authentication.",
   "settings.session.tokenLifetimes": "Token Lifetimes",
   "settings.session.accessTokenLifetime": "Access Token Lifetime",
@@ -3089,7 +3088,6 @@
   "settings.session.days": "days",
   "settings.session.week": "week",
   "settings.session.weeks": "weeks",
-
   "settings.localAuth.enableLocal": "Enable Local (Username/Password) Authentication",
   "settings.localAuth.registrationSettings": "Registration Settings",
   "settings.localAuth.allowSelfRegistration": "Allow self-registration",
@@ -3123,9 +3121,7 @@
   "settings.localAuth.lowercase": "lowercase",
   "settings.localAuth.numbers": "numbers",
   "settings.localAuth.specialChars": "special chars",
-
   "loginBanner.consentText": "By clicking \"I Acknowledge\", you consent to the terms above and confirm that you are authorized to access this system.",
-
   "settings.accountStatus.overview": "Account Status Overview",
   "settings.accountStatus.dashboard": "Account Status Dashboard",
   "settings.accountStatus.loadingStatus": "Loading account status...",
@@ -3139,7 +3135,6 @@
   "settings.accountStatus.sectionTitle": "Account Status",
   "settings.accountStatus.sectionDescription": "Overview of user accounts, MFA adoption, and security status.",
   "settings.accountStatus.navLabel": "Account Status",
-
   "settings.auditLog.sectionTitle": "Audit Logs",
   "settings.auditLog.sectionDescription": "View and export authentication and configuration change logs.",
   "settings.auditLog.navLabel": "Audit Logs",
@@ -3182,7 +3177,6 @@
   "settings.auditLog.events.userDelete": "User Delete",
   "settings.auditLog.events.roleChange": "Role Change",
   "settings.auditLog.events.settingsChange": "Settings Change",
-
   "settings.authentication.heading": "Authentication Configuration",
   "settings.authentication.dbBackedTitle": "Database-Backed Auth Configuration",
   "settings.authentication.comingSoonDesc": "This feature is coming soon. For now, configure authentication via environment variables:",
@@ -3202,14 +3196,11 @@
   "settings.authentication.method.keycloak": "Keycloak/OIDC",
   "settings.authentication.method.pki": "PKI/X.509 Certificates",
   "settings.authentication.method.mfa": "MFA/TOTP",
-
   "settings.statistics.previousGpu": "Previous GPU",
   "settings.statistics.nextGpu": "Next GPU",
-
   "common.testing": "Testing...",
   "common.show": "Show",
   "common.hide": "Hide",
-
   "settings.ldap.enable": "Enable LDAP/Active Directory Authentication",
   "settings.ldap.serverConnection": "Server Connection",
   "settings.ldap.server": "LDAP Server",
@@ -3243,7 +3234,6 @@
   "settings.ldap.allowedUserGroupsHelp": "Leave empty to allow all authenticated users, or specify groups for access control",
   "settings.ldap.testConnection": "Test Connection",
   "settings.ldap.saveConfiguration": "Save Configuration",
-
   "settings.keycloak.enable": "Enable OIDC/Keycloak Authentication",
   "settings.keycloak.oidcTitle": "OpenID Connect (OIDC)",
   "settings.keycloak.oidcDescription": "This integration supports Keycloak and other OIDC-compliant identity providers including Azure AD, Okta, Auth0, and Google Workspace.",
@@ -3275,7 +3265,6 @@
   "settings.keycloak.adminRoleHelp": "Users with this role in their token will be granted admin privileges",
   "settings.keycloak.testConnection": "Test Connection",
   "settings.keycloak.saveConfiguration": "Save Configuration",
-
   "settings.pki.enable": "Enable PKI/Certificate Authentication",
   "settings.pki.advancedConfiguration": "Advanced Configuration",
   "settings.pki.advancedConfigurationDesc": "PKI authentication requires proper infrastructure setup including certificate management, reverse proxy configuration, and CA certificate distribution. See the documentation for detailed setup instructions.",
@@ -3308,7 +3297,6 @@
   "settings.pki.allowPasswordFallbackHelp": "When enabled, users without certificates can authenticate using username/password",
   "settings.pki.saveConfiguration": "Save Configuration",
   "settings.sharing.adminBadge": "Admin",
-
   "settings.llm.autoSummarySection": "AI Summary Settings",
   "settings.llm.autoSummary": "Auto-generate summaries",
   "settings.llm.autoSummaryDesc": "Automatically generate AI summaries after each transcription completes",
@@ -3317,18 +3305,14 @@
   "settings.llm.systemSummaryDesc": "Enable or disable AI summary generation for all users (admin only)",
   "settings.llm.systemSummaryDisabledHint": "AI summaries have been disabled by the administrator.",
   "settings.llm.systemSummaryDisabledWarning": "AI summaries are disabled for ALL users. Manual generation is also blocked for non-admin users.",
-
   "upload.skipSummary": "Skip AI summary for this upload",
   "upload.skipSummaryHint": "Transcription will complete without generating an AI summary",
-
   "summary.statusDisabled": "Summary generation disabled",
   "summary.generateAnyway": "Generate Summary Anyway",
   "summary.systemDisabled": "AI summaries have been disabled by the administrator",
   "summary.adminEnableHint": "Contact your administrator to enable AI summary generation",
-
   "common.enabled": "Enabled",
   "common.disabled": "Disabled",
-
   "uploader.whisperModel": "Transcription Model",
   "uploader.whisperModelHint": "Choose a Whisper model for this transcription",
   "uploader.useSystemDefault": "Use system default",
@@ -3341,7 +3325,6 @@
   "fileDetail.whisperModel": "ASR Model",
   "fileDetail.modelFallback": "Fallback",
   "fileDetail.requestedModel": "Requested model",
-
   "metadata.diarizationDisabled": "Disabled",
   "gallery.diarizationDisabledTooltip": "Speaker diarization was disabled for this file",
   "gallery.monologue": "Monologue",

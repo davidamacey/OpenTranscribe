@@ -887,4 +887,40 @@
   .btn-link:active:not(:disabled) {
     transform: scale(1);
   }
+
+  @media (max-width: 768px) {
+    .fields-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .action-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .action-row .btn {
+      width: 100%;
+    }
+
+    .run-confirm-text {
+      text-align: center;
+    }
+
+    .button-row {
+      flex-wrap: wrap;
+    }
+
+    .button-row .btn-secondary {
+      margin-right: 0;
+    }
+
+    .button-row .btn {
+      flex: 1;
+    }
+
+    .preview-table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
 </style>

@@ -4654,4 +4654,37 @@
     color: var(--text-secondary, #6b7280);
   }
 
+  /* Mobile: properly sized tabs, reduced padding */
+  @media (max-width: 768px) {
+    .tab-navigation {
+      gap: 0;
+    }
+
+    .tab-button {
+      flex: 1;
+      justify-content: center;
+      padding: 0.75rem 0.5rem;
+      font-size: 0.85rem;
+      min-height: 44px;
+    }
+
+    .tab-button svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .drop-zone {
+      padding: 2rem 1rem;
+    }
+
+    .drop-zone svg {
+      width: 2rem;
+      height: 2rem;
+    }
+
+    .upload-text {
+      font-size: 0.9rem;
+    }
+  }
+
 </style>

@@ -932,7 +932,8 @@
     margin: 0 auto;
     padding: 1rem;
     color: var(--text-color);
-    height: calc(100vh - 60px);
+    height: calc(100vh - var(--content-top, 60px));
+    height: calc(100dvh - var(--content-top, 60px));
     overflow-y: auto;
   }
 
@@ -1910,12 +1911,12 @@
     }
 
     .status-cards {
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 0.5rem;
     }
 
     .status-card {
-      padding: 0.75rem;
+      padding: 0.6rem;
     }
 
     .status-number {
@@ -1924,6 +1925,12 @@
 
     .status-label {
       font-size: 0.7rem;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .status-cards {
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 </style>

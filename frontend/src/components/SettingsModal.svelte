@@ -792,7 +792,25 @@
       </button>
 
       <div class="settings-modal-container">
-        <!-- Sidebar -->
+        <!-- Mobile section selector (replaces sidebar on small screens) -->
+        <div class="settings-mobile-nav">
+          <h2 class="settings-mobile-title">{$t('settings.title')}</h2>
+          <select
+            class="settings-section-select"
+            value={activeSection}
+            on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
+          >
+            {#each sidebarSections as section}
+              <optgroup label={section.title}>
+                {#each section.items as item}
+                  <option value={item.id}>{item.label}{$settingsModalStore.dirtyState[item.id] ? ' ●' : ''}</option>
+                {/each}
+              </optgroup>
+            {/each}
+          </select>
+        </div>
+
+        <!-- Desktop sidebar -->
         <aside class="settings-sidebar">
           <h2 id="settings-modal-title" class="settings-title">{$t('settings.title')}</h2>
 
@@ -2583,41 +2601,88 @@
   }
 
   /* Responsive Design */
+  /* Mobile nav selector — hidden on desktop */
+  .settings-mobile-nav {
+    display: none;
+  }
+
   @media (max-width: 768px) {
     .settings-modal {
       width: 100vw;
       height: 100vh;
+      height: 100dvh;
       max-width: none;
       max-height: none;
       border-radius: 0;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
     .settings-modal-container {
       flex-direction: column;
     }
 
+    /* Hide full sidebar on mobile — replaced by select dropdown */
     .settings-sidebar {
-      width: 100%;
-      border-right: none;
+      display: none;
+    }
+
+    /* Show mobile nav with select dropdown */
+    .settings-mobile-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 3rem 0.75rem 1rem; /* Extra right padding for close button */
       border-bottom: 1px solid var(--border-color);
-      padding: 1rem 0;
-      max-height: 200px;
+      flex-shrink: 0;
     }
 
-    .settings-title {
-      margin: 0 1rem 1rem;
+    .settings-mobile-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-color);
+      margin: 0;
+      white-space: nowrap;
     }
 
-    .section-heading {
-      margin: 0 1rem 0.5rem;
-    }
-
-    .nav-item {
-      padding: 0.625rem 1rem;
+    .settings-section-select {
+      flex: 1;
+      min-width: 0;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--surface-color);
+      color: var(--text-color);
+      font-size: 0.875rem;
+      font-family: inherit;
+      min-height: 44px;
+      cursor: pointer;
     }
 
     .settings-content {
-      padding: 1.5rem;
+      padding: 1rem;
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overflow-x: hidden;
+    }
+
+    /* Global mobile overrides for all settings panels */
+    .settings-content :global(.form-group) {
+      min-width: 0;
+    }
+
+    .settings-content :global(input),
+    .settings-content :global(select),
+    .settings-content :global(textarea) {
+      min-height: 44px;
+      font-size: 1rem;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .settings-content :global(button) {
+      min-height: 44px;
     }
 
     .stats-grid {

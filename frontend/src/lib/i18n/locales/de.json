@@ -306,6 +306,7 @@
   "common.audio": "Audio",
   "common.cancel": "Abbrechen",
   "common.close": "Schließen",
+  "common.clear": "Löschen",
   "common.completed": "Abgeschlossen",
   "common.confirm": "Bestätigen",
   "common.date": "Datum",
@@ -3001,7 +3002,6 @@
   "settings.dataIntegrity.docMetadata": "Metadaten",
   "settings.dataIntegrity.docChunks": "Suchfragmente",
   "settings.dataIntegrity.docTotal": "Gesamt",
-
   "settings.embeddingConsistency.title": "Embedding Consistency",
   "settings.embeddingConsistency.description": "Detects speakers in the database that are missing from the OpenSearch speaker index and re-extracts their embeddings. Runs automatically every 10 minutes.",
   "settings.embeddingConsistency.loading": "Loading embedding consistency status...",
@@ -3044,7 +3044,6 @@
   "settings.embeddingConsistency.completedIn": "Completed in {{duration}}",
   "settings.embeddingConsistency.allSpeakersIndexed": "All speakers are indexed",
   "settings.embeddingConsistency.repairSummary": "{{repaired}} repaired, {{failed}} failed",
-
   "settings.session.introText": "Konfigurieren Sie Sitzungs- und Token-Laufzeiten, um Sicherheit und Benutzerkomfort auszugleichen. Kürzere Laufzeiten verbessern die Sicherheit, erfordern aber häufigere Neuanmeldungen.",
   "settings.session.tokenLifetimes": "Token-Laufzeiten",
   "settings.session.accessTokenLifetime": "Zugangstoken-Laufzeit",
@@ -3085,7 +3084,6 @@
   "settings.session.days": "Tage",
   "settings.session.week": "Woche",
   "settings.session.weeks": "Wochen",
-
   "settings.localAuth.enableLocal": "Lokale Authentifizierung (Benutzername/Passwort) aktivieren",
   "settings.localAuth.registrationSettings": "Registrierungseinstellungen",
   "settings.localAuth.allowSelfRegistration": "Selbstregistrierung erlauben",
@@ -3119,9 +3117,7 @@
   "settings.localAuth.lowercase": "Kleinbuchstaben",
   "settings.localAuth.numbers": "Zahlen",
   "settings.localAuth.specialChars": "Sonderzeichen",
-
   "loginBanner.consentText": "Durch Klicken auf \"Ich bestätige\" stimmen Sie den obigen Bedingungen zu und bestätigen, dass Sie zum Zugriff auf dieses System berechtigt sind.",
-
   "settings.accountStatus.overview": "Kontostatusübersicht",
   "settings.accountStatus.dashboard": "Kontostatus-Dashboard",
   "settings.accountStatus.loadingStatus": "Kontostatus wird geladen...",
@@ -3135,7 +3131,6 @@
   "settings.accountStatus.sectionTitle": "Kontostatus",
   "settings.accountStatus.sectionDescription": "Übersicht der Benutzerkonten, MFA-Nutzung und Sicherheitsstatus.",
   "settings.accountStatus.navLabel": "Kontostatus",
-
   "settings.auditLog.sectionTitle": "Audit-Protokolle",
   "settings.auditLog.sectionDescription": "Authentifizierungs- und Konfigurationsänderungsprotokolle anzeigen und exportieren.",
   "settings.auditLog.navLabel": "Audit-Protokolle",
@@ -3178,7 +3173,6 @@
   "settings.auditLog.events.userDelete": "Benutzer gelöscht",
   "settings.auditLog.events.roleChange": "Rollenänderung",
   "settings.auditLog.events.settingsChange": "Einstellungsänderung",
-
   "settings.authentication.heading": "Authentifizierungskonfiguration",
   "settings.authentication.dbBackedTitle": "Datenbankgestützte Auth-Konfiguration",
   "settings.authentication.comingSoonDesc": "Diese Funktion wird bald verfügbar sein. Konfigurieren Sie die Authentifizierung vorerst über Umgebungsvariablen:",
@@ -3198,14 +3192,11 @@
   "settings.authentication.method.keycloak": "Keycloak/OIDC",
   "settings.authentication.method.pki": "PKI/X.509-Zertifikate",
   "settings.authentication.method.mfa": "MFA/TOTP",
-
   "settings.statistics.previousGpu": "Vorherige GPU",
   "settings.statistics.nextGpu": "Nächste GPU",
-
   "common.testing": "Teste...",
   "common.show": "Anzeigen",
   "common.hide": "Verbergen",
-
   "settings.ldap.enable": "LDAP/Active Directory-Authentifizierung aktivieren",
   "settings.ldap.serverConnection": "Serververbindung",
   "settings.ldap.server": "LDAP-Server",
@@ -3239,7 +3230,6 @@
   "settings.ldap.allowedUserGroupsHelp": "Leer lassen, um alle authentifizierten Benutzer zuzulassen, oder Gruppen für die Zugriffskontrolle angeben",
   "settings.ldap.testConnection": "Verbindung testen",
   "settings.ldap.saveConfiguration": "Konfiguration speichern",
-
   "settings.keycloak.enable": "OIDC/Keycloak-Authentifizierung aktivieren",
   "settings.keycloak.oidcTitle": "OpenID Connect (OIDC)",
   "settings.keycloak.oidcDescription": "Diese Integration unterstützt Keycloak und andere OIDC-kompatible Identitätsanbieter, einschließlich Azure AD, Okta, Auth0 und Google Workspace.",
@@ -3271,7 +3261,6 @@
   "settings.keycloak.adminRoleHelp": "Benutzer mit dieser Rolle in ihrem Token erhalten Administratorrechte",
   "settings.keycloak.testConnection": "Verbindung testen",
   "settings.keycloak.saveConfiguration": "Konfiguration speichern",
-
   "settings.pki.enable": "PKI/Zertifikat-Authentifizierung aktivieren",
   "settings.pki.advancedConfiguration": "Erweiterte Konfiguration",
   "settings.pki.advancedConfigurationDesc": "PKI-Authentifizierung erfordert eine ordnungsgemäße Infrastruktureinrichtung, einschließlich Zertifikatsverwaltung, Reverse-Proxy-Konfiguration und CA-Zertifikatsverteilung. Siehe Dokumentation für detaillierte Einrichtungsanweisungen.",
@@ -3304,27 +3293,22 @@
   "settings.pki.allowPasswordFallbackHelp": "Wenn aktiviert, können sich Benutzer ohne Zertifikate mit Benutzername/Passwort authentifizieren",
   "settings.pki.saveConfiguration": "Konfiguration speichern",
   "settings.sharing.adminBadge": "Admin",
-
   "settings.llm.autoSummarySection": "KI-Zusammenfassungseinstellungen",
   "settings.llm.autoSummary": "Zusammenfassungen automatisch generieren",
   "settings.llm.autoSummaryDesc": "Automatisch KI-Zusammenfassungen nach jeder Transkription erstellen",
-  "settings.llm.autoSummaryDisabledHint": "Zusammenfassungen werden nicht automatisch erstellt. Sie k\u00f6nnen sie weiterhin manuell pro Datei generieren.",
+  "settings.llm.autoSummaryDisabledHint": "Zusammenfassungen werden nicht automatisch erstellt. Sie können sie weiterhin manuell pro Datei generieren.",
   "settings.llm.systemSummary": "Systemweite KI-Zusammenfassungen",
-  "settings.llm.systemSummaryDesc": "KI-Zusammenfassungserstellung f\u00fcr alle Benutzer aktivieren oder deaktivieren (nur Admin)",
+  "settings.llm.systemSummaryDesc": "KI-Zusammenfassungserstellung für alle Benutzer aktivieren oder deaktivieren (nur Admin)",
   "settings.llm.systemSummaryDisabledHint": "KI-Zusammenfassungen wurden vom Administrator deaktiviert.",
-  "settings.llm.systemSummaryDisabledWarning": "KI-Zusammenfassungen sind f\u00fcr ALLE Benutzer deaktiviert. Die manuelle Generierung ist auch f\u00fcr Nicht-Administratoren gesperrt.",
-
-  "upload.skipSummary": "KI-Zusammenfassung f\u00fcr diesen Upload \u00fcberspringen",
+  "settings.llm.systemSummaryDisabledWarning": "KI-Zusammenfassungen sind für ALLE Benutzer deaktiviert. Die manuelle Generierung ist auch für Nicht-Administratoren gesperrt.",
+  "upload.skipSummary": "KI-Zusammenfassung für diesen Upload überspringen",
   "upload.skipSummaryHint": "Die Transkription wird ohne KI-Zusammenfassung abgeschlossen",
-
   "summary.statusDisabled": "Zusammenfassungserstellung deaktiviert",
   "summary.generateAnyway": "Trotzdem Zusammenfassung erstellen",
   "summary.systemDisabled": "KI-Zusammenfassungen wurden vom Administrator deaktiviert",
   "summary.adminEnableHint": "Kontaktieren Sie Ihren Administrator, um die KI-Zusammenfassungserstellung zu aktivieren",
-
   "common.enabled": "Aktiviert",
   "common.disabled": "Deaktiviert",
-
   "uploader.whisperModel": "Transkriptionsmodell",
   "uploader.whisperModelHint": "Whisper-Modell fuer diese Transkription waehlen",
   "uploader.useSystemDefault": "Systemstandard verwenden",
@@ -3337,7 +3321,6 @@
   "fileDetail.whisperModel": "ASR-Modell",
   "fileDetail.modelFallback": "Fallback",
   "fileDetail.requestedModel": "Angefordertes Modell",
-
   "metadata.diarizationDisabled": "Deaktiviert",
   "gallery.diarizationDisabledTooltip": "Sprechererkennung wurde für diese Datei deaktiviert",
   "gallery.monologue": "Monolog",

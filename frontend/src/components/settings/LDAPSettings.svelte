@@ -482,5 +482,30 @@
     margin-right: auto;
   }
 
+  @media (max-width: 768px) {
+    .form-row {
+      flex-direction: column;
+      gap: 0;
+    }
 
+    .form-row.checkboxes {
+      gap: 0.75rem;
+    }
+
+    .form-group.small {
+      flex: 1;
+    }
+
+    .actions {
+      flex-wrap: wrap;
+    }
+
+    .actions .btn-secondary {
+      margin-right: 0;
+    }
+
+    .actions .btn {
+      flex: 1;
+    }
+  }
 </style>

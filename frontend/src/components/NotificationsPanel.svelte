@@ -428,6 +428,7 @@
     width: 380px;
     max-width: calc(100vw - 32px);
     max-height: calc(100vh - 90px);
+    max-height: calc(100dvh - 90px);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 12px;
