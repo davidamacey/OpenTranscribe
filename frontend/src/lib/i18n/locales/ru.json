@@ -3325,7 +3325,6 @@
   "common.enabled": "\u0412\u043a\u043b\u044e\u0447\u0435\u043d\u043e",
   "common.disabled": "\u041e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u043e",
 
-  "settings.sharing.adminBadge": "Админ",
   "uploader.whisperModel": "Модель транскрипции",
   "uploader.whisperModelHint": "Выберите модель Whisper для этой транскрипции",
   "uploader.useSystemDefault": "Использовать системное значение",
@@ -3334,5 +3333,11 @@
   "uploader.turboNoTranslation": "Примечание: Эта модель не поддерживает перевод. Перевод будет отключен для этого файла.",
   "fileDetail.whisperModel": "Модель ASR",
   "fileDetail.modelFallback": "Откат",
-  "fileDetail.requestedModel": "Запрошенная модель"
+  "fileDetail.requestedModel": "Запрошенная модель",
+
+  "metadata.diarizationDisabled": "Отключено",
+  "gallery.diarizationDisabledTooltip": "Диаризация говорящих была отключена для этого файла",
+  "gallery.monologue": "Монолог",
+  "reprocess.diarizationWasDisabled": "Этот файл был обработан без диаризации говорящих. Выберите «Повторная диаризация», чтобы включить определение говорящих.",
+  "exportOptions.diarizationDisabledHint": "Данные о говорящих недоступны"
 }

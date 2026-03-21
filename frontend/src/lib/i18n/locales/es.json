@@ -3333,5 +3333,11 @@
   "uploader.turboNoTranslation": "Nota: Este modelo no soporta traduccion. La traduccion se desactivara para este archivo.",
   "fileDetail.whisperModel": "Modelo ASR",
   "fileDetail.modelFallback": "Alternativa",
-  "fileDetail.requestedModel": "Modelo solicitado"
+  "fileDetail.requestedModel": "Modelo solicitado",
+
+  "metadata.diarizationDisabled": "Desactivado",
+  "gallery.diarizationDisabledTooltip": "La diarización de hablantes fue desactivada para este archivo",
+  "gallery.monologue": "Monólogo",
+  "reprocess.diarizationWasDisabled": "Este archivo fue procesado sin diarización de hablantes. Seleccione \"Rediarizar\" para activar la detección de hablantes.",
+  "exportOptions.diarizationDisabledHint": "No hay datos de hablantes disponibles"
 }

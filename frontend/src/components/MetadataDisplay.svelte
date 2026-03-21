@@ -181,7 +181,7 @@
         </div>
       </div>
 
-      {#if file?.whisper_model || file?.diarization_model || file?.embedding_mode}
+      {#if file?.whisper_model || file?.diarization_model || file?.diarization_disabled || file?.embedding_mode}
         <div class="processing-models-section">
           <hr class="models-divider" />
           <div class="models-row">
@@ -195,6 +195,11 @@
               <span class="model-badge">
                 <span class="model-label">Diarization:</span>
                 <span class="model-name">{file.diarization_model}</span>
+              </span>
+            {:else if file.diarization_disabled}
+              <span class="model-badge diarization-disabled">
+                <span class="model-label">Diarization:</span>
+                <span class="model-name">{$t('metadata.diarizationDisabled')}</span>
               </span>
             {/if}
             {#if file.embedding_mode}
@@ -366,6 +371,11 @@
     font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
     color: var(--text-primary);
     font-weight: 500;
+  }
+
+  .model-badge.diarization-disabled .model-name {
+    color: var(--text-secondary);
+    font-style: italic;
   }
 
   @media (max-width: 768px) {

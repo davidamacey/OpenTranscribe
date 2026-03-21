@@ -292,6 +292,10 @@
     selectedStages = new Set();
   }
 
+  $: hasDiarizationDisabled = bulkMode
+    ? bulkFiles.some((f: any) => f.diarization_disabled)
+    : file?.diarization_disabled === true;
+
   $: allSelected = allStages.filter(s => !s.disabled && s.id !== 'rediarize').every(s => selectedStages.has(s.id));
 
   function getStageLabelById(id: string): string {
@@ -360,6 +364,17 @@
                       <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
                     </svg>
                     <span>{$t('reprocess.cloudASRInfo', { provider: ASRSettingsApi.getProviderDisplayName(activeASRProvider), model: activeASRModel })}</span>
+                  </div>
+                {/if}
+
+                {#if hasDiarizationDisabled}
+                  <div class="warning-banner warning-info" style="margin-top: 0; margin-bottom: 0.75rem;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>{$t('reprocess.diarizationWasDisabled')}</span>
                   </div>
                 {/if}
 

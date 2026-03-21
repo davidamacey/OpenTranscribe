@@ -11,6 +11,7 @@
   export let fileId: number;
   export let fileName: string = '';
   export let isOpen: boolean = false;
+  export let diarizationDisabled: boolean = false;
 
   // Pagination props
   export let totalSpeakerSegments: number = 0;
@@ -51,9 +52,11 @@
 
   // Generate consolidated transcript when display segments change
   $: if (displaySegments && displaySegments.length > 0) {
-    consolidatedTranscript = displaySegments
-      .map(block => `${translateSpeakerLabel(block.speakerName)} [${formatSimpleTimestamp(block.startTime ?? 0)}-${formatSimpleTimestamp(block.endTime ?? 0)}]: ${block.text}`)
-      .join('\n\n');
+    consolidatedTranscript = diarizationDisabled
+      ? displaySegments.map(block => block.text).join(' ')
+      : displaySegments
+          .map(block => `${translateSpeakerLabel(block.speakerName)} [${formatSimpleTimestamp(block.startTime ?? 0)}-${formatSimpleTimestamp(block.endTime ?? 0)}]: ${block.text}`)
+          .join('\n\n');
   } else {
     consolidatedTranscript = '';
   }
@@ -388,42 +391,52 @@
             <div class="transcript-content">
               {#each displaySegments as segment, index}
                 {#if segment.isOverlapGroup && segment.overlapSegments}
-                  <!-- Overlap Group -->
-                  <div class="overlap-group" data-seg-index={segment.rawStartIndex}>
-                    <div class="overlap-indicator">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="9" cy="7" r="4"></circle>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                      </svg>
-                      <span class="overlap-label">{$t('transcript.overlapIndicator', { count: segment.overlapSegments.length })}</span>
-                      <span class="overlap-time">{formatSimpleTimestamp(segment.startTime ?? 0)} - {formatSimpleTimestamp(segment.endTime ?? 0)}</span>
-                    </div>
-                    <div class="overlap-connector"></div>
+                  {#if diarizationDisabled}
                     {#each segment.overlapSegments as overlapSeg}
-                      <div class="transcript-segment in-overlap">
-                        <div class="segment-header">
-                          <div
-                            class="segment-speaker"
-                            style="background-color: {getSpeakerColorForSegment(overlapSeg).bg}; border-color: {getSpeakerColorForSegment(overlapSeg).border}; --speaker-light: {getSpeakerColorForSegment(overlapSeg).textLight}; --speaker-dark: {getSpeakerColorForSegment(overlapSeg).textDark};"
-                          >{translateSpeakerLabel(overlapSeg.speakerName)}</div>
-                          <div class="segment-time">{formatSimpleTimestamp(overlapSeg.startTime ?? 0)}-{formatSimpleTimestamp(overlapSeg.endTime ?? 0)}</div>
-                        </div>
+                      <div class="transcript-segment monologue" data-seg-index={segment.rawStartIndex}>
                         <div class="segment-text">{@html highlightSearchTerms(overlapSeg.text, searchQuery, currentMatchIndex)}</div>
                       </div>
                     {/each}
-                  </div>
+                  {:else}
+                    <!-- Overlap Group -->
+                    <div class="overlap-group" data-seg-index={segment.rawStartIndex}>
+                      <div class="overlap-indicator">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                          <circle cx="9" cy="7" r="4"></circle>
+                          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                        <span class="overlap-label">{$t('transcript.overlapIndicator', { count: segment.overlapSegments.length })}</span>
+                        <span class="overlap-time">{formatSimpleTimestamp(segment.startTime ?? 0)} - {formatSimpleTimestamp(segment.endTime ?? 0)}</span>
+                      </div>
+                      <div class="overlap-connector"></div>
+                      {#each segment.overlapSegments as overlapSeg}
+                        <div class="transcript-segment in-overlap">
+                          <div class="segment-header">
+                            <div
+                              class="segment-speaker"
+                              style="background-color: {getSpeakerColorForSegment(overlapSeg).bg}; border-color: {getSpeakerColorForSegment(overlapSeg).border}; --speaker-light: {getSpeakerColorForSegment(overlapSeg).textLight}; --speaker-dark: {getSpeakerColorForSegment(overlapSeg).textDark};"
+                            >{translateSpeakerLabel(overlapSeg.speakerName)}</div>
+                            <div class="segment-time">{formatSimpleTimestamp(overlapSeg.startTime ?? 0)}-{formatSimpleTimestamp(overlapSeg.endTime ?? 0)}</div>
+                          </div>
+                          <div class="segment-text">{@html highlightSearchTerms(overlapSeg.text, searchQuery, currentMatchIndex)}</div>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
                 {:else}
                   <!-- Regular Segment -->
-                  <div class="transcript-segment" data-seg-index={segment.rawStartIndex}>
-                    <div class="segment-header">
-                      <div
-                        class="segment-speaker"
-                        style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
-                      >{translateSpeakerLabel(segment.speakerName)}</div>
-                      <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
-                    </div>
+                  <div class="transcript-segment" class:monologue={diarizationDisabled} data-seg-index={segment.rawStartIndex}>
+                    {#if !diarizationDisabled}
+                      <div class="segment-header">
+                        <div
+                          class="segment-speaker"
+                          style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
+                        >{translateSpeakerLabel(segment.speakerName)}</div>
+                        <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
+                      </div>
+                    {/if}
                     <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
                   </div>
                 {/if}
@@ -739,6 +752,11 @@
 
   .transcript-segment:last-child {
     margin-bottom: 0;
+  }
+
+  .transcript-segment.monologue {
+    margin-bottom: 0.25rem;
+    display: block;
   }
 
   .segment-header {

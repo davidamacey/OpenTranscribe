@@ -3337,5 +3337,11 @@
   "uploader.turboNoTranslation": "Note: This model does not support translation. Translation will be disabled for this file.",
   "fileDetail.whisperModel": "ASR Model",
   "fileDetail.modelFallback": "Fallback",
-  "fileDetail.requestedModel": "Requested model"
+  "fileDetail.requestedModel": "Requested model",
+
+  "metadata.diarizationDisabled": "Disabled",
+  "gallery.diarizationDisabledTooltip": "Speaker diarization was disabled for this file",
+  "gallery.monologue": "Monologue",
+  "reprocess.diarizationWasDisabled": "This file was processed without speaker diarization. Select \"Rediarize\" to enable speaker detection.",
+  "exportOptions.diarizationDisabledHint": "No speaker data available"
 }

@@ -67,6 +67,9 @@ export interface MediaFile {
     count: number;
     primary_speakers: string[];
   };
+
+  // Diarization
+  diarization_disabled?: boolean;
 }
 
 export interface DurationRange {

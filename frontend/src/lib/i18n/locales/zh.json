@@ -3325,7 +3325,6 @@
   "common.enabled": "\u5df2\u542f\u7528",
   "common.disabled": "\u5df2\u7981\u7528",
 
-  "settings.sharing.adminBadge": "管理员",
   "uploader.whisperModel": "转录模型",
   "uploader.whisperModelHint": "为此转录选择 Whisper 模型",
   "uploader.useSystemDefault": "使用系统默认",
@@ -3334,5 +3333,11 @@
   "uploader.turboNoTranslation": "注意：此模型不支持翻译。此文件的翻译将被禁用。",
   "fileDetail.whisperModel": "ASR 模型",
   "fileDetail.modelFallback": "回退",
-  "fileDetail.requestedModel": "请求的模型"
+  "fileDetail.requestedModel": "请求的模型",
+
+  "metadata.diarizationDisabled": "已禁用",
+  "gallery.diarizationDisabledTooltip": "此文件已禁用说话人分离",
+  "gallery.monologue": "独白",
+  "reprocess.diarizationWasDisabled": "此文件在未启用说话人分离的情况下处理。选择\u300c重新分离\u300d以启用说话人检测。",
+  "exportOptions.diarizationDisabledHint": "无可用的说话人数据"
 }

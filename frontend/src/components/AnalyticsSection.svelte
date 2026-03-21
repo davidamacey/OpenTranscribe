@@ -42,6 +42,7 @@
   export let isAnalyticsExpanded: boolean = false;
   export let speakerList: Speaker[] = [];
   export let transcriptStore: { speakers: Speaker[] } = { speakers: [] };
+  export let diarizationDisabled: boolean = false;
 
   // Simple refresh counter to force re-rendering
   let refreshCounter = 0;
@@ -116,6 +117,7 @@
               ...analyticsData
             }}
             speakerList={activeSpeakers as Array<{name: string, display_name: string}>}
+            {diarizationDisabled}
           />
         {/key}
       {:else if file && file.status === 'processing'}

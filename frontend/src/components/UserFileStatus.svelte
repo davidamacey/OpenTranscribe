@@ -822,7 +822,12 @@
                   </span>
                 </div>
               {/if}
-              {#if detailedStatus.file.diarization_model}
+              {#if detailedStatus.file.diarization_disabled}
+                <div class="metadata-item">
+                  <span class="metadata-label">Diarization:</span>
+                  <span class="metadata-value diarization-disabled-value">{$t('metadata.diarizationDisabled')}</span>
+                </div>
+              {:else if detailedStatus.file.diarization_model}
                 <div class="metadata-item">
                   <span class="metadata-label">Diarization:</span>
                   <span class="metadata-value model-name-value">{detailedStatus.file.diarization_model}</span>
@@ -1640,6 +1645,11 @@
   .model-name-value {
     font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
     font-size: 0.85rem;
+  }
+
+  .diarization-disabled-value {
+    font-style: italic;
+    color: var(--text-secondary);
   }
 
   .fallback-badge {

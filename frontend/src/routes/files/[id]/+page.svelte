@@ -95,6 +95,9 @@
   // LLM availability for summary functionality
   $: llmAvailable = $isLLMAvailable;
 
+  // Diarization disabled flag — when true, suppress all speaker-specific UI
+  $: diarizationDisabled = file?.diarization_disabled === true;
+
   // Detect changes in speaker names - depends on speaker display_name values
   $: speakerNamesChanged = speakerList.length > 0 && speakerList.some(speaker => {
     const originalName = originalSpeakerNames.get(speaker.uuid) || '';
@@ -183,6 +186,9 @@
         }
         if (response.data.language !== undefined) {
           file.language = response.data.language;
+        }
+        if (response.data.diarization_disabled !== undefined) {
+          file.diarization_disabled = response.data.diarization_disabled;
         }
 
         // Update collections if they changed
@@ -419,6 +425,7 @@
    */
   async function loadCrossMediaDataForLabeledSpeakers(): Promise<void> {
     if (!speakerList || speakerList.length === 0) return;
+    if (file?.diarization_disabled) return; // Skip cross-media for monologue files
 
     // Find speakers that need cross-media data (labeled speakers without individual matches)
     const speakersNeedingCrossMedia = speakerList.filter(speaker => speaker.needsCrossMediaCall);
@@ -1103,7 +1110,13 @@
     if (format === 'txt') {
       // Show TXT-specific options modal (timestamps, speakers, comments)
       const prefs = loadTxtPrefs();
-      txtExportOptions = { ...prefs, includeComments: false, hasComments };
+      txtExportOptions = {
+        ...prefs,
+        includeComments: false,
+        hasComments,
+        // When diarization disabled, force speakers off
+        ...(diarizationDisabled ? { includeSpeakers: false } : {})
+      };
       showTxtExportOptions = true;
       return;
     }
@@ -1549,8 +1562,8 @@
         }
       }
 
-      // Check for speakers that need profile confirmation
-      const speakersNeedingConfirmation = speakersToUpdate.filter(speaker =>
+      // Check for speakers that need profile confirmation (skip when diarization disabled)
+      const speakersNeedingConfirmation = diarizationDisabled ? [] : speakersToUpdate.filter(speaker =>
         speaker.profile && speaker.profile.name !== speaker.display_name.trim()
       );
 
@@ -2496,6 +2509,7 @@
           bind:isAnalyticsExpanded
           {speakerList}
           transcriptStore={$transcriptStore}
+          {diarizationDisabled}
         />
 
         <CommentSection
@@ -2521,6 +2535,7 @@
           {isEditingSpeakers}
           {speakerList}
           {reprocessing}
+          {diarizationDisabled}
           {totalSegments}
           {hasMoreSegments}
           {loadingMoreSegments}
@@ -2610,9 +2625,12 @@
               <input type="checkbox" bind:checked={txtExportOptions.includeTimestamps} />
               {$t('exportOptions.includeTimestamps')}
             </label>
-            <label class="export-option-label">
-              <input type="checkbox" bind:checked={txtExportOptions.includeSpeakers} />
+            <label class="export-option-label" class:disabled-option={diarizationDisabled}>
+              <input type="checkbox" bind:checked={txtExportOptions.includeSpeakers} disabled={diarizationDisabled} />
               {$t('exportOptions.includeSpeakers')}
+              {#if diarizationDisabled}
+                <span class="option-hint">{$t('exportOptions.diarizationDisabledHint')}</span>
+              {/if}
             </label>
             {#if txtExportOptions.hasComments}
               <label class="export-option-label">
@@ -2748,6 +2766,7 @@
     {totalSpeakerSegments}
     {hasMoreSegments}
     {loadingMoreSegments}
+    {diarizationDisabled}
     on:close={() => showTranscriptModal = false}
     on:loadMore={loadMoreSegments}
   />
@@ -3129,6 +3148,17 @@
     height: 1rem;
     cursor: pointer;
     accent-color: var(--primary-color);
+  }
+
+  .export-option-label.disabled-option {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .option-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary-color);
+    font-style: italic;
   }
 
   .modal-footer {

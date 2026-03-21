@@ -227,7 +227,9 @@
 
           <!-- Speakers -->
           <div class="list-cell list-cell-speakers">
-            {#if file.speaker_summary && file.speaker_summary.count > 0}
+            {#if file.diarization_disabled}
+              <span class="monologue-label" title={$t('gallery.diarizationDisabledTooltip')}>{$t('gallery.monologue')}</span>
+            {:else if file.speaker_summary && file.speaker_summary.count > 0}
               <span class="speaker-names" title={file.speaker_summary.primary_speakers.join(', ')}>
                 {file.speaker_summary.primary_speakers.join(', ')}
               </span>
@@ -520,6 +522,12 @@
 
   .no-speakers {
     color: var(--text-tertiary);
+  }
+
+  .monologue-label {
+    font-style: italic;
+    color: var(--text-secondary);
+    cursor: help;
   }
 
   .list-cell-duration,

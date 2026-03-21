@@ -48,6 +48,7 @@
   export let speakerList: any[] = [];
   export let reprocessing: boolean = false;
   export let currentTime: number = 0;
+  export let diarizationDisabled: boolean = false;
 
   // Create a reactive key based on speakerList to force re-renders of speaker sections
   // This ensures Edit Speakers and Merge Speakers sections update when speakers change
@@ -592,7 +593,8 @@
         {#each groupedTranscriptSegments as group}
           {#if group.isOverlapGroup}
             <!-- Overlap Group Container -->
-            <div class="overlap-group" data-overlap-group-id="{group.overlapGroupId}" data-seg-index={group.startSegmentIndex}>
+            <div class="{diarizationDisabled ? '' : 'overlap-group'}" data-overlap-group-id="{group.overlapGroupId}" data-seg-index={group.startSegmentIndex}>
+              {#if !diarizationDisabled}
               <div class="overlap-indicator">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -604,17 +606,20 @@
                 <span class="overlap-time">{formatSimpleTimestamp(group.startTime)} - {formatSimpleTimestamp(group.endTime)}</span>
               </div>
               <div class="overlap-connector"></div>
+              {/if}
               {#each group.segments as segment, segIdx}
                 <div
-                  class="transcript-segment in-overlap"
-                  class:first-in-overlap={segIdx === 0}
-                  class:last-in-overlap={segIdx === group.segments.length - 1}
+                  class="transcript-segment{diarizationDisabled ? '' : ' in-overlap'}"
+                  class:first-in-overlap={!diarizationDisabled && segIdx === 0}
+                  class:last-in-overlap={!diarizationDisabled && segIdx === group.segments.length - 1}
                   data-segment-id="{segment.uuid}"
                 >
                   {#if editingSegmentId === segment.uuid}
                     <div class="segment-edit-container">
                       <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
+                      {#if !diarizationDisabled}
                       <div class="segment-speaker">{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
+                      {/if}
                       <div class="segment-edit-input">
                         <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
                         <div class="segment-edit-actions">
@@ -637,12 +642,13 @@
                   {:else}
                     <div class="segment-row">
                       <button
-                        class="segment-content"
+                        class="segment-content{diarizationDisabled ? ' monologue' : ''}"
                         on:click={() => handleSegmentClick(segment.start_time)}
                         on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
                         title={$t('transcript.jumpToSegment')}
                       >
                         <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
+                        {#if !diarizationDisabled}
                         <div
                           class="segment-speaker-wrapper"
                           role="button"
@@ -658,6 +664,7 @@
                             on:speakerCreated={handleSpeakerCreated}
                           />
                         </div>
+                        {/if}
                         <div class="segment-text">
                           {@html highlightTextWithMatches(
                             segment.text,
@@ -691,7 +698,9 @@
               {#if editingSegmentId === segment.uuid}
                 <div class="segment-edit-container">
                   <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
+                  {#if !diarizationDisabled}
                   <div class="segment-speaker">{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
+                  {/if}
                   <div class="segment-edit-input">
                     <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
                     <div class="segment-edit-actions">
@@ -714,12 +723,13 @@
               {:else}
                 <div class="segment-row">
                   <button
-                    class="segment-content"
+                    class="segment-content{diarizationDisabled ? ' monologue' : ''}"
                     on:click={() => handleSegmentClick(segment.start_time)}
                     on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
                     title={$t('transcript.jumpToSegment')}
                   >
                     <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
+                    {#if !diarizationDisabled}
                     <div
                       class="segment-speaker-wrapper"
                       role="button"
@@ -735,6 +745,7 @@
                         on:speakerCreated={handleSpeakerCreated}
                       />
                     </div>
+                    {/if}
                     <div class="segment-text">
                       {@html highlightTextWithMatches(
                         segment.text,
@@ -846,6 +857,7 @@
           </div>
         </div>
 
+        {#if !diarizationDisabled}
         <button
           class="edit-speakers-button"
           on:click={toggleSpeakerEditor}
@@ -861,6 +873,7 @@
             <circle cx="12" cy="7" r="4"></circle>
           </svg>
         </button>
+        {/if}
 
         {#if file && file.download_url}
           <button
@@ -913,7 +926,7 @@
 
       </div>
 
-      {#if isEditingSpeakers}
+      {#if isEditingSpeakers && !diarizationDisabled}
         <div class="speaker-editor-container" transition:slide={{ duration: 200 }}>
           <div class="speaker-editor-header">
             <h4>
@@ -1480,6 +1493,10 @@
     min-width: 0; /* Allow grid to shrink */
     max-width: 100%;
     overflow: hidden;
+  }
+
+  .segment-content.monologue {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .segment-speaker-wrapper {
@@ -2077,6 +2094,10 @@
       grid-template-columns: auto auto minmax(0, 1fr);
       gap: 8px;
       padding: 8px;
+    }
+
+    .segment-content.monologue {
+      grid-template-columns: auto minmax(0, 1fr);
     }
 
     .segment-speaker {
