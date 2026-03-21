@@ -406,14 +406,14 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    flex-wrap: nowrap;
-    white-space: nowrap;
+    flex-wrap: wrap;
   }
 
   .header-version-number {
     color: var(--text-color, var(--text-primary, #1a1a1a));
     font-size: 0.9rem;
     font-weight: 500;
+    white-space: nowrap;
   }
 
   .header-version-sep {
