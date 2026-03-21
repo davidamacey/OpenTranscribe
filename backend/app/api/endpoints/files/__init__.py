@@ -143,6 +143,12 @@ async def upload_media_file(
     # Parse speaker diarization parameters from headers
     speaker_params = _parse_speaker_params_from_headers(request)
 
+    # Parse skip_summary from header
+    skip_summary = False
+    if request:
+        skip_summary_header = request.headers.get("X-Skip-Summary", "")
+        skip_summary = skip_summary_header.lower() in ("true", "1", "yes")
+
     # Process the file upload
     db_file = await process_file_upload(
         file,
@@ -153,6 +159,7 @@ async def upload_media_file(
         speaker_params.min_speakers,
         speaker_params.max_speakers,
         speaker_params.num_speakers,
+        skip_summary=skip_summary,
     )
 
     # Invalidate caches so gallery picks up the new file

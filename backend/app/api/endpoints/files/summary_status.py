@@ -49,21 +49,38 @@ async def get_summary_status(
         logger.warning(f"Failed to check LLM availability for file {file_id}: {e}")
         llm_available = False
 
-    # Determine if retry is possible
+    # Check summary enable settings
+    from app.utils.summary_settings import is_summary_enabled_for_user
+    from app.utils.summary_settings import is_summary_enabled_system
+
+    system_enabled = is_summary_enabled_system(db)
+    user_enabled = is_summary_enabled_for_user(db, int(current_user.id))
+
+    # Determine if retry is possible (not for disabled status)
+    summary_status_str = media_file.summary_status or "pending"
     can_retry = (
-        media_file.summary_status == "failed"
+        summary_status_str == "failed"
         and llm_available
         and media_file.status == "completed"  # Transcription must be complete
     )
 
+    # Whether the user can generate a summary (manual trigger)
+    is_admin = getattr(current_user, "role", None) == "admin"
+    can_generate = (
+        llm_available and media_file.status == "completed" and (is_admin or system_enabled)
+    )
+
     return {
         "file_id": str(media_file.uuid),  # Use UUID for frontend
-        "summary_status": media_file.summary_status or "pending",
+        "summary_status": summary_status_str,
         "summary_exists": bool(media_file.summary_data or media_file.summary_opensearch_id),
         "llm_available": llm_available,
         "can_retry": can_retry,
         "transcription_status": media_file.status,
         "filename": media_file.filename,
+        "summary_enabled_system": system_enabled,
+        "summary_enabled_user": user_enabled,
+        "can_generate": can_generate,
     }
 
 
@@ -83,6 +100,15 @@ async def retry_summary(
     file_id = media_file.id
 
     # Check if retry is needed and possible
+    if str(media_file.summary_status) == "disabled":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "This file has summary generation disabled. "
+                "Use 'Generate Summary' to manually create one, "
+                "or update your settings to re-enable auto-generation."
+            ),
+        )
     if media_file.summary_status not in ["failed", "pending"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

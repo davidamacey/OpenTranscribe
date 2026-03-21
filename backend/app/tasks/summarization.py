@@ -494,6 +494,19 @@ def summarize_transcript_task(
 
             file_id = int(media_file.id)
             create_task_record(db, task_id, int(media_file.user_id), file_id, "summarization")
+
+            # Safety net: skip if file was marked disabled (per-upload flag
+            # or system/user setting). Manual trigger endpoint resets status
+            # before dispatching, so this only blocks zombie tasks.
+            if str(media_file.summary_status) == "disabled":
+                logger.info(f"Summary task skipped — file {file_id} has disabled status")
+                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+                return {
+                    "status": "skipped",
+                    "file_id": file_id,
+                    "message": "Summary generation is disabled for this file",
+                }
+
             update_task_status(db, task_id, "in_progress", progress=0.1)
 
             if force_regenerate:

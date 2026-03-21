@@ -333,6 +333,7 @@ async def process_file_upload(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    skip_summary: bool = False,
 ) -> MediaFile:
     """
     Complete file upload processing pipeline with chunked upload support for large files.
@@ -409,6 +410,11 @@ async def process_file_upload(
         # Update storage path, file size, and thumbnail path in database
         db_file.storage_path = storage_path  # type: ignore[assignment]
         db_file.file_size = file_size  # type: ignore[assignment]
+
+        # Per-file skip summary: mark as disabled before pipeline starts
+        if skip_summary:
+            db_file.summary_status = "disabled"  # type: ignore[assignment]
+
         db.commit()
         db.refresh(db_file)
 

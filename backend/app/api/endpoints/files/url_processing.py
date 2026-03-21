@@ -77,6 +77,10 @@ class URLProcessingRequest(BaseModel):
         default=None,
         description="Tag names to apply to the file after creation",
     )
+    skip_summary: bool = Field(
+        default=False,
+        description="Skip AI summary generation for this download",
+    )
 
     video_quality: str | None = Field(
         default=None,
@@ -664,6 +668,11 @@ async def process_media_url(
         media_file = _create_media_file_record(
             db, int(current_user.id), normalized_url, video_id, video_title, video_info
         )
+
+        # Per-file skip summary: mark as disabled before pipeline starts
+        if request_data.skip_summary:
+            media_file.summary_status = "disabled"  # type: ignore[assignment]
+            db.commit()
 
         # Assign to collections and apply tags immediately for single videos
         if request_data.collection_ids or request_data.tag_names:

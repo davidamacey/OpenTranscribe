@@ -609,3 +609,6 @@ TAG_SOURCE_BULK_GROUP = "bulk_group"
 
 # WebSocket notification types for auto-labeling
 NOTIFICATION_TYPE_AUTO_LABEL_STATUS = "auto_label_status"
+
+# AI Summary settings defaults
+DEFAULT_AI_SUMMARY_ENABLED = True

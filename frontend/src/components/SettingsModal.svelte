@@ -1138,7 +1138,7 @@
             <div class="content-section">
               <h3 class="section-title">{$t('settings.llmProvider.title')}</h3>
               <p class="section-description">{$t('settings.llmProvider.description')}</p>
-              <LLMSettings onSettingsChange={onAISettingsChange} />
+              <LLMSettings onSettingsChange={onAISettingsChange} {isAdmin} />
             </div>
           {/if}
 

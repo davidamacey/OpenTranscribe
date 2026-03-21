@@ -3303,5 +3303,25 @@
   "settings.pki.allowPasswordFallback": "允许密码回退",
   "settings.pki.allowPasswordFallbackHelp": "启用后，没有证书的用户可以使用用户名/密码进行身份验证",
   "settings.pki.saveConfiguration": "保存配置",
-  "settings.sharing.adminBadge": "管理员"
+  "settings.sharing.adminBadge": "\u7ba1\u7406\u5458",
+
+  "settings.llm.autoSummarySection": "AI\u6458\u8981\u8bbe\u7f6e",
+  "settings.llm.autoSummary": "\u81ea\u52a8\u751f\u6210\u6458\u8981",
+  "settings.llm.autoSummaryDesc": "\u6bcf\u6b21\u8f6c\u5f55\u5b8c\u6210\u540e\u81ea\u52a8\u751f\u6210AI\u6458\u8981",
+  "settings.llm.autoSummaryDisabledHint": "\u6458\u8981\u5c06\u4e0d\u4f1a\u81ea\u52a8\u751f\u6210\u3002\u60a8\u4ecd\u53ef\u4ee5\u6309\u6587\u4ef6\u624b\u52a8\u751f\u6210\u3002",
+  "settings.llm.systemSummary": "\u7cfb\u7edf\u7ea7AI\u6458\u8981",
+  "settings.llm.systemSummaryDesc": "\u4e3a\u6240\u6709\u7528\u6237\u542f\u7528\u6216\u7981\u7528AI\u6458\u8981\u751f\u6210\uff08\u4ec5\u7ba1\u7406\u5458\uff09",
+  "settings.llm.systemSummaryDisabledHint": "AI\u6458\u8981\u5df2\u88ab\u7ba1\u7406\u5458\u7981\u7528\u3002",
+  "settings.llm.systemSummaryDisabledWarning": "AI\u6458\u8981\u5df2\u5bf9\u6240\u6709\u7528\u6237\u7981\u7528\u3002\u975e\u7ba1\u7406\u5458\u7528\u6237\u7684\u624b\u52a8\u751f\u6210\u4e5f\u88ab\u963b\u6b62\u3002",
+
+  "upload.skipSummary": "\u8df3\u8fc7\u6b64\u4e0a\u4f20\u7684AI\u6458\u8981",
+  "upload.skipSummaryHint": "\u8f6c\u5f55\u5c06\u5728\u4e0d\u751f\u6210AI\u6458\u8981\u7684\u60c5\u51b5\u4e0b\u5b8c\u6210",
+
+  "summary.statusDisabled": "\u6458\u8981\u751f\u6210\u5df2\u7981\u7528",
+  "summary.generateAnyway": "\u4ecd\u7136\u751f\u6210\u6458\u8981",
+  "summary.systemDisabled": "AI\u6458\u8981\u5df2\u88ab\u7ba1\u7406\u5458\u7981\u7528",
+  "summary.adminEnableHint": "\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u542f\u7528AI\u6458\u8981\u751f\u6210",
+
+  "common.enabled": "\u5df2\u542f\u7528",
+  "common.disabled": "\u5df2\u7981\u7528"
 }

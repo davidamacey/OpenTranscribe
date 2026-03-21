@@ -3307,5 +3307,25 @@
   "settings.pki.allowPasswordFallback": "Allow password fallback",
   "settings.pki.allowPasswordFallbackHelp": "When enabled, users without certificates can authenticate using username/password",
   "settings.pki.saveConfiguration": "Save Configuration",
-  "settings.sharing.adminBadge": "Admin"
+  "settings.sharing.adminBadge": "Admin",
+
+  "settings.llm.autoSummarySection": "AI Summary Settings",
+  "settings.llm.autoSummary": "Auto-generate summaries",
+  "settings.llm.autoSummaryDesc": "Automatically generate AI summaries after each transcription completes",
+  "settings.llm.autoSummaryDisabledHint": "Summaries will not be generated automatically. You can still generate them manually per file.",
+  "settings.llm.systemSummary": "System-wide AI summaries",
+  "settings.llm.systemSummaryDesc": "Enable or disable AI summary generation for all users (admin only)",
+  "settings.llm.systemSummaryDisabledHint": "AI summaries have been disabled by the administrator.",
+  "settings.llm.systemSummaryDisabledWarning": "AI summaries are disabled for ALL users. Manual generation is also blocked for non-admin users.",
+
+  "upload.skipSummary": "Skip AI summary for this upload",
+  "upload.skipSummaryHint": "Transcription will complete without generating an AI summary",
+
+  "summary.statusDisabled": "Summary generation disabled",
+  "summary.generateAnyway": "Generate Summary Anyway",
+  "summary.systemDisabled": "AI summaries have been disabled by the administrator",
+  "summary.adminEnableHint": "Contact your administrator to enable AI summary generation",
+
+  "common.enabled": "Enabled",
+  "common.disabled": "Disabled"
 }

@@ -50,7 +50,7 @@ class MediaFile(Base):
     summary_opensearch_id = Column(String, nullable=True)  # OpenSearch document ID for summary
     summary_status = Column(
         String, default="pending", nullable=True
-    )  # pending, processing, completed, failed, not_configured
+    )  # pending, processing, completed, failed, not_configured, disabled
     summary_schema_version = Column(Integer, default=1)  # Track summary schema evolution
     translated_text = Column(Text, nullable=True)  # For non-English transcripts
     file_hash = Column(String, nullable=True, index=True)  # SHA-256 hash for duplicate detection

@@ -94,6 +94,9 @@
   let downloadDefaults: DownloadSystemDefaults | null = null;
   let showDownloadOptions = false;
 
+  // Skip summary option
+  let skipSummary = false;
+
   // Local recording UI state
   let showRecordingInfo = false;
   let showRecordingWarningModal = false;
@@ -1208,6 +1211,10 @@
         uploadHeaders['X-File-Hash'] = fileHash;
       }
 
+      if (skipSummary) {
+        uploadHeaders['X-Skip-Summary'] = 'true';
+      }
+
       // Configure axios with timeout and upload progress
       const config = {
         headers: {
@@ -1604,6 +1611,11 @@
           payload.audio_only = downloadAudioOnly;
           payload.audio_quality = downloadAudioQuality;
         }
+      }
+
+      // Pass skip_summary flag if set
+      if (skipSummary) {
+        payload.skip_summary = true;
       }
 
       // Call the API endpoint directly for immediate processing
@@ -2166,6 +2178,14 @@
                 {$t('uploader.minMaxValidationError')}
               </div>
             {/if}
+
+            <div class="setting-field skip-summary-field">
+              <label class="checkbox-label">
+                <input type="checkbox" bind:checked={skipSummary} />
+                <span>{$t('upload.skipSummary')}</span>
+              </label>
+              <span class="setting-hint">{$t('upload.skipSummaryHint')}</span>
+            </div>
           </div>
         {/if}
       </div>
@@ -2342,6 +2362,14 @@
             </div>
           {/if}
         </details>
+
+        <div class="skip-summary-url-option">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={skipSummary} />
+            <span>{$t('upload.skipSummary')}</span>
+          </label>
+          <span class="setting-hint">{$t('upload.skipSummaryHint')}</span>
+        </div>
 
         <div class="url-actions">
           <button
@@ -3328,6 +3356,36 @@
 
   .setting-field input::placeholder {
     color: var(--text-light);
+  }
+
+  .skip-summary-field {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .skip-summary-url-option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0;
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-color);
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--primary-color);
   }
 
   .validation-error {

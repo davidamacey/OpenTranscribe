@@ -3303,5 +3303,25 @@
   "settings.pki.allowPasswordFallback": "Permitir respaldo con contraseña",
   "settings.pki.allowPasswordFallbackHelp": "Cuando está habilitado, los usuarios sin certificados pueden autenticarse usando nombre de usuario/contraseña",
   "settings.pki.saveConfiguration": "Guardar configuración",
-  "settings.sharing.adminBadge": "Admin"
+  "settings.sharing.adminBadge": "Admin",
+
+  "settings.llm.autoSummarySection": "Configuraci\u00f3n de resumen IA",
+  "settings.llm.autoSummary": "Generar res\u00famenes autom\u00e1ticamente",
+  "settings.llm.autoSummaryDesc": "Generar autom\u00e1ticamente res\u00famenes de IA despu\u00e9s de cada transcripci\u00f3n",
+  "settings.llm.autoSummaryDisabledHint": "Los res\u00famenes no se generar\u00e1n autom\u00e1ticamente. A\u00fan puede generarlos manualmente por archivo.",
+  "settings.llm.systemSummary": "Res\u00famenes IA a nivel de sistema",
+  "settings.llm.systemSummaryDesc": "Activar o desactivar la generaci\u00f3n de res\u00famenes IA para todos los usuarios (solo admin)",
+  "settings.llm.systemSummaryDisabledHint": "Los res\u00famenes IA han sido desactivados por el administrador.",
+  "settings.llm.systemSummaryDisabledWarning": "Los res\u00famenes IA est\u00e1n desactivados para TODOS los usuarios. La generaci\u00f3n manual tambi\u00e9n est\u00e1 bloqueada para usuarios no administradores.",
+
+  "upload.skipSummary": "Omitir resumen IA para esta carga",
+  "upload.skipSummaryHint": "La transcripci\u00f3n se completar\u00e1 sin generar un resumen IA",
+
+  "summary.statusDisabled": "Generaci\u00f3n de resumen desactivada",
+  "summary.generateAnyway": "Generar resumen de todos modos",
+  "summary.systemDisabled": "Los res\u00famenes IA han sido desactivados por el administrador",
+  "summary.adminEnableHint": "Contacte a su administrador para activar la generaci\u00f3n de res\u00famenes IA",
+
+  "common.enabled": "Activado",
+  "common.disabled": "Desactivado"
 }

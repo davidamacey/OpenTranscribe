@@ -1166,6 +1166,57 @@ def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list
     return cleaned_segments, garbage_count
 
 
+def _dispatch_automatic_summary(
+    file_id: int, file_uuid: str, collection_prompt_uuid: str | None
+) -> None:
+    """Check summary disable settings and dispatch if enabled."""
+    from app.tasks.summarization import send_summary_notification
+    from app.tasks.summarization import summarize_transcript_task
+    from app.utils.summary_settings import get_summary_disable_reason
+
+    with session_scope() as db:
+        media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+        if not media_file:
+            logger.warning(f"File {file_uuid} not found for summary dispatch")
+            return
+
+        if str(media_file.summary_status) == "disabled":
+            logger.info(f"Summary disabled for file {file_id} (per-file flag)")
+            send_summary_notification(
+                int(media_file.user_id),
+                file_id,
+                "disabled",
+                "AI summary generation is disabled for this file",
+                0,
+            )
+            return
+
+        disable_reason = get_summary_disable_reason(db, int(media_file.user_id))
+        if disable_reason:
+            media_file.summary_status = "disabled"  # type: ignore[assignment]
+            db.commit()
+            reason_msg = (
+                "AI summary generation has been disabled by the system administrator"
+                if disable_reason == "system"
+                else "AI summary auto-generation is disabled in your settings"
+            )
+            logger.info(f"Summary disabled for file {file_id} (reason: {disable_reason})")
+            send_summary_notification(
+                int(media_file.user_id),
+                file_id,
+                "disabled",
+                reason_msg,
+                0,
+            )
+            return
+
+    summary_task = summarize_transcript_task.delay(
+        file_uuid=file_uuid,
+        prompt_uuid=collection_prompt_uuid,
+    )
+    logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
+
+
 def _get_collection_prompt_uuid(file_id: int) -> str | None:
     """Look up the default summary prompt UUID from the file's first collection (by added_at)."""
     try:
@@ -1245,15 +1296,7 @@ def trigger_automatic_summarization(
 
         # Summarization
         if tasks_to_run is None or "summarization" in tasks_to_run:
-            from app.tasks.summarization import summarize_transcript_task
-
-            summary_task = summarize_transcript_task.delay(
-                file_uuid=file_uuid,
-                prompt_uuid=collection_prompt_uuid,
-            )
-            logger.info(
-                f"Automatic summarization task {summary_task.id} started for file {file_id}"
-            )
+            _dispatch_automatic_summary(file_id, file_uuid, collection_prompt_uuid)
 
         # Topic extraction
         if tasks_to_run is None or "topic_extraction" in tasks_to_run:

@@ -196,8 +196,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'media_file' AND column_name = 'diarization_disabled')"
     )
+    has_ai_summary_setting = "system_settings" in tables and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM system_settings WHERE key = 'ai.summary_enabled')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v351: AI summary enabled system setting
+    if has_ai_summary_setting:
+        return "v351_add_ai_summary_settings"
     # v350: diarization_disabled flag on media_file
     if has_diarization_disabled:
         return "v350_add_diarization_disabled"

@@ -77,6 +77,28 @@ async def trigger_summarization(
             detail="File must have completed transcription before summarization",
         )
 
+    # Check system-wide disable (non-admin users blocked)
+    if getattr(current_user, "role", None) != "admin":
+        from app.utils.summary_settings import is_summary_enabled_system
+
+        if not is_summary_enabled_system(db):
+            raise HTTPException(
+                status_code=423,
+                detail=(
+                    "AI summary generation has been disabled by the system "
+                    "administrator. Contact your admin to re-enable."
+                ),
+            )
+
+    # Per-file disabled status: manual trigger resets it (explicit user intent)
+    if str(media_file.summary_status) == "disabled":
+        media_file.summary_status = "pending"  # type: ignore[assignment]
+        db.commit()
+        logger.info(
+            f"User manually triggered summary for file {file_id}; "
+            f"resetting per-file disabled status"
+        )
+
     # Check LLM availability before starting the task
     llm_available = await is_llm_available(user_id=int(current_user.id))
     if not llm_available:

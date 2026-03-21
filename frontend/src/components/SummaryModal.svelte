@@ -30,6 +30,9 @@
   let generating = false;
   let summaryStatus: string = 'pending';
   let canRetry: boolean = false;
+  let canGenerate: boolean = true;
+  let summaryEnabledSystem: boolean = true;
+  let summaryEnabledUser: boolean = true;
 
   // Get LLM availability from centralized store
   $: llmAvailable = $isLLMAvailable;
@@ -67,6 +70,9 @@
           summaryStatus = statusData.summary_status;
           llmAvailable = statusData.llm_available;
           canRetry = statusData.can_retry;
+          canGenerate = statusData.can_generate ?? true;
+          summaryEnabledSystem = statusData.summary_enabled_system ?? true;
+          summaryEnabledUser = statusData.summary_enabled_user ?? true;
         }
       } catch (statusErr) {
         console.warn('Failed to load summary status:', statusErr);
@@ -494,6 +500,8 @@
               {llmAvailable}
               {canRetry}
               {summaryStatus}
+              {canGenerate}
+              {summaryEnabledSystem}
               on:generateSummary={generateSummary}
               on:retrySummary={retryFailedSummary}
               on:regenerateWithPrompt={regenerateWithPrompt}

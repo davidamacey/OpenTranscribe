@@ -3303,5 +3303,25 @@
   "settings.pki.allowPasswordFallback": "Autoriser le repli sur mot de passe",
   "settings.pki.allowPasswordFallbackHelp": "Lorsque activé, les utilisateurs sans certificat peuvent s'authentifier par nom d'utilisateur/mot de passe",
   "settings.pki.saveConfiguration": "Enregistrer la configuration",
-  "settings.sharing.adminBadge": "Admin"
+  "settings.sharing.adminBadge": "Admin",
+
+  "settings.llm.autoSummarySection": "Param\u00e8tres de r\u00e9sum\u00e9 IA",
+  "settings.llm.autoSummary": "G\u00e9n\u00e9rer automatiquement les r\u00e9sum\u00e9s",
+  "settings.llm.autoSummaryDesc": "G\u00e9n\u00e9rer automatiquement des r\u00e9sum\u00e9s IA apr\u00e8s chaque transcription",
+  "settings.llm.autoSummaryDisabledHint": "Les r\u00e9sum\u00e9s ne seront pas g\u00e9n\u00e9r\u00e9s automatiquement. Vous pouvez toujours les g\u00e9n\u00e9rer manuellement par fichier.",
+  "settings.llm.systemSummary": "R\u00e9sum\u00e9s IA au niveau syst\u00e8me",
+  "settings.llm.systemSummaryDesc": "Activer ou d\u00e9sactiver la g\u00e9n\u00e9ration de r\u00e9sum\u00e9s IA pour tous les utilisateurs (admin uniquement)",
+  "settings.llm.systemSummaryDisabledHint": "Les r\u00e9sum\u00e9s IA ont \u00e9t\u00e9 d\u00e9sactiv\u00e9s par l'administrateur.",
+  "settings.llm.systemSummaryDisabledWarning": "Les r\u00e9sum\u00e9s IA sont d\u00e9sactiv\u00e9s pour TOUS les utilisateurs. La g\u00e9n\u00e9ration manuelle est aussi bloqu\u00e9e pour les non-administrateurs.",
+
+  "upload.skipSummary": "Ignorer le r\u00e9sum\u00e9 IA pour cet envoi",
+  "upload.skipSummaryHint": "La transcription se terminera sans g\u00e9n\u00e9rer de r\u00e9sum\u00e9 IA",
+
+  "summary.statusDisabled": "G\u00e9n\u00e9ration de r\u00e9sum\u00e9 d\u00e9sactiv\u00e9e",
+  "summary.generateAnyway": "G\u00e9n\u00e9rer le r\u00e9sum\u00e9 quand m\u00eame",
+  "summary.systemDisabled": "Les r\u00e9sum\u00e9s IA ont \u00e9t\u00e9 d\u00e9sactiv\u00e9s par l'administrateur",
+  "summary.adminEnableHint": "Contactez votre administrateur pour activer la g\u00e9n\u00e9ration de r\u00e9sum\u00e9s IA",
+
+  "common.enabled": "Activ\u00e9",
+  "common.disabled": "D\u00e9sactiv\u00e9"
 }

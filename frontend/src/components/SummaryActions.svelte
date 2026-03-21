@@ -11,6 +11,8 @@
   export let llmAvailable: boolean = false;
   export let canRetry: boolean = false;
   export let summaryStatus: string = 'pending';
+  export let canGenerate: boolean = true;
+  export let summaryEnabledSystem: boolean = true;
 
   const dispatch = createEventDispatcher<{
     generateSummary: void;
@@ -44,7 +46,31 @@
 </script>
 
 <div class="summary-actions">
-  {#if !summary && llmAvailable && summaryStatus === 'pending'}
+  {#if !summary && summaryStatus === 'disabled'}
+    <div class="disabled-badge">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+      </svg>
+      {$t('summary.statusDisabled')}
+    </div>
+    {#if canGenerate}
+      <button
+        class="action-button primary"
+        on:click={() => dispatch('generateSummary')}
+        disabled={generating}
+      >
+        {#if generating}
+          <Spinner size="small" color="currentColor" />
+          {$t('summary.generatingSummary')}
+        {:else}
+          {$t('summary.generateAnyway')}
+        {/if}
+      </button>
+    {:else if !summaryEnabledSystem}
+      <span class="admin-hint">{$t('summary.adminEnableHint')}</span>
+    {/if}
+  {:else if !summary && llmAvailable && summaryStatus === 'pending'}
     <button
       class="action-button primary"
       on:click={() => dispatch('generateSummary')}
@@ -205,6 +231,25 @@
   .prompt-select:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .disabled-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+  }
+
+  .admin-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-style: italic;
   }
 
   @media (max-width: 768px) {

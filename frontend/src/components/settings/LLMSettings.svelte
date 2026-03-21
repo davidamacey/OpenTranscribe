@@ -6,8 +6,10 @@
   import { toastStore } from '../../stores/toast';
   import { llmStatusStore } from '../../stores/llmStatus';
   import { t } from '$stores/locale';
+  import axiosInstance from '$lib/axios';
 
   export let onSettingsChange: (() => void) | null = null;
+  export let isAdmin: boolean = false;
 
   // State variables
   let loading = false;
@@ -30,6 +32,12 @@
   let configToDelete: UserLLMSettings | null = null;
   let showDeleteAllModal = false;
 
+  // Auto-summary toggle state
+  let autoSummaryEnabled = true;
+  let autoSummaryLoading = false;
+  let systemSummaryEnabled = true;
+  let systemSummaryLoading = false;
+
   // Connection status for active configuration
   let connectionStatus: 'unknown' | 'connected' | 'disconnected' = 'unknown';
   let statusMessage = '';
@@ -39,6 +47,10 @@
   // Load initial data
   onMount(async () => {
     await loadData();
+    await loadAutoSummarySetting();
+    if (isAdmin) {
+      await loadSystemSummarySetting();
+    }
   });
 
   // Cleanup on destroy
@@ -95,6 +107,55 @@
       }
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadAutoSummarySetting() {
+    try {
+      const res = await axiosInstance.get('/settings/ai-summary');
+      autoSummaryEnabled = res.data.ai_summary_enabled;
+    } catch (err) {
+      console.warn('Failed to load auto-summary setting:', err);
+    }
+  }
+
+  async function saveAutoSummary() {
+    autoSummaryLoading = true;
+    try {
+      const res = await axiosInstance.put('/settings/ai-summary', { enabled: autoSummaryEnabled });
+      autoSummaryEnabled = res.data.ai_summary_enabled;
+      toastStore.success(res.data.message, 3000);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : $t('common.error'), 5000);
+      autoSummaryEnabled = !autoSummaryEnabled; // rollback
+    } finally {
+      autoSummaryLoading = false;
+    }
+  }
+
+  async function loadSystemSummarySetting() {
+    try {
+      const res = await axiosInstance.get('/admin/system/ai-summary');
+      systemSummaryEnabled = res.data.ai_summary_enabled;
+    } catch (err) {
+      console.warn('Failed to load system summary setting:', err);
+    }
+  }
+
+  async function saveSystemSummary() {
+    systemSummaryLoading = true;
+    try {
+      const res = await axiosInstance.put('/admin/system/ai-summary', { enabled: systemSummaryEnabled });
+      systemSummaryEnabled = res.data.ai_summary_enabled;
+      const state = systemSummaryEnabled ? $t('common.enabled') : $t('common.disabled');
+      toastStore.success(`${$t('settings.llm.systemSummary')}: ${state}`, 3000);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : $t('common.error'), 5000);
+      systemSummaryEnabled = !systemSummaryEnabled; // rollback
+    } finally {
+      systemSummaryLoading = false;
     }
   }
 
@@ -635,6 +696,74 @@
         </div>
       {/if}
     </div>
+
+    <!-- Auto-Summary Settings -->
+    {#if hasSettings || sharedConfigurations.length > 0}
+      <div class="auto-summary-section">
+        <div class="section-header">
+          <h4>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            {$t('settings.llm.autoSummarySection')}
+          </h4>
+        </div>
+
+        <div class="summary-toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-title">{$t('settings.llm.autoSummary')}</span>
+            <span class="toggle-desc">{$t('settings.llm.autoSummaryDesc')}</span>
+          </div>
+          <label class="toggle-label">
+            <input type="checkbox" class="toggle-input"
+              bind:checked={autoSummaryEnabled}
+              on:change={saveAutoSummary}
+              disabled={autoSummaryLoading || (!systemSummaryEnabled && !isAdmin)} />
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+
+        {#if !autoSummaryEnabled}
+          <div class="summary-hint">
+            {$t('settings.llm.autoSummaryDisabledHint')}
+          </div>
+        {/if}
+
+        {#if !systemSummaryEnabled && !isAdmin}
+          <div class="summary-hint warning">
+            {$t('settings.llm.systemSummaryDisabledHint')}
+          </div>
+        {/if}
+
+        {#if isAdmin}
+          <div class="summary-toggle-row admin-toggle">
+            <div class="toggle-info">
+              <span class="toggle-title">
+                {$t('settings.llm.systemSummary')}
+                <span class="admin-badge">{$t('settings.sharing.adminBadge')}</span>
+              </span>
+              <span class="toggle-desc">{$t('settings.llm.systemSummaryDesc')}</span>
+            </div>
+            <label class="toggle-label">
+              <input type="checkbox" class="toggle-input"
+                bind:checked={systemSummaryEnabled}
+                on:change={saveSystemSummary}
+                disabled={systemSummaryLoading} />
+              <span class="toggle-switch"></span>
+            </label>
+          </div>
+
+          {#if !systemSummaryEnabled}
+            <div class="summary-hint warning">
+              {$t('settings.llm.systemSummaryDisabledWarning')}
+            </div>
+          {/if}
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -1099,5 +1228,68 @@
 
   .toggle-text {
     user-select: none;
+  }
+
+  /* Auto-summary settings */
+  .auto-summary-section {
+    margin-top: 2rem;
+    padding-top: 1rem;
+  }
+
+  .summary-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-background);
+    margin-bottom: 0.5rem;
+  }
+
+  .summary-toggle-row.admin-toggle {
+    border-color: var(--warning-color);
+    background: rgba(245, 158, 11, 0.04);
+    margin-top: 1rem;
+  }
+
+  :global([data-theme='dark']) .summary-toggle-row.admin-toggle {
+    background: rgba(245, 158, 11, 0.08);
+  }
+
+  .toggle-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .toggle-title {
+    font-weight: 500;
+    font-size: 0.8125rem;
+    color: var(--text-color);
+  }
+
+  .toggle-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  .summary-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 0.5rem 1rem;
+    background: var(--surface-color);
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+  }
+
+  .summary-hint.warning {
+    color: var(--warning-color);
+    background: rgba(245, 158, 11, 0.08);
+    border-left: 3px solid var(--warning-color);
   }
 </style>

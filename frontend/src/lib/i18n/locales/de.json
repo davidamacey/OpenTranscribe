@@ -3303,5 +3303,25 @@
   "settings.pki.allowPasswordFallback": "Passwort-Fallback erlauben",
   "settings.pki.allowPasswordFallbackHelp": "Wenn aktiviert, können sich Benutzer ohne Zertifikate mit Benutzername/Passwort authentifizieren",
   "settings.pki.saveConfiguration": "Konfiguration speichern",
-  "settings.sharing.adminBadge": "Admin"
+  "settings.sharing.adminBadge": "Admin",
+
+  "settings.llm.autoSummarySection": "KI-Zusammenfassungseinstellungen",
+  "settings.llm.autoSummary": "Zusammenfassungen automatisch generieren",
+  "settings.llm.autoSummaryDesc": "Automatisch KI-Zusammenfassungen nach jeder Transkription erstellen",
+  "settings.llm.autoSummaryDisabledHint": "Zusammenfassungen werden nicht automatisch erstellt. Sie k\u00f6nnen sie weiterhin manuell pro Datei generieren.",
+  "settings.llm.systemSummary": "Systemweite KI-Zusammenfassungen",
+  "settings.llm.systemSummaryDesc": "KI-Zusammenfassungserstellung f\u00fcr alle Benutzer aktivieren oder deaktivieren (nur Admin)",
+  "settings.llm.systemSummaryDisabledHint": "KI-Zusammenfassungen wurden vom Administrator deaktiviert.",
+  "settings.llm.systemSummaryDisabledWarning": "KI-Zusammenfassungen sind f\u00fcr ALLE Benutzer deaktiviert. Die manuelle Generierung ist auch f\u00fcr Nicht-Administratoren gesperrt.",
+
+  "upload.skipSummary": "KI-Zusammenfassung f\u00fcr diesen Upload \u00fcberspringen",
+  "upload.skipSummaryHint": "Die Transkription wird ohne KI-Zusammenfassung abgeschlossen",
+
+  "summary.statusDisabled": "Zusammenfassungserstellung deaktiviert",
+  "summary.generateAnyway": "Trotzdem Zusammenfassung erstellen",
+  "summary.systemDisabled": "KI-Zusammenfassungen wurden vom Administrator deaktiviert",
+  "summary.adminEnableHint": "Kontaktieren Sie Ihren Administrator, um die KI-Zusammenfassungserstellung zu aktivieren",
+
+  "common.enabled": "Aktiviert",
+  "common.disabled": "Deaktiviert"
 }

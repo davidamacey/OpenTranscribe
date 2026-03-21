@@ -1787,3 +1787,39 @@ async def repair_profile_embeddings(
         "updated": success,
         "failed": failed,
     }
+
+
+# =============================================================================
+# AI Summary System Settings
+# =============================================================================
+
+
+@router.get("/system/ai-summary")
+def get_system_ai_summary_setting(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Get system-wide AI summary setting (admin only)."""
+    from app.utils.summary_settings import is_summary_enabled_system
+
+    enabled = is_summary_enabled_system(db)
+    return {"ai_summary_enabled": enabled, "scope": "system"}
+
+
+@router.put("/system/ai-summary")
+def update_system_ai_summary_setting(
+    *,
+    enabled: bool,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Enable or disable AI summary generation system-wide (admin only)."""
+    system_settings_service.set_setting(
+        db,
+        "ai.summary_enabled",
+        enabled,
+        "Global toggle for AI summary auto-generation",
+    )
+    state = "enabled" if enabled else "disabled"
+    logger.info(f"Admin {current_user.email} {state} system-wide AI summaries")
+    return {"ai_summary_enabled": enabled, "scope": "system"}
