@@ -530,6 +530,7 @@
               class="dropdown-item"
               on:click={() => {
                 showDropdown = false;
+                mobileMenuOpen = false;
                 settingsModalStore.open('system-statistics');
               }}
               title={$t('nav.settings')}
@@ -550,6 +551,7 @@
                 // Open Flower in a new tab with the correct URL
                 window.open(url, '_blank');
                 showDropdown = false;
+                mobileMenuOpen = false;
               }}
               aria-label={$t('nav.flowerDashboard')}
               title={$t('nav.flowerDashboard')}
