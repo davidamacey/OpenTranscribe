@@ -26,7 +26,7 @@
 </script>
 
 <div class="about-modal-wrapper">
-<BaseModal isOpen={showModal} onClose={closeModal} maxWidth="800px">
+<BaseModal isOpen={showModal} onClose={closeModal} maxWidth="800px" zIndex={1100}>
   <svelte:fragment slot="header">
     <div class="header-title-group">
       <h2 class="modal-title">{$t('about.title')}</h2>
