@@ -143,51 +143,51 @@
       {
         title: $t('settings.sections.administration'),
         items: [
-          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' },
           ...(isSuperAdmin ? [
-            { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' },
-            { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list' }
-          ] : [])
+            { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list' },
+            { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' }
+          ] : []),
+          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' }
         ]
       },
       {
         title: $t('settings.sections.systemManagement'),
         items: [
-          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
-          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
-          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
           { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield' },
-          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' }
+          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
+          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' },
+          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
+          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' }
         ]
       }
     ] : []),
     {
       title: $t('settings.sections.account'),
       items: [
-        { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
-        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group' }
+        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group' },
+        { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' }
       ]
     },
     {
       title: $t('settings.sections.transcriptionAi'),
       items: [
-        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
-        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
-        { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
-        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
         { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic' },
-        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list' }
+        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
+        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list' },
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
+        { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
+        { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
+        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' }
       ]
     },
     {
       title: $t('settings.sections.mediaOutput'),
       items: [
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
+        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' },
-        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' }
+        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' }
       ]
     }
   ];

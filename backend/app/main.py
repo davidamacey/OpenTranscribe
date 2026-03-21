@@ -497,6 +497,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
 
+    # Sync speaker profile data from PostgreSQL to OpenSearch
+    try:
+        from app.db.base import SessionLocal
+        from app.services.opensearch_service import sync_speaker_profiles_to_opensearch
+
+        _db = SessionLocal()
+        try:
+            sync_result = sync_speaker_profiles_to_opensearch(_db)
+            if sync_result["updated"] > 0:
+                logger.info(f"Speaker profile sync: {sync_result}")
+        finally:
+            _db.close()
+    except Exception as e:
+        logger.warning(f"Speaker profile sync failed (non-fatal): {e}")
+
     # Clear stale migration state from Redis (orphaned by unclean shutdown)
     try:
         _clear_stale_task_state()

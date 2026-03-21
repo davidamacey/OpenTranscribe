@@ -18,6 +18,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -703,6 +704,16 @@ def delete_asr_config(
             _clear_active_asr_setting(db, int(current_user.id))
 
 
+@router.post("/clear-active")
+def clear_active_asr_config(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Clear the active ASR configuration, reverting to local GPU default."""
+    _clear_active_asr_setting(db, int(current_user.id))
+    return {"message": "Reverted to local ASR default"}
+
+
 @router.delete("/all", status_code=204)
 def delete_all_asr_configs(
     db: Session = Depends(get_db),
@@ -721,6 +732,7 @@ def delete_all_asr_configs(
 def test_asr_connection(
     request: Request,
     settings_in: schemas.ASRConnectionTestRequest,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Test an ad-hoc ASR connection without saving configuration."""
@@ -766,6 +778,7 @@ def test_asr_connection(
 def test_saved_asr_config(
     request: Request,
     config_uuid: UUID,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -877,6 +890,7 @@ class _SetLocalModelRequest(BaseModel):
 def set_active_local_model(
     request: Request,
     body: _SetLocalModelRequest,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
 ) -> Any:
@@ -916,6 +930,7 @@ def set_active_local_model(
 @limiter.limit("5/minute")
 def restart_gpu_worker(
     request: Request,
+    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
 ) -> Any:

@@ -152,7 +152,7 @@ def _execute_profile_knn_search(
     matches = []
 
     for hit in response["hits"]["hits"]:
-        score = hit["_score"]
+        score = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
         source = hit["_source"]
         if score >= threshold:
             matches.append(

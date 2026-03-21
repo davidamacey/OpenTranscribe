@@ -80,30 +80,57 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
     speaker_mapping = gpu_result.get("speaker_mapping", {})
     native_embeddings = gpu_result.get("native_embeddings")
     use_native = gpu_result.get("use_native_embeddings", False)
+    asr_provider = gpu_result.get("asr_provider", "local")
     downstream_tasks = gpu_result.get("downstream_tasks")
 
     post_start = time.perf_counter()
 
     try:
-        # Speaker matching must complete before marking "completed" so the
-        # frontend shows matched profile names, not generic "Speaker 1" labels.
-        send_progress_notification(user_id, file_id, 0.80, "Processing speaker identification")
+        is_cloud_asr = asr_provider and asr_provider != "local"
 
-        if use_native and native_embeddings:
-            _process_native_embeddings(
-                file_id, user_id, task_id, native_embeddings, speaker_mapping
+        if is_cloud_asr:
+            # Cloud ASR: no native embeddings, dispatch GPU task to extract them
+            send_progress_notification(
+                user_id, file_id, 0.80, "Dispatching speaker embedding extraction"
             )
+            try:
+                from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
 
-        # Store v4 centroids if applicable (native available but not used for matching)
-        if native_embeddings and not use_native:
-            _store_v4_centroids(file_id, file_uuid, user_id, native_embeddings, speaker_mapping)
+                extract_speaker_embeddings_task.apply_async(
+                    args=[str(file_uuid), speaker_mapping],
+                    queue="gpu",
+                )
+                logger.info(
+                    f"Dispatched speaker embedding extraction to GPU queue for "
+                    f"cloud-transcribed file {file_id}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to dispatch speaker embedding task: {e}")
+        else:
+            # Local ASR: process embeddings inline
+            send_progress_notification(user_id, file_id, 0.80, "Processing speaker identification")
 
-        # Mark COMPLETED — speaker labels are now accurate in DB
-        send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
-        with session_scope() as db:
-            update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            if use_native and native_embeddings:
+                _process_native_embeddings(
+                    file_id, user_id, task_id, native_embeddings, speaker_mapping
+                )
 
-        send_completion_notification(user_id, file_id)
+            # Store v4 centroids if applicable (native available but not used for matching)
+            if native_embeddings and not use_native:
+                _store_v4_centroids(file_id, file_uuid, user_id, native_embeddings, speaker_mapping)
+
+        if is_cloud_asr:
+            # Cloud ASR: embedding task runs async on GPU — keep at 90% until it finishes
+            send_progress_notification(user_id, file_id, 0.90, "Processing speaker identification")
+            with session_scope() as db:
+                update_task_status(db, task_id, "in_progress", progress=0.90)
+            # Completion notification will be sent by extract_speaker_embeddings_task
+        else:
+            # Local ASR: embeddings already done inline — mark completed
+            send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
+            with session_scope() as db:
+                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            send_completion_notification(user_id, file_id)
 
         completion_elapsed = time.perf_counter() - post_start
         logger.info(

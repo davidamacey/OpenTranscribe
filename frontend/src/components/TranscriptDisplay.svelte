@@ -1468,7 +1468,7 @@
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr); /* minmax(0, 1fr) allows column to shrink */
     gap: 12px;
-    align-items: center;
+    align-items: start;
     padding: 8px 12px;
     background: none;
     border: none;
@@ -1539,8 +1539,7 @@
     content: '';
     position: absolute;
     left: 0;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 2px;
     width: 2px;
     height: 20px;
     background: rgba(107, 114, 128, 0.3);

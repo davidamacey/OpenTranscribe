@@ -253,11 +253,18 @@ def _execute_knn_search(
 
 
 def _extract_matches_from_response(response: dict, threshold: float) -> list[dict]:
-    """Extract and filter matches from OpenSearch response."""
+    """Extract and filter matches from OpenSearch response.
+
+    OpenSearch cosinesimil returns ``(1 + cosine) / 2`` (range 0-1).
+    We convert back to raw cosine (range -1 to 1) so thresholds like
+    0.75 mean real cosine similarity.
+    """
     matches = []
     for hit in response["hits"]["hits"]:
-        score = hit["_score"]
-        if score < threshold:
+        # Convert OpenSearch score to raw cosine similarity
+        cosine_sim = 2.0 * hit["_score"] - 1.0
+
+        if cosine_sim < threshold:
             continue
 
         source = hit["_source"]
@@ -270,13 +277,12 @@ def _extract_matches_from_response(response: dict, threshold: float) -> list[dic
 
         matches.append(
             {
-                "profile_id": profile_id,  # Integer ID for internal database operations
-                "profile_uuid": profile_uuid or str(profile_id),  # UUID for external API responses
+                "profile_id": profile_id,
+                "profile_uuid": profile_uuid or str(profile_id),
                 "profile_name": profile_name,
-                "similarity": float(score),
+                "similarity": cosine_sim,
                 "embedding_count": source.get("speaker_count", 1),
                 "last_update": source.get("updated_at"),
-                "opensearch_score": score,
             }
         )
 
@@ -348,71 +354,20 @@ class ProfileEmbeddingService:
     def add_speaker_to_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> bool:
         """
         Add a speaker's embedding to the profile's consolidated embedding.
-        This is an incremental update that adjusts the profile embedding
-        without recalculating from all speakers.
+
+        Performs a full recalculation by averaging all speakers assigned to the
+        profile, ensuring the stored embedding always represents the true centroid.
 
         Args:
             db: Database session
-            speaker_id: ID of the speaker to add
+            speaker_id: ID of the speaker being added
             profile_id: ID of the profile to update
 
         Returns:
             True if successful, False otherwise
         """
-        try:
-            # Get the speaker object to extract UUID
-            speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
-            if not speaker:
-                logger.error(f"Speaker {speaker_id} not found")
-                return False
-
-            # Get the speaker embedding using UUID
-            speaker_embedding = get_speaker_embedding(str(speaker.uuid))
-            if not speaker_embedding:
-                logger.warning(f"No embedding found for speaker {speaker.uuid}")
-                # Fall back to full recalculation
-                return ProfileEmbeddingService.update_profile_embedding(db, profile_id)
-
-            # Get the profile
-            profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
-            if not profile:
-                logger.error(f"Profile {profile_id} not found")
-                return False
-
-            # Update embedding count and timestamp (vectors stored in OpenSearch)
-            current_count = int(profile.embedding_count) if profile.embedding_count else 0
-            profile.embedding_count = current_count + 1  # type: ignore[assignment]
-            profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
-            db.commit()
-
-            # Store/update embedding in OpenSearch for optimal vector similarity performance
-            try:
-                from app.services.opensearch_service import store_profile_embedding
-
-                store_profile_embedding(
-                    profile_id=profile_id,
-                    profile_uuid=str(profile.uuid),
-                    profile_name=str(profile.name),
-                    embedding=speaker_embedding,
-                    speaker_count=int(profile.embedding_count),
-                    user_id=int(profile.user_id),
-                )
-                logger.info(f"Updated profile {profile_id} embedding in OpenSearch")
-            except Exception as e:
-                logger.error(f"Failed to update profile embedding in OpenSearch: {e}")
-
-            logger.info(
-                f"Added speaker {speaker_id} embedding to profile {profile_id} "
-                f"(now has {profile.embedding_count} embeddings)"
-            )
-            return True
-
-        except Exception as e:
-            logger.error(
-                f"Error adding speaker {speaker_id} to profile {profile_id} embedding: {e}"
-            )
-            db.rollback()
-            return False
+        logger.info(f"Adding speaker {speaker_id} to profile {profile_id}, recalculating average")
+        return ProfileEmbeddingService.update_profile_embedding(db, profile_id)
 
     @staticmethod
     def remove_speaker_from_profile_embedding(

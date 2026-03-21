@@ -100,6 +100,23 @@
     }
   }
 
+  async function switchToLocal() {
+    if (usingLocalDefault) return;
+    saving = true;
+    try {
+      await ASRSettingsApi.clearActive();
+      activeConfigurationId = null;
+      usingLocalDefault = true;
+      toastStore.success($t('settings.asrProvider.switchedToLocal'));
+      if (onSettingsChange) onSettingsChange();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : 'Failed to switch to local', 5000);
+    } finally {
+      saving = false;
+    }
+  }
+
   async function testConfiguration(config: UserASRSettingsResponse) {
     testingConfigId = config.uuid;
     testing = true;
@@ -383,8 +400,13 @@
       {#if usingLocalDefault}
         {$t('settings.asrProvider.usingLocalDefault')}{#if activeLocalModel} — <strong>{activeLocalModel}</strong>{/if}
       {:else}
-        {$t('settings.asrProvider.currentProvider')}: <strong>{getActiveConfig()?.name || ''}</strong>
-        ({ASRSettingsApi.getProviderDisplayName(getActiveConfig()?.provider || '')} — {getActiveConfig()?.model_name || ''})
+        <span class="status-text">
+          {$t('settings.asrProvider.currentProvider')}: <strong>{getActiveConfig()?.name || ''}</strong>
+          ({ASRSettingsApi.getProviderDisplayName(getActiveConfig()?.provider || '')} — {getActiveConfig()?.model_name || ''})
+        </span>
+        <button class="btn-use-local" on:click={switchToLocal} disabled={saving}>
+          {$t('settings.asrProvider.useLocal')}
+        </button>
       {/if}
     </div>
 
@@ -638,6 +660,21 @@
     color: var(--text-muted);
     border-color: var(--border-color);
   }
+
+  .status-text { flex: 1; }
+
+  .btn-use-local {
+    margin-left: auto;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-color);
+    color: var(--text-color);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-use-local:hover:not(:disabled) { background: var(--button-hover); }
 
   .section-header {
     display: flex;

@@ -300,6 +300,15 @@ export class ASRSettingsApi {
   }
 
   /**
+   * Clear the active configuration, reverting to local GPU default.
+   * Does NOT delete any saved configs — they remain available for re-activation.
+   */
+  static async clearActive(): Promise<{ message: string }> {
+    const response = await axiosInstance.post(`${this.BASE_PATH}/clear-active`);
+    return response.data;
+  }
+
+  /**
    * Toggle sharing on an ASR configuration
    */
   static async toggleShare(uuid: string, isShared: boolean): Promise<UserASRSettingsResponse> {

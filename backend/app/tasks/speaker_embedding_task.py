@@ -155,6 +155,34 @@ def extract_speaker_embeddings_task(
 
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
+            # Also mark the parent transcription task as completed if it was
+            # left at in_progress by postprocess (cloud ASR path).
+            from app.models.media import Task as TaskModel
+
+            parent_task = (
+                db.query(TaskModel)
+                .filter(
+                    TaskModel.media_file_id == file_id,
+                    TaskModel.task_type == "transcription",
+                    TaskModel.status == "in_progress",
+                )
+                .first()
+            )
+            if parent_task:
+                parent_task.status = "completed"
+                parent_task.progress = 1.0
+                parent_task.completed = True
+                db.commit()
+
+            # Send completion notification so frontend updates with speaker labels
+            try:
+                from app.tasks.transcription.notifications import send_completion_notification
+
+                send_completion_notification(user_id, file_id)
+                logger.info(f"Sent completion notification for cloud-transcribed file {file_id}")
+            except Exception as notify_err:
+                logger.warning(f"Failed to send completion notification: {notify_err}")
+
             return {
                 "status": "success",
                 "file_id": file_id,

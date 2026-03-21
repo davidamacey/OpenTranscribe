@@ -8,6 +8,7 @@
   import { toastStore } from '../stores/toast';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
+  import { ASRSettingsApi } from '$lib/api/asrSettings';
 
   export let showModal: boolean = false;
   export let file: any = null;
@@ -29,6 +30,11 @@
   let maxSpeakers: number | null = null;
   let numSpeakers: number | null = null;
 
+  // ASR provider info
+  let isCloudASR = false;
+  let activeASRProvider = 'local';
+  let activeASRModel = '';
+
   // Computed state
   // In bulk mode, gallery file objects use the list schema (no transcript_segments/total_segments).
   // A completed file always has a transcript, so use status as the indicator.
@@ -40,7 +46,7 @@
     ? bulkFiles.some((f: any) => f.status === 'completed')
     : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
   $: showSpeakerSettings =
-    selectedStages.has('transcription') || selectedStages.has('rediarize');
+    (selectedStages.has('transcription') || selectedStages.has('rediarize')) && !isCloudASR;
   $: isValid =
     selectedStages.size > 0 &&
     (!showSpeakerSettings ||
@@ -81,8 +87,8 @@
       id: 'rediarize',
       labelKey: 'reprocess.stageRediarize',
       descKey: 'reprocess.stageRediarizeDesc',
-      disabled: !hasWordTimestamps,
-      disabledReason: $t('reprocess.stageRediarizeDisabled'),
+      disabled: !hasWordTimestamps || isCloudASR,
+      disabledReason: isCloudASR ? $t('reprocess.rediarizeCloudDisabled') : $t('reprocess.stageRediarizeDisabled'),
     },
   ] as StageDefinition[];
 
@@ -251,9 +257,18 @@
     reprocessing = false;
   }
 
-  // Reset state when modal opens (not on close, to avoid content flash during exit)
+  // Reset state and fetch ASR status when modal opens
   $: if (showModal) {
     resetState();
+    ASRSettingsApi.getStatus().then((status) => {
+      isCloudASR = status.is_cloud_provider ?? false;
+      activeASRProvider = status.active_provider ?? 'local';
+      activeASRModel = status.active_model ?? '';
+    }).catch(() => {
+      isCloudASR = false;
+      activeASRProvider = 'local';
+      activeASRModel = '';
+    });
   }
 
   function handleClose() {
@@ -337,6 +352,16 @@
                     {allSelected ? $t('reprocess.deselectAll') : $t('reprocess.selectAll')}
                   </button>
                 </div>
+
+                <!-- ASR provider banner -->
+                {#if isCloudASR && selectedStages.has('transcription')}
+                  <div class="warning-banner warning-info" style="margin-top: 0; margin-bottom: 0.75rem;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                    <span>{$t('reprocess.cloudASRInfo', { provider: ASRSettingsApi.getProviderDisplayName(activeASRProvider), model: activeASRModel })}</span>
+                  </div>
+                {/if}
 
                 <!-- Core Processing -->
                 <div class="stage-group">

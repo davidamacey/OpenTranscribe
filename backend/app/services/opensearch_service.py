@@ -1744,6 +1744,33 @@ def search_transcripts(  # noqa: C901
         return []
 
 
+def _extract_speaker_match(hit: dict, threshold: float) -> dict[str, Any] | None:
+    """Convert a single OpenSearch kNN hit to a speaker match dict.
+
+    Converts the OpenSearch cosinesimil score ``(1 + cosine) / 2`` back to
+    raw cosine similarity so thresholds represent real cosine values.
+    """
+    cosine_sim = 2.0 * hit["_score"] - 1.0
+    if cosine_sim < threshold:
+        return None
+
+    source = hit["_source"]
+    if "speaker_id" not in source:
+        logger.debug(f"Skipping profile document in speaker matching: {source.get('profile_id')}")
+        return None
+
+    return {
+        "speaker_id": source["speaker_id"],
+        "speaker_uuid": source.get("speaker_uuid"),
+        "profile_id": source.get("profile_id"),
+        "profile_uuid": source.get("profile_uuid"),
+        "name": source["name"],
+        "confidence": cosine_sim,
+        "media_file_id": source.get("media_file_id"),
+        "collection_ids": source.get("collection_ids", []),
+    }
+
+
 def find_matching_speaker(
     embedding: list[float],
     user_id: int,
@@ -1810,30 +1837,9 @@ def find_matching_speaker(
 
         # Check if we have a match
         if len(response["hits"]["hits"]) > 0:
-            hit = response["hits"]["hits"][0]
-            # Get the score (normalized 0-1)
-            score = hit["_score"]
-
-            # Check if score meets our threshold
-            if score >= threshold:
-                source = hit["_source"]
-                # Skip profile documents that don't have speaker_id
-                if "speaker_id" not in source:
-                    logger.debug(
-                        f"Skipping profile document in speaker matching: {source.get('profile_id')}"
-                    )
-                    return None
-
-                return {
-                    "speaker_id": source["speaker_id"],
-                    "speaker_uuid": source.get("speaker_uuid"),
-                    "profile_id": source.get("profile_id"),
-                    "profile_uuid": source.get("profile_uuid"),
-                    "name": source["name"],
-                    "confidence": score,
-                    "media_file_id": source.get("media_file_id"),
-                    "collection_ids": source.get("collection_ids", []),
-                }
+            match = _extract_speaker_match(response["hits"]["hits"][0], threshold)
+            if match:
+                return match
 
         # No match found or score below threshold
         return None
@@ -1847,22 +1853,9 @@ def find_matching_speaker(
                 try:
                     response = opensearch_client.search(index=get_speaker_index(), body=query)
                     if len(response["hits"]["hits"]) > 0:
-                        hit = response["hits"]["hits"][0]
-                        score = hit["_score"]
-                        if score >= threshold:
-                            source = hit["_source"]
-                            if "speaker_id" not in source:
-                                return None
-                            return {
-                                "speaker_id": source["speaker_id"],
-                                "speaker_uuid": source.get("speaker_uuid"),
-                                "profile_id": source.get("profile_id"),
-                                "profile_uuid": source.get("profile_uuid"),
-                                "name": source["name"],
-                                "confidence": score,
-                                "media_file_id": source.get("media_file_id"),
-                                "collection_ids": source.get("collection_ids", []),
-                            }
+                        match = _extract_speaker_match(response["hits"]["hits"][0], threshold)
+                        if match:
+                            return match
                     return None
                 except Exception as retry_err:
                     logger.error(f"Retry after repair failed for speaker matching: {retry_err}")
@@ -1936,7 +1929,7 @@ def batch_find_matching_speakers(
             matches = []
             if "hits" in search_response and search_response["hits"]["hits"]:
                 for hit in search_response["hits"]["hits"]:
-                    score = hit["_score"]
+                    score = 2.0 * hit["_score"] - 1.0  # raw cosine
                     if score >= threshold:
                         source = hit["_source"]
                         matches.append(
@@ -2548,54 +2541,6 @@ def store_profile_embedding(
         return False
 
 
-def update_profile_embedding(
-    profile_id: int, profile_uuid: str, embedding: list[float], embedding_count: int
-) -> bool:
-    """
-    Update or create a profile embedding in OpenSearch
-
-    Args:
-        profile_id: ID of the speaker profile (for internal queries)
-        profile_uuid: UUID of the speaker profile (used as document ID)
-        embedding: Embedding vector
-        embedding_count: Number of speakers contributing to this embedding
-
-    Returns:
-        True if successful, False otherwise
-    """
-    if not opensearch_client:
-        logger.warning("OpenSearch client not initialized")
-        return False
-
-    try:
-        ensure_indices_exist()
-
-        doc = {
-            "document_type": "profile",  # CRITICAL: Distinguish from speakers
-            "profile_id": profile_id,
-            "profile_uuid": str(profile_uuid),
-            "embedding": embedding,
-            "embedding_count": embedding_count,
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        }
-
-        # Use UUID-based prefixed ID
-        # Use refresh='wait_for' to ensure the update is immediately searchable
-        opensearch_client.index(
-            index=get_speaker_index(),
-            id=f"profile_{profile_uuid}",
-            body=doc,
-            refresh="wait_for",
-        )
-
-        logger.info(f"Updated profile {profile_uuid} embedding in OpenSearch")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error updating profile embedding: {e}")
-        return False
-
-
 def remove_profile_embedding(profile_uuid: str) -> bool:
     """Remove a profile embedding from all speaker indices (main + v4 staging).
 
@@ -2859,7 +2804,7 @@ def msearch_speaker_similarities(
                     hits.append(
                         {
                             "speaker_uuid": source.get("speaker_uuid"),
-                            "similarity": float(hit["_score"]),
+                            "similarity": 2.0 * float(hit["_score"]) - 1.0,  # raw cosine
                             "speaker_id": source.get("speaker_id"),
                         }
                     )
@@ -3177,6 +3122,7 @@ def update_speaker_profile(
     profile_id: int | None,
     profile_uuid: str | None,
     verified: bool = False,
+    display_name: str | None = None,
 ):
     """
     Update the profile assignment of a speaker in OpenSearch
@@ -3186,6 +3132,7 @@ def update_speaker_profile(
         profile_id: Profile ID to assign (or None to clear, for internal queries)
         profile_uuid: Profile UUID to assign (or None to clear)
         verified: Whether the speaker is verified
+        display_name: Optional display name to sync
     """
     if not opensearch_client:
         logger.warning("OpenSearch client not initialized")
@@ -3193,14 +3140,15 @@ def update_speaker_profile(
 
     try:
         # Update the speaker document with new profile assignment using UUID
-        update_body = {
-            "doc": {
-                "profile_id": profile_id,
-                "profile_uuid": str(profile_uuid) if profile_uuid else None,
-                "verified": verified,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            }
+        doc: dict = {
+            "profile_id": profile_id,
+            "profile_uuid": str(profile_uuid) if profile_uuid else None,
+            "verified": verified,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
+        if display_name is not None:
+            doc["display_name"] = display_name
+        update_body = {"doc": doc}
 
         response = opensearch_client.update(
             index=get_speaker_index(),
@@ -3215,6 +3163,57 @@ def update_speaker_profile(
 
     except Exception as e:
         logger.error(f"Error updating speaker profile assignment: {e}")
+
+
+def sync_speaker_profiles_to_opensearch(db) -> dict:
+    """Bulk-sync speaker profile_id, display_name, and verified from PostgreSQL to OpenSearch.
+
+    Finds all speakers that have a profile_id or display_name in PostgreSQL and
+    updates their corresponding OpenSearch documents. This repairs drift caused by
+    profile assignments that bypassed the normal API update path.
+
+    Returns:
+        Dict with counts: updated, skipped, errors.
+    """
+    from app.models.media import Speaker
+
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized, skipping profile sync")
+        return {"updated": 0, "skipped": 0, "errors": 0}
+
+    speakers = (
+        db.query(Speaker)
+        .filter((Speaker.profile_id.isnot(None)) | (Speaker.display_name.isnot(None)))
+        .all()
+    )
+
+    updated = 0
+    skipped = 0
+    errors = 0
+
+    for speaker in speakers:
+        try:
+            profile_uuid = str(speaker.profile.uuid) if speaker.profile else None
+            update_speaker_profile(
+                speaker_uuid=str(speaker.uuid),
+                profile_id=int(speaker.profile_id) if speaker.profile_id else None,
+                profile_uuid=profile_uuid,
+                verified=bool(speaker.verified) if hasattr(speaker, "verified") else False,
+                display_name=str(speaker.display_name) if speaker.display_name else None,
+            )
+            updated += 1
+        except Exception as e:
+            if "document_missing_exception" in str(e):
+                skipped += 1
+            else:
+                logger.warning(f"Error syncing speaker {speaker.uuid}: {e}")
+                errors += 1
+
+    logger.info(
+        f"Speaker profile sync complete: {updated} updated, {skipped} skipped "
+        f"(no OS doc), {errors} errors"
+    )
+    return {"updated": updated, "skipped": skipped, "errors": errors}
 
 
 def find_matching_profiles(
@@ -3266,7 +3265,7 @@ def find_matching_profiles(
 
         matches = []
         for hit in response["hits"]["hits"]:
-            score = hit["_score"]
+            score = 2.0 * hit["_score"] - 1.0  # raw cosine
             if score >= threshold:
                 source = hit["_source"]
                 matches.append(

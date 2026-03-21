@@ -185,14 +185,13 @@ class SimilarityService:
 
         response = opensearch_client.search(index=index_name, body=search_body)
 
-        # Process results - scores are already normalized by our script
+        # Convert OpenSearch cosinesimil scores to raw cosine similarity
         results = []
         for hit in response.get("hits", {}).get("hits", []):
-            similarity = float(hit["_score"])
+            similarity = 2.0 * float(hit["_score"]) - 1.0
 
             result = {
                 "similarity": similarity,
-                "opensearch_score": similarity,  # Store original for debugging
                 **hit["_source"],
             }
             results.append(result)

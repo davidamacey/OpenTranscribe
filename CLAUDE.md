@@ -323,7 +323,7 @@ source backend/venv/bin/activate
 pytest backend/tests/e2e/ -v
 
 # Run with visible browser on XRDP (watch the tests)
-DISPLAY=:13 pytest backend/tests/e2e/ -v --headed
+DISPLAY=:11 pytest backend/tests/e2e/ -v --headed
 
 # Run specific test file
 pytest backend/tests/e2e/test_login.py -v

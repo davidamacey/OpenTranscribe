@@ -1,6 +1,6 @@
 """Deepgram Nova-3 ASR provider.
 
-Targets deepgram-sdk >= 3.0.0 (PrerecordedOptions v1 API).
+Targets deepgram-sdk >= 6.0.0 (Fern-generated client with keyword-only APIs).
 """
 
 from __future__ import annotations
@@ -95,10 +95,10 @@ class DeepgramProvider(ASRProvider):
         try:
             from deepgram import DeepgramClient
         except ImportError:
-            return False, "deepgram-sdk not installed. Run: pip install 'deepgram-sdk>=3.0.0'", 0.0
+            return False, "deepgram-sdk not installed. Run: pip install 'deepgram-sdk>=6.0.0'", 0.0
         try:
-            client = DeepgramClient(self._api_key)
-            client.manage.v("1").get_projects()
+            client = DeepgramClient(api_key=self._api_key)
+            client.manage.v1.projects.list()
             ms = (time.time() - start) * 1000
             return True, "Deepgram connection successful", ms
         except Exception as e:
@@ -113,10 +113,9 @@ class DeepgramProvider(ASRProvider):
     ) -> ASRResult:
         try:
             from deepgram import DeepgramClient
-            from deepgram import PrerecordedOptions
         except ImportError as err:
             raise RuntimeError(
-                "deepgram-sdk not installed. Run: pip install 'deepgram-sdk>=3.0.0'"
+                "deepgram-sdk not installed. Run: pip install 'deepgram-sdk>=6.0.0'"
             ) from err
 
         # Validate the file exists before attempting network I/O.
@@ -136,28 +135,31 @@ class DeepgramProvider(ASRProvider):
         if progress_callback:
             progress_callback(0.1, "Uploading to Deepgram…")
 
-        client = DeepgramClient(self._api_key)
-        options = PrerecordedOptions(
-            model=self._model_name,
-            smart_format=True,
-            diarize=config.enable_diarization,
-            language=None if config.language == "auto" else config.language,
-            punctuate=True,
-            utterances=True,
-            words=True,
-        )
+        client = DeepgramClient(api_key=self._api_key)
+
+        # Build keyword args for transcribe_file (v6 uses keyword-only params)
+        transcribe_kwargs: dict = {
+            "model": self._model_name,
+            "smart_format": True,
+            "diarize": config.enable_diarization,
+            "punctuate": True,
+            "utterances": True,
+        }
+        if config.language and config.language != "auto":
+            transcribe_kwargs["language"] = config.language
         if config.vocabulary:
-            options.keywords = config.vocabulary[:100]
+            transcribe_kwargs["keywords"] = config.vocabulary[:100]
 
         if progress_callback:
             progress_callback(0.3, "Transcribing with Deepgram…")
 
-        # Pass the open file handle directly instead of reading the entire file into memory.
-        # The Deepgram SDK streams the upload from the file object, which avoids holding
-        # a multi-GB audio buffer in Celery worker RAM for long recordings.
+        # Read file into bytes — the v6 SDK expects bytes or an iterator for request=.
         try:
             with open(audio_path, "rb") as f:
-                response = client.listen.prerecorded.v("1").transcribe_file({"buffer": f}, options)
+                audio_bytes = f.read()
+            response = client.listen.v1.media.transcribe_file(
+                request=audio_bytes, **transcribe_kwargs
+            )
         except Exception as exc:
             sanitized = self._sanitize_error(str(exc), self._api_key)
             logger.error("Deepgram transcription failed for file=%s: %s", filename, sanitized)

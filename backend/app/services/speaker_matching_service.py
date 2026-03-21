@@ -270,7 +270,7 @@ class SpeakerMatchingService:
 
             # Process each match and get speaker details
             for hit in response["hits"]["hits"]:
-                confidence = hit["_score"]
+                confidence = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
                 if (
                     confidence >= ConfidenceLevel.HIGH
                 ):  # ConfidenceLevel.HIGH threshold for high-confidence matches only
@@ -615,21 +615,7 @@ class SpeakerMatchingService:
 
         self.db.flush()
 
-        # Update profile embedding and propagate assignment (DB-only operations, no OS doc needed)
-        if match["auto_accept"] and match.get("profile_id"):
-            from app.services.profile_embedding_service import ProfileEmbeddingService
-
-            if speaker.profile_id:
-                ProfileEmbeddingService.update_profile_embedding(self.db, int(speaker.profile_id))
-
-            # Propagate profile assignment to other similar speakers
-            if speaker.profile_id:
-                self._propagate_profile_assignment(
-                    int(speaker.id), int(speaker.profile_id), user_id
-                )
-
-        # Store/update embedding with suggested name for future matching
-        # profile_id is included here so new documents are created with profile already set
+        # Store embedding FIRST so incremental profile update can find it
         if aggregated_embedding is not None and aggregated_embedding.size > 0:
             add_speaker_embedding(
                 speaker_id=int(speaker.id),
@@ -649,6 +635,59 @@ class SpeakerMatchingService:
             self.find_and_store_speaker_matches(
                 int(speaker.id), aggregated_embedding, user_id, threshold=0.5
             )
+
+        # Incrementally update profile embedding using the embedding we already have
+        if match["auto_accept"] and match.get("profile_id"):
+            if speaker.profile_id and aggregated_embedding is not None:
+                try:
+                    from app.services.opensearch_service import get_profile_embedding
+                    from app.services.opensearch_service import store_profile_embedding
+
+                    profile = (
+                        self.db.query(SpeakerProfile)
+                        .filter(SpeakerProfile.id == speaker.profile_id)
+                        .first()
+                    )
+                    if profile:
+                        # Weighted incremental average with existing profile embedding
+                        existing = get_profile_embedding(str(profile.uuid))
+                        count = int(profile.embedding_count) if profile.embedding_count else 0
+                        new_emb = aggregated_embedding.tolist()
+                        if existing and count > 0:
+                            import numpy as np
+
+                            old = np.array(existing)
+                            added = np.array(new_emb)
+                            merged = (old * count + added) / (count + 1)
+                            norm = np.linalg.norm(merged)
+                            if norm > 0:
+                                merged = merged / norm
+                            new_emb = merged.tolist()
+                            count += 1
+                        else:
+                            count = max(count, 1)
+                        store_profile_embedding(
+                            profile_id=int(profile.id),
+                            profile_uuid=str(profile.uuid),
+                            profile_name=str(profile.name),
+                            embedding=new_emb,
+                            speaker_count=count,
+                            user_id=int(profile.user_id),
+                        )
+                        profile.embedding_count = count  # type: ignore[assignment]
+                        from datetime import datetime
+                        from datetime import timezone
+
+                        profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
+                        self.db.commit()
+                except Exception as e:
+                    logger.warning(f"Incremental profile update failed (non-fatal): {e}")
+
+            # Propagate profile assignment to other similar speakers
+            if speaker.profile_id:
+                self._propagate_profile_assignment(
+                    int(speaker.id), int(speaker.profile_id), user_id
+                )
 
         # Sync profile assignment to OpenSearch after the document has been created/updated
         if match["auto_accept"] and match.get("profile_id"):
@@ -1117,7 +1156,7 @@ class SpeakerMatchingService:
         Returns:
             Match result dictionary or None if processing failed
         """
-        score = hit["_score"]
+        score = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
         if score < threshold:
             return None
 

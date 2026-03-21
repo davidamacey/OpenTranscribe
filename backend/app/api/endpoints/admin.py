@@ -1753,3 +1753,37 @@ async def stop_embedding_consistency_repair(
     from app.tasks.speaker_embedding_consistency import stop_consistency_repair
 
     return stop_consistency_repair()
+
+
+@router.post("/profile-embeddings/repair")
+async def repair_profile_embeddings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Recalculate all profile embeddings by averaging assigned speakers.
+
+    Fixes profiles where the embedding was stored from a single speaker
+    instead of the true centroid of all assigned speakers.
+    """
+    from app.models.media import SpeakerProfile
+    from app.services.profile_embedding_service import ProfileEmbeddingService
+
+    profiles = db.query(SpeakerProfile).all()
+    if not profiles:
+        return {"status": "ok", "message": "No profiles found", "total": 0}
+
+    profile_ids = [int(p.id) for p in profiles]
+    results = ProfileEmbeddingService.batch_update_profile_embeddings(db, profile_ids)
+
+    success = sum(1 for v in results.values() if v)
+    failed = len(results) - success
+
+    logger.info(
+        f"Profile embedding repair: {success} updated, {failed} failed out of {len(results)}"
+    )
+    return {
+        "status": "ok",
+        "total": len(results),
+        "updated": success,
+        "failed": failed,
+    }

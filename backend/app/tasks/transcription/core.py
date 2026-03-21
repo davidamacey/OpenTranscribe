@@ -851,23 +851,45 @@ def _run_post_gpu_background(
     logger.info(f"Background post-processing started for file {ctx.file_id}")
 
     try:
-        # Speaker embeddings (native path uses OpenSearch, no GPU)
-        send_progress_notification(
-            ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification"
-        )
-        _run_speaker_embeddings_with_retry(
-            ctx, result, audio_file_path, processed_segments, speaker_mapping
-        )
+        # Speaker embeddings — choose path based on ASR provider
+        is_cloud_asr = result.get("asr_provider") and result.get("asr_provider") != "local"
 
-        # Store native centroids in v4 staging index (fire-and-forget)
-        native_embeddings_for_v4 = result.get("native_speaker_embeddings")
-        if native_embeddings_for_v4 and not _should_use_native_embeddings(result):
+        if is_cloud_asr:
+            # Cloud ASR: no native embeddings available, dispatch GPU task to extract them
+            send_progress_notification(
+                ctx.user_id, ctx.file_id, 0.78, "Dispatching speaker embedding extraction"
+            )
             try:
-                _store_native_centroids_in_v4_staging(
-                    ctx, native_embeddings_for_v4, speaker_mapping
+                from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
+
+                extract_speaker_embeddings_task.apply_async(
+                    args=[str(ctx.file_uuid), speaker_mapping],
+                    queue="gpu",
+                )
+                logger.info(
+                    f"Dispatched speaker embedding extraction to GPU queue for "
+                    f"cloud-transcribed file {ctx.file_id}"
                 )
             except Exception as e:
-                logger.warning(f"v4 staging: Error (non-fatal): {e}")
+                logger.warning(f"Failed to dispatch speaker embedding task: {e}")
+        else:
+            # Local ASR: embeddings available inline or via native centroids
+            send_progress_notification(
+                ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification"
+            )
+            _run_speaker_embeddings_with_retry(
+                ctx, result, audio_file_path, processed_segments, speaker_mapping
+            )
+
+            # Store native centroids in v4 staging index (fire-and-forget)
+            native_embeddings_for_v4 = result.get("native_speaker_embeddings")
+            if native_embeddings_for_v4 and not _should_use_native_embeddings(result):
+                try:
+                    _store_native_centroids_in_v4_staging(
+                        ctx, native_embeddings_for_v4, speaker_mapping
+                    )
+                except Exception as e:
+                    logger.warning(f"v4 staging: Error (non-fatal): {e}")
 
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=0.85)
@@ -1772,6 +1794,7 @@ def _process_and_save_critical(
         "speaker_mapping": speaker_mapping,
         "native_embeddings": native_embeddings_serialized,
         "use_native_embeddings": use_native,
+        "asr_provider": result.get("asr_provider", "local"),
         "downstream_tasks": preprocess_context.get("downstream_tasks"),
         "audio_temp_path": preprocess_context.get("audio_temp_path"),
     }
