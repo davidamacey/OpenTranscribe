@@ -674,25 +674,54 @@
       gap: 0.75rem;
     }
 
+    .file-content {
+      padding: 0.625rem;
+      gap: 0.375rem;
+    }
+
+    .file-thumbnail {
+      max-height: 100px;
+      min-height: 60px;
+      margin-bottom: 0;
+      border-radius: 6px;
+    }
+
+    .video-placeholder svg,
+    .audio-placeholder svg {
+      width: 28px;
+      height: 28px;
+    }
+
     .file-name {
-      font-size: 0.875rem;
+      font-size: 0.8125rem;
       -webkit-line-clamp: 2;
       line-clamp: 2;
+      line-height: 1.3;
+    }
+
+    .file-meta {
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      font-size: 0.6875rem;
     }
 
     .file-date,
     .file-duration {
-      font-size: 0.75rem;
-    }
-
-    .file-meta {
-      gap: 0.25rem;
-      font-size: 0.75rem;
+      font-size: 0.6875rem;
     }
 
     .file-status {
-      font-size: 0.6rem;
-      padding: 0.1rem 0.4rem;
+      font-size: 0.55rem;
+      padding: 0.1rem 0.35rem;
+    }
+
+    .file-card {
+      border-radius: 8px;
+    }
+
+    .file-selector {
+      bottom: 6px;
+      right: 6px;
     }
   }
 

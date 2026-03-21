@@ -1865,6 +1865,8 @@
 
     .scrollable-content {
       padding: 1rem;
+      padding-top: 0;
+      background-color: var(--background-color);
     }
 
     /* Upload & Collections modals: fullscreen on mobile */
@@ -1999,8 +2001,10 @@
       gap: 0.5rem;
       margin-left: -1rem;
       margin-right: -1rem;
-      padding-left: 1rem;
-      padding-right: 1rem;
+      padding: 0.5rem 1rem;
+      /* Prevent content showing through gap between navbar and toolbar */
+      background-color: var(--background-color, var(--surface-color));
+      box-shadow: 0 -20px 0 0 var(--background-color, var(--surface-color));
     }
 
     .gallery-header-left {
