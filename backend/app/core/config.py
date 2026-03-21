@@ -305,7 +305,7 @@ class Settings(BaseSettings):
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
     SEARCH_CHUNK_TARGET_WORDS: int = _int_env("SEARCH_CHUNK_TARGET_WORDS", 200)
     SEARCH_CHUNK_OVERLAP_WORDS: int = _int_env("SEARCH_CHUNK_OVERLAP_WORDS", 40)
-    SEARCH_RRF_RANK_CONSTANT: int = _int_env("SEARCH_RRF_RANK_CONSTANT", 40)
+    SEARCH_RRF_RANK_CONSTANT: int = _int_env("SEARCH_RRF_RANK_CONSTANT", 30)
     SEARCH_RRF_WINDOW_SIZE: int = _int_env("SEARCH_RRF_WINDOW_SIZE", 500)
     SEARCH_BULK_BATCH_SIZE: int = max(_int_env("SEARCH_BULK_BATCH_SIZE", 100), 1)
     SEARCH_NEURAL_BATCH_SIZE: int = _int_env("SEARCH_NEURAL_BATCH_SIZE", 5)
@@ -323,6 +323,10 @@ class Settings(BaseSettings):
 
     # Max concurrent group searches for collapse inner_hits (OpenSearch default: 0 = sequential)
     SEARCH_COLLAPSE_MAX_CONCURRENT: int = _int_env("SEARCH_COLLAPSE_MAX_CONCURRENT", 20)
+
+    # Maximum number of collapsed file groups to over-fetch for client-side sorting.
+    # Higher values improve recall for large collections at the cost of memory.
+    SEARCH_MAX_OVERFETCH: int = _int_env("SEARCH_MAX_OVERFETCH", 1000)
 
     # OpenSearch Neural Search settings (ML Commons-based)
     # When enabled, embeddings are generated server-side by OpenSearch instead of Python

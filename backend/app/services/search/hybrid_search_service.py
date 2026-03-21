@@ -1037,11 +1037,12 @@ class HybridSearchService:
         query: str,
         search_fields: list[str],
     ) -> dict[str, Any]:
-        """Build the text query clause (multi_match or match_all).
+        """Build an adaptive text query with fuzziness and cross-field support.
 
-        For multi-word queries, adds a phrase proximity boost so that
-        chunks where the query terms appear near each other rank higher
-        than chunks where the terms appear far apart.
+        Single signal queries use fuzziness for typo tolerance plus an exact
+        match boost so precise hits still outrank fuzzy ones.  Multi-word
+        queries add cross-field matching (terms can match different fields)
+        and phrase proximity with slop.  Quoted phrases bypass fuzziness.
 
         Args:
             query: Search query text.
@@ -1050,31 +1051,76 @@ class HybridSearchService:
         Returns:
             Query clause dict.
         """
-        if query and query.strip():
-            words = [w for w in query.split() if len(w) >= 2]
-            should_clauses: list[dict[str, Any]] = [
+        if not (query and query.strip()):
+            return {"match_all": {}}
+
+        words = [w for w in query.split() if len(w) >= 2]
+        is_phrase_query = query.startswith('"') and query.endswith('"')
+
+        should_clauses: list[dict[str, Any]] = []
+
+        if is_phrase_query:
+            # Exact phrase: no fuzziness, phrase match only
+            should_clauses.append(
+                {
+                    "multi_match": {
+                        "query": query.strip('"'),
+                        "fields": search_fields,
+                        "type": "phrase",
+                    }
+                }
+            )
+        else:
+            # Primary: best_fields with AUTO fuzziness for typo tolerance
+            should_clauses.append(
                 {
                     "multi_match": {
                         "query": query,
                         "fields": search_fields,
                         "type": "best_fields",
+                        "fuzziness": "AUTO",
+                        "prefix_length": 2,
                     }
                 }
-            ]
+            )
+            # Exact match boost — precise hits outrank fuzzy matches
+            should_clauses.append(
+                {
+                    "multi_match": {
+                        "query": query,
+                        "fields": search_fields,
+                        "type": "best_fields",
+                        "boost": 1.5,
+                    }
+                }
+            )
             if len(words) > 1:
-                # Boost chunks where query words appear near each other (phrase proximity)
+                # Cross-field: different words can match different fields
+                should_clauses.append(
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": search_fields,
+                            "type": "cross_fields",
+                            "operator": "or",
+                            "boost": 0.8,
+                        }
+                    }
+                )
+                # Phrase proximity with slop for near-matches
                 should_clauses.append(
                     {
                         "multi_match": {
                             "query": query,
                             "fields": search_fields,
                             "type": "phrase",
+                            "slop": 3,
                             "boost": 2.0,
                         }
                     }
                 )
-            return {"bool": {"should": should_clauses, "minimum_should_match": 1}}
-        return {"match_all": {}}
+
+        return {"bool": {"should": should_clauses, "minimum_should_match": 1}}
 
     def _get_search_fields(
         self,
@@ -1134,13 +1180,12 @@ class HybridSearchService:
         Returns:
             The outer_size to use for the query.
         """
-        if sort_by == "relevance":
-            return min(page_size * 5, 200)
-
-        if use_search_pipeline:
-            # Hybrid/RRF mode: cannot mix _score with other sort criteria.
-            # Over-fetch results and sort client-side in _sort_and_paginate().
-            return min(page_size * 5, 200)
+        if sort_by == "relevance" or use_search_pipeline:
+            # Dynamic over-fetch: scale with page depth for full coverage.
+            # Page 1/20 → 200, page 5/20 → 500, capped at SEARCH_MAX_OVERFETCH.
+            min_fetch = page * page_size
+            over_fetch = max(page_size * 10, min_fetch + page_size * 5)
+            return min(over_fetch, settings.SEARCH_MAX_OVERFETCH)
 
         # BM25-only: server-side sort with _score as tiebreaker is safe
         sort_map = {
@@ -1244,11 +1289,11 @@ class HybridSearchService:
                     "highlight": {"fields": highlight_fields},
                     "_source": {"excludes": ["embedding"]},
                     "track_total_hits": False,
-                    "aggs": {
-                        "total_files": {
-                            "cardinality": {"field": "file_uuid", "precision_threshold": 10000}
-                        }
-                    },
+                    # NOTE: Do NOT add "aggs" here. OpenSearch 3.4 has a bug
+                    # where cardinality aggregations combined with hybrid query
+                    # + collapse + RRF search_pipeline triggers an
+                    # ArrayIndexOutOfBoundsException in score-ranker-processor.
+                    # total_files is computed from collapsed results instead.
                 }
                 body["size"] = self._apply_sort_clause(
                     body, sort_by, sort_order, page, page_size, use_search_pipeline=True
@@ -1337,6 +1382,68 @@ class HybridSearchService:
         body["size"] = self._apply_sort_clause(body, sort_by, sort_order, page, page_size)
         return body
 
+    @staticmethod
+    def _detect_keyword_match_fallback(
+        inner_source: dict[str, Any],
+        word_patterns: list[tuple[str, re.Pattern[str], re.Pattern[str]]],
+        match_sources: list[str],
+    ) -> bool:
+        """Detect keyword matches using word-boundary regex when highlights are lost.
+
+        The RRF collapse bug in OpenSearch strips inner hit highlights.
+        This fallback checks content/title/speaker using word-boundary patterns
+        with stemming to avoid false positives (e.g. "art" matching "artificial").
+
+        Args:
+            inner_source: Inner hit _source dict.
+            word_patterns: Pre-compiled (word, pattern, stem_pattern) tuples.
+            match_sources: Mutable list of match sources to update.
+
+        Returns:
+            True if keyword match was detected.
+        """
+        has_match = False
+        for _qw, pattern, stem_pattern in word_patterns:
+            for field_text, source_name in [
+                (inner_source.get("content", ""), "content"),
+                (inner_source.get("title", ""), "title"),
+                (inner_source.get("speaker", ""), "speaker"),
+            ]:
+                if pattern.search(field_text) or stem_pattern.search(field_text):
+                    has_match = True
+                    if source_name not in match_sources:
+                        match_sources.append(source_name)
+            if has_match:
+                break
+        return has_match
+
+    @staticmethod
+    def _generate_synthetic_snippet(
+        content: str,
+        word_patterns: list[tuple[str, re.Pattern[str], re.Pattern[str]]],
+    ) -> str | None:
+        """Generate a highlighted snippet when RRF collapse strips OpenSearch highlights.
+
+        Args:
+            content: Raw content text from the inner hit source.
+            word_patterns: Pre-compiled (word, pattern, stem_pattern) tuples.
+
+        Returns:
+            Sanitized snippet with <mark> tags, or None if no match found.
+        """
+        for _qw, wp, sp in word_patterns:
+            m = wp.search(content) or sp.search(content)
+            if m:
+                start = max(0, m.start() - 100)
+                end = min(len(content), m.end() + 100)
+                window = content[start:end]
+                for _qw2, wp2, _sp2 in word_patterns:
+                    window = wp2.sub(r"<mark>\g<0></mark>", window)
+                prefix = "..." if start > 0 else ""
+                suffix = "..." if end < len(content) else ""
+                return _sanitize_html(prefix + window + suffix)
+        return None
+
     def _process_inner_hits(
         self,
         inner_hit_list: list[dict[str, Any]],
@@ -1360,8 +1467,21 @@ class HybridSearchService:
         match_sources: list[str] = []
         best_score = outer_score
 
-        # Pre-compute query words for manual keyword detection (hybrid fallback)
+        # Pre-compile word-boundary patterns for keyword detection (hybrid fallback).
+        # Uses word boundaries + stemming instead of substring 'in' to prevent
+        # false positives like "art" matching "artificial".
         query_words = [w.lower() for w in query.split() if len(w) >= 2] if query else []
+        word_patterns: list[tuple[str, re.Pattern[str], re.Pattern[str]]] = []
+        if query_words:
+            for qw in query_words:
+                qw_stem = _get_word_stem(qw)
+                word_patterns.append(
+                    (
+                        qw,
+                        re.compile(rf"\b{re.escape(qw)}\w{{0,5}}\b", re.IGNORECASE),
+                        re.compile(rf"\b{re.escape(qw_stem)}\w{{0,5}}\b", re.IGNORECASE),
+                    )
+                )
 
         for inner_hit in inner_hit_list:
             inner_source = inner_hit.get("_source", {})
@@ -1370,29 +1490,29 @@ class HybridSearchService:
             has_keyword_match = bool(highlight)
 
             # Hybrid + collapse fallback: when inner hits lose scores and
-            # highlights (OpenSearch RRF limitation), manually check if query
-            # terms appear in the content/title/speaker text.
-            if not has_keyword_match and inner_score == 0.0 and query_words and outer_score > 0:
-                content_lower = inner_source.get("content", "").lower()
-                title_lower = inner_source.get("title", "").lower()
-                speaker_lower = inner_source.get("speaker", "").lower()
-                for qw in query_words:
-                    if qw in content_lower or qw in title_lower or qw in speaker_lower:
-                        has_keyword_match = True
-                        if qw in content_lower and "content" not in match_sources:
-                            match_sources.append("content")
-                        if qw in title_lower and "title" not in match_sources:
-                            match_sources.append("title")
-                        if qw in speaker_lower and "speaker" not in match_sources:
-                            match_sources.append("speaker")
-                        break
+            # highlights (OpenSearch RRF limitation), detect keyword matches
+            # using word-boundary regex with stemming.
+            if not has_keyword_match and inner_score == 0.0 and word_patterns and outer_score > 0:
+                has_keyword_match = self._detect_keyword_match_fallback(
+                    inner_source,
+                    word_patterns,
+                    match_sources,
+                )
                 # Use outer score as fallback since inner scores are lost
-                # to the RRF collapse bug — applies to both keyword and
-                # semantic-only hits so semantic results aren't dropped.
+                # to the RRF collapse bug.
                 inner_score = outer_score
 
             snippet, match_type = _extract_snippet_and_match_type(inner_source, highlight)
             speaker_highlighted = _extract_highlighted_field(highlight, "speaker")
+
+            # Synthetic highlights: when RRF collapse strips OpenSearch highlights
+            # from keyword matches, generate <mark> tags using word patterns.
+            if has_keyword_match and not highlight and word_patterns:
+                content = inner_source.get("content", "")
+                if content:
+                    synthetic = self._generate_synthetic_snippet(content, word_patterns)
+                    if synthetic:
+                        snippet = synthetic
 
             if not title_highlighted:
                 title_highlighted = _extract_highlighted_field(highlight, "title")
@@ -1410,8 +1530,6 @@ class HybridSearchService:
             if has_keyword_match:
                 keyword_count += 1
             else:
-                if inner_score < settings.SEARCH_HYBRID_MIN_SCORE:
-                    continue
                 semantic_count += 1
 
             occurrences.append(
@@ -1457,6 +1575,27 @@ class HybridSearchService:
             if h.has_both_match_types:
                 h.relevance_percent = min(99, h.relevance_percent + 5)
 
+    @staticmethod
+    def _apply_semantic_demotion(grouped: list[SearchHit]) -> None:
+        """Soft-demote low-scoring semantic-only results so they rank last.
+
+        Never removes results — only halves relevance_score and sets
+        semantic_confidence to "low" for results below the demotion threshold.
+        """
+        semantic_hits = [h for h in grouped if h.semantic_only]
+        if not semantic_hits:
+            return
+        best_semantic = max(h.relevance_score for h in semantic_hits)
+        min_semantic = settings.SEARCH_HYBRID_MIN_SCORE
+        semantic_range = best_semantic - min_semantic
+        if semantic_range <= 0:
+            return
+        demotion_threshold = min_semantic + semantic_range * settings.SEARCH_SEMANTIC_SUPPRESS_RATIO
+        for h in grouped:
+            if h.semantic_only and h.relevance_score < demotion_threshold:
+                h.relevance_score *= 0.5
+                h.semantic_confidence = "low"
+
     def _process_collapsed_results(
         self,
         response: dict[str, Any],
@@ -1472,12 +1611,15 @@ class HybridSearchService:
             query: Original search query for highlight classification.
 
         Returns:
-            Tuple of (list of SearchHit, estimated total_files from cardinality agg).
+            Tuple of (list of SearchHit, estimated total_files).
         """
         outer_hits = response.get("hits", {}).get("hits", [])
-        total_files_agg = (
-            response.get("aggregations", {}).get("total_files", {}).get("value", len(outer_hits))
-        )
+        # Use cardinality agg when available (BM25-only path), otherwise
+        # fall back to the number of collapsed groups returned (hybrid path
+        # omits aggs to work around OpenSearch 3.4 RRF + aggs crash).
+        total_files_agg = response.get("aggregations", {}).get("total_files", {}).get(
+            "value"
+        ) or len(outer_hits)
 
         results: list[SearchHit] = []
         query_lower = query.lower().strip() if query else ""
@@ -1832,9 +1974,11 @@ class HybridSearchService:
         search_fields = self._get_search_fields(has_speaker_filter)
         text_query_clause = self._build_text_query(search_query, search_fields)
 
-        # ── Phase 1: Hybrid aggregation ──────────────────────────────────────
-        # Collect ALL matching file UUIDs with metadata sub-aggregations.
-        # We request up to 5000 unique files (sufficient for any real dataset).
+        # ── Phase 1: Hybrid file discovery ──────────────────────────────────
+        # OpenSearch 3.4 bug: aggs + hybrid + RRF pipeline triggers
+        # ArrayIndexOutOfBoundsException.  Use a collapse-based approach
+        # instead: fetch all matching file_uuids via collapse (no inner_hits,
+        # lightweight), then extract metadata in Phase 2.
         t_p1 = time.time()
         phase1_body: dict[str, Any] = {
             "query": {
@@ -1865,27 +2009,21 @@ class HybridSearchService:
                     ]
                 }
             },
-            "size": 0,
+            "size": 5000,
             "track_total_hits": False,
-            "aggs": {
-                "by_file": {
-                    "terms": {
-                        "field": "file_uuid",
-                        "size": 5000,
-                    },
-                    "aggs": {
-                        "max_duration": {"max": {"field": "duration"}},
-                        "max_file_size": {"max": {"field": "file_size"}},
-                        "max_upload_time": {"max": {"field": "upload_time"}},
-                        "min_file_id": {"min": {"field": "file_id"}},
-                        "title_kw": {"terms": {"field": "title.keyword", "size": 1}},
-                        "language_kw": {"terms": {"field": "language", "size": 1}},
-                        "content_type_kw": {"terms": {"field": "content_type", "size": 1}},
-                        "speakers_kw": {"terms": {"field": "speakers", "size": 10}},
-                        "tags_kw": {"terms": {"field": "tags", "size": 20}},
-                    },
-                }
-            },
+            "_source": [
+                "file_uuid",
+                "file_id",
+                "title",
+                "speakers",
+                "tags",
+                "upload_time",
+                "language",
+                "content_type",
+                "duration",
+                "file_size",
+            ],
+            "collapse": {"field": "file_uuid"},
         }
 
         try:
@@ -1913,8 +2051,37 @@ class HybridSearchService:
 
         p1_ms = round((time.time() - t_p1) * 1000)
 
-        # Extract file metadata from aggregation buckets
-        buckets = phase1_resp.get("aggregations", {}).get("by_file", {}).get("buckets", [])
+        # Convert collapsed hits to pseudo-bucket format for _sort_buckets
+        # and _bucket_metadata compatibility.
+        collapsed_hits = phase1_resp.get("hits", {}).get("hits", [])
+        buckets = []
+        for hit in collapsed_hits:
+            src = hit.get("_source", {})
+            fuid = src.get("file_uuid", "")
+            if not fuid:
+                continue
+            buckets.append(
+                {
+                    "key": fuid,
+                    "title_kw": {
+                        "buckets": [{"key": src.get("title", "")}] if src.get("title") else []
+                    },
+                    "language_kw": {
+                        "buckets": [{"key": src.get("language", "")}] if src.get("language") else []
+                    },
+                    "content_type_kw": {
+                        "buckets": [{"key": src.get("content_type", "")}]
+                        if src.get("content_type")
+                        else []
+                    },
+                    "speakers_kw": {"buckets": [{"key": s} for s in (src.get("speakers") or [])]},
+                    "tags_kw": {"buckets": [{"key": t} for t in (src.get("tags") or [])]},
+                    "max_duration": {"value": src.get("duration") or 0.0},
+                    "max_file_size": {"value": src.get("file_size") or 0},
+                    "max_upload_time": {"value_as_string": src.get("upload_time") or ""},
+                    "min_file_id": {"value": src.get("file_id") or 0},
+                }
+            )
         if not buckets:
             return self._sort_and_paginate(
                 query,
@@ -2158,21 +2325,7 @@ class HybridSearchService:
         grouped, total_files_est = self._process_collapsed_results(response, query)
         process_ms = round((time.time() - t_process) * 1000)
 
-        # Semantic suppression
-        semantic_hits = [h for h in grouped if h.semantic_only]
-        if semantic_hits:
-            best_semantic = max(h.relevance_score for h in semantic_hits)
-            min_semantic = settings.SEARCH_HYBRID_MIN_SCORE
-            semantic_range = best_semantic - min_semantic
-            if semantic_range > 0:
-                threshold = min_semantic + semantic_range * settings.SEARCH_SEMANTIC_SUPPRESS_RATIO
-                grouped = [
-                    h for h in grouped if not h.semantic_only or h.relevance_score >= threshold
-                ]
-
-        # Adjust total_files estimate after suppression
-        if len(grouped) < total_files_est:
-            total_files_est = len(grouped)
+        self._apply_semantic_demotion(grouped)
 
         # Sort and paginate — always client-side for consistent behavior.
         # Hybrid/RRF over-fetches results (sort clause omitted to avoid pipeline
