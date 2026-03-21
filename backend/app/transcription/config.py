@@ -12,6 +12,10 @@ from typing import ClassVar
 
 logger = logging.getLogger(__name__)
 
+# Models small enough to run efficiently on CPU (int8).
+# These are routed to the CPU worker instead of GPU.
+LIGHTWEIGHT_MODELS = frozenset({"tiny", "tiny.en", "base", "base.en"})
+
 
 def _parse_optional_float(value: str) -> float | None:
     """Parse a string to float, returning None for empty/whitespace."""
@@ -131,6 +135,40 @@ class TranscriptionConfig:
             f"concurrent_requests={config.concurrent_requests}"
         )
 
+        return config
+
+    @classmethod
+    def for_cpu_lightweight(cls, **overrides) -> "TranscriptionConfig":
+        """Config for CPU-based lightweight transcription (base/tiny models).
+
+        Uses int8 quantization for optimal CPU throughput. Diarization is
+        disabled because PyAnnote requires CUDA.
+        """
+        model_name = os.getenv("WHISPER_LIGHTWEIGHT_MODEL", "base")
+        config = cls(
+            model_name=model_name,
+            compute_type="int8",
+            device="cpu",
+            device_index=0,
+            batch_size=4,
+            beam_size=5,
+            concurrent_requests=1,
+            enable_diarization=False,
+            enable_native_embeddings=False,
+            enable_overlap_detection=False,
+        )
+        for key, value in overrides.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+
+        logger.info(
+            "TranscriptionConfig (CPU lightweight): model=%s, compute_type=%s, "
+            "batch_size=%d, language=%s",
+            config.model_name,
+            config.compute_type,
+            config.batch_size,
+            config.source_language,
+        )
         return config
 
     @classmethod

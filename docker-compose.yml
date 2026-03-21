@@ -253,8 +253,9 @@ services:
     env_file: .env
     security_opt:
       - no-new-privileges:true
-    command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility,cloud-asr --concurrency=8 --max-tasks-per-child=20 --hostname cpu-processor@%h -E
+    command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility,cloud-asr,cpu-transcribe --concurrency=8 --max-tasks-per-child=20 --hostname cpu-processor@%h -E
     environment:
+      - PRELOAD_CPU_WHISPER=true
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

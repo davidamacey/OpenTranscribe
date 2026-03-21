@@ -35,6 +35,10 @@
   let activeASRProvider = 'local';
   let activeASRModel = '';
 
+  // Model selection for reprocessing
+  let selectedReprocessModel: string | null = null;
+  let adminDefaultModel = '';
+
   // Computed state
   // In bulk mode, gallery file objects use the list schema (no transcript_segments/total_segments).
   // A completed file always has a transcript, so use status as the indicator.
@@ -52,8 +56,8 @@
     (!showSpeakerSettings ||
       !(minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers));
 
-  // Step navigation
-  $: needsSettingsStep = showSpeakerSettings;
+  // Step navigation — show settings step for speaker config OR model selection
+  $: needsSettingsStep = showSpeakerSettings || selectedStages.has('transcription');
   $: stepLabels = needsSettingsStep
     ? ['reprocess.stepStages', 'reprocess.stepSettings', 'reprocess.stepReview']
     : ['reprocess.stepStages', 'reprocess.stepReview'];
@@ -200,6 +204,10 @@
         if (numSpeakers !== null) requestBody.num_speakers = numSpeakers;
       }
 
+      if (selectedReprocessModel) {
+        requestBody.whisper_model = selectedReprocessModel;
+      }
+
       if (bulkMode) {
         // Bulk mode: POST to bulk-action endpoint
         requestBody.file_uuids = bulkFiles.map((f: any) => f.uuid);
@@ -260,6 +268,7 @@
   // Reset state and fetch ASR status when modal opens
   $: if (showModal) {
     resetState();
+    selectedReprocessModel = null;
     ASRSettingsApi.getStatus().then((status) => {
       isCloudASR = status.is_cloud_provider ?? false;
       activeASRProvider = status.active_provider ?? 'local';
@@ -268,6 +277,11 @@
       isCloudASR = false;
       activeASRProvider = 'local';
       activeASRModel = '';
+    });
+    ASRSettingsApi.getActiveLocalModel().then((info) => {
+      adminDefaultModel = info.active_model || 'large-v3-turbo';
+    }).catch(() => {
+      adminDefaultModel = 'large-v3-turbo';
     });
   }
 
@@ -497,6 +511,27 @@
 
               <!-- Step 2: Settings (only when needsSettingsStep && currentStep === 2) -->
               {:else if isOnSettingsStep()}
+                <!-- Model Selection -->
+                {#if selectedStages.has('transcription')}
+                  <div class="setting-field" style="margin-bottom: 1rem;">
+                    <label for="reprocess-model-select">
+                      {$t('uploader.whisperModel')}
+                    </label>
+                    <select id="reprocess-model-select" bind:value={selectedReprocessModel} class="model-select">
+                      <option value={null}>
+                        {$t('uploader.highQuality')} ({adminDefaultModel})
+                      </option>
+                      <option value="base">
+                        {$t('uploader.fastProcessing')}
+                      </option>
+                    </select>
+                    {#if selectedReprocessModel === 'base'}
+                      <p class="model-hint-text">{$t('uploader.fastProcessingHint')}</p>
+                    {/if}
+                  </div>
+                {/if}
+
+                {#if showSpeakerSettings}
                 <div class="speaker-settings-section">
                   <div class="stage-group-header">
                     <span class="stage-group-label">{$t('reprocess.speakerSettings')}</span>
@@ -574,6 +609,7 @@
                     </div>
                   {/if}
                 </div>
+                {/if}
 
               <!-- Step 3 (or Step 2 when no settings): Review -->
               {:else if isOnReviewStep()}
@@ -1189,6 +1225,30 @@
 
   .setting-field input::placeholder {
     color: var(--text-muted);
+  }
+
+  .model-select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--input-background, var(--card-background));
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  .model-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+
+  .model-hint-text {
+    margin: 0.35rem 0 0;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
   }
 
   .validation-error {

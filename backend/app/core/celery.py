@@ -242,13 +242,16 @@ def init_worker_process(**kwargs):
 
 
 @worker_ready.connect
-def preload_gpu_models(**kwargs):
-    """Preload GPU models at worker startup.
+def preload_models(**kwargs):
+    """Preload AI models at worker startup.
 
-    Models are loaded once into VRAM and shared across all worker threads
-    (threaded pool). This avoids cold-start latency on the first task and
-    keeps the model pinned for the worker's lifetime.
+    GPU workers: Load Whisper + PyAnnote into VRAM (shared across threads).
+    CPU-transcribe workers: Load lightweight Whisper model into RAM.
+    Other CPU workers: No model preloading needed.
     """
+    import os
+
+    # GPU model preloading
     try:
         from app.transcription.config import TranscriptionConfig
 
@@ -268,7 +271,30 @@ def preload_gpu_models(**kwargs):
                 f"concurrent_requests={config.concurrent_requests})"
             )
     except Exception as e:
-        logger.debug(f"Model preloading skipped (not a GPU worker or error): {e}")
+        logger.debug(f"GPU model preloading skipped: {e}")
+
+    # CPU lightweight model preloading
+    if os.getenv("PRELOAD_CPU_WHISPER", "").lower() == "true":
+        try:
+            from app.transcription.config import TranscriptionConfig as CpuTranscriptionConfig
+
+            cpu_config = CpuTranscriptionConfig.for_cpu_lightweight()
+            logger.info(
+                f"Preloading CPU lightweight model '{cpu_config.model_name}' "
+                f"(compute_type={cpu_config.compute_type})..."
+            )
+            from faster_whisper import WhisperModel
+
+            # Load model to warm the cache — subsequent loads are instant
+            _model = WhisperModel(
+                cpu_config.model_name,
+                device="cpu",
+                compute_type="int8",
+            )
+            del _model
+            logger.info(f"CPU lightweight model '{cpu_config.model_name}' preloaded successfully")
+        except Exception as e:
+            logger.warning(f"CPU lightweight model preloading failed: {e}")
 
 
 @task_postrun.connect

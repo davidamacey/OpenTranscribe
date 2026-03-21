@@ -15,6 +15,7 @@ from app.models.media import MediaFile
 from app.services.minio_service import download_file
 from app.services.opensearch_service import index_transcript
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.transcription.config import LIGHTWEIGHT_MODELS
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
@@ -65,41 +66,32 @@ class _ModelNotAvailableError(Exception):
         super().__init__(f"Model '{model_name}' not available on this worker")
 
 
-def _validate_model_override(model_name: str) -> None:
-    """Validate a per-task model override and check availability.
+def _validate_model_override(model_name: str) -> str | None:
+    """Validate a per-task model override.
 
-    Args:
-        model_name: The requested Whisper model name.
-
-    Raises:
-        _ModelNotAvailableError: If the model is not downloaded.
+    Returns:
+        'cpu' if model should run on CPU, 'gpu' if it matches the admin model,
+        or None if the model is rejected.
     """
+    from app.transcription.config import TranscriptionConfig
+
     if model_name not in _VALID_LOCAL_MODELS:
-        logger.warning(
-            "Unknown model override '%s', ignoring and using admin default",
-            model_name,
-        )
-        raise _ModelNotAvailableError(model_name)
+        logger.warning("Unknown model '%s', rejecting override", model_name)
+        return None
 
-    # Best-effort check if model is downloaded on this worker
-    try:
-        from app.services.asr.model_discovery import get_downloaded_model_names
+    if model_name in LIGHTWEIGHT_MODELS:
+        return "cpu"
 
-        downloaded = get_downloaded_model_names()
-        if model_name not in downloaded:
-            logger.warning(
-                "Requested model '%s' is not downloaded on this worker; "
-                "falling back to admin-pinned model.",
-                model_name,
-            )
-            raise _ModelNotAvailableError(model_name)
-    except _ModelNotAvailableError:
-        raise
-    except Exception as e:
-        logger.debug(
-            "Model availability check failed (%s), proceeding optimistically",
-            e,
-        )
+    if model_name == TranscriptionConfig._pinned_model_name:
+        return "gpu"
+
+    logger.warning(
+        "Model '%s' is valid but not loaded (admin model is '%s'). "
+        "Only lightweight models or the admin model are supported.",
+        model_name,
+        TranscriptionConfig._pinned_model_name,
+    )
+    return None
 
 
 # Deprecation warning for legacy TRANSCRIPTION_ENGINE env var
@@ -833,28 +825,26 @@ def _run_transcription_pipeline(
         enable_diarization=not disable_diarization,
     )
 
-    # Apply per-task model override if provided
+    # Apply per-task model override if provided.
+    # Lightweight models (base, tiny) are routed to CPU by dispatch.py and never
+    # reach this GPU code path. Only the admin-pinned model is valid here.
     if whisper_model:
-        # Guard: disallow in concurrent GPU mode to prevent model-swap crashes
-        concurrent_requests = int(os.environ.get("GPU_CONCURRENT_REQUESTS", "1"))
-        if concurrent_requests > 1:
+        if whisper_model in LIGHTWEIGHT_MODELS:
             logger.warning(
-                "Per-task model override ('%s') is not supported in concurrent "
-                "GPU mode (concurrent_requests=%d). Using admin-pinned model.",
+                "Lightweight model '%s' reached GPU task — should have been routed "
+                "to CPU. Using admin-pinned model instead.",
                 whisper_model,
-                concurrent_requests,
             )
+        elif whisper_model == TranscriptionConfig._pinned_model_name:
+            # Explicitly requesting the admin model — no-op, already in use
+            pass
         else:
-            try:
-                _validate_model_override(whisper_model)
-                overrides["model_name"] = whisper_model
-                logger.info(
-                    "Per-task model override: '%s' (admin default: '%s')",
-                    whisper_model,
-                    TranscriptionConfig._pinned_model_name,
-                )
-            except _ModelNotAvailableError as e:
-                logger.warning("Falling back to admin default: %s", e)
+            logger.warning(
+                "Model override '%s' rejected — only the admin-pinned model ('%s') "
+                "or lightweight models (routed to CPU) are supported.",
+                whisper_model,
+                TranscriptionConfig._pinned_model_name,
+            )
 
     config = TranscriptionConfig.from_environment(**overrides)
 
@@ -2080,4 +2070,154 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
         logger.error(f"GPU transcription failed for file {file_uuid}: {e}")
         error_message = _get_user_friendly_error_message(str(e))
         _handle_transcription_failure(ctx, task_id, error_message, "gpu_processing_error")
+        raise
+
+
+# ---------------------------------------------------------------------------
+# CPU lightweight transcription task (Stage 2 alternative)
+# Runs base/tiny Whisper models on CPU — zero GPU impact.
+# Diarization is disabled (PyAnnote requires CUDA).
+# ---------------------------------------------------------------------------
+
+
+def _run_cpu_transcription(
+    ctx: TranscriptionContext,
+    audio_file_path: str,
+    source_language: str | None = None,
+    translate_to_english: bool | None = None,
+    whisper_model: str | None = None,
+) -> dict:
+    """Run lightweight Whisper transcription on CPU."""
+    from app.transcription import TranscriptionConfig
+    from app.transcription import TranscriptionPipeline
+
+    source_language, translate_to_english = _resolve_language_settings(
+        ctx, source_language, translate_to_english
+    )
+
+    # Get user's transcription tuning settings
+    with session_scope() as db:
+        user_settings = _get_user_transcription_settings(db, ctx.user_id)
+
+    overrides = dict(
+        source_language=source_language,
+        translate_to_english=translate_to_english,
+        min_speakers=1,
+        max_speakers=1,
+        hf_token=settings.HUGGINGFACE_TOKEN,
+        vad_threshold=user_settings["vad_threshold"],
+        vad_min_silence_ms=user_settings["vad_min_silence_ms"],
+        vad_min_speech_ms=user_settings["vad_min_speech_ms"],
+        vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
+        hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
+        repetition_penalty=user_settings["repetition_penalty"],
+    )
+
+    if whisper_model and whisper_model in LIGHTWEIGHT_MODELS:
+        overrides["model_name"] = whisper_model
+
+    config = TranscriptionConfig.for_cpu_lightweight(**overrides)
+
+    with session_scope() as db:
+        update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
+
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.4, "Running fast CPU transcription")
+
+    def progress_callback(progress, message):
+        with session_scope() as db:
+            update_task_status(db, ctx.task_id, "in_progress", progress=progress)
+        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+
+    pipeline = TranscriptionPipeline(config)
+    raw_result = pipeline.process(
+        audio_file_path, progress_callback=progress_callback, task_id=ctx.task_id
+    )
+
+    if isinstance(raw_result, dict):
+        raw_result.setdefault("asr_provider", "local")
+        raw_result.setdefault("asr_model", config.model_name)
+        raw_result["diarization_disabled"] = True
+
+    return raw_result
+
+
+@celery_app.task(
+    bind=True,
+    name="transcription.cpu_transcribe",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=1,
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=30,
+)
+def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
+    """CPU-only: Lightweight Whisper transcription (base/tiny models).
+
+    Stage 2 alternative for the 3-stage pipeline chain. Runs on the CPU worker
+    instead of GPU, using a small Whisper model with int8 quantization.
+    Diarization is skipped (PyAnnote requires CUDA).
+    """
+    task_id = preprocess_context["task_id"]
+    file_uuid = preprocess_context["file_uuid"]
+    file_id = preprocess_context["file_id"]
+    user_id = preprocess_context["user_id"]
+
+    ctx = TranscriptionContext(
+        task_id=task_id,
+        file_id=file_id,
+        file_uuid=file_uuid,
+        user_id=user_id,
+        file_path=preprocess_context["storage_path"],
+        file_name=preprocess_context["file_name"],
+        content_type=preprocess_context["content_type"],
+    )
+
+    try:
+        from app.services.minio_service import download_temp_audio
+
+        with session_scope() as db:
+            update_task_status(db, task_id, "in_progress", progress=0.22)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Download preprocessed audio from MinIO temp
+            local_audio_path = os.path.join(temp_dir, "audio.wav")
+            download_temp_audio(file_uuid, local_audio_path)
+
+            send_progress_notification(user_id, file_id, 0.25, "Starting fast CPU transcription")
+
+            # Persist diarization_disabled=True for CPU path
+            with session_scope() as db:
+                media_file = get_refreshed_object(db, MediaFile, file_id)
+                if media_file:
+                    media_file.diarization_disabled = True
+                    db.commit()
+
+            whisper_model = preprocess_context.get("whisper_model")
+
+            result = _run_cpu_transcription(
+                ctx,
+                local_audio_path,
+                source_language=preprocess_context.get("source_language"),
+                translate_to_english=preprocess_context.get("translate_to_english"),
+                whisper_model=whisper_model,
+            )
+
+            # Validate result
+            validation_error = _validate_transcription_result(result, ctx, task_id)
+            if validation_error:
+                return {
+                    "status": "error",
+                    "file_uuid": file_uuid,
+                    "file_id": file_id,
+                    "task_id": task_id,
+                }
+
+            # Process speakers, save to DB (same as GPU path)
+            return _process_and_save_critical(ctx, result, preprocess_context)
+
+    except Exception as e:
+        logger.error(f"CPU transcription failed for file {file_uuid}: {e}")
+        error_message = _get_user_friendly_error_message(str(e))
+        _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
         raise

@@ -29,6 +29,7 @@ from app.core.constants import GPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.transcription.config import LIGHTWEIGHT_MODELS
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -86,11 +87,13 @@ def dispatch_transcription_pipeline(
             provider ('gpu' for local, 'cloud-asr' for cloud providers).
         whisper_model: Optional per-task Whisper model override (local ASR only).
     """
+    from .core import transcribe_cpu_task
     from .core import transcribe_gpu_task
     from .postprocess import finalize_transcription
     from .preprocess import preprocess_for_transcription
 
     task_id = str(uuid.uuid4())
+    use_cpu = whisper_model in LIGHTWEIGHT_MODELS
 
     # Create task record and set file to PROCESSING
     with session_scope() as db:
@@ -102,14 +105,24 @@ def dispatch_transcription_pipeline(
         user_id = int(media_file.user_id)
 
         # Auto-resolve queue from user's ASR provider if not specified
-        if gpu_queue is None:
+        if not use_cpu and gpu_queue is None:
             gpu_queue = _resolve_gpu_queue(user_id, db)
 
         create_task_record(db, task_id, user_id, file_id, "transcription")
         update_media_file_status(db, file_id, FileStatus.PROCESSING)
         update_task_status(db, task_id, "in_progress", progress=0.0)
 
-    # Build the 3-stage chain
+    # Build the 3-stage chain — route lightweight models to CPU
+    if use_cpu:
+        logger.info(f"Routing file {file_uuid} to CPU transcription (model={whisper_model})")
+        transcribe_task = transcribe_cpu_task.s().set(
+            queue="cpu-transcribe", priority=CPUPriority.PIPELINE_CRITICAL
+        )
+    else:
+        transcribe_task = transcribe_gpu_task.s().set(
+            queue=gpu_queue, priority=GPUPriority.USER_IMPORT
+        )
+
     pipeline = chain(
         preprocess_for_transcription.s(
             file_uuid=file_uuid,
@@ -120,10 +133,10 @@ def dispatch_transcription_pipeline(
             downstream_tasks=downstream_tasks,
             source_language=source_language,
             translate_to_english=translate_to_english,
-            disable_diarization=disable_diarization,
+            disable_diarization=True if use_cpu else disable_diarization,
             whisper_model=whisper_model,
         ).set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
-        transcribe_gpu_task.s().set(queue=gpu_queue, priority=GPUPriority.USER_IMPORT),
+        transcribe_task,
         finalize_transcription.s().set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
     )
 
@@ -138,9 +151,9 @@ def dispatch_transcription_pipeline(
         link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue="utility")],
     )
 
+    route = "cpu-transcribe" if use_cpu else gpu_queue
     logger.info(
-        f"Dispatched transcription pipeline for file {file_uuid} "
-        f"(task_id={task_id}, gpu_queue={gpu_queue})"
+        f"Dispatched transcription pipeline for file {file_uuid} (task_id={task_id}, route={route})"
     )
 
     return task_id
@@ -161,12 +174,15 @@ def dispatch_batch_transcription(
 
     Returns dict with batch_id and task_ids for tracking.
     """
+    from .core import transcribe_cpu_task
     from .core import transcribe_gpu_task
     from .postprocess import finalize_transcription
     from .preprocess import preprocess_for_transcription
 
     task_ids = []
     chains = []
+    batch_whisper_model = kwargs.get("whisper_model")
+    use_cpu = batch_whisper_model in LIGHTWEIGHT_MODELS
 
     for file_uuid in file_uuids:
         try:
@@ -182,20 +198,34 @@ def dispatch_batch_transcription(
                 owner_id = int(media_file.user_id)
 
                 resolved_queue = gpu_queue
-                if resolved_queue is None:
+                if not use_cpu and resolved_queue is None:
                     resolved_queue = _resolve_gpu_queue(owner_id, db)
 
                 create_task_record(db, task_id, owner_id, file_id, "transcription")
                 update_media_file_status(db, file_id, FileStatus.PROCESSING)
                 update_task_status(db, task_id, "in_progress", progress=0.0)
 
+            # Force disable_diarization for CPU path
+            batch_kwargs = dict(kwargs)
+            if use_cpu:
+                batch_kwargs["disable_diarization"] = True
+
+            if use_cpu:
+                transcribe_task = transcribe_cpu_task.s().set(
+                    queue="cpu-transcribe", priority=CPUPriority.PIPELINE_CRITICAL
+                )
+            else:
+                transcribe_task = transcribe_gpu_task.s().set(
+                    queue=resolved_queue, priority=GPUPriority.USER_IMPORT
+                )
+
             pipeline = chain(
                 preprocess_for_transcription.s(
                     file_uuid=file_uuid,
                     task_id=task_id,
-                    **kwargs,
+                    **batch_kwargs,
                 ).set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
-                transcribe_gpu_task.s().set(queue=resolved_queue, priority=GPUPriority.USER_IMPORT),
+                transcribe_task,
                 finalize_transcription.s().set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
             )
             pipeline.set(link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue="utility")])

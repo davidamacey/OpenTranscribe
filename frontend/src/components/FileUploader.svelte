@@ -35,7 +35,7 @@
   import { getDownloadSettings, getDownloadSystemDefaults, type DownloadSettings, type DownloadSystemDefaults } from '$lib/api/downloadSettings';
 
   // Import ASR settings for model selection
-  import { ASRSettingsApi, type LocalWhisperModel } from '$lib/api/asrSettings';
+  import { ASRSettingsApi } from '$lib/api/asrSettings';
 
   // Import network connectivity store
   import { isOnline } from '../stores/network';
@@ -134,7 +134,6 @@
 
   // Whisper model selection
   let selectedWhisperModel: string | null = null;
-  let availableWhisperModels: LocalWhisperModel[] = [];
   let adminDefaultModel = '';
 
   // Organization state (collections and tags for upload)
@@ -239,17 +238,14 @@
       }
     })();
 
-    // Load available Whisper models and admin default
+    // Load admin default model name for display
     (async () => {
       try {
-        const [models, activeInfo] = await Promise.all([
-          ASRSettingsApi.getLocalWhisperModels(),
-          ASRSettingsApi.getActiveLocalModel(),
-        ]);
-        availableWhisperModels = models;
-        adminDefaultModel = activeInfo.active_model || '';
+        const activeInfo = await ASRSettingsApi.getActiveLocalModel();
+        adminDefaultModel = activeInfo.active_model || 'large-v3-turbo';
       } catch (err) {
-        console.error('Failed to load Whisper models:', err);
+        console.error('Failed to load active model info:', err);
+        adminDefaultModel = 'large-v3-turbo';
       }
     })();
 
@@ -2211,35 +2207,23 @@
             </div>
 
             <!-- Whisper Model Selection -->
-            {#if availableWhisperModels.length > 0}
-              <div class="setting-field whisper-model-field">
-                <label for="whisper-model-select">
-                  {$t('uploader.whisperModel')}
-                  <span class="setting-hint">{$t('uploader.whisperModelHint')}</span>
-                </label>
-                <select id="whisper-model-select" bind:value={selectedWhisperModel} class="model-select">
-                  <option value={null}>
-                    {$t('uploader.useSystemDefault')}{adminDefaultModel ? ` (${adminDefaultModel})` : ''}
-                  </option>
-                  {#each availableWhisperModels as model}
-                    <option value={model.id} disabled={!model.downloaded}>
-                      {model.display_name}
-                      {#if !model.downloaded} ({$t('uploader.notDownloaded')}){/if}
-                      {#if model.id === adminDefaultModel} ({$t('uploader.systemDefault')}){/if}
-                    </option>
-                  {/each}
-                </select>
-                {#if selectedWhisperModel}
-                  {@const modelInfo = availableWhisperModels.find(m => m.id === selectedWhisperModel)}
-                  {#if modelInfo}
-                    <p class="model-hint-text">{modelInfo.description}</p>
-                    {#if !modelInfo.supports_translation}
-                      <p class="model-warning-text">{$t('uploader.turboNoTranslation')}</p>
-                    {/if}
-                  {/if}
-                {/if}
-              </div>
-            {/if}
+            <div class="setting-field whisper-model-field">
+              <label for="whisper-model-select">
+                {$t('uploader.whisperModel')}
+                <span class="setting-hint">{$t('uploader.whisperModelHint')}</span>
+              </label>
+              <select id="whisper-model-select" bind:value={selectedWhisperModel} class="model-select">
+                <option value={null}>
+                  {$t('uploader.highQuality')} ({adminDefaultModel})
+                </option>
+                <option value="base">
+                  {$t('uploader.fastProcessing')}
+                </option>
+              </select>
+              {#if selectedWhisperModel === 'base'}
+                <p class="model-hint-text">{$t('uploader.fastProcessingHint')}</p>
+              {/if}
+            </div>
           </div>
         {/if}
       </div>
@@ -3473,13 +3457,6 @@
     margin: 0.35rem 0 0;
     font-size: 0.8rem;
     color: var(--text-secondary);
-    line-height: 1.3;
-  }
-
-  .model-warning-text {
-    margin: 0.25rem 0 0;
-    font-size: 0.8rem;
-    color: var(--warning-color, #d97706);
     line-height: 1.3;
   }
 
