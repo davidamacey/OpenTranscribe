@@ -16,11 +16,12 @@
 
   const dispatch = createEventDispatcher<{ errorclick: MediaFile }>();
 
-  // Virtual scrolling config
-  const ROW_HEIGHT = 340; // approximate card height including gap
-  const CARD_MIN_WIDTH = typeof window !== 'undefined' && window.innerWidth < 768 ? 140 : 300;
-  const GAP = 24; // 1.5rem
-  const OVERSCAN = 2;
+  // Virtual scrolling config — responsive for mobile compact cards
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const ROW_HEIGHT = isMobile ? 200 : 340; // compact cards are shorter on mobile
+  const CARD_MIN_WIDTH = isMobile ? 140 : 300;
+  const GAP = isMobile ? 12 : 24; // 0.75rem vs 1.5rem
+  const OVERSCAN = isMobile ? 3 : 2; // extra buffer rows on mobile for smoother scroll
 
   // State
   let columnsPerRow = 1;
