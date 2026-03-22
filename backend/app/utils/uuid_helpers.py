@@ -209,19 +209,24 @@ def get_asr_config_by_uuid(db: Session, uuid: "UUID | str") -> "Any":
 
 # Permission checking helpers
 def get_file_by_uuid_with_permission(
-    db: Session, uuid: UUID | str, user_id: int, allow_public: bool = False
+    db: Session,
+    uuid: UUID | str,
+    user_id: int,
+    allow_public: bool = False,
+    is_admin: bool = False,
 ) -> MediaFile:
     """
     Get media file by UUID with permission check.
 
-    Checks direct ownership first, then falls back to shared access
-    via PermissionService (direct shares and group shares).
+    Checks admin bypass first, then direct ownership, then falls back to
+    shared access via PermissionService (direct shares and group shares).
 
     Args:
         db: Database session
         uuid: File UUID
         user_id: Current user ID
         allow_public: Whether to allow public files
+        is_admin: Whether the user has admin privileges (bypasses all checks)
 
     Returns:
         MediaFile instance
@@ -232,6 +237,10 @@ def get_file_by_uuid_with_permission(
     from app.services.permission_service import PermissionService
 
     file = get_file_by_uuid(db, uuid)
+
+    # Admin bypass — admins can access any file
+    if is_admin:
+        return file
 
     # Direct ownership or public access (fast path)
     if file.user_id == user_id or (allow_public and file.is_public):
@@ -249,18 +258,19 @@ def get_file_by_uuid_with_permission(
 
 
 def get_collection_by_uuid_with_permission(
-    db: Session, uuid: UUID | str, user_id: int
+    db: Session, uuid: UUID | str, user_id: int, is_admin: bool = False
 ) -> Collection:
     """
     Get collection by UUID with permission check.
 
-    Checks direct ownership first, then falls back to shared access
-    via PermissionService (direct shares and group shares).
+    Checks admin bypass first, then direct ownership, then falls back to
+    shared access via PermissionService (direct shares and group shares).
 
     Args:
         db: Database session
         uuid: Collection UUID
         user_id: Current user ID
+        is_admin: Whether the user has admin privileges (bypasses all checks)
 
     Returns:
         Collection instance
@@ -271,6 +281,10 @@ def get_collection_by_uuid_with_permission(
     from app.services.permission_service import PermissionService
 
     collection = get_collection_by_uuid(db, uuid)
+
+    # Admin bypass — admins can access any collection
+    if is_admin:
+        return collection
 
     # Direct ownership (fast path)
     if collection.user_id == user_id:

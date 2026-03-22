@@ -198,7 +198,9 @@ def get_file_detailed_status(
     """
     try:
         # Get the file (ensure user owns it)
-        media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+        media_file = get_file_by_uuid_with_permission(
+            db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        )
         file_id = int(media_file.id)
 
         # Get task summary
@@ -338,7 +340,9 @@ async def retry_file_processing(
     """
     try:
         # Get the file (ensure user owns it)
-        media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+        media_file = get_file_by_uuid_with_permission(
+            db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        )
         file_id = int(media_file.id)
 
         # Check if retry is appropriate

@@ -57,7 +57,9 @@ def create_speaker(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get media file by UUID and verify permission
-    media_file = get_file_by_uuid_with_permission(db, media_file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, media_file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
 
     # Generate a UUID for the new speaker
     speaker_uuid = str(uuid.uuid4())
@@ -138,18 +140,21 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
 
     from app.services.permission_service import PermissionService
 
-    accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, int(current_user.id))
+    # Build base filters — admins see all speakers, others see accessible files only
+    base_filter = [
+        Speaker.display_name.isnot(None),
+        Speaker.display_name != "",
+        ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
+    ]
+    if not current_user.is_admin:
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, int(current_user.id))
+        base_filter.append(Speaker.media_file_id.in_(select(accessible_sq)))
 
     # Step 1: Get one representative speaker per display_name using DISTINCT ON
     # This gives deterministic UUID selection (lowest id wins)
     representative_speakers = (
         db.query(Speaker)
-        .filter(
-            Speaker.media_file_id.in_(select(accessible_sq)),
-            Speaker.display_name.isnot(None),
-            Speaker.display_name != "",
-            ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
-        )
+        .filter(*base_filter)
         .distinct(Speaker.display_name)
         .order_by(Speaker.display_name, Speaker.id)
         .all()
@@ -161,12 +166,7 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
             Speaker.display_name,
             func.count(func.distinct(Speaker.media_file_id)).label("media_count"),
         )
-        .filter(
-            Speaker.media_file_id.in_(select(accessible_sq)),
-            Speaker.display_name.isnot(None),
-            Speaker.display_name != "",
-            ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
-        )
+        .filter(*base_filter)
         .group_by(Speaker.display_name)
         .all()
     )
@@ -193,7 +193,9 @@ def _resolve_file_uuid_to_id(file_uuid: str | None, current_user: User, db: Sess
         return None
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     return int(media_file.id)
 
 
@@ -572,11 +574,17 @@ def list_speakers(
         # Convert file_uuid to file_id if provided
         file_id = _resolve_file_uuid_to_id(file_uuid, current_user, db)
 
-        query = (
-            db.query(Speaker)
-            .options(joinedload(Speaker.profile), joinedload(Speaker.media_file))
-            .filter(Speaker.user_id == current_user.id)
+        query = db.query(Speaker).options(
+            joinedload(Speaker.profile), joinedload(Speaker.media_file)
         )
+        # Admins see all speakers; when file_id is provided, permission was
+        # already checked by _resolve_file_uuid_to_id; otherwise scope to owner.
+        if current_user.is_admin:
+            pass  # Admins see all speakers
+        elif file_id is not None:
+            pass  # Viewing specific file — permission already checked
+        else:
+            query = query.filter(Speaker.user_id == current_user.id)
         query = _filter_speakers_query(query, verified_only, False, file_id)
         speakers = query.all()
         speakers = _sort_speakers(speakers)
@@ -787,11 +795,10 @@ def debug_cross_media_by_name(
     """
     try:
         # Find all matching speakers
-        matching_speakers = (
-            db.query(Speaker)
-            .filter(Speaker.user_id == current_user.id, Speaker.display_name == speaker_name)
-            .all()
-        )
+        query = db.query(Speaker).filter(Speaker.display_name == speaker_name)
+        if not current_user.is_admin:
+            query = query.filter(Speaker.user_id == current_user.id)
+        matching_speakers = query.all()
 
         results: dict[str, Any] = {
             "speakers_found": len(matching_speakers),
@@ -812,15 +819,16 @@ def debug_cross_media_by_name(
             # Replicate the cross-media logic
             if speaker.profile_id:
                 # Speaker has a profile - find all instances of this profile
-                profile_speakers = (
+                profile_q = (
                     db.query(Speaker)
                     .join(MediaFile)
                     .filter(
                         Speaker.profile_id == speaker.profile_id,
-                        Speaker.user_id == current_user.id,
                     )
-                    .all()
                 )
+                if not current_user.is_admin:
+                    profile_q = profile_q.filter(Speaker.user_id == current_user.id)
+                profile_speakers = profile_q.all()
 
                 cross_media_result["method_used"] = "profile_based"
                 cross_media_result["profile_speakers_found"] = len(profile_speakers)
@@ -838,16 +846,17 @@ def debug_cross_media_by_name(
 
             else:
                 # Speaker has no profile - search by display_name
-                similar_speakers = (
+                similar_q = (
                     db.query(Speaker)
                     .join(MediaFile)
                     .filter(
                         Speaker.display_name == speaker.display_name,
-                        Speaker.user_id == current_user.id,
                         Speaker.id != speaker.id,  # Exclude self
                     )
-                    .all()
                 )
+                if not current_user.is_admin:
+                    similar_q = similar_q.filter(Speaker.user_id == current_user.id)
+                similar_speakers = similar_q.all()
 
                 cross_media_result["method_used"] = "display_name_based"
                 cross_media_result["similar_speakers_found"] = len(similar_speakers)
@@ -917,8 +926,12 @@ def get_speaker_cross_media_occurrences(
     """
     try:
         speaker = get_speaker_by_uuid(db, speaker_uuid)
-        file_perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+        file_perm = (
+            "owner"
+            if current_user.is_admin
+            else PermissionService.get_file_permission(
+                db, int(speaker.media_file_id), int(current_user.id)
+            )
         )
         if not file_perm:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
@@ -959,8 +972,12 @@ def verify_speaker_identification(
     """
     try:
         speaker = get_speaker_by_uuid(db, speaker_uuid)
-        file_perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+        file_perm = (
+            "owner"
+            if current_user.is_admin
+            else PermissionService.get_file_permission(
+                db, int(speaker.media_file_id), int(current_user.id)
+            )
         )
         if not file_perm:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
@@ -994,8 +1011,14 @@ def confirm_speaker_gender(
         )
 
     speaker = get_speaker_by_uuid(db, speaker_uuid)
-    if speaker.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    if not current_user.is_admin and speaker.user_id != current_user.id:
+        perm = PermissionService.get_file_permission(
+            db, int(speaker.media_file_id), int(current_user.id)
+        )
+        if not perm or perm == "viewer":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Requires editor permission"
+            )
 
     speaker.predicted_gender = gender  # type: ignore[assignment]
     speaker.gender_confirmed_by_user = True  # type: ignore[assignment]
@@ -1020,9 +1043,18 @@ def merge_speakers(
     source_speaker = get_speaker_by_uuid(db, speaker_uuid)
     target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)
 
-    # Verify ownership
-    if source_speaker.user_id != current_user.id or target_speaker.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    # Verify ownership or shared editor permission
+    if not current_user.is_admin:
+        for spk in (source_speaker, target_speaker):
+            if spk.user_id != current_user.id:
+                perm = PermissionService.get_file_permission(
+                    db, int(spk.media_file_id), int(current_user.id)
+                )
+                if not perm or perm == "viewer":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Requires editor permission",
+                    )
 
     # Store profile IDs for embedding updates
     source_profile_id = int(source_speaker.profile_id) if source_speaker.profile_id else None
@@ -1232,11 +1264,10 @@ def _handle_update_profile_action(
     logger.info(f"Updated profile {profile.id} name to '{new_name}' globally")
 
     # Update all speakers linked to this profile
-    linked_speakers = (
-        db.query(Speaker)
-        .filter(Speaker.profile_id == profile_id, Speaker.user_id == current_user.id)
-        .all()
-    )
+    linked_query = db.query(Speaker).filter(Speaker.profile_id == profile_id)
+    if not current_user.is_admin:
+        linked_query = linked_query.filter(Speaker.user_id == current_user.id)
+    linked_speakers = linked_query.all()
 
     for linked_speaker in linked_speakers:
         linked_speaker.display_name = new_name  # type: ignore[assignment]
@@ -1410,8 +1441,14 @@ def update_speaker(
 
     # Find and validate speaker
     speaker = get_speaker_by_uuid(db, speaker_uuid)
-    if speaker.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    if not current_user.is_admin and speaker.user_id != current_user.id:
+        perm = PermissionService.get_file_permission(
+            db, int(speaker.media_file_id), int(current_user.id)
+        )
+        if not perm or perm == "viewer":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Requires editor permission"
+            )
 
     speaker_id = int(speaker.id)
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
@@ -1489,9 +1526,15 @@ def delete_speaker(
     # Find the speaker by UUID
     speaker = get_speaker_by_uuid(db, speaker_uuid)
 
-    # Verify ownership
-    if speaker.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    # Verify ownership or shared editor permission
+    if not current_user.is_admin and speaker.user_id != current_user.id:
+        perm = PermissionService.get_file_permission(
+            db, int(speaker.media_file_id), int(current_user.id)
+        )
+        if not perm or perm == "viewer":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Requires editor permission"
+            )
 
     # Capture UUID before DB delete
     uuid_to_clean = str(speaker.uuid)
@@ -1851,15 +1894,16 @@ def _get_profile_based_occurrences(
     speaker: Speaker, current_user: User, db: Session
 ) -> list[dict[str, Any]]:
     """Get cross-media occurrences for a speaker with a profile."""
-    profile_speakers = (
+    query = (
         db.query(Speaker)
         .join(MediaFile)
         .filter(
             Speaker.profile_id == speaker.profile_id,
-            Speaker.user_id == current_user.id,
         )
-        .all()
     )
+    if not current_user.is_admin:
+        query = query.filter(Speaker.user_id == current_user.id)
+    profile_speakers = query.all()
 
     result: list[dict[str, Any]] = []
     for profile_speaker in profile_speakers:
@@ -1889,16 +1933,17 @@ def _get_display_name_based_occurrences(
         return result
 
     # Find other speakers with the same display name
-    similar_speakers = (
+    similar_q = (
         db.query(Speaker)
         .join(MediaFile)
         .filter(
             Speaker.display_name == speaker.display_name,
-            Speaker.user_id == current_user.id,
             Speaker.id != speaker.id,
         )
-        .all()
     )
+    if not current_user.is_admin:
+        similar_q = similar_q.filter(Speaker.user_id == current_user.id)
+    similar_speakers = similar_q.all()
 
     for similar_speaker in similar_speakers:
         if similar_speaker.media_file:

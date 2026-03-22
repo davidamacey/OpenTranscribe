@@ -67,7 +67,9 @@ async def trigger_summarization(
     - **Follow-up Items**: Future discussion points
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)
 
     # Check if file has completed transcription
@@ -183,7 +185,9 @@ async def get_file_summary(
     - Search-optimized content for highlighting
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)
 
     try:
@@ -386,7 +390,9 @@ async def identify_speakers(
     - Provide context clues for manual identification
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)
 
     # Check if file has speakers to identify
@@ -445,7 +451,9 @@ async def delete_summary(
     - Search index entries
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)
 
     try:

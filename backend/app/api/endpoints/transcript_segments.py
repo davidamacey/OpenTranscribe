@@ -107,12 +107,18 @@ def _get_new_speaker_id(
             detail="Speaker does not belong to the same media file as this segment",
         )
 
-    # Verify the user owns this speaker
-    if speaker.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to use this speaker",
+    # Verify the user owns this speaker (admins and shared editors bypass)
+    if not current_user.is_admin and speaker.user_id != current_user.id:
+        from app.services.permission_service import PermissionService
+
+        perm = PermissionService.get_file_permission(
+            db, int(speaker.media_file_id), int(current_user.id)
         )
+        if not perm or perm == "viewer":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to use this speaker",
+            )
 
     return int(speaker.id)
 

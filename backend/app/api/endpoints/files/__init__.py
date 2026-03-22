@@ -247,7 +247,7 @@ def list_media_files(
     user_id = int(current_user.id)
 
     # Admin users can see all files regardless of ownership param
-    if current_user.role == "admin":
+    if current_user.is_admin:
         base_query = db.query(MediaFile).options(*list_options)
         effective_user_id = None
     elif ownership == "mine":
@@ -411,7 +411,9 @@ def get_media_file_info(
     """
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    media_file = get_file_by_uuid_with_permission(db, str(file_uuid), int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, str(file_uuid), int(current_user.id), is_admin=current_user.is_admin
+    )
 
     return MediaFilePublicInfo(
         uuid=media_file.uuid,
@@ -486,7 +488,7 @@ def get_media_file_stream_url(
         )
 
     # Verify user has permission (ownership check)
-    is_admin = bool(current_user.role == "admin")
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
 
     # Determine storage path and expiration based on media type
@@ -549,7 +551,7 @@ def get_media_file_content(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get the content of a media file"""
-    is_admin = bool(current_user.role == "admin")
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
     return get_content_streaming_response(db_file)
 
@@ -658,7 +660,7 @@ def download_media_file(
     current_user: User = Depends(get_current_active_user),
 ):
     """Download a media file (with embedded subtitles for videos by default)"""
-    is_admin = bool(current_user.role == "admin")
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
 
     # Check if this is a video file with available subtitles
@@ -712,7 +714,7 @@ def download_media_file_with_token(
             raise HTTPException(status_code=401, detail="Invalid user")
 
         # Get file and check ownership
-        is_admin = bool(user.role == "admin")
+        is_admin = user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(user.id), is_admin=is_admin)
 
         # Check if this is a video file with available subtitles
@@ -769,12 +771,16 @@ async def video_file(
                 detail="Authentication required for private files. Use /stream-url endpoint for presigned URLs.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        is_admin = current_user.role in ("admin", "super_admin")
+        is_admin = current_user.is_admin
         if not is_admin and db_file.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this file",
-            )
+            from app.services.permission_service import PermissionService
+
+            perm = PermissionService.get_file_permission(db, int(db_file.id), int(current_user.id))
+            if not perm:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this file",
+                )
 
     range_header = request.headers.get("range") or ""
     return get_video_streaming_response(db_file, range_header)
@@ -807,12 +813,16 @@ async def simple_video(
                 detail="Authentication required for private files. Use /stream-url endpoint for presigned URLs.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        is_admin = current_user.role in ("admin", "super_admin")
+        is_admin = current_user.is_admin
         if not is_admin and db_file.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this file",
-            )
+            from app.services.permission_service import PermissionService
+
+            perm = PermissionService.get_file_permission(db, int(db_file.id), int(current_user.id))
+            if not perm:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this file",
+                )
 
     range_header = request.headers.get("range") or ""
     return get_enhanced_video_streaming_response(db_file, range_header)
@@ -846,12 +856,16 @@ async def get_thumbnail(
                 detail="Authentication required. Use presigned thumbnail_url from file listing.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        is_admin = current_user.role in ("admin", "super_admin")
+        is_admin = current_user.is_admin
         if not is_admin and db_file.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this file",
-            )
+            from app.services.permission_service import PermissionService
+
+            perm = PermissionService.get_file_permission(db, int(db_file.id), int(current_user.id))
+            if not perm:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this file",
+                )
 
     return get_thumbnail_streaming_response(db_file)
 
@@ -913,7 +927,7 @@ def clear_video_cache(
     """Clear cached processed videos for a file (e.g., after speaker name updates)"""
     try:
         # Verify user owns the file or is admin
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
         file_id = int(db_file.id)  # Get internal ID for cache operations
 
@@ -948,7 +962,7 @@ def refresh_analytics(
     """Refresh analytics for a media file by recomputing them"""
     try:
         # Verify user owns the file or is admin
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
         file_id = int(db_file.id)  # Get internal ID for analytics refresh
 

@@ -366,11 +366,13 @@ async def process_file_reprocess(
 
     try:
         # Get the file (allow admin to reprocess any file)
-        is_admin = current_user.role == "admin"
+        is_admin = current_user.is_admin
         if is_admin:
             media_file = get_file_by_uuid(db, file_uuid)
         else:
-            media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+            media_file = get_file_by_uuid_with_permission(
+                db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+            )
 
         file_id = int(media_file.id)  # Get internal ID for task operations
 

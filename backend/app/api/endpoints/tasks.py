@@ -55,7 +55,7 @@ TASK_STATUS_FAILED = "failed"
 
 def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
     """Get media files based on user permissions."""
-    if current_user.role == "admin":
+    if current_user.is_admin:
         return db.query(MediaFile).all()  # type: ignore[no-any-return]
     else:
         return db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()  # type: ignore[no-any-return]
@@ -598,12 +598,14 @@ async def retry_file_processing(
     """
     try:
         # Find the media file
-        if current_user.role == "admin":
+        if current_user.is_admin:
             from app.utils.uuid_helpers import get_file_by_uuid
 
             media_file = get_file_by_uuid(db, file_uuid)
         else:
-            media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+            media_file = get_file_by_uuid_with_permission(
+                db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+            )
 
         file_id = int(media_file.id)
 
@@ -680,7 +682,7 @@ def _parse_task_id(task_id: str) -> int:
 
 def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> MediaFile:
     """Get media file by ID with proper permission checking."""
-    if current_user.role == "admin":
+    if current_user.is_admin:
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
     else:
         media_file = (

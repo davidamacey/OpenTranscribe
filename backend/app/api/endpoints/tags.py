@@ -180,7 +180,9 @@ async def add_tag_to_file(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get file by UUID and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = media_file.id  # Get internal ID for database operations
 
     # Log detailed information about the request for debugging
@@ -238,7 +240,9 @@ def remove_tag_from_file(
     # Get file by UUID with permission check
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = media_file.id
 
     # Find the tag

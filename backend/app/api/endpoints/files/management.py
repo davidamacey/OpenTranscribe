@@ -86,7 +86,7 @@ async def get_file_status_detail(
 ):
     """Get detailed status information for a file."""
     try:
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
         file_id = int(db_file.id)  # Get internal ID for task operations
 
@@ -175,7 +175,7 @@ async def cancel_file_processing(
 ):
     """Cancel active processing for a file."""
     try:
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
         file_id = int(db_file.id)  # Get internal ID for task operations
 
@@ -219,7 +219,7 @@ async def retry_file_processing(
 ):
     """Retry processing for a failed file."""
     try:
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
         file_id = int(db_file.id)  # Get internal ID for task operations
 
@@ -292,7 +292,7 @@ async def recover_file(
 ):
     """Attempt to recover a stuck file."""
     try:
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
         file_id = int(db_file.id)  # Get internal ID for task operations
 
@@ -330,7 +330,7 @@ async def force_delete_file(
     current_user: User = Depends(get_current_user),
 ):
     """Force delete a file (admin only)."""
-    if current_user.role != "admin":
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can force delete files",
@@ -361,7 +361,7 @@ async def get_stuck_files(
         stuck_file_ids = check_for_stuck_files(db, threshold_hours)
 
         # Get file details for user's files only (unless admin)
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
         stuck_files = []
 
         for file_id in stuck_file_ids:
@@ -639,7 +639,7 @@ async def bulk_file_action(
     """Perform bulk actions on multiple files."""
     try:
         results = []
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
 
         for file_uuid in request.file_uuids:
             try:
@@ -694,7 +694,7 @@ async def cleanup_orphaned_files(
     current_user: User = Depends(get_current_user),
 ):
     """Clean up orphaned files (admin only)."""
-    if current_user.role != "admin":
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can cleanup orphaned files",

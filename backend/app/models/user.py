@@ -66,6 +66,11 @@ class User(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
+    @property
+    def is_admin(self) -> bool:
+        """Check if user has admin or super_admin role."""
+        return self.role in ("admin", "super_admin")
+
     # Relationships
     media_files = relationship("MediaFile", back_populates="user")
     comments = relationship("Comment", back_populates="user")

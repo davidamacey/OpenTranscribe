@@ -22,12 +22,14 @@ from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 router = APIRouter()
 
 
-def _check_file_access(db: Session, file_uuid: str, user_id: int) -> MediaFile:
+def _check_file_access(db: Session, file_uuid: str, current_user: User) -> MediaFile:
     """Get a media file after verifying the user has at least viewer permission.
 
     Uses PermissionService to check ownership, direct shares, and group shares.
     """
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, user_id)
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     return media_file
 
 
@@ -41,7 +43,7 @@ def get_comments_for_file_nested(
 
     Requires viewer+ permission on the file (via ownership or sharing).
     """
-    media_file = _check_file_access(db, file_uuid, int(current_user.id))
+    media_file = _check_file_access(db, file_uuid, current_user)
     file_id = media_file.id
 
     # Get comments for this file with user relationship loaded
@@ -65,7 +67,7 @@ def create_comment_for_file_nested(
 
     Requires viewer+ permission on the file (commenting is collaborative).
     """
-    media_file = _check_file_access(db, file_uuid, int(current_user.id))
+    media_file = _check_file_access(db, file_uuid, current_user)
     file_id = media_file.id
 
     # Create comment with file_id from URL
@@ -100,7 +102,7 @@ def get_comments_for_file(
 
     Requires viewer+ permission on the file.
     """
-    media_file = _check_file_access(db, media_file_uuid, int(current_user.id))
+    media_file = _check_file_access(db, media_file_uuid, current_user)
     media_file_id = media_file.id
 
     # Get comments for this file (eager-load relationships to avoid N+1)
@@ -125,7 +127,7 @@ def create_comment_query_param(
 
     Requires viewer+ permission on the file.
     """
-    media_file = _check_file_access(db, comment.media_file_id, int(current_user.id))  # type: ignore[attr-defined]
+    media_file = _check_file_access(db, comment.media_file_id, current_user)  # type: ignore[attr-defined]
     file_id = media_file.id
 
     # Create new comment
@@ -164,14 +166,15 @@ def get_comment(
     comment = get_comment_by_uuid(db, comment_uuid)
 
     # Verify the user has access to the comment's file via PermissionService
-    permission = PermissionService.get_file_permission(
-        db, int(comment.media_file_id), int(current_user.id)
-    )
-    if permission is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to view this comment",
+    if not current_user.is_admin:
+        permission = PermissionService.get_file_permission(
+            db, int(comment.media_file_id), int(current_user.id)
         )
+        if permission is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to view this comment",
+            )
 
     return comment
 
@@ -186,7 +189,7 @@ def update_comment(
     """Update a comment. Only the comment author can edit."""
     comment = get_comment_by_uuid(db, comment_uuid)
 
-    if comment.user_id != current_user.id:
+    if not current_user.is_admin and comment.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to edit this comment",
@@ -217,8 +220,14 @@ def delete_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Delete a comment. Comment author or file owner can delete."""
+    """Delete a comment. Admin, comment author, or file owner can delete."""
     comment = get_comment_by_uuid(db, comment_uuid)
+
+    # Allow deletion by admin
+    if current_user.is_admin:
+        db.delete(comment)
+        db.commit()
+        return None
 
     # Allow deletion by comment author
     if comment.user_id == current_user.id:

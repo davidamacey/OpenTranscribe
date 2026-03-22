@@ -42,7 +42,9 @@ async def get_subtitles(
     Supports: srt, webvtt, txt (plain text with timestamps).
     """
     # Get media file and check permissions
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)  # Get internal ID for subtitle generation
 
     if media_file.status != "completed":
@@ -108,7 +110,9 @@ async def validate_subtitles(
     Returns validation results including any timing issues or problems found.
     """
     # Get media file and check permissions
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)  # Get internal ID for validation
 
     if media_file.status != "completed":
@@ -185,7 +189,9 @@ async def bulk_export_subtitles(
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_uuid in request.file_uuids:
             try:
-                media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+                media_file = get_file_by_uuid_with_permission(
+                    db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+                )
                 file_id = int(media_file.id)
 
                 if media_file.status != "completed":

@@ -258,7 +258,7 @@ async def get_audio_waveform(
         JSON response with waveform data and metadata
     """
     # Get the media file and verify user access
-    is_admin = current_user.role == "admin"
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=bool(is_admin))
     file_id = int(db_file.id)
 
@@ -297,7 +297,7 @@ async def get_audio_waveform_peaks(
         JSON response with peaks data optimized for display
     """
     # Get the media file and verify user access
-    is_admin = current_user.role == "admin"
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=bool(is_admin))
     file_id = int(db_file.id)
 
@@ -344,7 +344,7 @@ async def generate_waveform_for_file(
     """
     try:
         # Verify user access to the file
-        is_admin = current_user.role == "admin"
+        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
             db, file_uuid, int(current_user.id), is_admin=bool(is_admin)
         )
@@ -396,7 +396,7 @@ async def generate_waveforms_for_files(
     Only admin users can trigger this operation.
     """
     # Check if user is admin
-    if current_user.role not in ["admin", "superuser"]:
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can trigger bulk waveform generation",
@@ -457,7 +457,7 @@ def get_waveform_status(
     Shows how many files have/don't have waveform data.
     """
     # Check if user is admin
-    if current_user.role not in ["admin", "superuser"]:
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can view waveform status",

@@ -456,6 +456,9 @@ class MediaFileDetail(MediaFile):
     # Additional formatted fields for detail view
     speaker_summary: Optional[dict[str, Any]] = None  # Speaker count and primary speakers
 
+    # Caller's effective permission on this file (null = owner)
+    my_permission: Optional[str] = None
+
     # Transcript pagination metadata
     total_segments: Optional[int] = None  # Total number of transcript segments
     total_speaker_segments: Optional[int] = (

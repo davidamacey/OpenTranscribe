@@ -68,7 +68,9 @@ async def batch_extract_topics(
     verified_uuids = []
     for file_uuid in file_uuids:
         try:
-            media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+            media_file = get_file_by_uuid_with_permission(
+                db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+            )
             if media_file.transcript_segments:
                 verified_uuids.append(file_uuid)
             else:
@@ -215,7 +217,9 @@ async def auto_label_single_file(
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """Apply auto-labeling to a single file's pending suggestions."""
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
 
     from app.services.auto_label_service import AutoLabelService
 
@@ -278,7 +282,9 @@ async def get_topic_suggestions(
         Tag and collection suggestions from AI
     """
     # Get file and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)
 
     # Get suggestion from PostgreSQL
@@ -345,7 +351,9 @@ async def extract_topics(
         Acknowledgment that extraction has been triggered
     """
     # Get file and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
 
     # Check if file has transcript
     if not media_file.transcript_segments:
@@ -416,7 +424,9 @@ async def apply_topic_suggestions(
         Summary of actions taken
     """
     # Get file and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)
 
     # Get suggestion
@@ -467,7 +477,9 @@ async def dismiss_topic_suggestions(
         current_user: Authenticated user
     """
     # Get file and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
     file_id = int(media_file.id)
 
     # Get suggestion

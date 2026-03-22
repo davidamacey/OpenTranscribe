@@ -58,7 +58,7 @@ def get_media_file_by_uuid(
 
         return get_file_by_uuid(db, file_uuid)
     else:
-        return get_file_by_uuid_with_permission(db, file_uuid, user_id)
+        return get_file_by_uuid_with_permission(db, file_uuid, user_id, is_admin=is_admin)
 
 
 def get_media_file_by_id(
@@ -411,7 +411,7 @@ def get_media_file_detail(
     """
     try:
         # Get the file by uuid and user id (admin can access any file)
-        is_admin = bool(current_user.role == "admin")
+        is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
         file_id = int(db_file.id)
 
@@ -440,6 +440,16 @@ def get_media_file_detail(
             if segment.speaker:
                 SpeakerStatusService.add_computed_status(segment.speaker)
 
+        # Compute caller's effective permission for frontend
+        if is_admin:
+            my_permission = "owner"
+        elif db_file.user_id == int(current_user.id):
+            my_permission = None  # Owner (frontend convention: null = owner)
+        else:
+            from app.services.permission_service import PermissionService
+
+            my_permission = PermissionService.get_file_permission(db, file_id, int(current_user.id))
+
         # Set URLs
         set_file_urls(db_file)
 
@@ -456,6 +466,9 @@ def get_media_file_detail(
             segment_limit=segment_limit,
             segment_offset=segment_offset,
         )
+
+        # Set caller's permission on the response
+        response.my_permission = my_permission
 
         db.commit()
         return response
@@ -485,7 +498,7 @@ def update_media_file(
     Returns:
         Updated MediaFile object
     """
-    is_admin = bool(current_user.role == "admin")
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
     file_id = int(db_file.id)  # Get internal ID for OpenSearch update
 
@@ -612,7 +625,7 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import is_file_safe_to_delete
 
-    is_admin = bool(current_user.role == "admin")
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
     file_id = int(db_file.id)  # Get internal ID for task operations
 
@@ -747,7 +760,7 @@ def update_single_transcript_segment(
         Updated TranscriptSegmentSchema object with all formatted fields
     """
     # Verify user owns the file or is admin
-    is_admin = bool(current_user.role == "admin")
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
     file_id = int(db_file.id)  # Get internal ID for segment query
 
@@ -804,7 +817,7 @@ def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict
     Returns:
         Dictionary with URL and content type information
     """
-    is_admin = bool(current_user.role == "admin")
+    is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
 
     # Skip S3 operations in test environment

@@ -41,7 +41,7 @@ def list_speaker_profiles(
     """List all speaker profiles for the current user, including shared profiles."""
     try:
         # Admins see all profiles; regular users see own + shared
-        is_admin = getattr(current_user, "is_admin", False)
+        is_admin = current_user.is_admin
         if is_admin:
             query = db.query(SpeakerProfile)
             owned_ids: set[int] = set()  # Will compute below for is_shared flag
@@ -270,8 +270,12 @@ def assign_speaker_to_profile(
     try:
         # Verify speaker exists and user has file-level access
         speaker = get_speaker_by_uuid(db, speaker_uuid)
-        file_perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+        file_perm = (
+            "owner"
+            if current_user.is_admin
+            else PermissionService.get_file_permission(
+                db, int(speaker.media_file_id), int(current_user.id)
+            )
         )
         if not file_perm:
             raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
@@ -455,8 +459,12 @@ def get_speaker_profile_suggestions(
     try:
         # Verify speaker exists and user has file-level access
         speaker = get_speaker_by_uuid(db, speaker_uuid)
-        file_perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+        file_perm = (
+            "owner"
+            if current_user.is_admin
+            else PermissionService.get_file_permission(
+                db, int(speaker.media_file_id), int(current_user.id)
+            )
         )
         if not file_perm:
             raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
