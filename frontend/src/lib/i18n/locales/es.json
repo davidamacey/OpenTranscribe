@@ -2638,7 +2638,7 @@
   "sharing.shareRevoked": "Acceso revocado",
   "sharing.failedToRevoke": "Error al revocar acceso",
   "sharing.revokeAccess": "Revocar acceso",
-  "sharing.sharedFileNotice": "Archivo compartido (acceso {{permission}})",
+  "sharing.sharedChip": "Compartido · {{permission}}",
   "groups.settingsDescription": "Crea y gestiona grupos para compartir colecciones con equipos.",
   "groups.noMembers": "Aún no hay miembros",
   "groups.you": "tú",

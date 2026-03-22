@@ -583,7 +583,7 @@
 <!-- Password Reset Modal -->
 {#if showPasswordResetModal && passwordResetUser}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="password-reset-modal-backdrop" on:click={closePasswordResetModal} role="presentation" on:keydown={(e) => e.key === 'Escape' && closePasswordResetModal()}>
+  <div class="password-reset-modal-backdrop" on:click={closePasswordResetModal} on:wheel|preventDefault|self on:touchmove|preventDefault|self role="presentation" on:keydown={(e) => e.key === 'Escape' && closePasswordResetModal()}>
     <div class="password-reset-modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="password-reset-title" tabindex="0">
       <button class="modal-close-btn" on:click={closePasswordResetModal} aria-label={$t('common.close')} title={$t('common.close')}>
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -981,7 +981,8 @@
     justify-content: center;
     z-index: 1200;
     animation: fadeIn 0.2s ease-out;
-    overscroll-behavior: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   @keyframes fadeIn {

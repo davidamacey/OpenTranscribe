@@ -1184,7 +1184,7 @@
   {#if showPromoteModal}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="modal-backdrop" on:click|self={() => { showPromoteModal = false; }} transition:fade={{ duration: 200 }}>
+    <div class="modal-backdrop" on:click|self={() => { showPromoteModal = false; }} on:wheel|preventDefault|self on:touchmove|preventDefault|self transition:fade={{ duration: 200 }}>
       <div class="promote-modal" transition:fade={{ duration: 200, delay: 100 }}>
         <h3>{$t('speakers.promote.title')}</h3>
         <p>{$t('speakers.promote.description')}</p>
@@ -1791,6 +1791,8 @@
     align-items: center;
     justify-content: center;
     z-index: 1200;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .promote-modal {

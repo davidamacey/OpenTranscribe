@@ -1437,6 +1437,8 @@
     role="presentation"
     transition:fade={{ duration: 400 }}
     on:click|self={toggleUploadModal}
+    on:wheel|preventDefault|self
+    on:touchmove|preventDefault|self
     on:keydown={(e) => e.key === 'Escape' && toggleUploadModal()}
   >
     <!-- The actual modal dialog -->
@@ -1483,6 +1485,8 @@
     role="presentation"
     transition:fade={{ duration: 400 }}
     on:click={() => showCollectionsModal = false}
+    on:wheel|preventDefault|self
+    on:touchmove|preventDefault|self
     on:keydown={(e) => e.key === 'Escape' && (() => showCollectionsModal = false)()}
   >
     <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -1738,6 +1742,8 @@
     align-items: center;
     justify-content: center;
     z-index: 1000;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   :global(.dark) .modal-backdrop {

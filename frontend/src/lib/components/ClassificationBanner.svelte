@@ -174,6 +174,8 @@ By using this IS (which includes any device attached to this IS), you consent to
     justify-content: center;
     z-index: 10000;
     padding: 1rem;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .consent-modal {

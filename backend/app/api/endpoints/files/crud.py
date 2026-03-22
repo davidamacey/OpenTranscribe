@@ -441,10 +441,10 @@ def get_media_file_detail(
                 SpeakerStatusService.add_computed_status(segment.speaker)
 
         # Compute caller's effective permission for frontend
-        if is_admin:
-            my_permission = "owner"
-        elif db_file.user_id == int(current_user.id):
-            my_permission = None  # Owner (frontend convention: null = owner)
+        if db_file.user_id == int(current_user.id):
+            my_permission = None  # Actual owner (frontend convention: null = owner)
+        elif is_admin:
+            my_permission = "owner"  # Admin viewing someone else's file
         else:
             from app.services.permission_service import PermissionService
 

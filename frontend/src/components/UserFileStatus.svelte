@@ -750,6 +750,8 @@
       class="detailed-status-modal"
       role="presentation"
       on:click={closeModal}
+      on:wheel|preventDefault|self
+      on:touchmove|preventDefault|self
       on:keydown={(e) => e.key === 'Escape' && closeModal()}
     >
       <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -1552,7 +1554,8 @@
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    overscroll-behavior: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   :global(.dark) .detailed-status-modal {

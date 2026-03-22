@@ -2638,7 +2638,7 @@
   "sharing.shareRevoked": "Freigabe widerrufen",
   "sharing.failedToRevoke": "Fehler beim Widerrufen der Freigabe",
   "sharing.revokeAccess": "Zugriff widerrufen",
-  "sharing.sharedFileNotice": "Geteilte Datei ({{permission}}-Zugriff)",
+  "sharing.sharedChip": "Geteilt · {{permission}}",
   "groups.settingsDescription": "Erstellen und verwalten Sie Gruppen, um Sammlungen einfach mit Teams zu teilen.",
   "groups.noMembers": "Noch keine Mitglieder",
   "groups.you": "Sie",

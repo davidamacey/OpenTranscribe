@@ -490,6 +490,8 @@
       class="modal-backdrop"
       role="presentation"
       on:click={() => showCreateModal = false}
+      on:wheel|preventDefault|self
+      on:touchmove|preventDefault|self
       on:keydown={(e) => e.key === 'Escape' && (() => showCreateModal = false)()}
       transition:fade
     >
@@ -607,6 +609,8 @@
       class="modal-backdrop"
       role="presentation"
       on:click={() => showEditModal = false}
+      on:wheel|preventDefault|self
+      on:touchmove|preventDefault|self
       on:keydown={(e) => e.key === 'Escape' && (() => showEditModal = false)()}
       transition:fade
     >
@@ -1121,7 +1125,8 @@
     justify-content: center;
     z-index: 1200;
     padding: 1rem;
-    overscroll-behavior: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .modal-container {
@@ -1132,6 +1137,7 @@
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
+    overscroll-behavior: contain;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     animation: slideIn 0.2s ease-out;
   }

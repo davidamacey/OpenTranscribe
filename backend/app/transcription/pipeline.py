@@ -113,6 +113,17 @@ class TranscriptionPipeline:
         # Save final result for comparison
         self._save_intermediate_result(result, "final_result")
 
+        # Re-enable TF32 after diarization. PyAnnote's fix_reproducibility()
+        # disables TF32 globally during segmentation. Our fork re-enables it for
+        # embeddings, but it stays off after diarization completes. This ensures
+        # subsequent Whisper runs benefit from Tensor Core acceleration (~15-20%
+        # speedup on Ampere+ GPUs: RTX 3000+, A-series, RTX 4000+).
+        if self.config.device == "cuda":
+            import torch
+
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+
         # Cleanup
         hw.log_vram_usage("before final pipeline cleanup")
         audio_duration = len(audio) / 16000 if audio is not None else 0.0

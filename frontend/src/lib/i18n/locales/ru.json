@@ -2674,7 +2674,7 @@
   "sharing.shareRevoked": "Доступ отозван",
   "sharing.failedToRevoke": "Не удалось отозвать доступ",
   "sharing.revokeAccess": "Отозвать доступ",
-  "sharing.sharedFileNotice": "Общий файл (доступ {{permission}})",
+  "sharing.sharedChip": "Общий · {{permission}}",
   "gallery.filter.ownership": "Владение",
   "gallery.filter.allFiles": "Все файлы",
   "gallery.filter.myFiles": "Мои файлы",

@@ -263,6 +263,7 @@
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.removeEventListener('reindex-complete', handleReindexCompleteStats);
     // Re-enable scroll when component is destroyed
+    document.documentElement.style.overflow = '';
     document.body.style.overflow = '';
   });
 
@@ -272,7 +273,8 @@
   // Prevent body scroll when modal is open and load initial data
   $: {
     if (isOpen && !previousOpenState) {
-      // Modal just opened
+      // Modal just opened — prevent background scroll
+      document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
 
       // Load data for the active section when modal opens
@@ -286,7 +288,8 @@
 
       previousOpenState = true;
     } else if (!isOpen && previousOpenState) {
-      // Modal just closed
+      // Modal just closed — restore background scroll
+      document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
       previousOpenState = false;
     }
@@ -791,15 +794,18 @@
 </script>
 
 {#if isOpen}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="settings-modal-backdrop"
     on:click={handleBackdropClick}
+    on:wheel|preventDefault|self
+    on:touchmove|preventDefault|self
     role="presentation"
   >
     <div class="settings-modal" bind:this={modalElement} role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-      <!-- Header bar (close button always visible, title shown on mobile) -->
+      <!-- Header bar with title and close button -->
       <div class="settings-header-bar">
-        <span class="settings-header-title">{$t('settings.title')}</span>
+        <h2 id="settings-modal-title" class="settings-header-title">{$t('settings.title')}</h2>
         <button class="modal-close-button" on:click={attemptClose} aria-label={$t('settings.modal.closeSettings')} title={$t('settings.modal.closeSettingsTitle')} style="position:static; margin:0; padding:0.5rem;">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -811,8 +817,6 @@
       <div class="settings-modal-container">
         <!-- Desktop sidebar -->
         <aside class="settings-sidebar">
-          <h2 id="settings-modal-title" class="settings-title">{$t('settings.title')}</h2>
-
           {#each sidebarSections as section}
             <div class="sidebar-section">
               <h3 class="section-heading">{section.title}</h3>
@@ -1761,7 +1765,8 @@
     justify-content: center;
     z-index: 1100;
     animation: fadeIn 0.2s ease-out;
-    overscroll-behavior: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   @keyframes fadeIn {
@@ -1813,7 +1818,7 @@
     font-weight: 600;
     font-size: 1.1rem;
     color: var(--text-color);
-    display: none;
+    margin: 0;
     margin-right: auto;
   }
 
@@ -1850,16 +1855,10 @@
     width: 240px;
     background-color: var(--background-color);
     border-right: 1px solid var(--border-color);
-    padding: 1.5rem 0;
+    padding: 0.75rem 0;
     overflow-y: auto;
     flex-shrink: 0;
-  }
-
-  .settings-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0 1.25rem 1.5rem;
-    color: var(--text-color);
+    overscroll-behavior: contain;
   }
 
   .sidebar-section {
@@ -2693,10 +2692,6 @@
     }
 
     .mobile-section-nav {
-      display: block;
-    }
-
-    .settings-header-title {
       display: block;
     }
 

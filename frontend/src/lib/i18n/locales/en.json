@@ -2677,7 +2677,7 @@
   "sharing.shareRevoked": "Share revoked",
   "sharing.failedToRevoke": "Failed to revoke share",
   "sharing.revokeAccess": "Revoke access",
-  "sharing.sharedFileNotice": "Shared file ({{permission}} access)",
+  "sharing.sharedChip": "Shared · {{permission}}",
   "gallery.filter.ownership": "Ownership",
   "gallery.filter.allFiles": "All Files",
   "gallery.filter.myFiles": "My Files",

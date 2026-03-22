@@ -214,6 +214,8 @@
   <div
     class="details-modal-backdrop"
     on:click={handleDetailsBackdrop}
+    on:wheel|preventDefault|self
+    on:touchmove|preventDefault|self
     on:keydown={handleDetailsKeydown}
     tabindex="-1"
     role="dialog"
@@ -542,7 +544,8 @@
     justify-content: center;
     z-index: 1200;
     padding: 1rem;
-    overscroll-behavior: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   :global([data-theme='dark']) .details-modal-backdrop {

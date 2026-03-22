@@ -2675,7 +2675,7 @@
   "sharing.shareRevoked": "共享已撤销",
   "sharing.failedToRevoke": "撤销共享失败",
   "sharing.revokeAccess": "撤销访问权限",
-  "sharing.sharedFileNotice": "共享文件（{{permission}} 访问权限）",
+  "sharing.sharedChip": "共享 · {{permission}}",
   "gallery.filter.ownership": "所有权",
   "gallery.filter.allFiles": "所有文件",
   "gallery.filter.myFiles": "我的文件",

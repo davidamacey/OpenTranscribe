@@ -2675,7 +2675,7 @@
   "sharing.shareRevoked": "共有が取り消されました",
   "sharing.failedToRevoke": "共有の取り消しに失敗しました",
   "sharing.revokeAccess": "アクセスを取り消す",
-  "sharing.sharedFileNotice": "共有ファイル（{{permission}} アクセス）",
+  "sharing.sharedChip": "共有 · {{permission}}",
   "gallery.filter.ownership": "所有権",
   "gallery.filter.allFiles": "すべてのファイル",
   "gallery.filter.myFiles": "マイファイル",

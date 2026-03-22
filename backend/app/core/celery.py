@@ -257,9 +257,19 @@ def preload_models(**kwargs):
 
         config = TranscriptionConfig.from_environment()
         if config.device == "cuda":
+            import torch
+
             from app.transcription.model_manager import ModelManager
 
             ModelManager.get_instance().ensure_models_loaded(config)
+
+            # Enable TF32 AFTER model loading. PyAnnote's fix_reproducibility()
+            # disables TF32 during Pipeline.from_pretrained(). Re-enabling here
+            # gives Whisper ~15-20% speedup on Ampere+ GPUs (RTX 3000+, A-series).
+            # pipeline.py also re-enables after each diarization run.
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            logger.info("TF32 enabled for Tensor Core acceleration")
 
             # Pin the model name so subsequent tasks use the loaded model,
             # even if the admin changes the DB setting before restarting.

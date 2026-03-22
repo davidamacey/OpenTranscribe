@@ -22,13 +22,16 @@
   export let zIndex = 1000;
   export let onClose: () => void = () => {};
 
-  // Lock body scroll when modal is open
+  // Lock page scroll when modal is open
   $: if (typeof document !== 'undefined') {
-    document.body.style.overflow = isOpen ? 'hidden' : '';
+    const lock = isOpen ? 'hidden' : '';
+    document.documentElement.style.overflow = lock;
+    document.body.style.overflow = lock;
   }
 
   onDestroy(() => {
     if (typeof document !== 'undefined') {
+      document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
     }
   });
@@ -47,7 +50,7 @@
 {#if isOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-backdrop" style="z-index: {zIndex}" on:click={handleBackdropClick}>
+  <div class="modal-backdrop" style="z-index: {zIndex}" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
     <div class="modal-container" style="max-width: {maxWidth}">
       <div class="modal-header">
         {#if $$slots.header}
@@ -88,7 +91,8 @@
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    overscroll-behavior: contain;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .modal-container {

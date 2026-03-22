@@ -5,6 +5,7 @@
 
   export let file: any = null;
   export let currentProcessingStep: string = '';
+  export let sharedPermission: string | null = null;
 
   let isExpanded = false;
   let isEditingTitle = false;
@@ -140,6 +141,17 @@
     {:else}
       <div class="title-display-container">
         <h1>{getDisplayName(file)}</h1>
+        {#if sharedPermission}
+          <span class="shared-chip">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            {$t('sharing.sharedChip', { permission: sharedPermission })}
+          </span>
+        {/if}
         <button
           type="button"
           on:click={startEditingTitle}
@@ -540,6 +552,27 @@
   .edit-btn:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
+  }
+
+  .shared-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--primary-color);
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-bottom: 16px;
+    text-transform: capitalize;
+  }
+
+  :global(.dark) .shared-chip {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
   }
 
   .title-edit-container {
