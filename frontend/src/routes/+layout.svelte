@@ -108,9 +108,20 @@
     {/if}
 
     {#if $isAuthenticated}
-      <AppContent>
-        <slot />
-      </AppContent>
+      {@const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password']}
+      {#if publicPaths.includes($page.url.pathname)}
+        <!-- Authenticated but still on login/register page — show loading while navigating away -->
+        <div class="loading-app">
+          <div class="loading-brand">
+            <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />
+            <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+          </div>
+        </div>
+      {:else}
+        <AppContent>
+          <slot />
+        </AppContent>
+      {/if}
     {:else}
       <main class="content no-navbar">
         <slot />

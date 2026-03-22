@@ -92,7 +92,7 @@
 
         if (result.success) {
           loginSuccess = true;
-          goto('/', { replaceState: true });
+          setTimeout(() => goto('/', { replaceState: true }), 600);
           return;
         } else {
           // Only show error if it's not a state-related issue (likely double-request)
@@ -234,13 +234,13 @@
 
       if (result.success) {
         loginSuccess = true;
+        loading = false;
 
-        // Start prefetching dashboard data immediately (auth cookie already set)
-        const { prefetchDashboardData } = await import('$lib/prefetch');
-        prefetchDashboardData();
+        // Prefetch dashboard data while showing success state
+        import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
 
-        // Navigate immediately — the fullpage success state prevents any flicker
-        await goto('/', { replaceState: true });
+        // Brief delay so the success state is visible before navigation
+        setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
         console.error('Login.svelte: Login failed:', result.message);
         toastStore.error(result.message || $t('auth.loginFailed'));
@@ -303,7 +303,7 @@
 
     if (result.success) {
       loginSuccess = true;
-      goto('/', { replaceState: true });
+      setTimeout(() => goto('/', { replaceState: true }), 600);
     } else {
       toastStore.error(result.message || $t('auth.loginFailed'));
     }
@@ -323,7 +323,7 @@
 
       if (result.success) {
         loginSuccess = true;
-        goto('/', { replaceState: true });
+        setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
         toastStore.error(result.message || $t('auth.mfaVerificationFailed') || 'Verification failed');
         mfaCode = "";
