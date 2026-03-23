@@ -189,6 +189,9 @@
     }
 
     .modal-backdrop {
+      /* Raise above the navbar (z-index 1200) on mobile so the modal
+         header and close button are not hidden behind it */
+      z-index: 1300 !important;
       align-items: stretch;
     }
 
