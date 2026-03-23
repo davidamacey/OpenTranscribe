@@ -17,6 +17,7 @@ NC='\033[0m' # No Color
 DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME:-davidamacey}"
 REPO_BACKEND="${DOCKERHUB_USERNAME}/opentranscribe-backend"
 REPO_FRONTEND="${DOCKERHUB_USERNAME}/opentranscribe-frontend"
+REPO_DOCS="${DOCKERHUB_USERNAME}/opentranscribe-docs"
 SCAN_TARGET="${1:-all}"
 OUTPUT_DIR="${OUTPUT_DIR:-./security-reports}"
 SEVERITY_THRESHOLD="${SEVERITY_THRESHOLD:-MEDIUM}"
@@ -320,6 +321,10 @@ scan_component() {
             dockerfile="frontend/Dockerfile.prod"
             image="${REPO_FRONTEND}:latest"
             ;;
+        docs)
+            dockerfile="docs-site/Dockerfile"
+            image="${REPO_DOCS}:latest"
+            ;;
         *)
             print_error "Invalid component: ${component}"
             return 1
@@ -464,7 +469,8 @@ Tools used:
 Options:
     backend     Scan only backend image
     frontend    Scan only frontend image
-    all         Scan both images (default)
+    docs        Scan only docs image
+    all         Scan all images (default)
     install     Install all required tools
     help        Show this help message
 
@@ -533,7 +539,7 @@ main() {
             show_usage
             exit 0
             ;;
-        backend|frontend)
+        backend|frontend|docs)
             # Check required tools
             install_trivy
             install_grype
@@ -558,7 +564,10 @@ main() {
             scan_component "frontend"
             frontend_exit=$?
 
-            exit_code=$((backend_exit + frontend_exit))
+            scan_component "docs"
+            docs_exit=$?
+
+            exit_code=$((backend_exit + frontend_exit + docs_exit))
             ;;
         *)
             print_error "Invalid option: ${SCAN_TARGET}"

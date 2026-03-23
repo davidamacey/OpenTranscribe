@@ -1,4 +1,5 @@
 # OpenTranscribe One-Line Installation Guide
+<!-- Updated for v0.4.0 -->
 
 ## 🚀 Quick Installation (Any Platform)
 
@@ -68,15 +69,18 @@ curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/s
 
 | Platform | Device | Precision | Batch Size | Recommended Model |
 |----------|--------|-----------|------------|-------------------|
-| Linux + NVIDIA RTX 40x0 | `cuda` | `float16` | `16` | `large-v2` |
-| Linux + NVIDIA RTX 30x0 | `cuda` | `float16` | `8-12` | `large-v2` |
+| Linux + NVIDIA RTX 40x0 | `cuda` | `float16` | `16` | `large-v3-turbo` |
+| Linux + NVIDIA RTX 30x0 | `cuda` | `float16` | `8-12` | `large-v3-turbo` |
+| Linux + NVIDIA Blackwell (GB10x/GB20x) | `cuda` | `float16` | `16` | `large-v3-turbo` |
 | Linux + NVIDIA GTX/older | `cuda` | `float32` | `4-8` | `medium` |
-| macOS + M2 Max/Ultra | `mps` | `float32` | `8` | `medium` |
-| macOS + M1/M2 | `mps` | `float32` | `4-6` | `small` |
+| macOS + M2 Max/Ultra | `mps` | `float32` | `8` | `large-v3-turbo` |
+| macOS + M1/M2 | `mps` | `float32` | `4-6` | `medium` |
 | Intel Mac | `cpu` | `int8` | `2-4` | `base` |
 | Any CPU (16+ cores) | `cpu` | `int8` | `4` | `small` |
 | Any CPU (8+ cores) | `cpu` | `int8` | `2` | `base` |
 | Any CPU (4 cores) | `cpu` | `int8` | `1` | `base` |
+
+> **Note:** `large-v3-turbo` is the default model as of v0.4.0 — approximately 6x faster than `large-v2` for English and most languages. Use `large-v3` when translation to English or maximum multilingual accuracy is required (turbo was not trained for translation tasks).
 
 ## 🚀 After Installation
 
@@ -150,6 +154,20 @@ All authentication methods support:
 - **Audit Logging**: Comprehensive logging of all auth events
 
 See [SECURITY.md](SECURITY.md) for detailed security configuration and [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md) for verification procedures.
+
+## GPU-Free (Lite) Deployment
+
+v0.4.0 introduces `DEPLOYMENT_MODE=lite` for environments without a local GPU. In lite mode all AI transcription is handled by cloud ASR providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, Azure, AWS, Speechmatics, Gladia) — no WhisperX or PyAnnote containers are started.
+
+```bash
+# Add to .env
+DEPLOYMENT_MODE=lite
+
+# Configure at least one cloud ASR provider, e.g.:
+DEEPGRAM_API_KEY=your-key
+```
+
+Lite mode is also useful for development and CI environments where a GPU is not available. Full local GPU mode remains the default (`DEPLOYMENT_MODE=full`).
 
 ## 🔒 HTTPS/SSL Setup (For Network Access)
 

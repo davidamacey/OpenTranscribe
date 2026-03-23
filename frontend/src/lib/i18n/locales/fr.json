@@ -803,6 +803,7 @@
   "nav.settings": "Paramètres",
   "nav.signedInAs": "Connecté en tant que",
   "nav.speakers": "Locuteurs",
+  "nav.docs": "Docs",
   "nav.stopRecording": "Arrêter l'enregistrement",
   "nav.uploadRecording": "Télécharger l'enregistrement",
   "nav.uploadStarted": "Téléchargement démarré : {{filename}}",

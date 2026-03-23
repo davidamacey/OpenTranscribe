@@ -16,36 +16,50 @@ This directory contains utility scripts for OpenTranscribe backend operations.
 
 - **`db_inspect.py`** - Database inspection utility for debugging
   - Usage: `python scripts/db_inspect.py`
-  - Useful for debugging tag tables and database structure
+  - Inspect current schema and table state
 
 - **`query_tags.py`** - Database query utility for tag debugging
   - Usage: `python scripts/query_tags.py`
-  - Helps troubleshoot tag-related database issues
+
+- **`fix_error_status.py`** - Fix files stuck in error state
+  - Usage: `python scripts/fix_error_status.py`
 
 ### Infrastructure Setup Scripts
 
 - **`create_minio_bucket.py`** - Creates MinIO bucket for file storage
   - Usage: `python scripts/create_minio_bucket.py`
-  - Creates the required bucket if not auto-created by the application
-  - Configures bucket policies and settings for optimal file storage
+  - Creates the required bucket if not auto-created; usually not needed (startup handles this)
 
 - **`create_opensearch_indexes.py`** - Creates OpenSearch indexes for search functionality
   - Usage: `python scripts/create_opensearch_indexes.py`
-  - Sets up required indexes for transcript and speaker search
-  - Configures search mappings and analyzers for optimal text search
+  - Usually not needed — the backend startup runner creates indexes automatically
+
+### Benchmarking Scripts
+
+- **`benchmark_migration.py`** - Benchmark speaker embedding migration performance
+- **`benchmark_queries.py`** - Benchmark database query performance
+- **`compare_benchmarks.py`** - Compare benchmark results between runs
+
+### Operational Scripts
+
+- **`blackwell_patches.py`** - NVIDIA Blackwell GPU compatibility patches
+- **`retry_youtube_auth_errors_staggered.py`** - Retry YouTube downloads that failed due to auth errors
 
 ## Script Categories
 
 ### Development & Debugging
-Scripts for development workflow and troubleshooting:
-- `create_admin.py` - Manual admin user creation
-- `db_inspect.py` - Database state inspection
-- `query_tags.py` - Tag system debugging
+- `create_admin.py` — Manual admin user creation
+- `db_inspect.py` — Database state inspection
+- `query_tags.py` — Tag system debugging
+- `fix_error_status.py` — Fix stuck error-state files
 
 ### Infrastructure Setup
-Scripts for initial system setup and configuration:
-- `create_minio_bucket.py` - Object storage bucket creation
-- `create_opensearch_indexes.py` - Search index initialization
+- `create_minio_bucket.py` — Object storage bucket creation (usually auto-handled)
+- `create_opensearch_indexes.py` — Search index initialization (usually auto-handled)
+
+### Performance & Operations
+- `benchmark_migration.py`, `benchmark_queries.py`, `compare_benchmarks.py` — Performance benchmarking
+- `retry_youtube_auth_errors_staggered.py` — Batch retry YouTube auth failures
 
 ## Usage Notes
 

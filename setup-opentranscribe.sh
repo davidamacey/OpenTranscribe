@@ -1895,12 +1895,14 @@ display_summary() {
     if [[ -n "$NGINX_SERVER_NAME" ]]; then
         echo "  🔒 HTTPS Mode (via NGINX reverse proxy)"
         echo "  • Web Interface:     https://$NGINX_SERVER_NAME"
+        echo "  • Documentation:     https://$NGINX_SERVER_NAME/docs/"
         echo "  • API:               https://$NGINX_SERVER_NAME/api"
         echo "  • API Documentation: https://$NGINX_SERVER_NAME/api/docs"
         echo "  • Task Monitor:      https://$NGINX_SERVER_NAME/flower/"
         echo "  • MinIO Console:     https://$NGINX_SERVER_NAME/minio/"
     else
         echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
+        echo "  • Documentation:     http://localhost:${FRONTEND_PORT:-5173}/docs/"
         echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
         echo "  • Task Monitor:      http://localhost:${FLOWER_PORT:-5175}/flower"
         echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"

@@ -105,7 +105,7 @@ speakers = np.array([tree[w.start] for w in words])
 | 150 segments, 1,349 words | 10.2 seconds | 0.037 seconds | **273x** |
 | Algorithm complexity | O(n * m) per word | O(n log m) total | -- |
 
-This optimization was contributed upstream as a pull request to the WhisperX repository. The implementation is in `backend/app/utils/fast_speaker_assignment.py`.
+This optimization was contributed upstream as a pull request to the WhisperX repository. The implementation is in `backend/app/transcription/speaker_assigner.py`.
 
 ### Vectorized Segment Deduplication
 

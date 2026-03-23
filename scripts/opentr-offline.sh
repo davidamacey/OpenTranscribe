@@ -282,7 +282,7 @@ cmd_health() {
     build_compose_files "false"
 
     # Check each service
-    local services=("postgres" "redis" "minio" "opensearch" "backend" "celery-worker" "celery-download-worker" "celery-cpu-worker" "celery-nlp-worker" "frontend" "flower")
+    local services=("postgres" "redis" "minio" "opensearch" "backend" "celery-worker" "celery-download-worker" "celery-cpu-worker" "celery-nlp-worker" "frontend" "flower" "docs")
 
     for service in "${services[@]}"; do
         if dc ps "$service" 2>/dev/null | grep -q "Up"; then

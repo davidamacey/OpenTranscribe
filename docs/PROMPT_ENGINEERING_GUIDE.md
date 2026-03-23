@@ -558,13 +558,21 @@ class PromptTester:
 
 ### Priority 2 Improvements (Medium Impact, Medium Effort)
 
-⏳ **Add Few-Shot Examples**
-- Include 2-3 examples in summarization prompt
-- Files: `database/init_db.sql`
+✅ **Add Few-Shot Examples**
+- Included in summarization prompt
+- Files: `backend/app/services/llm_service.py`
 
-⏳ **Quote Extraction for Speaker ID**
-- Prefill response requesting quotes first
-- Files: `llm_service.py` `identify_speakers` method
+✅ **Quote Extraction for Speaker ID**
+- Prefill response requests quotes first
+- Files: `backend/app/services/llm_service.py` `identify_speakers` method
+
+✅ **Per-Collection Prompts**
+- Custom system prompts scoped to collections
+- See "Per-Collection Prompts" section above
+
+✅ **Org Context Injection**
+- Organization-level context block prepended to system prompts
+- Configured via Settings → LLM → Organization Context
 
 ⏳ **Context Overlap in Chunking**
 - Add previous summary to next chunk context
@@ -597,7 +605,86 @@ class PromptTester:
 
 ---
 
+## Application-Specific Features (v0.4.0)
+
+### Per-Collection Prompts
+
+OpenTranscribe v0.4.0 supports custom system prompts scoped to individual collections. This allows different teams or use-cases to get purpose-specific summaries without affecting other users.
+
+**How it works:**
+- Each collection can store a `default_prompt` in the database (added in migration `v190_add_collection_default_prompt.py`)
+- At summarization time, the system resolves the prompt in priority order:
+  1. File-level override (if set)
+  2. Collection-level prompt (if the file belongs to a collection with a custom prompt)
+  3. User-level default prompt
+  4. System-level default prompt
+
+**Best practices for collection prompts:**
+- Keep collection prompts focused on the domain (e.g., "legal depositions", "sales calls", "medical interviews")
+- Include role-specific instructions in the collection prompt rather than the user default
+- Collection prompts are inherited by all files added to that collection
+
+**Example — Legal deposition collection:**
+```xml
+<task_instructions>
+You are a legal analyst specializing in deposition summaries. Analyze this deposition transcript and produce a structured legal brief.
+
+Focus on:
+- Witness admissions and concessions
+- Contradictions with prior statements
+- Key facts established under oath
+- Areas where counsel objected
+
+Output must be in formal legal language suitable for inclusion in court filings.
+</task_instructions>
+```
+
+### Organizational Context Injection
+
+OpenTranscribe can inject an organization-level context block into prompts to improve relevance for enterprise deployments. Configure via `Settings → LLM → Organization Context`.
+
+**What to include in org context:**
+- Organization name and domain
+- Key personnel titles (e.g., "CEO is referred to as 'the executive'")
+- Domain-specific terminology glossary
+- Standard output format requirements
+
+**Example org context:**
+```
+Organization: Acme Corporation (healthcare software)
+Domain: Healthcare IT, EHR systems, HIPAA compliance
+Key roles: CTO (technology decisions), CPO (product roadmap), CMO (clinical affairs)
+Terminology: "the platform" = Acme's EHR product, "providers" = healthcare providers (not software vendors)
+Output: All summaries must flag any mention of patient data or HIPAA implications.
+```
+
+When org context is configured, it is prepended to the system prompt for all summarization tasks.
+
+### Disabling AI Summary Per File or Per User
+
+Users can disable automatic AI summary generation:
+
+**Per-user toggle** (Settings → AI Features → Auto-Summary):
+- When disabled, the "Generate Summary" button is still available for manual triggering
+- Useful for users who want to control when LLM API calls are made
+- Setting stored in `user_settings` table
+
+**Per-file disable:**
+- Set `ai_summary_enabled=false` on the file record via the API or UI
+- Summary button is hidden in the file detail view
+- Added in migration `v351_add_ai_summary_settings.py`
+
+**Prompt engineering implication:** When building custom integrations, check `ai_summary_settings.enabled` before constructing and sending prompts. Never call the LLM if the user or file has disabled summaries.
+
+---
+
 ## Changelog
+
+### v0.4.0 - 2026-03
+- Added per-collection prompt documentation
+- Added organizational context injection guidance
+- Added AI summary disable toggle documentation
+- Updated Quick Reference to reflect implemented vs. planned status
 
 ### v1.0 - 2025-01-03
 - Initial guide created from Anthropic's official documentation

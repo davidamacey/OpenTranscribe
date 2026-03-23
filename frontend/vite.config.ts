@@ -73,6 +73,13 @@ export default defineConfig(({ mode }) => {
             ).toString('base64')}`,
           },
         },
+        // Embedded docs proxy - mirrors the nginx /docs/ location block
+        // Allows offline access to documentation without leaving the app
+        '/docs': {
+          target: 'http://docs:8080',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/docs/, ''),
+        },
         // S3 proxy for presigned URLs (thumbnails, media files)
         // Mirrors the nginx /s3/ location block for dev mode parity
         '/s3': {

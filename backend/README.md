@@ -4,9 +4,9 @@
   # Backend
 </div>
 
-A modern FastAPI-based backend for AI-powered transcription and media processing.
+A modern FastAPI-based backend for AI-powered transcription and media processing. This is OpenTranscribe v0.4.0.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Docker and Docker Compose
@@ -31,7 +31,7 @@ curl http://localhost:5174/health
 - **ReDoc**: http://localhost:5174/redoc
 - **Flower Dashboard**: http://localhost:5175/flower
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
 - [Directory Structure](#directory-structure)
@@ -48,55 +48,55 @@ curl http://localhost:5174/health
 OpenTranscribe backend is built with modern Python technologies:
 
 ### Core Technologies
+- **Python 3.11+** - Minimum Python version (3.12 recommended)
 - **FastAPI** - High-performance async web framework
 - **SQLAlchemy 2.0** - Modern Python SQL toolkit and ORM
-- **Alembic** - Database migration management
-- **Celery** - Distributed task queue for background processing
-- **Redis** - Task broker and caching
+- **Alembic** - Database migration management (v000–v355 migrations)
+- **Celery** - Distributed task queue; GPU worker, CPU worker, and embedding worker
+- **Redis** - Task broker and caching (shared singleton via `app/core/redis.py`)
 - **PostgreSQL** - Primary database
 - **MinIO** - S3-compatible object storage
-- **OpenSearch** - Full-text and vector search
+- **OpenSearch 3.4** - Full-text search, vector search, and neural search (ML Commons)
 
 ### AI/ML Stack
-- **WhisperX** - Advanced speech recognition with word-level alignment
-- **PyAnnote** - Speaker diarization, voice fingerprinting, and cross-video speaker matching
-- **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Claude, OpenRouter
+- **WhisperX** - Advanced speech recognition (default: `large-v3-turbo`, 40x realtime on A6000)
+- **PyAnnote v4** - Speaker diarization, voice fingerprinting, cross-video speaker matching
+- **10 ASR Providers** - Local GPU, Deepgram, AssemblyAI, OpenAI Whisper API, Google, Azure, AWS, Speechmatics, Gladia, pyannote.ai
+- **Multi-Provider LLM Integration** - vLLM, OpenAI, Ollama, Anthropic, OpenRouter
 - **Intelligent Context Processing** - Section-by-section analysis for unlimited transcript lengths
 - **FFmpeg** - Media processing and conversion
-- **OpenSearch Vector Search** - Embedding-based speaker similarity matching
+- **OpenSearch Neural Search** - Hybrid BM25+vector search with ML Commons sentence-transformers
 
-#### Enhanced AI Processing Features
-- **Fast Batch Processing**: WhisperX leverages faster-whisper for batched inference (70x realtime with large-v2)
+#### AI Processing Features
+- **Fast Batch Processing**: WhisperX with faster-whisper; `large-v3-turbo` is default (40x GPU realtime, 54x peak at concurrency=8)
 - **100+ Language Transcription**: Support for 100+ languages with configurable source language
-- **Accurate Word-level Timestamps**: Uses wav2vec2 alignment for precise word timing (~42 languages supported)
-- **Optional English Translation**: Toggle to translate non-English audio or keep original language
-- **Advanced Speaker Diarization**: Identifies different speakers using PyAnnote.audio with voice fingerprinting
-- **Cross-Video Speaker Recognition**: AI-powered matching of speakers across different media files using embedding similarity
-- **Speaker Profile Management**: Global speaker profiles that persist across all transcriptions
-- **AI-Powered Speaker Suggestions**: Automatic speaker identification with confidence scoring and verification workflow
-- **Speaker Merge**: Combine duplicate speakers into single profiles with segment reassignment
-- **LLM-Powered Summarization**: Generate BLUF (Bottom Line Up Front) format summaries with action items, decisions, and speaker analysis
-- **Multilingual LLM Output**: Generate summaries in 12 different languages (en, es, fr, de, pt, zh, ja, ko, it, ru, ar, hi)
-- **Intelligent Section Processing**: Automatically handles transcripts of any length using context-aware chunking and summary stitching
-- **Universal Model Compatibility**: Works with models from 3B parameters (Ollama) to 200B+ parameters (Claude) via adaptive processing
-- **Model Auto-Discovery**: Automatic detection of available models for OpenAI-compatible providers
-- **Video Metadata Extraction**: Extracts detailed metadata from video files using ExifTool (resolution, frame rate, codec, etc.)
-- **Auto-Cleanup Garbage Segments**: Automatic detection and removal of erroneous transcription segments
-- **Pagination Support**: Efficient handling of large transcripts without browser performance issues
+- **Word-level Timestamps**: Native word-level timing via faster-whisper cross-attention DTW (all 100+ languages)
+- **Optional English Translation**: Toggle to translate non-English audio (use `large-v3` for translation; turbo cannot translate)
+- **Advanced Speaker Diarization**: PyAnnote.audio v4 with voice fingerprinting and GPU/MPS optimizations
+- **Cross-Video Speaker Recognition**: Embedding-based speaker matching across files, alias-based OpenSearch indices (`speakers` alias → versioned index)
+- **Speaker Profile Management**: Global profiles persisting across transcriptions; cosine scores correctly converted from OpenSearch `cosinesimil` space
+- **AI-Powered Speaker Suggestions**: LLM speaker ID with confidence scoring and manual verification workflow
+- **Speaker Merge**: Combine duplicate speakers with segment reassignment
+- **LLM-Powered Summarization**: BLUF format with action items, decisions, speaker analysis; 12 output languages
+- **Cloud ASR**: `DEPLOYMENT_MODE=lite` for GPU-free cloud ASR-only deployments
+- **Universal Media URL Support**: yt-dlp integration for 1800+ platforms
+- **Auto-Cleanup Garbage Segments**: Configurable detection and removal of erroneous segments
+- **Admin-Pinned ASR Model**: Admin sets local Whisper model via Super Admin UI; workers preload it at startup
 
 #### AI/ML Configuration
 Required environment variables for AI processing:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `WHISPER_MODEL` | Whisper model size to use | `large-v2` |
-| `DIARIZATION_MODEL` | Pyannote diarization model | `pyannote/speaker-diarization-3.1` |
+| `WHISPER_MODEL` | Whisper model to use (`large-v3-turbo`, `large-v3`, `large-v2`) | `large-v3-turbo` |
+| `DIARIZATION_MODEL` | PyAnnote diarization model | `pyannote/speaker-diarization-3.1` |
 | `BATCH_SIZE` | Batch size for processing (reduce if low on GPU memory) | `16` |
 | `COMPUTE_TYPE` | Computation precision (`float16` or `int8`) | `float16` |
 | `MIN_SPEAKERS` | Minimum number of speakers to detect (optional) | `1` |
-| `MAX_SPEAKERS` | Maximum number of speakers to detect (optional, can be increased to 50+ for large events) | `20` |
+| `MAX_SPEAKERS` | Maximum number of speakers to detect (optional, can be 50+ for large events) | `20` |
 | `HUGGINGFACE_TOKEN` | HuggingFace API token for diarization models | Required |
 | `MODEL_CACHE_DIR` | Host directory to cache downloaded models | `./models` |
+| `DEPLOYMENT_MODE` | Set to `lite` for GPU-free cloud ASR deployments | (unset) |
 
 **Note**: Language settings (source language, translate to English, LLM output language) are user-configurable via the Settings UI and stored per-user in the database.
 
@@ -105,8 +105,9 @@ OpenTranscribe automatically caches AI models for persistence across container r
 
 - **WhisperX Models**: Cached via HuggingFace Hub (~1.5GB)
 - **PyAnnote Models**: Cached via PyTorch/HuggingFace (~500MB)
-- **Alignment Models**: Cached via PyTorch Hub (~360MB)
-- **Total Storage**: ~2.9GB for complete model cache
+- **Sentence Transformers**: For neural search (~80MB)
+- **OpenSearch ML Models**: `all-MiniLM-L6-v2` for hybrid search (~80MB)
+- **Total Storage**: ~2.5GB for complete model cache
 
 Models are downloaded once on first use and automatically reused. Set `MODEL_CACHE_DIR` in your `.env` to specify the host directory for model storage.
 
@@ -141,28 +142,40 @@ backend/
 ├── app/                        # Main application package
 │   ├── api/                   # API layer
 │   │   ├── endpoints/         # API route handlers
-│   │   │   ├── files/        # File management modules
+│   │   │   ├── files/        # File management (upload, streaming, url_processing, etc.)
+│   │   │   ├── asr_settings.py  # ASR provider management + local model restart
+│   │   │   ├── groups.py     # User group management
+│   │   │   ├── media_collections.py  # Collection sharing
 │   │   │   ├── system.py     # System stats endpoint
 │   │   │   └── *.py          # Individual endpoint modules
 │   │   ├── router.py         # Main API router
 │   │   └── websockets.py     # WebSocket handlers
-│   ├── auth/                 # Authentication modules
+│   ├── auth/                 # Authentication modules (local, LDAP, Keycloak, PKI, MFA)
 │   ├── core/                 # Core configuration and setup
-│   │   └── constants.py      # Language constants and system defaults
+│   │   ├── constants.py      # Language constants, system defaults, OpenSearch model registry
+│   │   ├── enums.py          # Centralized FileStatus enum
+│   │   ├── exceptions.py     # Custom exception hierarchy
+│   │   └── redis.py          # Shared Redis singleton (get_redis())
 │   ├── db/                   # Database utilities
-│   │   └── migrations.py     # Automatic startup migrations
+│   │   └── migrations.py     # Automatic startup Alembic runner
 │   ├── models/               # SQLAlchemy ORM models
 │   ├── schemas/              # Pydantic validation schemas
-│   │   └── transcription_settings.py  # Transcription preferences
 │   ├── services/             # Business logic layer
+│   │   ├── interfaces.py     # Protocol interfaces (Storage, Search, Cache, Notification)
+│   │   ├── notification_service.py  # Unified send_task_notification() wrapper
+│   │   ├── progress_tracker.py      # EWMA ETA progress tracking
+│   │   └── ...               # 40+ service modules
 │   ├── tasks/                # Background task processing
-│   │   └── transcription/    # Modular transcription pipeline
+│   │   └── transcription/    # 3-stage pipeline (preprocess, gpu_transcription, postprocess)
 │   ├── utils/                # Common utilities
+│   │   └── transcript_builders.py  # Shared transcript formatting
 │   ├── main.py              # FastAPI application entry point
 │   └── initial_data.py      # Database initialization
-├── alembic/                  # Database migrations (production)
+├── alembic/                  # Alembic migrations (v000–v355)
 ├── scripts/                  # Utility scripts
 ├── tests/                    # Test suite
+│   ├── e2e/                  # Playwright E2E tests
+│   └── *.py                  # Backend unit/integration tests
 ├── requirements.txt          # Python dependencies
 ├── Dockerfile.prod           # Production container (multi-stage, non-root)
 └── README.md                 # This file
@@ -179,10 +192,10 @@ backend/
    ./opentr.sh shell backend # Access backend container
    ```
 
-2. **Manual setup** (if needed):
+2. **Local development** (outside Docker):
    ```bash
-   cd backend/
-   pip install -r requirements.txt
+   source backend/venv/bin/activate
+   pip install -r backend/requirements.txt
    uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
    ```
 
@@ -195,10 +208,11 @@ backend/
 
 2. **Database Changes**:
    ```bash
-   # Update database/init_db.sql
+   # Create new Alembic migration in backend/alembic/versions/
    # Update app/models/ SQLAlchemy models
    # Update app/schemas/ Pydantic schemas
-   ./opentr.sh reset dev  # Reset database with new schema
+   # Update app/db/migrations.py detection logic
+   ./opentr.sh reset dev  # Drops DB and runs full migration chain
    ```
 
 3. **Dependency Changes**:
@@ -209,11 +223,13 @@ backend/
 
 ### Code Style and Standards
 
-- **Python Style**: Follow PEP 8
-- **Type Hints**: Use throughout codebase
+- **Python 3.11+**: Minimum version; use `from __future__ import annotations` for modern syntax
+- **Linting**: `ruff check --fix .` then `ruff format .` (replaces black/isort/flake8)
+- **Line length**: 100 characters
+- **Type Hints**: Required on all new functions
 - **Docstrings**: Google-style docstrings for functions/classes
-- **Imports**: Organize imports (standard, third-party, local)
-- **Error Handling**: Use structured error responses
+- **Imports**: stdlib → third-party → local (ruff handles ordering)
+- **Error Handling**: Use `app/core/exceptions.py` hierarchy and structured error responses
 - **Async/Await**: Prefer async functions for I/O operations
 
 ### Adding New Features
@@ -275,11 +291,11 @@ backend/
 ### API Structure
 ```
 /api/
-├── /auth              # Authentication endpoints
+├── /auth              # Authentication (login, register, refresh, MFA, password policy, lockout)
 ├── /files             # File management with streaming support
 ├── /files/streaming   # Streaming and upload progress endpoints
 ├── /files/upload      # Enhanced upload handling with concurrency
-├── /files/url-processing # URL processing for video links
+├── /files/url-processing # URL processing for yt-dlp supported platforms
 ├── /users             # User management
 ├── /user-settings     # User-specific settings (recording, transcription preferences)
 ├── /system            # System statistics (CPU, memory, disk, GPU)
@@ -289,9 +305,13 @@ backend/
 ├── /speaker-profiles  # Global speaker profile management
 ├── /summarization     # LLM-powered summarization endpoints
 ├── /llm-settings      # User-specific LLM configuration management
+├── /asr-settings      # ASR provider management + local model set/restart
+├── /groups            # User group management
+├── /collection-shares # Collection sharing with permissions
+├── /file-retention    # File retention policy management
 ├── /tasks             # Task monitoring with enhanced progress tracking
-├── /search            # Search functionality
-└── /admin             # Admin operations
+├── /search            # Hybrid BM25+neural search
+└── /admin             # Admin operations (+ /admin/profile-embeddings/repair)
 ```
 
 ### Authentication
@@ -317,47 +337,54 @@ backend/
 }
 ```
 
-## 🗄️ Database Management
+## Database Management
 
-### Development Approach
-- **Direct SQL**: Schema defined in `database/init_db.sql`
-- **Quick Reset**: Use `./opentr.sh reset dev` for schema changes
+### Approach (All Environments)
+Alembic is the sole authority for database schema in all environments. Migrations run automatically on backend startup (`app/db/migrations.py` detects version and stamps untracked DBs).
+
+- **Migrations**: `backend/alembic/versions/` — v000 (bootstrap) through v355
 - **Models**: SQLAlchemy models in `app/models/`
 - **Validation**: Pydantic schemas in `app/schemas/`
-
-### Production Approach
-- **Migrations**: Alembic migrations for version control
-- **Deployment**: `alembic upgrade head` for production
-- **Rollback**: `alembic downgrade -1` if needed
+- **Quick Reset**: `./opentr.sh reset dev` drops DB and reruns full migration chain
+- **Production**: Backend auto-runs `alembic upgrade head` on startup
 
 ### Database Scripts
 ```bash
 # Development
-./opentr.sh reset dev              # Reset with new schema
+./opentr.sh reset dev              # Drop and recreate with full migration chain
 python scripts/db_inspect.py       # Inspect database state
-python scripts/create_admin.py     # Create admin user
+python scripts/create_admin.py     # Manually create admin user
 
-# Production (future)
-alembic upgrade head               # Apply migrations
-alembic revision --autogenerate    # Generate migration
+# Migrations
+alembic upgrade head               # Apply pending migrations
+alembic current                    # Show current migration version
+alembic downgrade -1               # Roll back one migration
 ```
 
 ## ⚙️ Background Tasks
 
 ### Task System
-- **Celery** with Redis broker
+- **Celery** with Redis broker (three worker types: GPU worker, CPU worker, embedding worker)
 - **Flower** monitoring at http://localhost:5175/flower
-- **Async processing** for CPU-intensive operations
+- **3-stage transcription pipeline**: `preprocess_task` → `gpu_transcription_task` → `postprocess_task`
+- Async enrichment decoupling — postprocess no longer blocks GPU for enrichment
+
+### Worker Types
+- **`celery-worker`**: GPU worker — runs `preprocess`, `gpu_transcription`, `postprocess` tasks
+- **`celery-cpu-worker`**: CPU worker — summarization, analytics, cleanup, maintenance
+- **`celery-embedding-worker`**: Embedding worker — speaker embedding extraction and reassignment
 
 ### Available Tasks
-- **Transcription**: WhisperX + speaker diarization with voice fingerprinting (100+ languages)
-- **Speaker Matching**: Cross-video speaker identification and profile matching
-- **Speaker Merge**: Combine duplicate speakers with segment reassignment
-- **YouTube Processing**: Enhanced URL processing for video links with metadata extraction
-- **Analysis**: Transcript analysis and metrics
-- **Summarization**: Multi-provider LLM-powered summarization with BLUF format (12 output languages)
-- **Garbage Cleanup**: Automatic detection and removal of erroneous transcription segments
-- **Notification System**: Real-time WebSocket updates for all processing stages
+- **Transcription**: 3-stage pipeline with WhisperX + speaker diarization (100+ languages)
+- **Cloud ASR**: Deepgram, AssemblyAI, OpenAI, Google, Azure, AWS, Speechmatics, Gladia
+- **Speaker Embedding**: Extraction and reassignment (`speaker_embedding_task.py`)
+- **Speaker Identification**: LLM-powered name suggestions (`speaker_identification_task.py`)
+- **Speaker Updates**: Background speaker record updates (`speaker_update_task.py`)
+- **Reindexing**: Search reindexing with stop/cancel support (`reindex_task.py`)
+- **File Retention**: Auto-deletion based on admin policy (`file_retention_task.py`)
+- **Summarization**: Multi-provider LLM, BLUF format, 12 output languages
+- **Analytics**: Transcript analytics and metrics
+- **Cleanup**: Stuck file detection and recovery
 
 ### Task Monitoring
 ```bash
@@ -368,31 +395,38 @@ alembic revision --autogenerate    # Generate migration
 # http://localhost:5175/flower
 ```
 
-## 🧪 Testing
+## Testing
 
 ### Test Suite
 ```bash
-# Run all tests
-./opentr.sh shell backend
-pytest tests/
+# Activate venv
+source backend/venv/bin/activate
 
-# Run specific test
-pytest tests/api/endpoints/test_files.py
+# Run all backend tests (parallel, recommended)
+pytest backend/tests/ -n 4 --ignore=backend/tests/e2e -q
+
+# Run specific test file
+pytest backend/tests/api/endpoints/test_auth_comprehensive.py -v
+
+# ASR settings tests (68 tests)
+pytest backend/tests/test_asr_settings.py -v
+
+# E2E tests (requires dev environment running)
+pytest backend/tests/e2e/ -v
 
 # Run with coverage
-pytest --cov=app tests/
+pytest --cov=app backend/tests/ --ignore=backend/tests/e2e
 ```
 
 ### Test Structure
-- **Unit Tests**: Individual component testing
-- **Integration Tests**: API endpoint testing
-- **Database Tests**: Model and schema validation
-- **Mock Services**: External service mocking
+- **Unit/Integration Tests** (`tests/`): API endpoints, auth, ASR settings, FIPS compliance, MFA, PKI
+- **E2E Tests** (`tests/e2e/`): Playwright browser tests — login, registration, auth flows, MFA, PKI, LDAP/Keycloak
+- **Auth tests**: See `tests/AUTH_TEST_SETUP.md` for credentials and container setup
 
 ### Test Configuration
-- **Isolated Database**: SQLite in-memory for tests
-- **Disabled Services**: S3, Celery, Redis disabled in tests
-- **Fixtures**: Common test data and setup
+- **Database**: PostgreSQL with transaction rollback isolation (uses Docker-exposed port 5176)
+- **Disabled by default**: S3/MinIO, Celery AI imports, Redis, OpenSearch
+- **Optional test suites**: Enable with env vars (`RUN_LLM_TESTS`, `RUN_FIPS_TESTS`, `RUN_MFA_TESTS`, `RUN_PKI_TESTS`, `RUN_AUTH_E2E`)
 
 ## 🚀 Deployment
 

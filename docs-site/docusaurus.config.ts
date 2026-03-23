@@ -23,8 +23,10 @@ const config: Config = {
   // Set the production url of your site here
   url: 'https://docs.opentranscribe.app',
   // Set the /<baseUrl>/ pathname under which your site is served
-  // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/',
+  // DOCS_BASE_URL env var allows building with /docs/ prefix for in-app embedding
+  // (the Docker build sets this to /docs/ so internal links work when proxied at /docs/)
+  // The public site at docs.opentranscribe.app builds with the default '/'
+  baseUrl: process.env.DOCS_BASE_URL || '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.

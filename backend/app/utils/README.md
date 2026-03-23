@@ -15,17 +15,55 @@ This directory contains common utilities and helper functions that provide reusa
 - **Error Handling**: Robust error handling with consistent responses
 - **Type Safety**: Full type hints for better development experience
 
-## 📁 Utility Modules
+## Utility Modules
 
 ```
 utils/
 ├── auth_decorators.py      # Authentication and authorization decorators
-├── db_helpers.py          # Database query utilities and helpers
-├── error_handlers.py      # Standardized error handling
-└── task_utils.py          # Celery task management utilities
+├── db_helpers.py           # Database query utilities and helpers
+├── error_handlers.py       # Standardized error handling
+├── error_classification.py # Fine-grained error classification
+├── task_utils.py           # Celery task management utilities
+├── task_lock.py            # Distributed task locking
+├── transcript_builders.py  # Shared transcript formatting functions (v0.4.0)
+├── embedding_helpers.py    # Voice embedding utility functions
+├── encryption.py           # Field-level encryption for API keys
+├── filename.py             # Filename processing and sanitization
+├── file_hash.py            # File content hashing
+├── file_validation.py      # Upload validation helpers
+├── segment_dedup.py        # Transcript segment deduplication
+├── segment_postprocess.py  # Segment post-processing pipeline
+├── stats_helpers.py        # Statistics computation helpers
+├── summary_settings.py     # Summary configuration helpers
+├── text_preprocessing.py   # Text normalization utilities
+├── thumbnail.py            # Thumbnail generation
+├── time_format.py          # Time formatting utilities
+├── url_validation.py       # URL validation and platform detection
+├── user_settings_helpers.py # User settings access helpers
+├── uuid_helpers.py         # UUID generation utilities
+├── websocket_notify.py     # WebSocket notification helpers
+├── hardware_detection.py   # GPU/hardware detection
+├── vram_profiler.py        # VRAM usage profiling
+├── nvml_monitor.py         # NVIDIA NVML monitoring
+├── pyannote_utils.py       # PyAnnote utility functions
+├── temp_file_utils.py      # Temporary file management
+├── diarization_merge.py    # Diarization result merging
+├── prompt_manager.py       # LLM prompt template management
+└── transcript_comparison.py # Transcript diff/comparison
 ```
 
-## 🔐 Authentication Decorators (`auth_decorators.py`)
+## Transcript Builders (`transcript_builders.py`) — v0.4.0
+
+Shared transcript formatting functions used across multiple tasks and services. Previously this logic was duplicated in individual task files; it was centralized in v0.4.0.
+
+Key functions:
+- Building full-text transcript strings for LLM/search use
+- Formatting segment data for export (SRT, VTT, plain text)
+- Speaker-attributed transcript assembly
+
+Import from here rather than reimplementing formatting logic in task or service code.
+
+## Authentication Decorators (`auth_decorators.py`)
 
 ### Purpose
 Provides reusable decorators and helpers for authentication and authorization across endpoints.
@@ -170,7 +208,7 @@ class FileService:
 - **Error Handling**: Graceful handling of database errors
 - **Batch Operations**: Efficient bulk operations
 
-## 🚨 Error Handlers (`error_handlers.py`)
+## Error Handlers (`error_handlers.py`)
 
 ### Purpose
 Provides standardized error handling patterns and HTTP exception generation.

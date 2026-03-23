@@ -1,5 +1,7 @@
 # FIPS 140-2 Compliance Guide
 
+> **Note**: FIPS 140-3 is now the current standard (mandatory for new federal systems since September 2021). This guide covers FIPS 140-2 for legacy deployments. For new deployments, see [FIPS_140_3_COMPLIANCE.md](FIPS_140_3_COMPLIANCE.md).
+
 This guide explains how to deploy OpenTranscribe in a FIPS 140-2 compliant configuration for government and high-security environments.
 
 ## Overview
@@ -25,6 +27,7 @@ PBKDF2_ITERATIONS=210000
 - Password hashing uses PBKDF2-SHA256 (NIST SP 800-132)
 - Automatic migration of existing bcrypt hashes on user login
 - 210,000 iterations (OWASP 2023 recommendation)
+- Sensitive auth configuration stored encrypted with AES-256-GCM (v0.4.0+)
 
 **No additional installation required** - the `passlib` library includes pure Python implementations.
 
@@ -283,7 +286,7 @@ services:
 
 ### Environment Variables
 
-Add to `.env` for FIPS deployment:
+Add to `.env` for FIPS 140-2 deployment:
 
 ```bash
 # ============================================================================
@@ -293,8 +296,11 @@ Add to `.env` for FIPS deployment:
 # Enable FIPS-approved algorithms in application
 FIPS_MODE=true
 
-# PBKDF2 iterations (OWASP 2023 recommendation)
+# PBKDF2 iterations (OWASP 2023 recommendation for FIPS 140-2)
 PBKDF2_ITERATIONS=210000
+
+# For FIPS 140-3, use PBKDF2_ITERATIONS_V3=600000 and FIPS_VERSION=140-3
+# See docs/FIPS_140_3_COMPLIANCE.md
 
 # Force TLS 1.2+ for all connections
 MINIO_SECURE=true

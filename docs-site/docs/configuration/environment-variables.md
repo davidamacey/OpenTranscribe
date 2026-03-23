@@ -161,6 +161,13 @@ SEARCH_NEURAL_BATCH_SIZE=5
 
 # Reindex refresh interval: flush Lucene segments every N files (default: 100)
 SEARCH_REINDEX_REFRESH_INTERVAL=100
+
+# Hybrid search over-fetch cap: max candidates per sub-query before RRF merge (default: 200)
+# Increase for large indexes where top-200 misses relevant results
+SEARCH_MAX_OVERFETCH=200
+
+# RRF rank constant: lower = more aggressive top-result boosting (default: 30)
+SEARCH_RRF_RANK_CONSTANT=30
 ```
 
 ### ML Commons Plugin
@@ -250,7 +257,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 ```bash
 # GPU Concurrent Model Sharing (multiple Celery threads share one model copy)
 GPU_CONCURRENT_REQUESTS=1  # auto calculates from VRAM: (total - 9GB) / 2GB, max 4
-GPU_WORKER_POOL=prefork    # Set to "threads" when GPU_CONCURRENT_REQUESTS > 1
+GPU_WORKER_POOL=threads    # Default: threads. Use "prefork" only for legacy single-threaded setups
+
+# Model preloading gate: set to true only on GPU workers to prevent CPU workers
+# from initializing CUDA contexts and causing memory leaks (default: false)
+PRELOAD_GPU_MODELS=false   # Set true in GPU worker compose service only
 
 # GPU Worker Max Tasks (restart after N tasks for memory safety)
 GPU_MAX_TASKS=100000       # Default: effectively never restart
@@ -332,6 +343,7 @@ MINIO_PORT=5178
 MINIO_CONSOLE_PORT=5179
 OPENSEARCH_PORT=5180
 OPENSEARCH_ADMIN_PORT=5181
+DOCS_PORT=3030
 ```
 
 ## HTTPS/SSL Configuration
@@ -369,7 +381,7 @@ CSP is enforced in production via `frontend/nginx.conf`. Development mode (Vite 
 
 ## File Retention
 
-OpenTranscribe does not currently enforce automatic file deletion, but this is a planned feature ([#134](https://github.com/davidamacey/OpenTranscribe/issues/134)). The design calls for an admin-configurable retention period (e.g., delete files older than N days) to support GDPR compliance and storage management in environments with sensitive information. When implemented, this will be an admin-only setting with audit logging of all deletions.
+OpenTranscribe supports admin-configurable automatic file retention ([#134](https://github.com/davidamacey/OpenTranscribe/issues/134)). Admins can set a retention period (delete files older than N days) to support GDPR compliance and storage management. File deletion is audit-logged and controlled exclusively by super admins via Settings → Admin → File Retention.
 
 ## URL Download Quality Settings
 

@@ -78,68 +78,80 @@ We take security vulnerabilities seriously. If you discover a security vulnerabi
 - Limit database access to necessary services only
 - Regularly backup database with encryption
 
-## Security Features
+## Security Features (v0.4.0)
 
 ### Core Security
-- JWT-based authentication with secure token rotation
-- Role-based access control (RBAC)
-- File type validation
-- Input sanitization
+- JWT-based authentication with secure refresh token rotation
+- Role-based access control (RBAC): `user`, `admin`, `super_admin`
+- AES-256-GCM encrypted authentication configuration stored in database
+- File type validation and input sanitization
 - CORS protection
-- Rate limiting capabilities
+- Content Security Policy (CSP) headers
+- Private MinIO buckets (no public object access)
+- Non-root container user (`appuser`, UID 1000) following principle of least privilege
+- Per-IP and per-user rate limiting on all auth and API endpoints
 
-### Authentication Methods
+### Enterprise Authentication (4-Method Hybrid)
 
-OpenTranscribe supports multiple authentication methods for different security requirements:
+All four methods can be active simultaneously. Users choose their preferred login method on the login screen.
 
 | Method | Description | Use Case |
 |--------|-------------|----------|
-| **Local** | bcrypt password hashing with SHA256 pre-hash | Default for standalone deployments |
-| **LDAP/AD** | LDAPS with service account binding | Enterprise Active Directory integration |
-| **OIDC/Keycloak** | OAuth 2.0 with PKCE flow | Single Sign-On, federated identity |
-| **PKI/X.509** | Certificate-based authentication | Government systems (CAC/PIV) |
+| **Local** | bcrypt_sha256 password hashing | Default for standalone deployments |
+| **LDAP/AD** | LDAPS with service account binding, username or email login | Enterprise Active Directory integration |
+| **OIDC/Keycloak** | OAuth 2.0 with PKCE, OIDC discovery, federated logout | Single Sign-On, federated identity |
+| **PKI/X.509** | mTLS client certificates, OCSP/CRL revocation | Government systems (CAC/PIV) |
 
-See detailed setup guides:
+Auth configuration is stored encrypted (AES-256-GCM) in the database and managed via the Super Admin UI. See detailed setup guides:
 - [LDAP Authentication](LDAP_AUTH.md)
 - [Keycloak/OIDC Setup](KEYCLOAK_SETUP.md)
 - [PKI/Certificate Authentication](PKI_SETUP.md)
+- [Auth Deployment Guide](AUTH_DEPLOYMENT_GUIDE.md)
 
 ### Multi-Factor Authentication (MFA)
 
-- **TOTP Support**: RFC 6238 compliant time-based one-time passwords
-- **Backup Codes**: Emergency recovery codes (stored hashed)
-- **Configurable Enforcement**: Can be required for specific roles or all users
-- **Device Trust**: Remember trusted devices to reduce friction
+- **TOTP**: RFC 6238 compliant time-based one-time passwords (HMAC-SHA1, 30-second window, 6 digits)
+- **Authenticator app compatible**: Google Authenticator, Microsoft Authenticator, Authy, FreeOTP, 1Password, etc.
+- **Backup Codes**: Emergency recovery codes (stored hashed with PBKDF2-SHA256)
+- **Configurable Enforcement**: Required for admins only, or for all users
+- **External IdP bypass**: PKI and Keycloak users bypass local MFA (their IdP handles it)
 
-### Password Security
+### Password Security (FedRAMP IA-5 Compliant)
 
 **Password Policies:**
 - Minimum length (configurable, default 12 characters)
 - Complexity requirements (uppercase, lowercase, numbers, symbols)
-- Password history (prevents reuse of last N passwords)
+- Password history enforcement (prevents reuse of last N passwords)
 - Expiration policies (configurable, optional)
-- Common password blacklist
+- Common password and pattern blacklist
 
 **Implementation:**
 - bcrypt_sha256 hashing (overcomes bcrypt's 72-byte limit)
+- PBKDF2-SHA256 available for FIPS mode (210,000 iterations FIPS 140-2; 600,000 iterations FIPS 140-3)
 - Automatic hash algorithm upgrade on login
 - Secure password reset with time-limited tokens
 
-### Account Lockout
+### Account Lockout (NIST AC-7 Compliant)
 
 - Configurable failed attempt threshold (default: 5 attempts)
 - Progressive lockout duration
 - Automatic unlock after timeout
-- Admin override capability
+- Admin override capability (lock/unlock via Admin UI)
 - Lockout events logged for security monitoring
+
+### Certificate Revocation (PKI)
+
+- **OCSP**: Real-time revocation checking — denied access within seconds of revocation
+- **CRL**: Periodic revocation list — configurable refresh interval (default 24 hours)
+- Both methods can be active simultaneously
 
 ### Session Management
 
-- Short-lived access tokens (configurable expiration)
-- Refresh token rotation on use
-- Secure token storage recommendations
-- Session invalidation on password change
-- Concurrent session limits (optional)
+- Short-lived JWT access tokens (configurable expiration, default 60 minutes)
+- Refresh token rotation on every use (stolen tokens become invalid after single use)
+- Concurrent session limits per user (configurable)
+- Session invalidation on password change and admin-forced logout
+- Idle timeout and absolute session timeout options
 
 ### Rate Limiting
 
@@ -151,48 +163,63 @@ Authentication endpoints are protected with rate limiting:
 
 ### Audit Logging
 
-All authentication events are logged for security monitoring:
-- Login attempts (success/failure)
-- Password changes
-- MFA enrollment/removal
-- Account lockouts
-- Session creation/termination
-- Administrative actions
+All authentication events are logged in structured **JSON** and **CEF (Common Event Format)** for SIEM integration:
+- Login attempts (success/failure with method, IP, user agent)
+- Password changes and MFA enrollment/removal
+- Account lockouts and unlocks
+- Session creation and termination
+- Administrative actions (config changes, role promotions)
+- Certificate validation events (PKI)
 
-Log format supports integration with SIEM systems.
+Logs are available in container stdout and optionally indexed in OpenSearch (set `AUDIT_LOG_TO_OPENSEARCH=true`).
 
 ## FedRAMP Compliance Features
 
 OpenTranscribe includes features to support FedRAMP compliance requirements:
+
+### AC-7: Unsuccessful Login Attempts (NIST AC-7)
+- Configurable lockout threshold (default: 5 failed attempts)
+- Progressive lockout duration
+- Automatic unlock after configurable timeout
+- Lockout events captured in audit log
 
 ### AC-8: System Use Notification
 - Classification banners (configurable levels: UNCLASSIFIED, CUI, SECRET, TOP SECRET)
 - System use notifications displayed before login
 - Customizable banner text and colors
 
+### AC-12: Session Termination
+- Configurable session timeouts (idle and absolute)
+- Automatic logout on inactivity
+- Admin-initiated session termination
+- Refresh token rotation to detect and invalidate stolen tokens
+
 ### IA-2: Identification and Authentication
-- Multi-factor authentication (TOTP)
+- Multi-factor authentication (TOTP, RFC 6238)
 - PKI/CAC support for government systems
 - Strong authentication for privileged users
 
-### IA-5: Authenticator Management
-- Password complexity policies
-- Password history enforcement
+### IA-5: Authenticator Management (FedRAMP IA-5 Compliant)
+- Password complexity policies (uppercase, lowercase, number, symbol required)
+- Password history enforcement (configurable, default 5 previous passwords)
 - Authenticator feedback protection (no password hints)
-- Password expiration policies
+- Password expiration policies with advance warning
+- bcrypt_sha256 default; PBKDF2-SHA256 in FIPS mode
 
-### AC-12: Session Termination
-- Configurable session timeouts
-- Automatic logout on inactivity
-- Session termination on logout
+### SC-13: Cryptographic Protection
+- AES-256-GCM for sensitive configuration data at rest
+- TLS 1.2+ for all service-to-service communication
+- PBKDF2-SHA256 for password-based key derivation (FIPS mode)
 
 ### AU-2/AU-3: Audit Events
-- Comprehensive audit logging
-- Timestamp and user identification
-- Event type and outcome recording
-- Source IP address logging
+- Comprehensive audit logging in JSON and CEF formats
+- Timestamp and user identification on every event
+- Event type and outcome (success/failure) recording
+- Source IP address and user agent logging
+- OpenSearch integration for audit log search and analysis
 
 For testing compliance features, see [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md).
+For FIPS cryptographic compliance, see [FIPS_140_3_COMPLIANCE.md](FIPS_140_3_COMPLIANCE.md).
 
 ## Responsible Disclosure
 

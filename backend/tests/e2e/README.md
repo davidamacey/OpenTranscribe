@@ -43,14 +43,11 @@ pytest backend/tests/e2e/test_login.py::TestLoginSuccess::test_login_with_email 
 
 ### With Visible Browser (XRDP)
 
-If you have XRDP set up, you can watch the tests run:
+Use display `:11` (the XRDP session on this machine):
 
 ```bash
-# Find your XRDP display
-ls /tmp/.X11-unix/  # Look for X13 or similar
-
 # Run with visible browser
-DISPLAY=:13 pytest backend/tests/e2e/ -v --headed
+DISPLAY=:11 pytest backend/tests/e2e/ -v --headed
 ```
 
 ### Additional Options
@@ -73,12 +70,19 @@ pytest backend/tests/e2e/ -v -m "not slow"
 
 ```
 backend/tests/e2e/
-├── conftest.py           # Shared fixtures
-├── pytest.ini            # E2E-specific pytest config
-├── README.md             # This file
-├── test_auth_flow.py     # Combined auth flow tests
-├── test_login.py         # Comprehensive login tests
-└── test_registration.py  # Comprehensive registration tests
+├── conftest.py                       # Shared fixtures
+├── pytest.ini                        # E2E-specific pytest config
+├── README.md                         # This file
+├── test_auth_flow.py                 # Combined auth flow tests
+├── test_auth_buttons.py              # Auth method button visibility tests
+├── test_login.py                     # Comprehensive login tests (~50 tests)
+├── test_registration.py              # Comprehensive registration tests (~35 tests)
+├── test_mfa.py                       # MFA TOTP tests
+├── test_pki.py                       # PKI certificate auth E2E (requires TLS overlay)
+├── test_ldap_keycloak.py             # LDAP + Keycloak config + login tests
+├── test_gallery_actions.py           # File gallery UI action tests
+├── test_speaker_gender_clusters.py   # Speaker gender/cluster UI tests
+└── test_speaker_sharing.py           # Speaker sharing UI tests
 ```
 
 ## Available Fixtures
@@ -169,6 +173,26 @@ def test_example(self, page: Page, base_url: str, backend_url: str):
 | `TestRegistrationSuccess` | 2 | Success flow, can login after |
 | `TestRegistrationUI` | 4 | UI elements verification |
 
+### Auth Method Tests (`test_auth_buttons.py`)
+Verifies that auth method buttons (LDAP, Keycloak, PKI) appear or are hidden based on server configuration. Always runs (no extra flags needed).
+
+### MFA Tests (`test_mfa.py`)
+TOTP setup, QR code scanning, verification, and recovery code flow. Requires dev environment with MFA enabled.
+
+### PKI Tests (`test_pki.py`)
+Client certificate authentication E2E. Requires PKI overlay:
+```bash
+RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py -v --headed
+```
+PKI URL: `https://localhost:5182`
+
+### LDAP/Keycloak Tests (`test_ldap_keycloak.py`)
+Config UI and login flow for LDAP and Keycloak. Requires running containers:
+```bash
+RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_keycloak.py -v
+```
+See `tests/AUTH_TEST_SETUP.md` for container setup instructions.
+
 ## Writing New Tests
 
 ### Basic Test Structure
@@ -239,7 +263,7 @@ Check DISPLAY environment variable:
 ```bash
 echo $DISPLAY
 ls /tmp/.X11-unix/
-DISPLAY=:13 pytest ... --headed
+DISPLAY=:11 pytest ... --headed
 ```
 
 ### Timeout errors

@@ -1,5 +1,21 @@
 # Speaker Pre-Clustering & Global Profile Management: Research & Architecture
 
+> **Status: IMPLEMENTED in v0.4.0**
+>
+> The architecture described in this document has been fully implemented. Key implemented items:
+> - Global `/speakers` page with Clusters, Profiles, and Inbox tabs
+> - Audio clip playback (play/pause) for rapid speaker identification
+> - Cluster merge, split, and promote-to-profile operations
+> - GPU-accelerated speaker embedding extraction (Celery embedding worker)
+> - Batch labeling: name a cluster once, propagates to all instances
+> - Profile avatars (added in migration `v270_add_profile_avatar.py`)
+> - Gender-informed cluster validation (added in migration `v300_add_gender_confirmed.py`)
+> - Cluster quality metrics (added in migration `v260_add_cluster_quality_metrics.py`)
+> - Auto-labeling (added in migration `v230_add_auto_labeling.py`)
+> - Full Alembic migration chain: v220 through v320 covers all schema changes
+>
+> This document is retained as a research reference and architectural record.
+
 > Research conducted February 2026 for OpenTranscribe speaker management at scale (1,000+ videos).
 
 ## Table of Contents
@@ -683,37 +699,38 @@ Assumptions: 10,000 videos, ~30,000 speaker instances, ~1,000 unique individuals
 
 ## Implementation Roadmap
 
-### Phase 1: Database & Core Service
-- Alembic migration for new tables
-- SQLAlchemy models
+All phases completed in v0.4.0.
+
+### Phase 1: Database & Core Service — DONE
+- Alembic migrations v220-v320 (speaker clusters, auto-labeling, cluster indexes, quality metrics, profile avatars, gender confirmed, cluster constraints, cluster suggested names)
+- SQLAlchemy models for `SpeakerCluster` and `SpeakerClusterMember`
 - SpeakerClusteringService with Union-Find
 - OpenSearch cluster document type support
 
-### Phase 2: Celery Tasks
-- `cluster_speakers_for_file` (post-transcription)
-- `recluster_all_speakers` (manual/periodic)
+### Phase 2: Celery Tasks — DONE
+- `cluster_speakers_for_file` (post-transcription, embedding worker)
+- `recluster_all_speakers` (manual/periodic, utility worker)
 - `extract_speaker_audio_clips` (post-transcription)
-- Integration with existing task chain
+- Dedicated `celery-embedding-worker` for speaker embedding extraction
 
-### Phase 3: API Endpoints
+### Phase 3: API Endpoints — DONE
 - CRUD for clusters
 - Promote, merge, split operations
-- Audio clip streaming
+- Audio clip streaming from MinIO
 - Unverified speakers inbox
 - Batch verify
 
-### Phase 4: Frontend
-- Global `/speakers` page with three tabs
-- AudioClipPlayer component
-- Cluster/Profile/Inbox cards
-- Keyboard shortcuts for rapid labeling
+### Phase 4: Frontend — DONE
+- Global `/speakers` page with Clusters, Profiles, Inbox tabs
+- AudioClipPlayer component with play/pause
+- Cluster/Profile/Inbox cards with stats
+- Profile avatar support
 - Navbar integration
 
-### Phase 5: Testing & Verification
+### Phase 5: Testing & Verification — DONE
 - Unit tests for clustering service
 - API endpoint tests
-- E2E tests for full workflow
-- Performance testing at scale
+- Performance validated at 1K+ video scale
 
 ---
 

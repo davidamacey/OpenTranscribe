@@ -19,7 +19,7 @@ OpenTranscribe uses WhisperX 3.8.1 with the faster-whisper backend for state-of-
 
 ### Speed
 
-- **GPU**: 70x realtime (1-hour file in ~50 seconds)
+- **GPU**: 40x+ realtime (1-hour file in ~90 seconds; up to 54x at peak concurrency)
 - **CPU**: 0.5-1x realtime (slower than playback)
 - **Batch Processing**: Process multiple files concurrently
 
@@ -165,7 +165,7 @@ While `large-v3-turbo` is recommended for most users, other models are available
 
 ## Technical Details
 
-### 3-Stage Processing Pipeline (New in v0.3.3)
+### 3-Stage Processing Pipeline (New in v0.4.0)
 
 OpenTranscribe uses a 3-stage Celery chain architecture that separates CPU-bound and GPU-bound work for maximum hardware utilization:
 
@@ -243,7 +243,7 @@ The 3-stage architecture was designed to solve several concrete problems with th
 
 4. **Retry granularity**: Celery retries apply per-stage. A transient GPU OOM error during transcription retries only Stage 2, not the entire pipeline. Postprocess tasks (search indexing, embedding extraction) have their own retry policies tuned for their failure modes.
 
-### Cloud ASR Providers (New in v0.3.3)
+### Cloud ASR Providers (New in v0.4.0)
 
 ```mermaid
 flowchart TD
@@ -410,13 +410,13 @@ Programmatic access via REST API:
 |---------|----------------|----------------|
 | **Privacy** | 100% local | Data sent to cloud |
 | **Cost** | Free (after hardware) | Per-minute fees |
-| **Speed** | 70x realtime | Varies |
+| **Speed** | 40x+ realtime (GPU) | Varies |
 | **Internet** | Not required | Required |
 | **Customization** | Full control | Limited |
 
 ### vs. Manual Transcription
 
-- **70x faster** than human transcription
+- **40x+ faster** than human transcription (up to 54x at peak concurrency)
 - **Consistent quality** (no fatigue)
 - **Word-perfect timing** (impossible manually)
 - **Lower cost** (no per-hour fees)

@@ -152,6 +152,7 @@ extract_docker_images() {
     APPLICATION_IMAGES=(
         "davidamacey/opentranscribe-backend:latest"
         "davidamacey/opentranscribe-frontend:latest"
+        "davidamacey/opentranscribe-docs:latest"
     )
 
     # Combine all images

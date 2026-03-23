@@ -169,30 +169,35 @@ YOUTUBE_COOKIE_FILE=/app/cookies.txt
 - Request timing patterns
 - Known yt-dlp signatures
 
-### What We're Already Doing
+### What We're Already Doing (v0.4.0)
 
-Your OpenTranscribe config already has anti-detection measures:
+OpenTranscribe v0.4.0 applies yt-dlp 2026 best practices:
 
 ```python
 "extractor_args": {
     "youtube": {
-        "player_client": ["android", "web"],  # Rotates clients
+        "player_client": ["android", "mweb", "web"],  # Rotates clients with mweb fallback
         "player_skip": ["webpage", "configs"],  # Avoids extra requests
     }
 },
 "http_headers": {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
     "Accept": "text/html,application/xhtml+xml,...",
-}
+},
+"extractor_retries": 3,       # Retry on transient extraction errors
+"fragment_retries": 10,       # Retry on fragment download errors
 ```
+
+**Deno JS Runtime:** The download worker container includes the Deno JavaScript runtime. yt-dlp uses Deno to execute YouTube's JavaScript player code for URL extraction — this significantly improves compatibility with YouTube's latest player updates and is more reliable than the older Python-based extraction approach.
 
 **This makes yt-dlp look like Android YouTube app traffic, not web scraping.**
 
-### What The New Anti-Bot Features Add
+### What The Anti-Bot Features Add
 
 - **Irregular timing** (jitter) - Defeats pattern recognition algorithms
 - **Human-like pacing** (staggering) - Mimics browsing behavior
 - **Reasonable volume** (rate limits) - Prevents bulk scraping detection
+- **Deno JS extraction** - Native JavaScript execution for YouTube player code
 
 **Together:** You look like "person using yt-dlp for personal archiving" - which YouTube generally tolerates.
 

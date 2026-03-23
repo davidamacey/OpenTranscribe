@@ -53,9 +53,15 @@ backend/app/transcription/
 
 ## Benchmark Results
 
-All benchmarks use Joe Rogan Experience #2404 (3.3 hours, 11,893s) on NVIDIA RTX A6000 (49GB).
+All benchmarks use NVIDIA RTX A6000 (49GB, Ampere). Full end-to-end pipeline benchmarks (transcription + diarization) are documented in detail in `docs/BENCHMARK_RESULTS.md`.
 
-### Pipeline Comparison
+**Key headline figures (v0.4.0, large-v3-turbo)**:
+- Single-file realtime factor: **40.3x** (2.78hr file, full pipeline)
+- Peak throughput: **54.6x** at concurrency=8
+- Perfect linear scaling confirmed 1x through 12x workers
+- VRAM ceiling: ~48.5GB at concurrency=10+
+
+### Native Pipeline Comparison (JRE #2404, 3.3 hours, 11,893s)
 
 | Configuration | Total | Transcription | Alignment | Diarization | Speaker Assign | Dedup |
 |---------------|-------|---------------|-----------|-------------|----------------|-------|
@@ -139,6 +145,60 @@ WHISPER_MODEL=large-v3-turbo
 # batch_size auto-detected to 8 for 8GB GPUs
 # Sequential mode keeps peak VRAM under 9GB
 ```
+
+**No-GPU / Cloud ASR (DEPLOYMENT_MODE=lite)**:
+```env
+DEPLOYMENT_MODE=lite
+# Disables local GPU worker. All transcription via cloud ASR provider.
+# Configure LLM_PROVIDER + cloud ASR keys in .env
+```
+
+### Admin-Pinned Model
+
+The active Whisper model is **admin-controlled** and shared across all users. An admin sets the model via **Settings → ASR → Local Model** in the UI. The model is loaded once into GPU VRAM at worker startup and remains warm between tasks (GPU pool type: `threads`, single warm model shared by all concurrent tasks).
+
+To switch models:
+1. Admin selects the new model in Settings → ASR → Local Model
+2. Click **Restart Worker** — the worker drains in-flight tasks, then restarts
+3. New model loads on the next task (or immediately if pre-loading is enabled)
+
+Per-user model override is removed. All users share the admin-set model. Users may still select base/tiny models per-upload (these route to the CPU worker).
+
+### Dual-Model Architecture
+
+| Worker | Models | Pool |
+|--------|--------|------|
+| `celery-worker` (GPU) | medium, large-v2, large-v3, large-v3-turbo | threads |
+| `celery-worker-cpu` | tiny, base | prefork |
+
+Small models (tiny, base) are fast enough on CPU and avoid wasting GPU VRAM for quick transcriptions. The routing is automatic based on the requested model.
+
+### Diarization Provider
+
+The diarization source is independently configurable via `diarization_source`:
+
+| Value | Description |
+|-------|-------------|
+| `local` | PyAnnote v4 (default, runs on GPU) |
+| `pyannote.ai` | Cloud diarization via pyannote.ai API |
+| `off` | No diarization (transcription-only mode) |
+
+### Cloud ASR Providers
+
+8 cloud ASR providers are available as alternatives to local GPU processing:
+
+| Provider | Notes |
+|----------|-------|
+| Deepgram | Free tier available, no CC required |
+| AssemblyAI | Free tier available |
+| OpenAI Whisper API | Pay-per-use |
+| Google Cloud Speech | Pay-per-use |
+| Azure Cognitive | Pay-per-use |
+| AWS Transcribe | Pay-per-use |
+| Speechmatics | Pay-per-use |
+| Gladia | Free tier available |
+
+Cloud ASR is configured per-user (each user manages their own API key). Cloud providers bypass local GPU processing entirely.
 
 ### Whisper Model Selection
 

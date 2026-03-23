@@ -1,4 +1,5 @@
 # OpenTranscribe Release Process
+<!-- Updated for v0.4.0 -->
 
 Complete guide for releasing any OpenTranscribe update - features, bug fixes, security patches, or major versions.
 
@@ -351,6 +352,18 @@ Update when:
 - New services added
 - Configuration changes
 
+#### 3.5 Update Technical Documentation (If Needed)
+
+Update the following docs when the corresponding areas change:
+- `docs/INSTALLATION.md` — hardware recommendations, new env vars, new deployment modes
+- `docs/ARCHITECTURE.md` — worker types, pipeline changes, service versions
+- `docs/DOCKER_DEPLOYMENT.md` — new Dockerfile variants, new build flags
+- `docs/database-schema.md` — new tables/columns from Alembic migrations
+- `docs/BACKEND_DOCUMENTATION.md` — new modules, removed files, version string
+- `docs/DEPLOYMENT_CHECKLIST.md` — new pre-deployment steps
+- `docs/VERIFICATION_CHECKLIST.md` — new verification items
+- `docs/CONTRIBUTING.md` — tooling changes, new development patterns
+
 #### 3.5 Commit Documentation
 ```bash
 git add CHANGELOG.md "docs-site/blog/YYYY-MM-DD-vX.Y.Z-*.md"
@@ -567,6 +580,7 @@ Copy and use this checklist for every release:
 - [ ] Create blog post
 - [ ] Update README.md (if needed)
 - [ ] Update CLAUDE.md (if needed)
+- [ ] Update technical docs in `docs/` (see section 3.5)
 - [ ] Commit documentation
 
 #### Git Operations

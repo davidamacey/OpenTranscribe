@@ -185,6 +185,7 @@ show_access_info() {
     if [ "$https_enabled" = true ]; then
         echo "  🔒 HTTPS Mode (via NGINX reverse proxy)"
         echo "  • Web Interface:     https://$nginx_server_name"
+        echo "  • Documentation:     https://$nginx_server_name/docs/"
         echo "  • API:               https://$nginx_server_name/api"
         echo "  • API Documentation: https://$nginx_server_name/api/docs"
         echo "  • Flower Dashboard:  https://$nginx_server_name/flower/"
@@ -194,6 +195,7 @@ show_access_info() {
         echo -e "${YELLOW}   Trust nginx/ssl/server.crt on client devices for no warnings${NC}"
     else
         echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
+        echo "  • Documentation:     http://localhost:${FRONTEND_PORT:-5173}/docs/"
         echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
         echo "  • API Endpoint:      http://localhost:${BACKEND_PORT:-5174}/api"
         echo "  • Flower Dashboard:  http://localhost:${FLOWER_PORT:-5175}/flower"

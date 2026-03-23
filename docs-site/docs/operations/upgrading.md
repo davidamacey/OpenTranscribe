@@ -99,6 +99,13 @@ The migration chain progresses through these versions:
 | `v200-v211` | Schema reconciliation, groups and sharing |
 | `v220-v270` | Speaker clusters, auto labeling, quality metrics, ASR providers, avatars |
 | `v280-v320` | Upload sessions, gender fields, speaker constraints, cluster names |
+| `v330` | Shared configs and prompts |
+| `v340` | User media sources |
+| `v350` | Diarization disabled flag |
+| `v351` | AI summary settings |
+| `v352` | Requested Whisper model per-transcription |
+| `v353` | Segment unique index fix |
+| `v355` | Independent diarization provider settings |
 
 ### What to Do if Migrations Fail
 

@@ -21,22 +21,45 @@ This directory contains the FastAPI application's API layer, organized by resour
 api/
 ├── endpoints/              # API route handlers
 │   ├── files/             # Modular file management
-│   │   ├── upload.py      # Enhanced file upload processing with concurrency
-│   │   ├── crud.py        # Basic CRUD operations
-│   │   ├── management.py  # Enhanced file management and recovery
-│   │   ├── filtering.py   # Advanced filtering logic
-│   │   ├── streaming.py   # Video/audio streaming support
-│   │   └── url_processing.py # NEW: YouTube/URL processing
-│   ├── admin.py           # Admin operations
-│   ├── auth.py            # Authentication endpoints
-│   ├── comments.py        # Comment system
-│   ├── search.py          # Search functionality
-│   ├── speakers.py        # Speaker management
-│   ├── summarization.py   # NEW: LLM-powered summarization
-│   ├── tags.py            # Tag operations
-│   ├── tasks.py           # Enhanced task monitoring
-│   ├── user_settings.py   # NEW: User settings management
-│   └── users.py           # User management
+│   │   ├── upload.py          # File upload with concurrency
+│   │   ├── crud.py            # Basic CRUD
+│   │   ├── management.py      # File recovery, force-delete, bulk ops
+│   │   ├── filtering.py       # Advanced filtering
+│   │   ├── streaming.py       # Video/audio streaming with range support
+│   │   ├── url_processing.py  # yt-dlp URL download processing
+│   │   ├── reprocess.py       # Selective reprocess (model, diarization)
+│   │   ├── subtitles.py       # SRT/VTT subtitle export
+│   │   ├── waveform.py        # Waveform data endpoints
+│   │   ├── prepare_upload.py  # Pre-upload session creation
+│   │   ├── cancel_upload.py   # Upload cancellation
+│   │   └── summary_status.py  # Per-file summary status
+│   ├── admin.py               # Admin operations + /admin/profile-embeddings/repair
+│   ├── asr_settings.py        # ASR provider management + local model set/restart
+│   ├── auth.py                # Authentication (all 4 methods + MFA + lockout + password policy)
+│   ├── auth_config.py         # Auth provider configuration (LDAP/Keycloak/PKI settings)
+│   ├── comments.py            # Comment system
+│   ├── custom_vocabulary.py   # Per-user custom vocabulary
+│   ├── embedding_migration.py # Speaker embedding migration endpoints
+│   ├── groups.py              # User group management
+│   ├── llm_settings.py        # User LLM configuration
+│   ├── llm_status.py          # LLM provider status
+│   ├── media_collections.py   # Collection sharing with permissions
+│   ├── prompts.py             # Shared/custom prompt management
+│   ├── search.py              # Hybrid BM25+neural search
+│   ├── speakers.py            # Speaker management, merge, cross-video matching
+│   ├── speaker_profiles.py    # Global speaker profile management
+│   ├── speaker_clusters.py    # Speaker cluster management
+│   ├── speaker_attribute_migration.py # Speaker attribute migration
+│   ├── speaker_update.py      # Background speaker updates
+│   ├── summarization.py       # LLM-powered summarization
+│   ├── system.py              # System statistics
+│   ├── tags.py                # Tag operations
+│   ├── tasks.py               # Task monitoring
+│   ├── topics.py              # LLM-extracted topics
+│   ├── transcript_segments.py # Transcript segment editing
+│   ├── user_files.py          # User file operations
+│   ├── user_settings.py       # User settings management
+│   └── users.py               # User management
 ├── router.py              # Main API router configuration
 └── websockets.py          # Real-time WebSocket handlers
 ```
@@ -104,12 +127,18 @@ def delete_resource(
 
 ## 📋 API Endpoints Reference
 
-### Authentication (`auth.py`)
+### Authentication (`auth.py`, `auth_config.py`)
 ```
-POST   /auth/login          # User login
-POST   /auth/register       # User registration
-POST   /auth/refresh        # Token refresh
-GET    /auth/me             # Current user info
+POST   /auth/login              # User login (all methods)
+POST   /auth/register           # User registration
+POST   /auth/refresh            # Token refresh (rotation)
+GET    /auth/me                 # Current user info
+GET    /auth/methods            # Available auth methods
+POST   /auth/mfa/setup          # Setup TOTP MFA
+POST   /auth/mfa/verify         # Verify MFA code
+DELETE /auth/mfa/disable        # Disable MFA
+GET    /auth/password-policy    # Password requirements
+POST   /auth/lockout/clear      # Clear account lockout (admin)
 ```
 
 ### Files (`files/`)
@@ -230,55 +259,80 @@ GET    /search/files        # Search files only
 GET    /search/transcripts  # Search transcripts only
 ```
 
-### **NEW: User Settings (`user_settings.py`)**
+### User Settings (`user_settings.py`)
 ```
-GET    /user-settings/recording      # Get user recording preferences
-PUT    /user-settings/recording      # Update recording settings
-DELETE /user-settings/recording      # Reset to defaults
-GET    /user-settings/all           # Get all user settings (debug)
+GET    /user-settings/recording            # Get user recording preferences
+PUT    /user-settings/recording            # Update recording settings
+DELETE /user-settings/recording            # Reset to defaults
+GET    /user-settings/transcription        # Get transcription preferences
+PUT    /user-settings/transcription        # Update transcription settings
+DELETE /user-settings/transcription        # Reset transcription to defaults
+GET    /user-settings/transcription/system-defaults  # System defaults + language options
+GET    /user-settings/all                  # All user settings (debug)
 ```
 
-**Recording Settings Management:**
-- **Duration Control**: Set maximum recording duration (5, 10, 15, 30, 60 minutes)
-- **Quality Settings**: Configure recording quality (low, medium, high)
-- **Auto-Stop Control**: Enable/disable automatic stop when duration reached
-- **Validation**: Server-side validation with comprehensive error handling
-- **Defaults**: Fallback to system defaults when user hasn't customized settings
-
-### **NEW: Summarization (`summarization.py`)**
+### Summarization (`summarization.py`)
 ```
 POST   /summarization/{file_id}     # Generate AI summary
 GET    /summarization/{file_id}     # Get existing summary
 DELETE /summarization/{file_id}     # Delete summary
 ```
 
-**AI-Powered Summarization Features:**
-- **Multi-Provider Support**: OpenAI, Claude, vLLM, Ollama, OpenRouter, custom endpoints
-- **BLUF Format**: Bottom Line Up Front structured summaries
-- **Intelligent Section Processing**: Handles transcripts of any length with context-aware chunking
-- **Custom Prompts**: User-defined prompts for different content types
-- **Real-time Progress**: WebSocket notifications during processing
-- **Error Recovery**: Robust error handling with user-friendly messages
+**Features:**
+- Multi-provider: OpenAI, Claude, vLLM, Ollama, OpenRouter, custom endpoints
+- BLUF format with action items, decisions, speaker analysis
+- 12 output languages
+- Intelligent section processing for transcripts of any length
+- Real-time WebSocket progress notifications
 
-### **NEW: URL Processing (`files/url_processing.py`)**
+### URL Processing (`files/url_processing.py`)
 ```
-POST   /files/process-url           # Process YouTube/media URLs
+POST   /files/process-url           # Process URLs via yt-dlp (1800+ platforms)
 GET    /files/url-status/{task_id}  # Get URL processing status
 ```
 
-**Enhanced URL Processing:**
-- **YouTube Integration**: Extract audio from YouTube videos with metadata
-- **Progress Tracking**: Real-time download and processing progress
-- **Error Handling**: Comprehensive error recovery and user feedback
-- **Quality Selection**: Automatic quality optimization for transcription
+**Features:**
+- yt-dlp integration for 1800+ platforms
+- Best support: YouTube, Dailymotion, TikTok
+- Limited support: Vimeo, Instagram, Facebook (may require auth)
+- Anti-blocking measures for YouTube (client rotation, proper headers)
+- User-friendly error messages for auth-required content
 
 ### Admin (`admin.py`)
 ```
-GET    /admin/stats         # System statistics
-GET    /admin/users         # All users management
-GET    /admin/files         # All files management
-POST   /admin/users/{id}/toggle # Toggle user status
-DELETE /admin/cleanup       # System cleanup
+GET    /admin/stats                        # System statistics
+GET    /admin/users                        # All users management
+GET    /admin/files                        # All files management
+POST   /admin/users/{id}/toggle            # Toggle user status
+DELETE /admin/cleanup                      # System cleanup
+POST   /admin/profile-embeddings/repair    # Repair speaker profile embeddings
+```
+
+### ASR Settings (`asr_settings.py`) — v0.4.0
+```
+GET    /asr-settings/providers             # List all ASR providers
+GET    /asr-settings/local-model           # Get current local model
+POST   /asr-settings/local-model/set       # Set local Whisper model (admin)
+POST   /asr-settings/local-model/restart   # Gracefully restart GPU worker (admin)
+GET    /asr-settings/providers/{id}/validate # Validate cloud provider connection
+```
+
+### Groups (`groups.py`) — v0.4.0
+```
+GET    /groups                  # List user groups
+POST   /groups                  # Create group
+GET    /groups/{id}             # Get group
+PUT    /groups/{id}             # Update group
+DELETE /groups/{id}             # Delete group
+POST   /groups/{id}/members     # Add member
+DELETE /groups/{id}/members/{user_id} # Remove member
+```
+
+### Collection Shares (`media_collections.py`) — v0.4.0
+```
+POST   /media-collections/{id}/share       # Share collection
+GET    /media-collections/{id}/shares      # List shares
+DELETE /media-collections/{id}/shares/{share_id} # Revoke share
 ```
 
 ## 🔐 Authentication & Authorization

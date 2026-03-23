@@ -50,8 +50,9 @@ The installer will ask for:
    - Used for speaker diarization models
    - Get a free token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
-2. **Whisper Model Size** (default: auto-detected based on hardware)
-   - `large-v2` - Best accuracy (NVIDIA GPU recommended)
+2. **Whisper Model Size** (default: `large-v3-turbo` — auto-detected based on hardware)
+   - `large-v3-turbo` - 6x faster, excellent accuracy (default, NVIDIA GPU recommended)
+   - `large-v3` - Best accuracy, required for translation to English
    - `medium` - Good balance (8GB+ GPU or Apple Silicon)
    - `base` - Fast (CPU-only systems)
 
@@ -67,8 +68,8 @@ cd opentranscribe
 Open your browser and navigate to:
 
 - **Web Interface**: http://localhost:5173
-- **API Documentation**: http://localhost:8080/docs
-- **Task Monitor** (Flower): http://localhost:5555/flower
+- **API Documentation**: http://localhost:5174/docs
+- **Task Monitor** (Flower): http://localhost:5175/flower
 
 ## First Transcription
 

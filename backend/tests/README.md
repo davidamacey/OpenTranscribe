@@ -19,13 +19,20 @@ pytest backend/tests/ -n auto --ignore=backend/tests/e2e -q
 
 | Directory/File | Description | Requirements |
 |----------------|-------------|--------------|
-| `api/endpoints/` | API endpoint tests | Database (PostgreSQL) |
-| `e2e/` | End-to-end Playwright tests | Running server + browser |
-| `test_llm_settings.py` | LLM settings tests | `RUN_LLM_TESTS=true` |
-| `test_search_quality.py` | Search quality tests | Live server with indexed data |
+| `api/endpoints/` | API endpoint tests | PostgreSQL |
+| `e2e/` | Playwright E2E tests | Running server + browser |
+| `test_asr_settings.py` | ASR provider settings tests (68 tests) | PostgreSQL |
+| `test_auth_config_integration.py` | Auth config DB round-trip | PostgreSQL |
+| `test_auth_config_service.py` | Auth config service (mock-based) | `RUN_AUTH_CONFIG_TESTS=true` |
+| `test_fedramp_compliance.py` | FedRAMP compliance tests | PostgreSQL |
 | `test_fips_140_3.py` | FIPS 140-3 compliance | `RUN_FIPS_TESTS=true` |
+| `test_llm_settings.py` | LLM settings tests | `RUN_LLM_TESTS=true` |
+| `test_mfa_integration.py` | MFA integration tests | PostgreSQL |
 | `test_mfa_security.py` | MFA security tests | `RUN_MFA_TESTS=true` |
 | `test_pki_auth.py` | PKI authentication tests | `RUN_PKI_TESTS=true` |
+| `test_search_quality.py` | Search quality tests | Live server + indexed data |
+| `test_speaker_constraints.py` | Speaker database constraints | PostgreSQL |
+| `test_error_classification.py` | Error classification logic | None |
 
 ## Running Tests
 
@@ -49,6 +56,9 @@ pytest backend/tests/ --ignore=backend/tests/e2e
 ```bash
 # Authentication tests (43 tests)
 pytest backend/tests/api/endpoints/test_auth_comprehensive.py -v
+
+# ASR settings tests (68 tests)
+pytest backend/tests/test_asr_settings.py -v
 
 # Admin endpoint tests
 pytest backend/tests/api/endpoints/test_admin.py -v
@@ -92,16 +102,25 @@ The test suite uses these environment variables (set automatically by conftest.p
 Enable specific test suites with environment variables:
 
 ```bash
-# Run LLM settings tests
+# Auth config service tests (mock-based)
+RUN_AUTH_CONFIG_TESTS=true pytest backend/tests/test_auth_config_service.py -v
+
+# LLM settings tests
 RUN_LLM_TESTS=true pytest backend/tests/test_llm_settings.py -v
 
-# Run FIPS 140-3 compliance tests
+# FIPS 140-3 compliance tests
 RUN_FIPS_TESTS=true pytest backend/tests/test_fips_140_3.py -v
 
-# Run search quality tests (requires live server)
+# MFA security tests
+RUN_MFA_TESTS=true pytest backend/tests/test_mfa_security.py -v
+
+# PKI authentication tests
+RUN_PKI_TESTS=true pytest backend/tests/test_pki_auth.py -v
+
+# Search quality tests (requires live server)
 RUN_SEARCH_QUALITY_TESTS=true pytest backend/tests/test_search_quality.py -v
 
-# Run advanced admin tests
+# Advanced admin tests
 RUN_ADVANCED_ADMIN_TESTS=true pytest backend/tests/test_admin_security.py -v
 ```
 

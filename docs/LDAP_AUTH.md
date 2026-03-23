@@ -6,12 +6,28 @@ OpenTranscribe supports hybrid authentication combining LDAP/Active Directory wi
 
 - **LDAP users**: Auto-created on first login with role based on `LDAP_ADMIN_USERS`
 - **Local admin users**: Created manually via registration endpoint with database passwords
-- **Flexible auth**: System supports both email-based (local) and username-based (LDAP) login
+- **Flexible auth**: System supports both email-based (local) and **username-based (LDAP)** login — users can log in with their sAMAccountName, uid, or any configured username attribute
 - **Priority**: Local users checked first when `auth_type='local'` in database
+
+> **v0.4.0 Change**: LDAP configuration is now managed via the Super Admin UI (Settings → Authentication → LDAP/Active Directory). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables (`LDAP_SERVER`, `LDAP_BASE_DN`, etc.) continue to work as an initial seed fallback but database configuration takes precedence once saved.
 
 ## Configuration
 
-### Environment Variables
+### Primary Method: Super Admin UI (v0.4.0+)
+
+Configure LDAP via the Admin UI for immediate, encrypted, restart-free configuration:
+
+1. Log in as super_admin (`admin@example.com`)
+2. Navigate to Settings → Authentication → LDAP/Active Directory
+3. Click "Edit" and fill in all fields (see table in SUPER_ADMIN_GUIDE.md)
+4. Click "Test Connection" to verify before saving
+5. Click "Save Configuration"
+
+Settings saved via the UI are encrypted with AES-256-GCM and take effect immediately.
+
+### Environment Variables (Fallback / Initial Seed)
+
+These variables are used only when no database configuration exists for LDAP. Once configuration is saved via the Admin UI, these env vars are ignored.
 
 Add the following to your `.env` file:
 
@@ -356,7 +372,7 @@ For development and testing, use the built-in LLDAP test container:
 
 **Configure OpenTranscribe to use test LDAP:**
 1. Log in as super_admin (admin@example.com / password)
-2. Go to Settings → Authentication → LDAP
+2. Go to Settings → Authentication → LDAP/Active Directory
 3. Configure:
    - Server: `lldap-test` (container name)
    - Port: `3890`
@@ -380,7 +396,7 @@ For production with your organization's Active Directory:
 
 **Configure OpenTranscribe:**
 1. Log in as super_admin
-2. Go to Settings → Authentication → LDAP
+2. Go to Settings → Authentication → LDAP/Active Directory
 3. Configure with your AD settings:
    - Server: `ldaps://your-ad-server.domain.com`
    - Port: `636`
@@ -526,12 +542,13 @@ WHERE email LIKE '%@domain.com';
 
 - [ ] LDAPS enabled with valid SSL certificate
 - [ ] Read-only service account created
-- [ ] Service account password stored securely
+- [ ] Service account password stored securely in Admin UI (encrypted AES-256-GCM)
+- [ ] LDAP config saved via Super Admin UI (Settings → Authentication → LDAP/AD)
 - [ ] LDAP_ADMIN_USERS configured for admins
 - [ ] LDAP_USERNAME_ATTR configured correctly for your directory
-- [ ] Firewall allows outbound LDAP connections
-- [ ] Test authentication with real AD users (username-based)
-- [ ] Test authentication with real AD users (email-based)
+- [ ] Firewall allows outbound LDAP connections from backend container
+- [ ] Test authentication with real AD users (username-based — e.g., `jdoe`)
+- [ ] Test authentication with real AD users (email-based — e.g., `jdoe@domain.com`)
 - [ ] Test authentication with local users
 - [ ] Verify audit logging is working
 - [ ] Monitor LDAP connection errors in logs
@@ -549,12 +566,22 @@ WHERE email LIKE '%@domain.com';
 
 ```
 backend/app/auth/
-├── direct_auth.py      # Direct DB authentication (bypasses ORM)
-├── ldap_auth.py        # LDAP/Active Directory authentication
-└── __init__.py
+├── direct_auth.py       # Direct DB authentication (bypasses ORM)
+├── ldap_auth.py         # LDAP/Active Directory authentication
+├── keycloak_auth.py     # OIDC/Keycloak integration
+├── pki_auth.py          # PKI/X.509 certificate authentication
+├── mfa.py               # TOTP multi-factor authentication (RFC 6238)
+├── password_policy.py   # Password strength enforcement (FedRAMP IA-5)
+├── password_history.py  # Password reuse prevention
+├── rate_limit.py        # Per-IP and per-user rate limiting
+├── lockout.py           # Account lockout (NIST AC-7 compliant)
+├── session.py           # Session/token management
+├── token_service.py     # JWT token operations
+├── audit.py             # Structured JSON and CEF audit logging
+└── constants.py         # Auth-related constants
 
 backend/app/api/endpoints/
-└── auth.py             # Authentication endpoints (login, register)
+└── auth.py              # Authentication endpoints (login, register)
 ```
 
 ### Key Functions

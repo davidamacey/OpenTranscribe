@@ -2698,6 +2698,7 @@
   "settings.groups.navTitle": "Grupos",
   "settings.groups.description": "Crie e gerencie grupos para compartilhar coleções com membros da equipe.",
   "nav.speakers": "Locutores",
+  "nav.docs": "Docs",
   "speakers.title": "Gestão de Locutores",
   "speakers.tabs.clusters": "Grupos",
   "speakers.tabs.profiles": "Perfis",

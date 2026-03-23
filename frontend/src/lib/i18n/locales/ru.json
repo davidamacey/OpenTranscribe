@@ -2688,6 +2688,7 @@
   "settings.groups.navTitle": "Группы",
   "settings.groups.description": "Создавайте группы и управляйте ими для обмена коллекциями с участниками команды.",
   "nav.speakers": "Дикторы",
+  "nav.docs": "Docs",
   "speakers.title": "Управление дикторами",
   "speakers.tabs.clusters": "Кластеры",
   "speakers.tabs.profiles": "Профили",

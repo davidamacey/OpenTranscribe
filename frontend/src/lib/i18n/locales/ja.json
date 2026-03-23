@@ -2698,6 +2698,7 @@
   "settings.groups.navTitle": "グループ",
   "settings.groups.description": "グループを作成・管理して、チームメンバーとコレクションを共有しましょう。",
   "nav.speakers": "スピーカー",
+  "nav.docs": "ドキュメント",
   "speakers.title": "スピーカー管理",
   "speakers.tabs.clusters": "グループ",
   "speakers.tabs.profiles": "プロフィール",

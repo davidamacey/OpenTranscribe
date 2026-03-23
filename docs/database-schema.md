@@ -1,4 +1,5 @@
 # OpenTranscribe Database Schema
+<!-- Updated for v0.4.0 -->
 
 This document provides a visual overview of the OpenTranscribe database schema and entity relationships.
 
@@ -19,6 +20,10 @@ erDiagram
     user ||--o{ summary_prompt : creates
     user ||--o{ user_setting : has
     user ||--o{ user_llm_settings : configures
+    user ||--o{ user_media_sources : configures
+    user ||--o| user_mfa : has
+    user ||--o{ password_history : has
+    user ||--o{ refresh_token : has
 
     media_file ||--o{ transcript_segment : contains
     media_file ||--o{ speaker : has
@@ -302,6 +307,65 @@ erDiagram
         timestamp updated_at
     }
 
+    user_mfa {
+        int id PK
+        int user_id FK
+        string totp_secret
+        boolean is_enabled
+        jsonb backup_codes
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    password_history {
+        int id PK
+        int user_id FK
+        string hashed_password
+        timestamp created_at
+    }
+
+    refresh_token {
+        int id PK
+        int user_id FK
+        string token_hash
+        timestamp expires_at
+        boolean revoked
+        timestamp created_at
+    }
+
+    shared_configs {
+        int id PK
+        uuid uuid UK
+        int owner_user_id FK
+        string config_type
+        jsonb config_data
+        boolean is_public
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    shared_prompts {
+        int id PK
+        uuid uuid UK
+        int owner_user_id FK
+        string name
+        text prompt_text
+        boolean is_public
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    user_media_sources {
+        int id PK
+        uuid uuid UK
+        int user_id FK
+        string source_type
+        string source_url
+        jsonb source_config
+        timestamp created_at
+        timestamp updated_at
+    }
+
     opensearch_transcript {
         keyword _id "file_uuid"
         int file_id
@@ -329,7 +393,7 @@ erDiagram
         int segment_count
         date created_at
         date updated_at
-        knn_vector embedding "192-dim_pyannote"
+        knn_vector embedding "256-dim_wespeaker_v4"
     }
 
     opensearch_speaker_profile {
@@ -341,7 +405,7 @@ erDiagram
         int user_id
         int speaker_count
         date updated_at
-        knn_vector embedding "192-dim_pyannote"
+        knn_vector embedding "256-dim_wespeaker_v4"
     }
 
     opensearch_summary {
@@ -375,9 +439,23 @@ OpenSearch is used for full-text search and vector similarity operations. The sy
 **Key Implementation Notes:**
 - PostgreSQL stores relational data and references OpenSearch document IDs
 - OpenSearch stores vector embeddings (not in PostgreSQL for performance)
-- Speaker embeddings use PyAnnote (192-dim), transcript embeddings use sentence-transformers (384-dim)
+- Speaker embeddings use WeSpeaker v4 (256-dim), stored in the `speakers_v4` concrete index; `speakers` is an alias pointing to the active versioned index
+- Transcript embeddings use sentence-transformers (384-dim) via OpenSearch ML Commons (server-side)
 - Document IDs in OpenSearch are UUIDs from PostgreSQL for consistency
 - Speaker profiles use prefixed IDs (`profile_{uuid}`) to avoid conflicts
+- OpenSearch cosine similarity scores are stored as `(1 + cosine) / 2`; convert back with `raw_cosine = 2.0 * score - 1.0`
+
+**Alembic Migrations (v330–v355, shipped in v0.4.0):**
+
+| Migration | Change |
+|-----------|--------|
+| v330 | Added `shared_configs` and `shared_prompts` tables |
+| v340 | Added `user_media_sources` table |
+| v350 | Added `diarization_disabled` column on file/user settings |
+| v351 | Added `ai_summary_disabled` column on file/user settings |
+| v352 | Added `requested_whisper_model` column (per-transcription model override) |
+| v353 | Fixed segment unique index constraint |
+| v355 | Added `diarization_source` enum column (local / pyannote.ai / off) |
 
 ## Schema Overview
 
@@ -387,6 +465,10 @@ OpenSearch is used for full-text search and vector similarity operations. The sy
 - **user**: User accounts with role-based access control
 - **user_setting**: User preferences and configuration
 - **user_llm_settings**: User-specific LLM provider configurations
+- **user_media_sources**: Per-user media source subscriptions (v340)
+- **user_mfa**: TOTP multi-factor authentication settings (enterprise auth)
+- **password_history**: Password reuse prevention (enterprise auth)
+- **refresh_token**: JWT refresh token rotation (enterprise auth)
 
 #### Media & Transcription
 - **media_file**: Core entity for uploaded audio/video files with extensive metadata
@@ -409,6 +491,8 @@ OpenSearch is used for full-text search and vector similarity operations. The sy
 #### AI Features
 - **topic_suggestion**: LLM-powered tag and collection suggestions
 - **summary_prompt**: Custom prompts for AI summarization
+- **shared_configs**: Shareable LLM/ASR configuration templates (v330)
+- **shared_prompts**: Shareable summarization prompt templates (v330)
 
 #### Collaboration & Tracking
 - **comment**: User comments on media files with optional timestamps
@@ -447,9 +531,9 @@ The application uses a multi-tier storage architecture optimized for different d
 #### OpenSearch
 - **Full-text search**: Searchable transcript content with highlighting
 - **Vector embeddings**:
-  - Speaker voice embeddings (PyAnnote 192-dim) for voice matching
-  - Speaker profile embeddings (averaged from multiple speakers)
-  - Transcript semantic embeddings (sentence-transformers 384-dim) for semantic search
+  - Speaker voice embeddings (WeSpeaker v4, 256-dim, `speakers_v4` index) for voice matching
+  - Speaker profile embeddings (centroid average across multiple speakers)
+  - Transcript semantic embeddings (sentence-transformers 384-dim, registered via ML Commons) for semantic search
 - **AI summaries**: Structured summary data with nested action items and topics
 - **Search indices**: Optimized for kNN similarity search and text matching
 

@@ -2698,6 +2698,7 @@
   "settings.groups.navTitle": "群组",
   "settings.groups.description": "创建和管理群组，与团队成员共享集合。",
   "nav.speakers": "讲话者",
+  "nav.docs": "文档",
   "speakers.title": "讲话者管理",
   "speakers.tabs.clusters": "分组",
   "speakers.tabs.profiles": "档案",

@@ -4,6 +4,8 @@
 
 Benchmark end-to-end transcription pipeline performance, test GPU concurrency limits, and project total reprocessing time for all files in the database.
 
+> **v0.4.0 pipeline**: Benchmarks measure the full native pipeline (faster-whisper `BatchedInferencePipeline` + PyAnnote v4 direct). The default model is `large-v3-turbo`. Baseline numbers from completed benchmarks: **40.3x realtime** single-file, **54.6x peak** at concurrency=8, perfect linear scaling 1x–12x. See `docs/BENCHMARK_RESULTS.md` for detailed results.
+
 ### Scripts
 
 | Script | Purpose |
@@ -253,7 +255,7 @@ python scripts/benchmark_parallel.py \
 - [ ] Concurrency=3 completed without OOM
 - [ ] Record: **Throughput at conc=3**: ___ x
 
-Try concurrency=4 (A6000 formula: (49000-6000)/1000 = max 4):
+Try concurrency=4 (and beyond — A6000 has been tested stable up to concurrency=12 at ~48.5GB VRAM):
 
 ```bash
 ./opentr.sh stop
@@ -339,19 +341,19 @@ python scripts/benchmark_projection.py \
 
 ## Results Summary
 
-Fill in after all phases complete:
+Fill in after all phases complete (v0.4.0 reference values from completed benchmarks shown in parentheses):
 
 | Question | Answer |
 |----------|--------|
 | Total files to reprocess | |
 | Total audio hours | |
-| Single-file realtime factor | x |
-| Bottleneck stage (% of GPU time) | |
-| Max concurrency on A6000 before OOM | |
-| Best single-GPU throughput | audio hrs/wall hr |
+| Single-file realtime factor | x (ref: 40.3x for 2.78hr file) |
+| Bottleneck stage (% of GPU time) | (ref: diarization 50.2%, whisper 47.6%) |
+| Max concurrency on A6000 before OOM | (ref: 12, VRAM ceiling ~48.5GB) |
+| Best single-GPU throughput | audio hrs/wall hr (ref: 54.6x at conc=8) |
 | Best multi-GPU throughput | audio hrs/wall hr |
 | Estimated time to reprocess all files | hours |
-| Optimal configuration | |
+| Optimal configuration | (ref: concurrent=6-8 for shared-GPU production) |
 
 ---
 

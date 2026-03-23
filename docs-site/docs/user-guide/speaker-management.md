@@ -23,6 +23,16 @@ OpenTranscribe provides powerful speaker diarization and management features to 
 
 3. Process files - speakers automatically detected
 
+### Disabling Speaker Diarization
+
+Speaker diarization can be skipped when not needed (e.g., single-speaker monologues, or when faster processing is more important than speaker labels):
+
+- **Per-upload**: Uncheck "Run Speaker Diarization" in the upload dialog
+- **Per-reprocess**: The reprocess dialog includes the same toggle
+- **User default**: Set your preference in Settings → Transcription → Speaker Diarization
+
+Transcripts processed without diarization will not have speaker labels but are otherwise complete.
+
 ## Speaker Identification Workflow
 
 ```mermaid
@@ -119,6 +129,14 @@ View comprehensive speaker statistics:
 1. Click speaker name in transcript
 2. Edit name
 3. Changes apply to all segments
+
+### Jump-to-Timestamp in Speaker Editor
+
+The speaker editor includes jump-to-timestamp links next to each segment ([#147](https://github.com/davidamacey/OpenTranscribe/issues/147)):
+
+- Click the timestamp badge next to any segment in the speaker editor to jump the media player to that moment
+- Useful for quickly verifying speaker assignments by listening to the actual audio
+- Works for both named profiles and unnamed clusters
 
 ### Merge Speakers
 

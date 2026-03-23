@@ -4,6 +4,8 @@
   # Backend Documentation Index
 </div>
 
+<!-- Updated for v0.4.0 -->
+
 Comprehensive documentation for the OpenTranscribe backend system, organized by component and use case.
 
 ## 📚 Documentation Structure
@@ -28,11 +30,13 @@ Comprehensive documentation for the OpenTranscribe backend system, organized by 
 ### 🔐 Authentication Module
 **Enterprise authentication with multiple identity providers**
 
-The `backend/app/auth/` module provides flexible authentication supporting:
+The `backend/app/auth/` module provides flexible authentication supporting all methods simultaneously (hybrid auth):
 - **Local Authentication** (`direct_auth.py`): bcrypt_sha256 password hashing
 - **LDAP/Active Directory** (`ldap_auth.py`): Enterprise directory integration
 - **OIDC/Keycloak** (`keycloak_auth.py`): OAuth 2.0 with PKCE flow
 - **PKI/X.509** (`pki_auth.py`): Certificate-based authentication (CAC/PIV)
+
+Auth method configuration is stored in the database (Admin UI → Settings → Authentication) and takes precedence over `.env` variables.
 
 **Security Components:**
 - `mfa.py` - TOTP multi-factor authentication with backup codes
@@ -79,10 +83,18 @@ The `backend/app/auth/` module provides flexible authentication supporting:
 ### ⚡ [Background Tasks](backend/app/tasks/README.md)
 **Asynchronous processing and AI workflows**
 - Task system architecture
-- Transcription pipeline (modular)
+- Transcription pipeline: unified 3-stage Celery chain (preprocess → GPU → postprocess)
 - Analytics and summarization
 - Task monitoring and error handling
 - Performance optimization
+- Selective reprocessing: stage picker for re-running specific pipeline stages
+
+### 🎙️ ASR Module
+**Cloud and local ASR provider abstraction** (`backend/app/services/asr/`)
+- 10 providers: local (WhisperX), Deepgram, AssemblyAI, OpenAI, Google, Azure, AWS, Speechmatics, Gladia, pyannote.ai
+- Admin-pinned local model (`asr.local_model` system setting, overrides `WHISPER_MODEL` env var)
+- Per-user cloud provider configuration with encrypted API key storage
+- `DEPLOYMENT_MODE=lite` disables local GPU workers entirely
 
 ### 🛠️ [Utilities](backend/app/utils/README.md)
 **Common utilities and helper functions**
@@ -117,6 +129,20 @@ The `backend/app/auth/` module provides flexible authentication supporting:
 - Debugging utilities
 - Setup scripts
 
+### Files Removed in v0.4.0
+
+The following files were removed as part of the pipeline unification refactor. Any documentation or code references to them should be updated:
+
+| Removed File | Replacement |
+|---|---|
+| `whisperx_service.py` | Unified ASR provider abstraction in `app/services/asr/` |
+| `parallel_pipeline.py` | Celery chain: preprocess → GPU → postprocess |
+| `fast_speaker_assignment.py` | Folded into unified GPU stage |
+| `batched_alignment.py` | Removed — word timestamps are native in faster-whisper DTW |
+| `pyannote_compat.py` | PyAnnote v4 API used directly (no compat shim needed) |
+
+Word-level timestamps are now produced natively by faster-whisper via cross-attention DTW. `ENABLE_ALIGNMENT` and `TRANSCRIPTION_ENGINE` environment variables are silently ignored.
+
 ## 🚀 Getting Started Guides
 
 ### For New Developers
@@ -129,7 +155,7 @@ The `backend/app/auth/` module provides flexible authentication supporting:
 1. **[API Layer Documentation](backend/app/api/README.md)**
 2. **[Authentication Patterns](backend/app/utils/README.md#authentication-decorators)**
 3. **[Error Handling](backend/app/utils/README.md#error-handlers)**
-4. **Interactive API Docs**: http://localhost:8080/docs
+4. **Interactive API Docs**: http://localhost:5174/api/docs
 
 ### For Database Work
 1. **[Data Models](backend/app/models/README.md)**
@@ -141,7 +167,7 @@ The `backend/app/auth/` module provides flexible authentication supporting:
 1. **[Tasks Overview](backend/app/tasks/README.md)**
 2. **[Transcription Pipeline](backend/app/tasks/README.md#transcription-pipeline)**
 3. **[Task Monitoring](backend/app/tasks/README.md#task-monitoring)**
-4. **Flower Dashboard**: http://localhost:5555/flower
+4. **Flower Dashboard**: http://localhost:5175/flower
 
 ## 🔧 Development Workflows
 
@@ -174,7 +200,7 @@ The `backend/app/auth/` module provides flexible authentication supporting:
 #### API Issues
 1. Check **[Error Handling](backend/app/utils/README.md#error-handlers)** patterns
 2. Review **[API Documentation](backend/app/api/README.md)** for debugging tips
-3. Use interactive docs at http://localhost:8080/docs
+3. Use interactive docs at http://localhost:5174/api/docs
 4. Check logs: `./opentr.sh logs backend`
 
 #### Database Issues
@@ -185,15 +211,15 @@ The `backend/app/auth/` module provides flexible authentication supporting:
 
 #### Background Task Issues
 1. Check **[Task Documentation](backend/app/tasks/README.md#error-handling)**
-2. Monitor via **Flower Dashboard**: http://localhost:5555/flower
+2. Monitor via **Flower Dashboard**: http://localhost:5175/flower
 3. Review **[Task Utilities](backend/app/utils/README.md#task-utilities)**
 4. Check logs: `./opentr.sh logs celery-worker`
 
 ## 📊 Reference Materials
 
 ### API Reference
-- **Interactive Docs**: http://localhost:8080/docs
-- **ReDoc**: http://localhost:8080/redoc
+- **Interactive Docs**: http://localhost:5174/api/docs
+- **ReDoc**: http://localhost:5174/api/redoc
 - **[Endpoint List](backend/app/api/README.md#api-endpoints-reference)**
 - **[Authentication Guide](backend/app/api/README.md#authentication--authorization)**
 
@@ -305,15 +331,15 @@ pytest tests/                   # Run all tests
 pytest --cov=app tests/         # Run with coverage
 
 # Monitoring
-# Flower: http://localhost:5555/flower
-# API Docs: http://localhost:8080/docs
+# Flower: http://localhost:5175/flower
+# API Docs: http://localhost:5174/api/docs
 ```
 
 ---
 
 **This documentation is living documentation - please keep it updated as the system evolves!**
 
-Last updated: $(date)
-Backend version: OpenTranscribe v1.0
+Last updated: 2026-03-22
+Backend version: OpenTranscribe v0.4.0
 Python: 3.11+
 FastAPI: 0.100+

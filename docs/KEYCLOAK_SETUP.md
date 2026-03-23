@@ -9,6 +9,12 @@ Keycloak provides enterprise-grade identity and access management. OpenTranscrib
 - Role-based access control synchronized from Keycloak
 - Support for LDAP/AD federation through Keycloak
 - Social login providers (Google, GitHub, etc.) via Keycloak
+- Full OIDC discovery support (endpoints auto-populated from provider metadata)
+- Federated logout — when a user's OpenTranscribe session ends, the logout is propagated to Keycloak
+
+> **v0.4.0 Change**: Keycloak configuration is now managed via the Super Admin UI (Settings → Authentication → Keycloak/OIDC). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables continue to work as an initial fallback but database config takes precedence.
+>
+> **MFA Note**: Keycloak users bypass local MFA — their identity provider is responsible for multi-factor authentication. Configure MFA enforcement directly in Keycloak.
 
 ## Development Environment Setup
 
@@ -107,10 +113,10 @@ Default credentials: `admin` / `admin`
 
 ### Step 7: Configure OpenTranscribe
 
-**Recommended Method: Via Admin UI** (stores config in database)
+**Recommended Method: Via Admin UI** (stores config encrypted in database — takes precedence over .env)
 
 1. Log in to OpenTranscribe as a super admin
-2. Go to **Settings** → **Authentication**
+2. Go to **Settings** → **Authentication** → **Keycloak/OIDC**
 3. Enable **Keycloak/OIDC**
 4. Configure the following settings:
    - **Server URL**: `http://localhost:8180` (must be accessible from user's browser)
@@ -128,9 +134,9 @@ Default credentials: `admin` / `admin`
 >
 > The callback URL must be accessible from the user's browser and must point to the frontend login page.
 
-**Alternative Method: Via .env file** (fallback if database not configured)
+**Alternative Method: Via .env file** (initial seed fallback — only used when no database config exists)
 
-If you prefer to use environment variables instead:
+If the Admin UI is not yet accessible (e.g., first-time setup), environment variables can seed the initial configuration:
 
 ```bash
 # Keycloak/OIDC Configuration
@@ -147,10 +153,13 @@ KEYCLOAK_TIMEOUT=30
 
 > **Note**: Database configuration (via admin UI) takes precedence over .env variables.
 
-### Step 8: Restart OpenTranscribe
+### Step 8: Apply Configuration
+
+**If configured via Admin UI**: Changes take effect immediately — no restart required.
+
+**If configured via .env only**: Restart the backend to load the new environment variables:
 
 ```bash
-# Restart backend to load new configuration
 ./opentr.sh stop
 ./opentr.sh start dev
 ```
@@ -183,9 +192,11 @@ KEYCLOAK_ADMIN_ROLE=admin
 ### Security Considerations
 
 1. **HTTPS Required**: Always use HTTPS in production
-2. **Client Secret**: Keep the client secret secure, never commit to git
-3. **Token Validation**: OpenTranscribe validates tokens using Keycloak's JWKS endpoint
+2. **Client Secret**: Stored encrypted (AES-256-GCM) in database when configured via Admin UI; never commit to git
+3. **Token Validation**: OpenTranscribe validates tokens using Keycloak's JWKS endpoint (auto-discovered via OIDC metadata)
 4. **Role Mapping**: Only users with the configured `KEYCLOAK_ADMIN_ROLE` get admin access
+5. **MFA**: Keycloak users bypass OpenTranscribe's local MFA — configure MFA enforcement in your Keycloak realm
+6. **Federated Logout**: When a user logs out of OpenTranscribe, the logout is propagated to Keycloak so the Keycloak SSO session is also terminated
 
 ### LDAP/AD Federation
 
@@ -210,8 +221,9 @@ To enable Google, GitHub, etc.:
 ### Common Issues
 
 **"Keycloak authentication is not enabled"**
-- Ensure `KEYCLOAK_ENABLED=true` in `.env`
-- Restart the backend after configuration changes
+- If using Admin UI: verify Keycloak/OIDC is enabled in Settings → Authentication → Keycloak/OIDC
+- If using .env: ensure `KEYCLOAK_ENABLED=true` and restart the backend
+- Database config takes precedence — an explicit `enabled=false` in the database overrides a `true` in .env
 
 **"Invalid or expired state parameter"**
 - Try the login again (state tokens expire after 10 minutes)

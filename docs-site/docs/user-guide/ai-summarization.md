@@ -113,6 +113,14 @@ Collections can have a **default AI prompt** assigned. When generating a summary
 
 This is useful for organizing different types of content (e.g., interviews vs. meetings) that need different summarization approaches.
 
+### Disable AI Summary
+
+Automatic AI summarization can be turned off:
+
+- **Per-upload**: Toggle "Generate AI Summary" off in the upload dialog to skip summarization for that file
+- **User default**: Go to Settings → AI → Auto-Summarize and disable it to skip automatic summarization on all uploads by default
+- When disabled, summaries can still be generated manually by clicking "Generate Summary" on any completed transcript
+
 ### Auto-Label Pipeline
 
 ```mermaid
@@ -265,7 +273,7 @@ grep LLM_ .env
 
 **Solutions**:
 - Use larger model (70B+ parameters recommended)
-- Improve transcription (use large-v2 Whisper model)
+- Improve transcription (use `large-v3` Whisper model for maximum accuracy)
 - Add speaker labels for better context
 
 ### Slow Processing

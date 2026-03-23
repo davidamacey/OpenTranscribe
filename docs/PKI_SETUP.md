@@ -9,6 +9,12 @@ PKI authentication allows users to authenticate using X.509 client certificates 
 - Enterprise environments with certificate-based security
 - High-security deployments requiring mutual TLS
 
+> **v0.4.0 Change**: PKI configuration is now managed via the Super Admin UI (Settings → Authentication → PKI/X.509). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables continue to work as a fallback seed.
+>
+> **OCSP/CRL**: v0.4.0 adds OCSP (Online Certificate Status Protocol) and CRL (Certificate Revocation List) checking. Configure via Admin UI for real-time or periodic revocation checking.
+>
+> **Super admin password fallback**: Even when PKI is the only enabled auth method, the super admin account can always authenticate with a password. This ensures emergency access and the ability to reconfigure authentication settings if PKI infrastructure fails.
+
 ## How It Works
 
 ```
@@ -105,7 +111,14 @@ This is the easiest way to test PKI authentication with a real browser.
 ./scripts/pki/setup-test-pki.sh
 ```
 
-### Step 2: Enable PKI in `.env`
+### Step 2: Enable PKI in `.env` or Admin UI
+
+**Admin UI (recommended — v0.4.0+):**
+1. Log in as super_admin
+2. Navigate to Settings → Authentication → PKI/X.509
+3. Enable PKI, set CA Certificate Path, and optionally configure OCSP/CRL
+
+**Environment variables (fallback / initial seed):**
 
 ```bash
 PKI_ENABLED=true
@@ -320,17 +333,45 @@ PKI_ADMIN_DNS=CN=Admin User,O=OpenTranscribe,C=US
 
 ### Using Enterprise CA
 
-For production, use your organization's Certificate Authority:
+For production, use your organization's Certificate Authority. Configure via the Admin UI (Settings → Authentication → PKI/X.509) for encrypted storage:
 
 ```bash
-# .env for production
+# .env for production (used only if no database config exists)
 PKI_ENABLED=true
 PKI_CA_CERT_PATH=/etc/ssl/certs/enterprise-ca.crt
 PKI_VERIFY_REVOCATION=true
 PKI_CERT_HEADER=X-Client-Cert
 PKI_CERT_DN_HEADER=X-Client-Cert-DN
-PKI_ADMIN_DNS=CN=Admin1,OU=IT,O=Company,C=US,CN=Admin2,OU=IT,O=Company,C=US
+PKI_ADMIN_DNS=CN=Admin1,OU=IT,O=Company,C=US|CN=Admin2,OU=IT,O=Company,C=US
 ```
+
+### OCSP Revocation Checking (Recommended)
+
+OCSP provides real-time certificate revocation status. When a certificate is added to the OCSP responder's revocation list, access is denied on the next login attempt:
+
+| Setting | Description | Example |
+|---------|-------------|---------|
+| **Enable OCSP** | Turn on OCSP checking | `true` |
+| **OCSP Responder URL** | Your CA's OCSP endpoint | `http://ocsp.pki.company.com` |
+
+Configure via Admin UI: Settings → Authentication → PKI/X.509 → Enable OCSP.
+
+### CRL Revocation Checking (Alternative)
+
+CRL downloads and caches a list of revoked certificates, refreshed periodically:
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **Enable CRL** | Turn on CRL checking | `false` |
+| **CRL Endpoint URL** | CRL distribution point | `http://pki.company.com/crl` |
+| **CRL Refresh Hours** | How often to refresh the CRL | `24` |
+
+CRL checking is suitable when an OCSP responder is not available. The system caches the CRL locally and refreshes on the configured interval.
+
+**OCSP vs CRL:**
+- OCSP: Real-time check on every login — revocation takes effect immediately
+- CRL: Periodic check — revocation takes effect within the refresh interval (up to 24 hours)
+- Both can be enabled simultaneously for defence-in-depth
 
 ### Nginx Production Configuration
 
@@ -440,8 +481,9 @@ sudo apt install opensc opensc-pkcs11
 ### Common Issues
 
 **"PKI authentication is not enabled"**
-- Ensure `PKI_ENABLED=true` in `.env`
-- Restart backend after configuration changes
+- If using Admin UI: verify PKI is enabled in Settings → Authentication → PKI/X.509
+- If using .env: ensure `PKI_ENABLED=true` and restart the backend
+- Database config takes precedence — an explicit `enabled=false` in the database overrides .env
 
 **"Invalid or missing client certificate"**
 - Verify certificate is imported in browser
@@ -483,27 +525,41 @@ openssl x509 -in user.crt -subject -noout
 
 ## Security Considerations
 
-1. **CA Security**: Protect your CA private key
-2. **Certificate Revocation**: Implement CRL or OCSP checking
-3. **Certificate Lifecycle**: Plan for certificate renewal
-4. **Key Storage**: Use hardware tokens for high-security environments
-5. **DN Validation**: Ensure DN matching is case-sensitive and exact
+1. **CA Security**: Protect your CA private key — compromise of the CA allows issuing fraudulent certificates
+2. **Certificate Revocation**: Enable OCSP or CRL checking in production to enforce immediate certificate revocation
+3. **Certificate Lifecycle**: Plan for certificate renewal before expiry; expired certificates will fail authentication
+4. **Key Storage**: Use hardware tokens (CAC, PIV, YubiKey) for high-security environments
+5. **DN Validation**: DN matching is case-sensitive and exact — copy DN strings directly from certificate details
+6. **Super Admin Fallback**: Ensure the super admin password is documented in a secure location; it is the only non-PKI access path when PKI-only mode is active
+7. **mTLS Requirement**: PKI authentication requires NGINX with mTLS (`--with-pki` flag); dev mode cannot use PKI
 
-## Certificate Revocation (Optional)
+## Certificate Revocation
 
-Enable CRL checking:
+### OCSP (Real-Time, Recommended)
+
+Enable via Admin UI (Settings → Authentication → PKI/X.509 → Enable OCSP) or environment variable:
 
 ```bash
-# .env
-PKI_VERIFY_REVOCATION=true
+PKI_OCSP_ENABLED=true
+PKI_OCSP_RESPONDER_URL=http://ocsp.your-ca.com
 ```
 
-Nginx CRL configuration:
+### CRL (Periodic Cache)
+
+Enable via Admin UI or environment variable:
+
+```bash
+PKI_CRL_ENABLED=true
+PKI_CRL_URL=http://pki.your-ca.com/crl
+PKI_CRL_REFRESH_HOURS=24
+```
+
+Nginx CRL configuration (optional — additional layer at the TLS termination point):
 ```nginx
 ssl_crl /etc/nginx/certs/ca.crl;
 ```
 
-Generate CRL:
+Generate CRL for testing:
 ```bash
 # Using Step CA
 step ca crl > ca.crl

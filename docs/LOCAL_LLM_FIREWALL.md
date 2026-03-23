@@ -2,6 +2,16 @@
 
 When running vLLM or Ollama on your host machine and connecting from OpenTranscribe (which runs in Docker containers), you may need to configure your local firewall to allow the containers to reach your LLM server.
 
+## v0.4.0 Notes
+
+### DEPLOYMENT_MODE=lite
+
+In `lite` deployment mode, the `celery-nlp-worker` is still started (LLM summarization is not GPU-dependent), so firewall rules for the NLP worker are still required even in lite mode.
+
+### Organization Context
+
+If you configure org context (Settings → LLM → Organization Context), the org context string is prepended to every LLM system prompt sent by the `celery-nlp-worker`. This increases token usage slightly but does not require any additional firewall rules — the traffic goes through the same endpoint.
+
 ## The Problem
 
 OpenTranscribe runs inside Docker containers. When you configure an LLM endpoint like `http://localhost:8000` or `http://localhost:11434`, the container tries to connect to itself (not your host machine), causing silent failures where:
@@ -117,6 +127,9 @@ OpenTranscribe uses different containers for different operations:
 |-----------|-----------|-------------|
 | LLM Test (Settings UI) | `backend` | Tests connection via `/api/llm-settings/test` |
 | Summarization | `celery-nlp-worker` | Runs actual LLM summarization tasks |
+| Speaker ID (LLM) | `celery-nlp-worker` | LLM-powered speaker name suggestions |
+| Transcription | `celery-worker` (GPU) | Uses local Whisper/PyAnnote — no LLM |
+| Speaker embeddings | `celery-embedding-worker` | No LLM — uses OpenSearch kNN only |
 
 **Important**: The test button in Settings tests connectivity from the `backend` container, but actual summarization runs in `celery-nlp-worker`. Both containers must be able to reach your LLM server.
 

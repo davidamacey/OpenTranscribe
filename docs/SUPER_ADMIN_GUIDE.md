@@ -63,8 +63,17 @@ Settings
 │   ├── Sessions
 │   └── Audit Log
 ├── Users (user management)
+├── Groups (user group management)
+├── Admin
+│   └── File Retention (auto-deletion policies for old transcriptions)
+├── AI
+│   ├── Organization Context (context injected into LLM summary prompts)
+│   └── Per-Collection Default AI Prompt
+├── ASR
+│   └── Local Model (pin warm model in GPU VRAM, restart GPU worker)
+├── Collections (sharing and admin controls)
 ├── System (system-wide configuration)
-└── Audit Logs (compliance view)
+└── Audit Logs (compliance view — structured JSON and CEF export)
 ```
 
 ### Permission Requirements
@@ -77,6 +86,10 @@ Settings
 - Changing user roles
 - Modifying password policies
 - Configuring PKI certificates
+- Managing user groups
+- Configuring file retention policies
+- Setting ASR local model and restarting the GPU worker
+- Setting organization AI context and per-collection prompts
 
 **Admin access is sufficient for:**
 - Locking/unlocking user accounts
@@ -111,7 +124,7 @@ Settings
 
 ### How Configuration Works
 
-OpenTranscribe uses a **database-driven configuration model** that eliminates the need to restart services when changing authentication settings:
+As of v0.4.0, OpenTranscribe uses a **database-driven configuration model** that eliminates the need to restart services when changing authentication settings:
 
 1. **Configuration Storage**: All authentication settings are stored in the `auth_config` table
 2. **Encryption**: Sensitive values (passwords, API keys, secrets) are encrypted with **AES-256-GCM**
@@ -780,10 +793,10 @@ LDAP_BIND_DN = "cn=admin,dc=example,dc=com"
 - Require container restart to take effect
 - Restart command:
   ```bash
-  docker-compose restart backend
+  docker compose restart backend
   ```
 - All active connections affected
-- Not recommended for runtime changes
+- Not recommended for runtime changes — use the Admin UI instead
 
 ## Multi-Method Hybrid Authentication Examples
 
@@ -1275,8 +1288,71 @@ When employee leaves organization:
 
 ---
 
-**Last Updated:** 2024-02-07
-**Documentation Version:** 2.0
+## v0.4.0 Admin Features
+
+### File Retention
+
+Configure automatic deletion of old transcriptions to manage storage:
+
+1. Navigate to Settings → Admin → File Retention
+2. Set retention policies (e.g., delete files older than 90 days)
+3. Policies apply per-user or globally
+4. Users receive warnings before their files are deleted
+
+### ASR Model Management
+
+The super admin pins a single ASR model that all workers share (GPU VRAM is loaded once at worker startup):
+
+1. Navigate to Settings → ASR → Local Model
+2. Select the desired model (e.g., `large-v3-turbo`, `large-v3`)
+3. Click "Set Model" — the setting is saved immediately
+4. Click "Restart GPU Worker" to perform a graceful drain restart
+   - The worker finishes all current tasks before stopping
+   - Docker automatically restarts the container with the new model loaded
+
+The model selection is stored in the database (`asr.local_model` system setting) and takes precedence over the `WHISPER_MODEL` environment variable.
+
+### Organization Context for LLM Summaries
+
+Inject organization-specific context into every AI summary prompt:
+
+1. Navigate to Settings → AI → Organization Context
+2. Enter context such as your organization name, domain terminology, common speakers, or acronyms
+3. This context is prepended to LLM summary requests for all users
+
+You can also set a per-collection default AI prompt under Settings → Collections → select collection → Default AI Prompt.
+
+### User Groups Management
+
+Manage logical groupings of users for collection sharing and access control:
+
+1. Navigate to Settings → Groups
+2. Create groups and assign members
+3. Groups can be granted access to shared collections
+4. LDAP group membership is synced on each LDAP login (separate from manually managed groups)
+
+### Collection Sharing Admin Controls
+
+Admins can view and modify sharing permissions on any collection:
+
+1. Navigate to Settings → Collections
+2. Filter by owner or sharing status
+3. Remove unwanted shares or transfer ownership when an employee leaves
+
+### Audit Log Viewer
+
+The audit log viewer supports structured export for SIEM integration:
+
+1. Navigate to Settings → Audit Logs
+2. Filter by date range, event type, outcome, user, or source IP
+3. Export as **JSON** (structured, includes all fields) or **CSV** (for spreadsheet analysis)
+4. Logs are also written in **CEF (Common Event Format)** for syslog/SIEM ingestion
+5. If `AUDIT_LOG_TO_OPENSEARCH=true`, logs are indexed in OpenSearch for full-text search
+
+---
+
+**Last Updated:** 2026-03-22
+**Documentation Version:** 2.1 (v0.4.0)
 
 ## Account Management
 

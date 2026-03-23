@@ -100,6 +100,12 @@ services:
     ports:
       - "${FLOWER_PORT:-5175}:5555"  # Flower web UI
 
+  docs:
+    image: davidamacey/opentranscribe-docs:latest
+    pull_policy: never  # Use pre-loaded image — no internet required
+    ports:
+      - "${DOCS_PORT:-3030}:8080"
+
   # GPU Scaled Worker - Offline overrides
   # NOTE: No 'scale' parameter here - base has scale: 0, gpu-scale.yml sets scale: 1
   # This overlay only provides offline-specific settings (image, pull_policy, paths)

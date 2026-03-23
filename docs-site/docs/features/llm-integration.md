@@ -33,7 +33,7 @@ Generate summaries in 12 different languages:
 
 Configure in Settings → Transcription → LLM Output Language.
 
-### Organization Context (New in v0.3.3)
+### Organization Context (New in v0.4.0)
 
 Inject organization-specific context into AI prompts for more relevant summaries:
 
@@ -44,7 +44,7 @@ Inject organization-specific context into AI prompts for more relevant summaries
 
 The organization context is injected as a system-level preamble before the transcript content in all LLM calls. This allows the model to correctly resolve ambiguous references -- for example, knowing that "the Board" refers to a specific governance body, or that "Q3" means a particular fiscal quarter for your organization. The context text is stored per-user, so different teams can define their own terminology without conflicting.
 
-### Per-Collection AI Prompts (New in v0.3.3)
+### Per-Collection AI Prompts (New in v0.4.0)
 
 Collections can have a default summarization prompt:
 
@@ -55,7 +55,7 @@ Collections can have a default summarization prompt:
 
 Prompt inheritance follows a clear priority chain: per-file custom prompt > collection default prompt > user default prompt > system default prompt. When a file belongs to multiple collections, the most recently assigned collection's prompt takes precedence.
 
-### Auto-Label (New in v0.3.3)
+### Auto-Label (New in v0.4.0)
 
 AI-powered automatic tagging and collection assignment ([#140](https://github.com/davidamacey/OpenTranscribe/issues/140)):
 
@@ -74,6 +74,23 @@ AI-powered automatic tagging and collection assignment ([#140](https://github.co
 3. **Auto-apply**: Suggestions at or above the confidence threshold are applied automatically. Below-threshold suggestions remain available for manual review in the UI.
 4. **Batch grouping**: For bulk imports, the system tracks which files were uploaded together via an `upload_batch` table. After all files in a batch complete topic extraction, topics appearing in 2+ files trigger automatic shared collection creation.
 5. **Provenance tracking**: Every tag and collection tracks its `source` ("manual", "auto_ai", or "bulk_group") so users can distinguish AI-applied labels from human ones. The frontend displays a sparkle icon on auto-applied items with confidence tooltips.
+
+### Disable AI Summary Generation
+
+Users can disable automatic AI summarization:
+
+- **Per-upload**: Toggle "Generate AI Summary" off in the upload dialog to skip summarization for a specific file
+- **User default**: Set your default in Settings → AI → Auto-Summarize to prevent automatic summarization on all uploads
+- Disabling auto-summarize does not prevent manual summarization — users can still click "Generate Summary" on any transcript at any time
+
+### Prompt Sharing
+
+Custom AI prompts can be shared between users:
+
+- Users can share their custom summarization prompts with other users or groups via the sharing system
+- Shared prompts appear in the recipient's prompt selection dropdown alongside their own prompts
+- Sharing is managed from Settings → AI Prompts → Share
+- Useful for standardizing summarization output across a team without each member creating identical prompts
 
 ### Speaker Identification
 

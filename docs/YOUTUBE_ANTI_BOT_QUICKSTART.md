@@ -1,11 +1,14 @@
 # YouTube Anti-Bot Protection - Quick Start
 
-## What Was Implemented
+## What Is Implemented
 
-✅ **Cookie Authentication** - Use browser cookies for authenticated downloads
-✅ **Playlist Staggering** - Progressive delays between playlist videos
-✅ **Pre-Download Jitter** - Random delays before each download
-✅ **Rate Limiting** - Per-user hourly/daily quotas tracked in Redis
+- Cookie Authentication - Use browser cookies for authenticated downloads
+- Playlist Staggering - Progressive delays between playlist videos
+- Pre-Download Jitter - Random delays before each download
+- Rate Limiting - Per-user hourly/daily quotas tracked in Redis
+- Deno JS Runtime - Embedded in the download worker container for yt-dlp JavaScript player extraction
+- User-Configurable Download Quality - Per-user quality setting (best, 1080p, 720p, 480p, audio-only)
+- yt-dlp 2026 best practices - Automatic client rotation, Android/mweb fallbacks
 
 ## Immediate Action (If Currently Banned)
 
@@ -109,7 +112,44 @@ YOUTUBE_COOKIE_FILE=/app/cookies.txt
 
 See `docs/YOUTUBE_COOKIE_AUTH.md` for detailed setup instructions.
 
+### User-Configurable Download Quality
+
+Users can set their preferred download quality in Settings → Media → Download Quality. The setting is stored per-user and passed to yt-dlp at download time.
+
+| Quality Setting | yt-dlp Format String | Notes |
+|----------------|---------------------|-------|
+| `best` (default) | `bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best` | Highest available resolution |
+| `1080p` | `bestvideo[height<=1080][ext=mp4]+bestaudio/best[height<=1080]` | 1080p cap |
+| `720p` | `bestvideo[height<=720][ext=mp4]+bestaudio/best[height<=720]` | 720p cap |
+| `480p` | `bestvideo[height<=480][ext=mp4]+bestaudio/best[height<=480]` | 480p cap |
+| `audio_only` | `bestaudio[ext=m4a]/bestaudio` | Audio track only, no video |
+
+**Audio-only mode** is useful for podcast-style content where video is not needed — significantly reduces download size and storage usage in MinIO.
+
 ---
+
+## Deno JS Runtime (v0.4.0)
+
+The download worker container (`celery-download-worker`) includes the **Deno JavaScript runtime** as part of the v0.4.0 base image. Deno enables yt-dlp to extract YouTube's JavaScript-based player code natively without spawning a full browser, improving compatibility with YouTube's latest player updates.
+
+**Why Deno is needed:**
+- YouTube's player code is increasingly JavaScript-heavy and requires a real JS runtime to extract video URLs
+- yt-dlp 2026 switched to a Deno-based JS extractor for better compatibility
+- Without Deno, some videos fall back to older extraction paths that YouTube actively blocks
+
+**You do not need to configure anything** — Deno is automatically used by yt-dlp when available in the container.
+
+**Verifying Deno is available:**
+```bash
+docker exec opentranscribe-celery-download-worker deno --version
+```
+
+**yt-dlp 2026 Best Practices (already applied):**
+- Client rotation: `android`, `mweb`, `web` fallback chain
+- `--extractor-retries 3` for transient extraction failures
+- Automatic format selection preferring H.264/MP4 for browser compatibility
+- Anti-throttling: randomized request delays at the HTTP level
+- Respects `--rate-limit` to avoid triggering YouTube's bandwidth detection
 
 ## What Each Feature Does
 
@@ -216,16 +256,20 @@ Then restart: `./opentr.sh restart-backend`
 
 ## Files Modified
 
-**New Files:**
+**New Files (original implementation):**
 - `backend/app/services/youtube_rate_limiter.py` - Rate limiting service
 - `docs/YOUTUBE_COOKIE_AUTH.md` - Detailed cookie setup guide
 - `docs/YOUTUBE_ANTI_BOT_QUICKSTART.md` - This file
 
+**New Files (v0.4.0):**
+- `backend/app/services/download_quality_service.py` - Per-user quality selection
+
 **Modified Files:**
-- `backend/app/core/config.py` - Added YouTube config settings
-- `backend/app/services/media_download_service.py` - Added cookie support
-- `backend/app/tasks/youtube_processing.py` - Added staggering and jitter
+- `backend/app/core/config.py` - Added YouTube config settings, Deno path, quality settings
+- `backend/app/services/media_download_service.py` - Added cookie support, Deno integration, quality selection
+- `backend/app/tasks/youtube_processing.py` - Added staggering, jitter, yt-dlp 2026 client rotation
 - `backend/app/api/endpoints/files/url_processing.py` - Added rate limiter
+- `backend/Dockerfile.prod` - Added Deno runtime installation
 - `.env.example` - Added YouTube configuration section
 
 ---

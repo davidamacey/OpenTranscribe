@@ -1,5 +1,17 @@
 # vLLM Optimization for OpenTranscribe LLM Processing
 
+## v0.4.0 LLM Feature Notes
+
+### Organization Context
+
+Admins can set an **organization context** (e.g., department name, project description, participant roster) that is automatically prepended to all LLM prompts. This improves speaker identification and summary quality without user intervention. Configure via **Admin → Settings → LLM → Organization Context**.
+
+### Per-Collection Default Prompt
+
+Each collection can have its own default AI prompt. When a file in that collection is summarized, the collection's prompt is used as the base instead of the global default. This allows different workflows (e.g., "meeting summary" vs "interview analysis") without changing global settings.
+
+---
+
 ## Current Configuration (A6000 49GB, gpt-oss-20b)
 
 File: `/mnt/nvm/repos/run_openwebui/docker-compose.yaml`

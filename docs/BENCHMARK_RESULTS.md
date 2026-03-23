@@ -1,5 +1,7 @@
 # GPU Processing Benchmark Results
 
+> **v0.4.0 pipeline**: All results use the native transcription pipeline (faster-whisper `BatchedInferencePipeline` + PyAnnote v4 direct) with `large-v3-turbo`. This is the **full end-to-end pipeline** (transcription + diarization + speaker assignment) — not transcription-only. The WhisperX legacy pipeline and wav2vec2 alignment have been removed.
+
 ## System Configuration
 
 | Component | Spec |
@@ -97,13 +99,13 @@
 | 9 | ~24 hours |
 
 ### Notes
-- Highly consistent across 3 iterations: GPU time 231-234s (std dev 1.2s)
-- Iter 1 preprocess slower (26.9s vs 18s) due to cold MinIO cache
+- Highly consistent across 3 iterations: GPU time 234.5-254.1s (mean 248.3s, std dev ~11s)
+- Iter 1 preprocess slower (23.6s vs 18.5s) due to cold MinIO cache
 - Diarization is the bottleneck at 53% of GPU time (embedding extraction dominates)
 - batch_size=32 had minimal impact vs 12 — CTranslate2 internally chunks to 30s segments
 - CTranslate2 (Whisper) uses its own CUDA kernels, not PyTorch matmul — TF32 flag doesn't help transcription
 - TF32 benefits PyAnnote embeddings via our fork (already re-enabled in fork code)
-- VRAM peak is only 9.4GB device / 3.9GB PyTorch — massive headroom for concurrency on A6000
+- VRAM peak is only 2,317 MB (4.7% of A6000 48GB) for a single concurrent task — massive headroom for concurrency
 
 ---
 

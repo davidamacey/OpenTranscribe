@@ -5,11 +5,11 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-02-07
+## [0.4.0] - 2026-03-22
 
 ### Overview
 
-Major release with four major enterprise-grade features: multi-method authentication system with super admin UI, PyAnnote v4 migration with speaker overlap detection, OpenSearch native neural search integration, and a unified transcription pipeline with native word-level timestamps for all 100+ languages. This release significantly improves security, performance, and search capabilities.
+Major release combining enterprise-grade authentication, native transcription pipeline, neural search, GPU optimizations, cloud ASR providers, comprehensive speaker intelligence, Progressive Web App support, and dozens of features built from processing 1,400+ real-world recordings over two months of development (167 commits). This release significantly improves security, performance, search capabilities, and mobile usability.
 
 ### Added
 
@@ -56,6 +56,75 @@ Major release with four major enterprise-grade features: multi-method authentica
   - Note: large-v3-turbo cannot translate; use large-v3 for translation needs
 - **Batch Size Optimization** - Intelligent batch sizing based on available VRAM
 - **Neural Model Endpoints** - RESTful API for model lifecycle management
+- **GPU Memory Leak Fixes** - Gated model preloading with `PRELOAD_GPU_MODELS` env var to prevent 15 GB CPU worker leak; forced CPU for speaker clustering under 500 speakers to prevent 44 GB prefork child leak
+- **Vectorized Speaker Assignment** - NumPy matmul replaces O(n×m) linear scan, 13x speedup (80s → 6s for 4.7-hour files)
+- **TF32 Acceleration** - Enabled at worker startup and after diarization for Ampere+ GPUs
+- **GPU Pipeline Benchmarks** - 40.3x single-file realtime, 54.6x peak at concurrency=8, perfect linear scaling 1–12 workers on RTX A6000
+
+#### Cloud ASR Providers
+- **Multi-Provider Cloud ASR** - 8 cloud speech providers: Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure Speech, Speechmatics, Gladia (#150)
+- **pyannote.ai Integration** - Cloud diarization via pyannote.ai API (`/v1/diarize`)
+- **Independent Diarization Provider Architecture** - `diarization_source` selector with four modes: ASR built-in, local (PyAnnote GPU), pyannote.ai cloud, or off — independent of transcription provider choice
+- **API-Lite Deployment Mode** - CPU-only image (~2 GB vs 8.9 GB) for organizations without GPUs; cloud-transcribed files still get local speaker embedding extraction for cross-file matching
+- **Custom Vocabulary** - Domain-specific hotwords (medical, legal, corporate, government) used as faster-whisper hotwords and cloud provider keyword boosting
+- **Admin-Pinned ASR Model** - Admins control local Whisper model selection; model loaded once at startup, shared across all workers; per-user override removed
+- **Per-Transcription Model Selection** - Users can override the admin-pinned model per upload (#153)
+
+#### Speaker Intelligence
+- **Speaker Pre-Clustering** - GPU-accelerated speaker clustering groups speakers across files based on voice similarity (#144)
+- **Global Speaker Management Page** - Dedicated page for cross-file speaker profile management
+- **Gender Classification** - Neural network gender prediction from voice characteristics using Apache 2.0 licensed model; results stored on profiles for cross-video consistency
+- **Gender-Informed Cluster Validation** - Cross-gender cluster assignment requires higher similarity threshold; minority-gender members flagged for review
+- **Speaker Profile Avatars** - Avatar images for speaker profiles
+- **Jump-to-Timestamp Links** - Speaker editor includes links to timestamps in transcript (#147)
+- **Speaker Metadata Parsing** - Cross-reference pipeline with metadata hints display for LLM-assisted speaker identification (#141)
+- **Unassign and Blacklist** - Remove speaker assignments and blacklist erroneous profiles
+- **Outlier Analysis** - Detect and flag outlier embeddings in speaker clusters
+- **Play/Pause Toggle** - Inline audio playback in speaker cluster views
+- **OpenSearch Cosine Score Fix** - OS `cosinesimil` returns `(1+cos)/2`; all 8 kNN score read locations now convert to raw cosine (`2.0 * score - 1.0`)
+- **Profile Embedding Fix** - `add_speaker_to_profile_embedding` now delegates to `update_profile_embedding` for correct centroid averaging
+
+#### Search Improvements
+- **Hybrid Search Overhaul** - Fixed OpenSearch 3.4 `ArrayIndexOutOfBoundsException` crash when using `aggs` + `hybrid` + `collapse` + RRF pipeline (was silently falling back to BM25-only)
+- **Score Gate Removed** - Replaced hard suppression with soft demotion (`_apply_semantic_demotion`); semantic results no longer dropped
+- **Dynamic Over-Fetch** - Cap raised from 200 to 1000 via `SEARCH_MAX_OVERFETCH` env var for large indexes
+- **BM25 Improvements** - Fuzziness AUTO, cross-fields, phrase slop; rank_constant 40→30
+- **Stop/Cancel Reindex** - Cancel in-flight reindex operations from Admin UI (#5994)
+- **Search Reliability** - Word-boundary regex for RRF collapse fallback; synthetic highlights for semantic results
+
+#### Collaboration & Sharing
+- **User Groups & Collection Sharing** - Create user groups and share collections with groups or individual users (#148)
+- **Speaker Profile Sharing** - Share speaker profiles via collection sharing infrastructure
+- **Config/Prompt Sharing** - Share LLM configs, prompts, media sources, and org contexts between users
+- **Per-Collection AI Prompts** - Different AI summarization prompts for different collections (#146)
+- **Bidirectional Prompt-Collection Links** - Prompts show linked collections on their cards
+
+#### Upload & Media
+- **TUS 1.0.0 Resumable Uploads** - Resumable chunked uploads with MinIO multipart storage; survives network interruptions (#10)
+- **Collection & Tag Selection at Upload** - Select collections and tags during file upload (#145)
+- **URL Download Quality Settings** - Configure video resolution, audio-only mode, and bitrate for yt-dlp downloads (#122)
+- **File Retention / Auto-Deletion** - Admin-configurable file retention with automatic deletion (#134)
+
+#### Export & Settings
+- **Configurable TXT Export** - Persistent export preferences including speaker grouping options
+- **Disable AI Summary** - Option to skip AI summarization per upload (#152)
+- **Disable Speaker Diarization** - Option to skip diarization per upload (#151)
+- **Stepper Reprocess UI** - Step-by-step reprocessing with stage picker for selective pipeline stages (#143)
+- **Organization Context** - Inject domain knowledge into all LLM prompts for context-aware summaries (#142)
+
+#### Infrastructure & Monitoring
+- **Flower Monitoring Upgrade** - Industry-standard Celery/Flower integration with persistent task history, queue visibility, and worker status
+- **Multi-GPU Stats with Stepper UI** - Real-time per-GPU stats display with stepper interface
+- **Resumable Upload Sessions** - TUS protocol session management in database
+- **Progressive Web App (PWA) & Mobile Overhaul** - Installable PWA, 2-column mobile grid, hamburger nav, full-screen modals, scroll locking, touch-optimized UI (#155)
+- **Security Hardening** - CSP headers, private MinIO buckets, AES-256-GCM encryption, non-root containers, FIPS 140-3 readiness
+- **Auto-Labeling** - AI suggests tags and collections from transcript content with fuzzy deduplication (#140)
+- **Codebase Modularization** - 9 new shared backend modules, 6 new UI components, speaker task splits, dead code removal
+- **Embedded Documentation** - New `opentranscribe-docs` container serving the Docusaurus documentation site; accessible at `/docs/` through the app's NGINX proxy (and `http://localhost:3030/docs/` directly); fully offline-capable for air-gapped deployments
+
+#### Authentication Additions (v0.3.3 integrated)
+- **Keycloak Federated Logout** - Session termination propagates to Keycloak OIDC end-session endpoint (#125)
+- **Super Admin PKI + Local Password Fallback** - PKI-authenticated super admins can retain local password as fallback (#127)
 
 ### Changed
 
@@ -90,9 +159,18 @@ Major release with four major enterprise-grade features: multi-method authentica
 ### Fixed
 
 - Speaker overlap detection accuracy improved
-- Neural search relevance and ranking improved
+- Neural search relevance and ranking improved (hybrid search was silently falling back to BM25-only due to OpenSearch 3.4 crash)
 - Authentication rate limiting prevents brute force attacks
 - PKI certificate validation with OCSP/CRL revocation checking
+- OpenSearch cosine similarity scores now correctly converted from OS range `(1+cos)/2` to raw cosine
+- Speaker profile centroid embeddings now correctly averaged across all constituent embeddings
+- GPU memory leaks fixed (CPU worker CUDA context initialization, prefork child VRAM leak)
+- HuggingFace gated model authentication for PyAnnote diarization
+- Login flicker and empty-state flash on navigation eliminated
+- YouTube bot-bypass anti-blocking with 2026 yt-dlp best practices (Deno JS runtime, client rotation)
+- Admin bypass and shared editor access across all API endpoints
+- Alembic migration chain linearized after branch merges
+- LDAP user bcrypt crash when verifying non-local passwords
 
 ### Upgrade Notes
 

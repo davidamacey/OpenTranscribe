@@ -1,4 +1,47 @@
 # PyAnnote Optimization — Deployment Checklist
+<!-- Updated for v0.4.0 -->
+
+## v0.4.0 Production Deployment Checklist
+
+Use this checklist when deploying or upgrading to v0.4.0. The PyAnnote-specific optimization checklist follows below.
+
+### Pre-Deployment
+- [ ] Verify `WHISPER_MODEL` is set (default `large-v3-turbo`; use `large-v3` if translation is needed)
+- [ ] Remove `ENABLE_ALIGNMENT` from `.env` if present — silently ignored in v0.4.0 (alignment is always-on via faster-whisper DTW)
+- [ ] Remove `TRANSCRIPTION_ENGINE` from `.env` if present — silently ignored in v0.4.0 (single unified engine)
+- [ ] Confirm `GPU_WORKER_POOL` is unset or `threads` (default changed from `prefork` to `threads`)
+- [ ] Confirm `DEPLOYMENT_MODE` is set (`full` for GPU, `lite` for cloud ASR only)
+- [ ] If using cloud ASR: configure at least one provider key (`DEEPGRAM_API_KEY`, etc.)
+
+### Authentication
+- [ ] Configure auth method(s) via Admin UI: **Settings → Authentication** (stored in DB, takes precedence over `.env`)
+- [ ] If enabling MFA: verify TOTP is compatible with standard authenticator apps (Google Authenticator, Authy)
+- [ ] If using PKI: ensure nginx mTLS overlay is active (`--with-pki` flag or `docker-compose.pki.yml`)
+- [ ] If using LDAP/AD: confirm LDAP service account credentials and search base
+- [ ] If using OIDC/Keycloak: confirm client ID, secret, and discovery URL
+
+### Database
+- [ ] Alembic migrations v330–v355 run automatically on backend startup — verify no errors in backend logs
+- [ ] Optional: run PyAnnote v4 speaker embedding migration (`POST /admin/embeddings/migrate-v4`) for improved 256-dim accuracy
+
+### OpenSearch
+- [ ] Verify OpenSearch ML Commons neural model is registered (check backend logs on startup)
+- [ ] If upgrading from v0.3.x: confirm `speakers` alias has been swapped to point to `speakers_v4` index
+
+### File Retention
+- [ ] Configure retention policy via Admin UI: **Settings → File Retention** (GDPR compliance)
+
+### Search Configuration
+- [ ] `SEARCH_MAX_OVERFETCH` (default: 1000) — increase if hybrid search returns too few results
+- [ ] `SEARCH_RRF_RANK_CONSTANT` (default: 30) — tune RRF scoring if needed
+
+### Post-Deployment Verification
+- [ ] Upload a test file and verify full pipeline completes (preprocess → GPU → postprocess)
+- [ ] Confirm WebSocket notifications arrive in frontend
+- [ ] Test search (keyword + semantic) returns results
+- [ ] Verify speaker diarization assigns 256-dim embeddings (check `speakers_v4` index count)
+
+---
 
 ## Summary
 ✅ **GPU Optimization**: 1.28x speedup, 66% VRAM reduction (verified on 5-file suite)

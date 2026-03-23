@@ -22,7 +22,7 @@ The migration updates the technical foundation of speaker embeddings:
 
 | Aspect | PyAnnote v3 | PyAnnote v4 |
 |--------|-------------|-------------|
-| Embedding Dimension | 192 | 256 |
+| Embedding Dimension | 512 | 256 |
 | Speaker Assignment | ~3 seconds per speaker | ~11ms per speaker |
 | Model Startup Time | With cache: 120-180s | With cache: 60-120s |
 | Overlap Detection | Not available | Available |
@@ -32,7 +32,7 @@ The migration updates the technical foundation of speaker embeddings:
 
 Since v0.3.3, OpenSearch speaker indices use an alias-based architecture:
 
-- **`speakers_v3`**: Concrete index with 192-dim embeddings (PyAnnote v3)
+- **`speakers_v3`**: Concrete index with 512-dim embeddings (PyAnnote v3 / pyannote/embedding model)
 - **`speakers_v4`**: Concrete index with 256-dim embeddings (WeSpeaker/PyAnnote v4)
 - **`speakers`**: An OpenSearch alias that points to the currently active versioned index
 
@@ -40,7 +40,7 @@ Finalization (switching from v3 to v4) is an atomic alias swap -- no data copy o
 
 #### Why Alias-Based Architecture?
 
-The alias-based design was chosen to solve a fundamental problem: v3 embeddings (192-dim) and v4 embeddings (256-dim) are mathematically incompatible and cannot coexist in the same HNSW index. A naive migration approach would require either:
+The alias-based design was chosen to solve a fundamental problem: v3 embeddings (512-dim) and v4 embeddings (256-dim) are mathematically incompatible and cannot coexist in the same HNSW index. A naive migration approach would require either:
 
 1. **Reindex-and-swap**: Build a complete new index, then delete the old one. This risks data loss if the process fails midway and requires double the storage during migration.
 2. **In-place migration**: Delete all documents and re-insert with new dimensions. This causes downtime and breaks any in-flight queries.

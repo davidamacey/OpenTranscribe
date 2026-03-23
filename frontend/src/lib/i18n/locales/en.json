@@ -2701,6 +2701,7 @@
   "settings.groups.navTitle": "Groups",
   "settings.groups.description": "Create and manage groups for sharing collections with team members.",
   "nav.speakers": "Speakers",
+  "nav.docs": "Docs",
   "speakers.title": "Speaker Management",
   "speakers.tabs.clusters": "Clusters",
   "speakers.tabs.profiles": "Profiles",

@@ -1,4 +1,5 @@
 # Architecture Overview
+<!-- Updated for v0.4.0 -->
 
 This document explains OpenTranscribe's architecture, the reasoning behind key design decisions, and how this approach compares to other open-source applications and industry patterns.
 
@@ -42,10 +43,11 @@ OpenTranscribe uses a **distributed microservices architecture** orchestrated wi
 |---------|-----------|---------|----------|
 | **Frontend** | `opentranscribe-frontend` | SPA with PWA support | Svelte, TypeScript, Vite |
 | **Backend** | `opentranscribe-backend` | REST API, WebSockets, migrations | FastAPI, SQLAlchemy, Alembic |
+| **Docs** | `opentranscribe-docs` | Embedded documentation site, proxied at `/docs/` | Docusaurus, NGINX |
 | **PostgreSQL** | `opentranscribe-postgres` | Relational data (users, transcripts, speakers) | PostgreSQL 17 |
 | **MinIO** | `opentranscribe-minio` | S3-compatible object storage for media files | MinIO |
 | **Redis** | `opentranscribe-redis` | Celery broker, caching, pub/sub | Redis 8 |
-| **OpenSearch** | `opentranscribe-opensearch` | Full-text search, vector/neural search | OpenSearch 3.4 |
+| **OpenSearch** | `opentranscribe-opensearch` | Full-text search, vector/neural search, ML Commons embeddings | OpenSearch 3.4.0 |
 | **Flower** | `opentranscribe-flower` | Celery task monitoring dashboard | Flower |
 
 ## Task Queue Architecture
@@ -64,20 +66,23 @@ OpenTranscribe uses **Celery with Redis** as its distributed task queue. This is
 
 ### Specialized Worker Queues
 
-OpenTranscribe splits work across 5 specialized Celery workers (plus a scheduler), each consuming from dedicated queues:
+OpenTranscribe splits work across 6 specialized Celery workers (plus a scheduler), each consuming from dedicated queues:
 
-| Worker | Queue(s) | Concurrency | Purpose |
-|--------|----------|-------------|---------|
-| **GPU Worker** | `gpu` | 1 (sequential) | WhisperX transcription + PyAnnote diarization. Keeps models warm in VRAM. |
-| **Download Worker** | `download` | 3 | Media downloads (yt-dlp, URL fetching). Network-bound, no GPU needed. |
-| **CPU Worker** | `cpu`, `utility` | 8 | Post-processing, reindexing, maintenance. Pure CPU work. |
-| **NLP Worker** | `nlp`, `celery` | 4 | LLM summarization, speaker identification. External API calls. |
-| **Embedding Worker** | `embedding` | 1 (sequential) | Sentence-transformer embedding generation. Keeps model in memory. |
-| **Beat Scheduler** | _(scheduler)_ | N/A | Periodic tasks (health checks, cleanup). No task execution. |
+| Worker | Queue(s) | Concurrency | Pool | Purpose |
+|--------|----------|-------------|------|---------|
+| **GPU Worker** | `gpu` | 1 (sequential) | `threads` | WhisperX transcription + PyAnnote diarization. Shared model in VRAM. |
+| **Download Worker** | `download` | 3 | `prefork` | Media downloads (yt-dlp, URL fetching). Network-bound, no GPU needed. |
+| **CPU Worker** | `cpu`, `utility` | 8 | `prefork` | Post-processing, reindexing, maintenance. Pure CPU work. |
+| **NLP Worker** | `nlp`, `celery` | 4 | `prefork` | LLM summarization, speaker identification. External API calls. |
+| **Embedding Worker** | `embedding` | 1 (sequential) | `threads` | Sentence-transformer embedding generation. Keeps model in memory. |
+| **Utility Worker** | `utility` | 4 | `prefork` | File retention cleanup, periodic maintenance tasks. |
+| **Beat Scheduler** | _(scheduler)_ | N/A | N/A | Periodic tasks (health checks, cleanup). No task execution. |
 
 **Design rationale for concurrency settings:**
-- **Concurrency=1** workers (GPU, Embedding): These load large models into memory. Running one task at a time keeps the model warm and avoids memory thrashing. High `max-tasks-per-child` prevents unnecessary model reloads.
-- **Concurrency=3-8** workers (Download, CPU, NLP): These are I/O-bound or CPU-bound without large model requirements. Higher concurrency increases throughput.
+- **Threads pool** (GPU, Embedding): Workers use the `threads` pool (default as of v0.4.0) so all threads within a process share a single loaded model. This avoids model reloads between tasks and reduces VRAM usage compared to the `prefork` model-per-process approach.
+- **Prefork pool** (Download, CPU, NLP, Utility): These are I/O-bound or CPU-bound without large model requirements. Higher concurrency increases throughput.
+
+**Unified 3-stage pipeline (v0.4.0):** Each transcription job runs as a Celery chain: `preprocess` → `gpu` → `postprocess`. The preprocess stage (audio extraction, format normalization) and postprocess stage (indexing, embedding, notifications) run on CPU workers, freeing the GPU worker to focus exclusively on AI inference.
 
 ### Multi-GPU Scaling
 
@@ -93,25 +98,31 @@ GPU_SCALE_WORKERS=4         # Parallel workers within one container
 ./opentr.sh start dev --gpu-scale
 ```
 
-This creates a single container with multiple Celery worker processes sharing one GPU, allowing parallel transcription of multiple files.
+This creates a single container with multiple Celery worker threads sharing one GPU (threads pool), allowing parallel transcription of multiple files without reloading the model.
 
 ### Task Flow Example
 
-A typical file upload follows this path:
+A typical file upload follows this path (unified 3-stage Celery chain, v0.4.0):
 
 ```
 User uploads file
   → Backend API receives file, stores in MinIO
   → Creates database record (PostgreSQL)
-  → Dispatches Celery task to `gpu` queue
-  → GPU Worker picks up task:
-      1. Downloads audio from MinIO
-      2. Runs WhisperX transcription (GPU)
-      3. Runs PyAnnote diarization (GPU)
-      4. Stores results in PostgreSQL
-      5. Dispatches embedding task to `embedding` queue
-      6. Sends WebSocket notification → Frontend updates
-  → Embedding Worker generates search vectors → OpenSearch
+  → Dispatches Celery chain to workers
+
+  Stage 1 — Preprocess (CPU Worker):
+      1. Extracts and normalizes audio from MinIO
+      2. Validates format and duration
+
+  Stage 2 — GPU (GPU Worker):
+      3. Runs WhisperX transcription with native word-level timestamps (DTW)
+      4. Runs PyAnnote diarization (256-dim WeSpeaker embeddings)
+      5. Stores transcript segments + speaker data in PostgreSQL
+
+  Stage 3 — Postprocess (CPU Worker):
+      6. Indexes transcript → OpenSearch (full-text + semantic)
+      7. Dispatches embedding task → Embedding Worker → OpenSearch
+      8. Sends WebSocket notification → Frontend updates
 ```
 
 ### Monitoring
@@ -180,23 +191,25 @@ The multi-container Celery architecture is the right fit because:
 
 | Requirement | How It's Met |
 |-------------|--------------|
-| Heavy GPU AI workloads | Isolated GPU worker with model persistence |
+| Heavy GPU AI workloads | Isolated GPU worker with shared model (threads pool) |
 | Self-hosted deployment | Docker Compose runs anywhere with a GPU |
-| Multiple task types | 5 specialized workers with appropriate concurrency |
+| GPU-free deployment | `DEPLOYMENT_MODE=lite` uses cloud ASR providers |
+| Multiple task types | 6 specialized workers with appropriate concurrency |
 | Reliability | Worker crashes don't affect API; Celery auto-restarts |
 | Scalability | Add workers per queue independently; multi-GPU support |
 | Monitoring | Flower dashboard for production visibility |
 | Offline / air-gapped | No cloud dependencies; everything runs locally |
+| Enterprise auth | Hybrid multi-method: local, LDAP, OIDC, PKI simultaneously |
 
 ### Container Count
 
-A full OpenTranscribe deployment runs **12 containers**:
+A full OpenTranscribe deployment runs **15 containers**:
 
 | Category | Containers | Count |
 |----------|-----------|-------|
-| **Application** | Frontend, Backend | 2 |
+| **Application** | Frontend, Backend, Docs | 3 |
 | **Infrastructure** | PostgreSQL, Redis, MinIO, OpenSearch | 4 |
-| **Workers** | GPU, Download, CPU, NLP, Embedding | 5 |
+| **Workers** | GPU, Download, CPU, NLP, Embedding, Utility | 6 |
 | **Monitoring/Scheduling** | Flower, Celery Beat | 2 |
 
 > **Note on container overhead:** The "weight" of this deployment comes from the AI models (~2.5GB for WhisperX + PyAnnote), not from the container count. Any architecture running the same models would need similar resources. The containers themselves add minimal overhead — they share the host kernel, and infrastructure services (Postgres, Redis, MinIO) use lightweight Alpine-based images.

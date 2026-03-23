@@ -139,7 +139,7 @@ RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py -v --headed
 pytest backend/tests/e2e/test_mfa.py -v
 
 # Run with visible browser (XRDP display)
-DISPLAY=:13 pytest backend/tests/e2e/test_auth_buttons.py -v --headed
+DISPLAY=:11 pytest backend/tests/e2e/test_auth_buttons.py -v --headed
 
 # All E2E tests
 pytest backend/tests/e2e/ -v

@@ -27,20 +27,39 @@ API Endpoints → Service Layer → Data Layer (Models/External APIs)
 
 ```
 services/
+├── interfaces.py                      # Protocol interfaces (Storage, Search, Cache, Notification)
+├── notification_service.py            # Unified send_task_notification() wrapper
+├── progress_tracker.py                # EWMA ETA progress tracking (preferred)
+├── migration_progress_service.py      # Atomic Lua increments for concurrent batch migrations
 ├── file_service.py                    # File management operations
 ├── file_cleanup_service.py            # File recovery and cleanup operations
+├── file_retention_service.py          # Admin-configurable auto-deletion policies
 ├── transcription_service.py           # Transcription workflow management
-├── llm_service.py                     # Multi-provider LLM integration with intelligent context processing
-├── opensearch_summary_service.py      # AI summary search and indexing operations
+├── llm_service.py                     # Multi-provider LLM (vLLM, OpenAI, Ollama, Claude, OpenRouter)
+├── opensearch_service.py              # Full-text + neural search, ML Commons, alias-based speaker indices
+├── hybrid_search_service.py           # Hybrid BM25+vector search (OS 3.4 crash fix applied)
+├── opensearch_summary_service.py      # AI summary search and indexing
 ├── minio_service.py                   # Object storage operations
-├── opensearch_service.py              # Search and indexing operations
-├── analytics_service.py               # Server-side analytics computation service
-├── error_categorization_service.py    # Error classification and user guidance service
-├── formatting_service.py              # Data formatting and display service
-├── profile_embedding_service.py       # Voice embedding and speaker similarity service
-├── smart_speaker_suggestion_service.py # Intelligent speaker suggestion consolidation service
-├── speaker_status_service.py          # Speaker verification status management service
-└── task_filtering_service.py          # Task and data filtering optimization service
+├── analytics_service.py               # Server-side analytics computation
+├── error_categorization_service.py    # Error classification and user guidance
+├── formatting_service.py              # Data formatting and display
+├── profile_embedding_service.py       # Profile centroid management (averaging bug fixed)
+├── speaker_matching_service.py        # Speaker matching with cosine score conversion
+├── smart_speaker_suggestion_service.py # Intelligent speaker suggestion consolidation
+├── speaker_status_service.py          # Speaker verification status management
+├── similarity_service.py              # Speaker similarity with corrected cosine conversion
+├── task_filtering_service.py          # Task and data filtering optimization
+├── asr/                               # ASR service + 8 cloud provider clients
+│   ├── asr_service.py                 # ASR provider dispatch
+│   ├── deepgram_client.py
+│   ├── assemblyai_client.py
+│   ├── openai_asr_client.py
+│   ├── google_asr_client.py
+│   ├── azure_asr_client.py
+│   ├── aws_asr_client.py
+│   ├── speechmatics_client.py
+│   └── gladia_client.py
+└── search/                            # Search sub-services
 ```
 
 ## 🔧 Service Design Patterns
@@ -521,7 +540,44 @@ class TaskFilteringService:
 - **Performance Optimization**: Query optimization for large datasets
 - **User-Specific Filtering**: Context-aware filtering based on user permissions
 
-## 🔍 OpenSearch Service (`opensearch_service.py`)
+## Protocol Interfaces (`interfaces.py`)
+
+Defines `Protocol` interfaces for Storage, Search, Cache, and Notification abstractions. Use these for type hints when writing code that should be testable against mocks.
+
+## Notification Service (`notification_service.py`)
+
+Unified `send_task_notification()` wrapper used by all tasks and services. Import this rather than calling WebSocket send directly.
+
+## Progress Tracker (`progress_tracker.py`)
+
+Preferred progress tracking implementation using EWMA (Exponentially Weighted Moving Average) for ETA estimation. Use this in new tasks rather than manual progress calculations.
+
+## Hybrid Search Service (`hybrid_search_service.py`)
+
+Implements hybrid BM25+neural search. Contains a critical fix for OpenSearch 3.4: using `aggs` (cardinality aggregations) with `hybrid` query + `collapse` + RRF `search_pipeline` causes an `ArrayIndexOutOfBoundsException` in OS 3.4. The fix removes `aggs` from hybrid query bodies; `total_files` is computed from result length instead.
+
+## OpenSearch Service (`opensearch_service.py`)
+
+### Cosine Score Conversion — Critical
+
+OpenSearch `cosinesimil` space type returns `(1 + cosine) / 2`, not raw cosine. A raw cosine of 0.50 appears as 0.75 in OpenSearch scores. All kNN score reads must convert:
+
+```python
+raw_cosine = 2.0 * hit["_score"] - 1.0
+```
+
+This conversion is applied at 8 locations across `opensearch_service.py`, `profile_embedding_service.py`, `speaker_matching_service.py`, `smart_speaker_suggestion_service.py`, and `similarity_service.py`.
+
+### Speaker Index Alias Architecture
+
+Speaker indices use an alias-based architecture:
+- `speakers_v3`: concrete index, 512-dim (pyannote/embedding)
+- `speakers_v4`: concrete index, 256-dim (WeSpeaker)
+- `speakers`: OpenSearch ALIAS pointing to the active versioned index
+
+Use `get_write_index()` and `get_active_versioned_index()` — never reference `speakers_v3`/`speakers_v4` directly outside `opensearch_service.py`.
+
+## OpenSearch Service (`opensearch_service.py`)
 
 ### Purpose
 Manages full-text search, indexing, and search analytics for transcripts and files.

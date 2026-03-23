@@ -2,6 +2,8 @@
 
 This guide explains how to use the free, open-source security scanning tools integrated into OpenTranscribe for local development and CI/CD pipelines.
 
+> **v0.4.0**: Trivy and Grype scans are part of the release process. Run `./scripts/security-scan.sh all` and resolve any CRITICAL/HIGH findings before tagging a release. The GitHub Actions `security-scan.yml` workflow enforces this automatically on pushes to main.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -294,7 +296,7 @@ Runs all pre-commit hooks on every push/PR:
 Add to README.md:
 
 ```markdown
-[![Security Scanning](https://github.com/yourusername/transcribe-app/actions/workflows/security-scan.yml/badge.svg)](https://github.com/yourusername/transcribe-app/actions/workflows/security-scan.yml)
+[![Security Scanning](https://github.com/davidamacey/opentranscribe/actions/workflows/security-scan.yml/badge.svg)](https://github.com/davidamacey/opentranscribe/actions/workflows/security-scan.yml)
 ```
 
 ## Understanding Reports
@@ -424,8 +426,11 @@ FAIL_ON_CRITICAL=false ./scripts/security-scan.sh all
 # For main branch: Fail on critical issues
 FAIL_ON_CRITICAL=true FAIL_ON_SECURITY_ISSUES=true ./scripts/security-scan.sh all
 
-# For releases: Full scan with strict settings
+# For releases (v0.4.0+ release process): Full scan with strict settings
 SEVERITY_THRESHOLD=MEDIUM FAIL_ON_CRITICAL=true ./scripts/security-scan.sh all
+# After passing: tag with annotated tag
+git tag -a v0.4.0 -m "Release v0.4.0"
+git push origin v0.4.0
 ```
 
 ## Troubleshooting

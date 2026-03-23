@@ -24,62 +24,93 @@ API Request → Task Dispatch → Celery Worker → AI Processing → Database U
 - **Multi-Provider LLMs**: Intelligent summarization with context processing
 - **FFmpeg**: Media processing and conversion
 
-## 📁 Task Structure
+## Task Structure
 
 ```
 tasks/
-├── transcription/              # Modular transcription pipeline
-│   ├── __init__.py            # Main task exports
-│   ├── core.py                # Task orchestrator
-│   ├── metadata_extractor.py  # Media metadata processing
-│   ├── audio_processor.py     # Audio conversion/extraction
-│   ├── speaker_processor.py   # Speaker diarization
-│   ├── storage.py             # Database storage utilities
-│   └── notifications.py       # WebSocket notifications
-├── analytics.py               # Analytics and insights processing
-├── cleanup.py                 # File recovery and cleanup tasks
-├── summarization.py           # Multi-provider AI summarization with intelligent section processing
-├── speaker_tasks.py           # LLM-powered speaker identification and management
-├── transcription.py           # Main transcription task router
-└── youtube_processing.py      # NEW: Enhanced YouTube URL processing with metadata extraction
+├── transcription/                    # 3-stage GPU transcription pipeline
+│   ├── __init__.py                  # Task exports
+│   ├── preprocess.py                # Stage 1: download from MinIO, extract audio
+│   ├── core.py                      # Stage 2: WhisperX + PyAnnote (GPU)
+│   ├── postprocess.py               # Stage 3: index, notify, dispatch enrichment
+│   ├── dispatch.py                  # Task routing helpers
+│   ├── audio_processor.py           # FFmpeg audio conversion/extraction
+│   ├── metadata_extractor.py        # ExifTool media metadata
+│   ├── speaker_processor.py         # Speaker diarization processing
+│   ├── storage.py                   # Database storage utilities
+│   ├── notifications.py             # WebSocket notifications
+│   └── waveform_generator.py        # Waveform data generation
+├── speaker_tasks.py                  # Thin re-export module (do not add logic here)
+├── speaker_identification_task.py    # LLM-powered speaker name suggestions
+├── speaker_update_task.py            # Background speaker record updates
+├── speaker_embedding_task.py         # Embedding extraction and reassignment
+├── reindex_task.py                   # Search reindexing with stop/cancel support
+├── file_retention_task.py            # Auto-deletion based on admin retention policy
+├── analytics.py                      # Analytics and insights processing
+├── cleanup.py                        # Stuck file detection and recovery
+├── summarization.py                  # Multi-provider LLM summarization
+├── summary_retry.py                  # Summary retry logic
+├── youtube_processing.py             # yt-dlp URL download processing
+├── embedding_migration_v4.py         # Speaker embedding migration to v4 format
+├── migration_pipeline.py             # General migration pipeline tasks
+├── embedding_consistency_repair.py   # Embedding index consistency repair
+├── search_maintenance_task.py        # OpenSearch index maintenance
+├── search_indexing_task.py           # Search indexing tasks
+├── thumbnail.py                      # Thumbnail generation
+├── waveform.py                       # Waveform generation (standalone)
+├── rediarize_task.py                 # Re-diarization tasks
+├── topic_extraction.py               # LLM topic extraction
+└── utility.py                        # Shared task utilities
 ```
 
-## 🎙️ Transcription Pipeline (`transcription/`)
+## Transcription Pipeline (`transcription/`)
 
-### Pipeline Overview
-The transcription system is modularized into focused components for maintainability and reusability:
+### 3-Stage Pipeline Overview
+
+The transcription pipeline runs as three chained Celery tasks, separating concerns and allowing the GPU worker to be freed as early as possible:
 
 ```
-1. File Download → 2. Metadata Extraction → 3. Audio Processing → 4. AI Transcription → 5. Speaker Diarization → 6. Database Storage → 7. Search Indexing → 8. Notifications
+preprocess_task  →  gpu_transcription_task  →  postprocess_task
+(download audio)    (WhisperX + PyAnnote)       (index + notify + dispatch enrichment)
+     CPU                   GPU                          CPU
 ```
 
-### Core Task (`core.py`)
-Main orchestrator that coordinates the entire transcription pipeline:
+Enrichment tasks (speaker embedding, LLM identification) are dispatched asynchronously from postprocess — they do not block the GPU worker.
+
+### Stage 1: Preprocess (`preprocess.py`)
+- Downloads file from MinIO
+- Extracts audio with FFmpeg
+- Extracts media metadata with ExifTool
+- Dispatches `gpu_transcription_task`
+
+### Stage 2: GPU Transcription (`core.py`)
+Main GPU-side orchestrator:
 
 ```python
-@celery_app.task(bind=True, name="transcribe_audio")
-def transcribe_audio_task(self, file_id: int):
+@celery_app.task(bind=True, name="gpu_transcription_task", queue="gpu")
+def gpu_transcription_task(self, file_id: int):
     """
-    Process an audio/video file with WhisperX for transcription and PyAnnote for diarization.
+    Run WhisperX transcription + PyAnnote speaker diarization.
 
-    Pipeline:
-    1. Download file from MinIO storage
-    2. Extract comprehensive metadata with ExifTool
-    3. Convert/extract audio for processing
-    4. Run WhisperX transcription with word-level alignment
-    5. Perform speaker diarization with PyAnnote
-    6. Process and store transcript segments
-    7. Index content for search
-    8. Send real-time notifications
+    Steps:
+    1. Load audio from temp storage
+    2. Run WhisperX with configured model (admin-pinned via SystemSettings)
+    3. Run PyAnnote speaker diarization
+    4. Process and store transcript segments
+    5. Dispatch postprocess_task
     """
 ```
 
 **Key Features:**
-- **Progress Tracking**: Real-time progress updates (0.1 → 1.0)
-- **Error Handling**: Comprehensive error recovery and logging
-- **Status Management**: File status transitions (pending → processing → completed)
-- **Session Management**: Proper database session handling
-- **Resource Cleanup**: Temporary file cleanup and memory management
+- **Admin-pinned model**: Reads model from `SystemSettings` key `asr.local_model`, falls back to `WHISPER_MODEL` env var
+- **Model preloading**: Worker preloads model at startup via `worker_ready` signal (CUDA workers)
+- **GPU memory management**: `torch.cuda.empty_cache()` after processing
+- **Progress tracking**: Real-time updates via `progress_tracker.py` (EWMA ETA)
+
+### Stage 3: Postprocess (`postprocess.py`)
+- Indexes content in OpenSearch
+- Sends WebSocket completion notification
+- Dispatches async enrichment: speaker embedding, LLM identification (does not block GPU)
 
 ### Metadata Extraction (`metadata_extractor.py`)
 Extracts comprehensive media metadata using ExifTool:
@@ -184,7 +215,20 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
 - **Error Notifications**: User-friendly error messages
 - **Retry Logic**: Robust delivery with automatic retries
 
-## 📊 Analytics Tasks (`analytics.py`)
+## Speaker Tasks (Split Architecture)
+
+`speaker_tasks.py` is a thin re-export module only. Real implementations live in dedicated files:
+
+### `speaker_identification_task.py`
+LLM-powered speaker name suggestions based on conversation context. Suggestions are never auto-applied — they require manual user verification.
+
+### `speaker_update_task.py`
+Background updates to speaker records (display names, profile links, verification status).
+
+### `speaker_embedding_task.py`
+Extracts voice embeddings and handles speaker profile reassignment. Runs on the embedding worker (`celery-embedding-worker`), keeping GPU memory free.
+
+## Analytics Tasks (`analytics.py`)
 
 ### Purpose
 Generate insights and analytics from transcribed content:
@@ -360,35 +404,23 @@ The cleanup tasks work with the enhanced file management system:
 - Progress tracking for bulk operations
 - User-friendly error messages and recommendations
 
-## 🔧 Task Configuration
+## Task Configuration
 
-### Celery Configuration (`app/core/celery.py`)
-```python
-# Task routing and configuration
-celery_app = Celery("transcribe_app")
-celery_app.conf.update(
-    broker_url=settings.CELERY_BROKER_URL,
-    result_backend=settings.CELERY_RESULT_BACKEND,
-    task_serializer='json',
-    accept_content=['json'],
-    result_serializer='json',
-    timezone='UTC',
-    enable_utc=True,
-    task_track_started=True,
-    task_time_limit=30 * 60,  # 30 minutes
-    task_soft_time_limit=25 * 60,  # 25 minutes
-)
-```
+### Celery Workers
+Three worker types are defined in `docker-compose.yml`:
+
+| Worker | Queue | Purpose |
+|--------|-------|---------|
+| `celery-worker` | `gpu`, `default` | GPU transcription pipeline (preprocess, gpu_transcription, postprocess) |
+| `celery-cpu-worker` | `cpu`, `default` | Summarization, analytics, cleanup, maintenance |
+| `celery-embedding-worker` | `embedding` | Speaker embedding extraction and reassignment |
+
+Worker pool defaults to `threads` (not prefork) so the Whisper model loads once and is shared.
 
 ### Task Registration
+Tasks are auto-discovered from `app.tasks`:
 ```python
-# Tasks are automatically discovered
 celery_app.autodiscover_tasks(['app.tasks'])
-
-# Manual task registration for complex imports
-from app.tasks.transcription import transcribe_audio_task
-from app.tasks.analytics import analyze_transcript_task
-from app.tasks.summarization import summarize_transcript_task
 ```
 
 ## 📊 Task Monitoring
@@ -500,25 +532,24 @@ with session_scope() as db:
 
 ### Task Testing Patterns
 ```python
-def test_transcription_task_success(celery_app, db_session, sample_file):
-    """Test successful transcription task."""
-    # Mock external dependencies
+def test_preprocess_task_success(celery_app, db_session, sample_file):
+    """Test successful preprocess task (stage 1)."""
+    from app.tasks.transcription.preprocess import preprocess_task
+
     with patch('app.services.minio_service.download_file') as mock_download:
         mock_download.return_value = (sample_audio_data, 1024, "audio/wav")
 
-        # Execute task
-        result = transcribe_audio_task.apply(args=[sample_file.id])
+        result = preprocess_task.apply(args=[sample_file.id])
 
-        # Verify results
         assert result.successful()
-        assert result.result["status"] == "success"
 
-def test_transcription_task_failure(celery_app, db_session, invalid_file):
-    """Test transcription task failure handling."""
-    result = transcribe_audio_task.apply(args=[invalid_file.id])
+def test_gpu_transcription_task_failure(celery_app, db_session, invalid_file):
+    """Test GPU transcription task failure handling (stage 2)."""
+    from app.tasks.transcription.core import gpu_transcription_task
 
+    result = gpu_transcription_task.apply(args=[invalid_file.id])
     assert result.failed()
-    # Verify error handling and cleanup
+    # Verify file status set to ERROR and user notified
 ```
 
 ### Integration Testing

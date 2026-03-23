@@ -2,6 +2,8 @@
 
 This document lists the environment variables to add to your `.env.example` file for FIPS 140-3 compliance and super admin features.
 
+> **v0.4.0 Note**: Authentication configuration is now stored encrypted (AES-256-GCM) in the database and managed via the Super Admin UI. The environment variables below function as initial seed values only — once configuration is saved via the Admin UI, the database values take precedence. FIPS-related variables (`FIPS_MODE`, `FIPS_VERSION`, `PBKDF2_ITERATIONS*`) continue to be read from the environment as they configure the cryptographic subsystem itself, not the auth configuration.
+
 ## How to Add to .env.example
 
 Add the following sections to your `.env.example` file in the appropriate locations:
@@ -46,7 +48,11 @@ TOTP_ALGORITHM=SHA1
 BOOTSTRAP_SUPER_ADMIN_EMAIL=
 
 # Note: After bootstrapping, remove or clear this value for security
-# Super admins can promote other users to super_admin via the admin UI
+# Super admins can promote other users to super_admin via Settings → Users
+
+# ===== Audit Logging (v0.4.0+) =====
+# Export audit events to OpenSearch for full-text search and SIEM integration
+AUDIT_LOG_TO_OPENSEARCH=false
 ```
 
 ## Full Configuration Example
@@ -98,3 +104,5 @@ To rollback to FIPS 140-2:
 - [FIPS 140-3 Compliance Guide](/docs/FIPS_140_3_COMPLIANCE.md)
 - [FIPS 140-2 Compliance Guide](/docs/FIPS_COMPLIANCE.md)
 - [Super Admin Guide](/docs/SUPER_ADMIN_GUIDE.md)
+- [Auth Deployment Guide](/docs/AUTH_DEPLOYMENT_GUIDE.md)
+- [Security Policy](/docs/SECURITY.md)

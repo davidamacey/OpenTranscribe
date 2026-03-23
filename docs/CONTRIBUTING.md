@@ -1,4 +1,5 @@
 # Contributing to OpenTranscribe
+<!-- Updated for v0.4.0 -->
 
 Thank you for your interest in contributing to OpenTranscribe! This document provides guidelines and information for contributors.
 
@@ -44,6 +45,10 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
    - NVIDIA GPU with CUDA support (for AI processing)
    - 16GB+ RAM (for large models)
    - Visual Studio Code with recommended extensions
+
+   # GPU-free development
+   # Set DEPLOYMENT_MODE=lite in .env to use cloud ASR providers instead of a local GPU.
+   # This is the fastest way to run a working dev environment without GPU hardware.
    ```
 
 2. **Fork and Clone**
@@ -77,8 +82,8 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
 
    # Access the application
    # Frontend: http://localhost:5173
-   # API: http://localhost:8080/docs
-   # Flower: http://localhost:5555/flower
+   # API: http://localhost:5174/api/docs
+   # Flower: http://localhost:5175/flower
    ```
 
 ## 🏗️ Development Workflow
@@ -105,16 +110,16 @@ git checkout -b docs/improvement-description
 cd backend/
 
 # Install dependencies (if developing outside Docker)
+source venv/bin/activate
 pip install -r requirements.txt
 
 # Run tests
 ./opentr.sh shell backend
 pytest tests/
 
-# Code style
-black app/
-isort app/
-flake8 app/
+# Code style (ruff replaces black, isort, flake8)
+ruff check --fix app/
+ruff format app/
 ```
 
 #### Frontend Development
@@ -443,9 +448,16 @@ Any other context, mockups, or examples
 
 ### Internationalization
 - Use translation keys instead of hardcoded strings
+- The UI supports 8 languages: English, Spanish, French, German, Portuguese, Chinese, Japanese, Korean
+- Translation JSON files live in `frontend/src/lib/i18n/locales/`
 - Support RTL languages
 - Consider cultural differences in UX
 - Test with different locales
+
+### Blackwell GPU Development
+- NVIDIA Blackwell GPUs (GB10x/GB20x, DGX Spark) require a separate `backend/Dockerfile.blackwell`
+- Use `./scripts/docker-build-push.sh --blackwell backend` to build the Blackwell image
+- Standard `Dockerfile.prod` builds work on all Ampere and earlier NVIDIA GPUs
 
 ## 🏆 Recognition
 
@@ -475,7 +487,7 @@ Any other context, mockups, or examples
 ### Resources
 - [Development Environment Setup Guide](backend/README.md)
 - [Frontend Development Guide](frontend/README.md)
-- [API Documentation](http://localhost:8080/docs)
+- [API Documentation](http://localhost:5174/api/docs)
 - [Architecture Overview](backend/app/README.md)
 
 ---

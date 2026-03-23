@@ -11,6 +11,7 @@ This directory contains core database configuration, session management, and the
 ```
 db/
 ├── base.py           # Core SQLAlchemy setup and configuration
+├── migrations.py     # Startup Alembic runner + schema version detection
 ├── session_utils.py  # Session management utilities
 └── README.md         # This documentation
 ```
@@ -184,10 +185,9 @@ The current database includes several new tables and enhancements for advanced f
 
 ### Alembic Setup
 - Alembic is configured in `alembic.ini`
-- Migration files in `alembic/versions/`
-- Current migrations:
-  - `initial_migration.py` - Base schema
-  - `add_speaker_fields.py` - Speaker enhancements
+- Migration files in `backend/alembic/versions/` — v010 (baseline) through v355
+- `migrations.py` runs automatically on backend startup: detects current version, stamps untracked databases, runs `alembic upgrade head`
+- Migration chain covers ~35 versions; see `alembic/versions/` for the full list
 
 ### Production Deployment
 1. **Create Migration**: Add a new migration in `backend/alembic/versions/`
@@ -200,15 +200,16 @@ The current database includes several new tables and enhancements for advanced f
 ```
 backend/
 ├── alembic/                    # Alembic migration framework
-│   ├── versions/              # Migration files
+│   ├── versions/              # Migration files (v010–v355)
 │   ├── env.py                 # Alembic environment config
 │   └── script.py.mako         # Migration template
 ├── alembic.ini                # Alembic configuration
-├── database/
-│   └── init_db.sql           # Legacy reference only
 └── app/
     ├── db/                   # Database layer (session management)
-    ├── models/               # SQLAlchemy ORM models
+    │   ├── base.py           # Engine, SessionLocal, Base
+    │   ├── migrations.py     # Startup runner + version detection
+    │   └── session_utils.py  # session_scope(), get_refreshed_object()
+    ├── models/               # SQLAlchemy ORM models (~20 files)
     └── schemas/              # Pydantic validation schemas
 ```
 

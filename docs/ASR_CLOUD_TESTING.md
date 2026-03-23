@@ -16,6 +16,61 @@ All providers share the same integration surface: a `validate_connection()` meth
 - `validate_connection()` for any cloud provider (lightweight credential check)
 - Full `transcribe()` calls (uploads audio, incurs API costs)
 
+## Deployment Mode: API-Lite (`DEPLOYMENT_MODE=lite`)
+
+OpenTranscribe v0.4.0 introduces a lightweight deployment mode that removes the GPU worker entirely and routes all transcription through cloud ASR providers.
+
+```bash
+# .env
+DEPLOYMENT_MODE=lite          # Disables GPU worker, enables cloud-only mode
+ASR_PROVIDER=deepgram         # Required: set a cloud provider as default
+```
+
+**How it differs from full mode:**
+
+| Aspect | `full` (default) | `lite` |
+|--------|-----------------|--------|
+| GPU worker | Required | Not started |
+| Local (GPU) ASR | Yes | No |
+| Cloud ASR | Optional | Required |
+| PyAnnote diarization | Yes | Depends on provider |
+| WhisperX models | Downloaded | Not downloaded |
+| Min RAM for transcription | ~6GB VRAM | 0 (host RAM only) |
+| Docker image size | ~12GB | ~3GB |
+
+**Use cases for `lite` mode:**
+- Deploying on CPU-only servers without GPU hardware
+- Cost-optimized cloud deployments where GPU instances are too expensive
+- Edge deployments with limited resources
+- Development/testing without a GPU
+
+**Limitations of `lite` mode:**
+- No local fallback if cloud provider fails
+- Speaker diarization depends entirely on the chosen provider's capabilities
+- Translation to English requires a provider that supports it (only `whisper-1` via OpenAI)
+- pyannote.ai provider (`transcribe()`) is not yet implemented (Phase A stub)
+
+## Custom Vocabulary
+
+Several providers support custom vocabulary to improve accuracy for domain-specific terms, proper nouns, and jargon.
+
+| Provider | Feature Name | Max Terms | Format |
+|----------|-------------|-----------|--------|
+| Local | `initial_prompt` | Unlimited | Free-text hint to Whisper |
+| Deepgram | Keywords | 100 per request | List of strings with optional weight |
+| AssemblyAI | `word_boost` | Unlimited | List of strings |
+| AWS | Custom Vocabulary | 256 terms | S3-uploaded vocab file |
+| Speechmatics | `additional_vocab` | Unlimited | List of strings |
+| Gladia | `custom_vocabulary` | Unlimited | List of strings |
+| OpenAI | No vocabulary support | — | — |
+| Google | No vocabulary support | — | — |
+| Azure | No vocabulary support | — | — |
+| pyannote.ai | No vocabulary support | — | Phase A stub only |
+
+**Configuration via Settings UI:** Settings → ASR → Edit Config → Custom Vocabulary field accepts comma-separated terms, stored per-provider config in the database.
+
+**Custom vocabulary is passed to the provider at transcription time.** The local provider passes vocabulary as an `initial_prompt` to Whisper (e.g., `"Vocabulary: PyAnnote, WhisperX, CTranslate2"`), which biases the model toward those spellings.
+
 ---
 
 ## Local Provider

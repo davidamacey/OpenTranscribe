@@ -515,6 +515,40 @@ Frontend can display progress bar with real-time updates.
 
 ---
 
+## v0.4.0 Critical Bug Fixes
+
+### Bug 1: Hybrid Search Was Non-Functional (ArrayIndexOutOfBoundsException)
+
+**Symptom**: All searches silently fell back to BM25-only with zero semantic contribution. No errors visible to users.
+
+**Root cause**: OpenSearch 3.4 throws a Java `ArrayIndexOutOfBoundsException` when a `hybrid` query is combined with all three of: `aggs` (cardinality aggregation), `collapse`, and an RRF `search_pipeline`. The exception is swallowed internally; the response returns BM25 results only.
+
+**Fix**: Removed `aggs` from the hybrid query body in `_build_collapsed_search_body()`. The `total_files` count is now computed from `len(outer_hits)`. The BM25-only path retains `aggs` (no crash). This fix restored full hybrid search functionality — a search like `"pytorch"` went from returning 1 result to 83 results.
+
+**Impact**: If you were running v0.3.x, all your searches were keyword-only regardless of model configuration. Upgrading to v0.4.0 restores semantic search.
+
+### Bug 2: Cosine Score Bias (All Similarity Scores Were Wrong)
+
+**Symptom**: Speaker matching and profile matching scores were systematically inflated. A raw cosine similarity of 0.50 appeared as 0.75.
+
+**Root cause**: OpenSearch's `cosinesimil` space type for kNN indices returns `(1 + cosine) / 2`, not the raw cosine value. This is a normalization to keep scores in the range [0, 1], but the code was treating returned scores as raw cosine values directly.
+
+**Fix**: Convert at every kNN score read: `raw_cosine = 2.0 * hit["_score"] - 1.0`. Fixed at 8 locations across `opensearch_service.py`, `speaker_matching_service.py`, `profile_embedding_service.py`, `smart_speaker_suggestion_service.py`, and `similarity_service.py`.
+
+**Impact**: Thresholds (0.75 auto-accept, 0.50 suggest) now correctly apply to actual cosine similarity values.
+
+### Speaker Index Alias Architecture
+
+As of v0.4.0, the `speakers` index name is an **alias**, not a concrete index:
+
+| Alias | Points to | Embedding model | Dimensions |
+|-------|-----------|-----------------|------------|
+| `speakers` | `speakers_v3` or `speakers_v4` | pyannote/embedding or WeSpeaker | 512 / 256 |
+
+On startup, `ensure_indices_exist()` runs `migrate_to_alias_based_indices()` which performs an atomic alias swap if needed. All read/write operations use the `speakers` alias — concrete index names are an implementation detail.
+
+---
+
 ## Hybrid Search (BM25 + Neural) with RRF
 
 ### How Hybrid Search Works
@@ -623,7 +657,7 @@ RRF combines ranked lists from BM25 and vector search:
 RRF(doc) = Σ 1 / (k + rank_of_doc_in_list_i)
 
 Where:
-- k = constant (typically 60)
+- k = constant (default: 30, configurable via SEARCH_RRF_RANK_CONSTANT)
 - rank_i = Document's position in each ranked list
 - Σ = Sum across all ranked lists
 ```
@@ -642,12 +676,12 @@ Where:
 2. Doc A (score: 0.89)
 3. Doc D (score: 0.81)
 
-**RRF Fusion** (k=60):
+**RRF Fusion** (k=30, v0.4.0 default):
 ```
-Doc A: 1/(60+1) + 1/(60+2) = 0.0164 + 0.0159 = 0.0323 (Highest)
-Doc B: 1/(60+3) + 1/(60+1) = 0.0152 + 0.0164 = 0.0316
-Doc C: 1/(60+2)           = 0.0159
-Doc D: 1/(60+3)           = 0.0152
+Doc A: 1/(30+1) + 1/(30+2) = 0.0323 + 0.0313 = 0.0635 (Highest)
+Doc B: 1/(30+3) + 1/(30+1) = 0.0303 + 0.0323 = 0.0626
+Doc C: 1/(30+2)           = 0.0313
+Doc D: 1/(30+3)           = 0.0303
 ```
 
 **Final Ranking**: Doc A > Doc B > Doc C > Doc D
@@ -691,26 +725,34 @@ def search_transcripts(
         "size": limit
     }
 
-    # Add vector search if enabled
+    # Add neural/hybrid search if enabled
+    # In v0.4.0, embeddings are generated server-side by OpenSearch ML Commons.
+    # The hybrid query is executed via the transcript-hybrid-search search pipeline
+    # (RRF), which merges BM25 and kNN results automatically.
     if use_semantic and query:
-        # Generate query embedding
-        embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-        query_embedding = embedding_model.encode(query).tolist()
-
-        # Add kNN to should clause for RRF
-        search_body["query"]["bool"]["should"] = [{
-            "knn": {
-                "embedding": {
-                    "vector": query_embedding,
-                    "k": limit
+        search_body = {
+            "query": {
+                "hybrid": {
+                    "queries": [
+                        {"bool": {"must": must_conditions}},
+                        {"neural": {
+                            "embedding": {
+                                "query_text": query,
+                                "model_id": active_model_id,
+                                "k": limit
+                            }
+                        }}
+                    ]
                 }
-            }
-        }]
+            },
+            "size": limit
+        }
 
-    # Execute hybrid search
+    # Execute search (hybrid pipeline applies RRF automatically)
     response = opensearch_client.search(
         index="transcripts",
-        body=search_body
+        body=search_body,
+        params={"search_pipeline": "transcript-hybrid-search"}
     )
 
     return response["hits"]["hits"]
@@ -1333,10 +1375,10 @@ response = opensearch_client.search(
 # Bulk: 1000 docs in one request
 # Individual: 1000 separate HTTP requests (100x slower)
 
-# 3. Pre-generate embeddings if possible
-# Client-side generation (optional):
-embeddings = embedding_model.encode(texts)
-# Then index with embeddings, avoiding server-side computation
+# 3. Server-side embeddings via ingest pipeline (default in v0.4.0):
+# Documents are indexed without pre-computed embeddings; the ingest
+# pipeline calls ML Commons to generate embeddings during indexing.
+# No client-side embedding library is needed.
 
 # 4. Disable refresh during bulk import
 bulk_body = [
@@ -1514,33 +1556,26 @@ response = opensearch_client.search(
 
 #### Issue: Slow embedding generation
 
-**Cause**: Large documents, GPU not available, or model not optimized
+**Cause**: Large documents, model not deployed, or high-dimensional model selected
 
 **Solution**:
 ```python
-# 1. Monitor embedding latency
-import time
+# 1. Check ingest pipeline performance via OpenSearch stats
+# docker logs opentranscribe-opensearch 2>&1 | grep -i "embedding\|pipeline"
 
-start = time.time()
-embedding = embedding_model.encode(text)
-elapsed = time.time() - start
+# 2. Switch to a faster (lower-dimension) model via Admin UI:
+#    Settings → Search → Embedding Model → all-MiniLM-L6-v2 (384d, fastest)
+#    vs all-mpnet-base-v2 (768d, slower)
 
-logger.info(f"Embedding latency: {elapsed:.2f}s for {len(text)} chars")
+# 3. Chunking strategy: transcripts are pre-chunked by OpenTranscribe
+#    before indexing (~200 words/chunk). Very large single documents
+#    should also be chunked before indexing to keep embeddings focused.
 
-# 2. Pre-chunk large documents
-# Instead of embedding 10KB document:
-chunks = [text[i:i+2000] for i in range(0, len(text), 2000)]
-embeddings = [embedding_model.encode(chunk) for chunk in chunks]
-
-# 3. Use batch encoding
-texts = ["text1", "text2", "text3"]
-embeddings = embedding_model.encode(texts, batch_size=32)
-
-# 4. Switch to faster model
-model_id = service.ensure_model_deployed(
-    "huggingface/sentence-transformers/all-MiniLM-L6-v2"  # Faster
-    # instead of all-mpnet-base-v2 (slower)
-)
+# 4. Ensure the ML model is deployed (not just registered)
+from app.services.search.ml_model_service import get_ml_model_service
+service = get_ml_model_service()
+status = service.get_model_status(service.get_active_model_id())
+print(f"Model deployed: {status.get('deployed')}")
 ```
 
 ### Debugging Strategies
@@ -1582,22 +1617,21 @@ curl -X GET "localhost:9200/_ingest/pipeline?pretty"
 
 #### Test Model Inference
 
-```python
-# Direct model inference test
-from sentence_transformers import SentenceTransformer
+```bash
+# Test that the ML Commons model is deployed and can generate embeddings
+# via a neural search query (server-side, no client-side library needed)
+curl -s -k -u admin:admin \
+  "https://localhost:9200/transcripts/_search" \
+  -H "Content-Type: application/json" \
+  -d '{"size":1,"query":{"neural":{"embedding":{"query_text":"test","model_id":"<MODEL_ID>","k":1}}}}' \
+  | python3 -m json.tool | grep '"_score"'
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
-
-# Encode sample text
-test_text = "This is a test query"
-embedding = model.encode(test_text)
-
-print(f"Embedding shape: {embedding.shape}")
-print(f"Embedding type: {type(embedding)}")
-print(f"Sample values: {embedding[:5]}")
-
-# Verify dimensions match model config
-assert len(embedding) == 384, "Dimension mismatch"
+# Check the deployed model list
+curl -s -k -u admin:admin \
+  "https://localhost:9200/_plugins/_ml/models/_search" \
+  -H "Content-Type: application/json" \
+  -d '{"query":{"match_all":{}}}' \
+  | python3 -m json.tool | grep '"model_state"'
 ```
 
 ### Performance Profiling
@@ -1699,7 +1733,9 @@ Response: {
 | `OPENSEARCH_NEURAL_SEARCH_ENABLED` | bool | True | Enable neural search |
 | `OPENSEARCH_NEURAL_MODEL` | str | all-MiniLM-L6-v2 | Default embedding model |
 | `OPENSEARCH_TRANSCRIPT_INDEX` | str | transcripts | Transcript index name |
-| `OPENSEARCH_SPEAKER_INDEX` | str | speakers | Speaker index name |
+| `OPENSEARCH_SPEAKER_INDEX` | str | speakers | Speaker index name (alias) |
+| `SEARCH_RRF_RANK_CONSTANT` | int | 30 | RRF k constant (lower = more weight to top results) |
+| `SEARCH_MAX_OVERFETCH` | int | 1000 | Max documents retrieved before RRF collapse |
 
 ### Environment Variables
 
@@ -1714,6 +1750,10 @@ export OPENSEARCH_PASSWORD=admin
 export OPENSEARCH_NEURAL_SEARCH_ENABLED=true
 export OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-MiniLM-L6-v2"
 export OPENSEARCH_NEURAL_PIPELINE="transcript-neural-ingest"
+
+# Hybrid search tuning (v0.4.0)
+export SEARCH_RRF_RANK_CONSTANT=30       # RRF k constant (default: 30)
+export SEARCH_MAX_OVERFETCH=1000         # Max docs before RRF collapse
 
 # Model caching (for offline deployments)
 export MODEL_CACHE_DIR=./models

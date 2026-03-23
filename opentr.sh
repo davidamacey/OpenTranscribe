@@ -109,6 +109,12 @@ build_prod_images() {
     exit 1
   }
 
+  echo "🧱 Building docs image (davidamacey/opentranscribe-docs:latest)..."
+  docker build --build-arg DOCS_BASE_URL=/docs/ -t davidamacey/opentranscribe-docs:latest docs-site || {
+    echo "❌ Docs image build failed"
+    exit 1
+  }
+
   echo "✅ Local production images built successfully"
 }
 

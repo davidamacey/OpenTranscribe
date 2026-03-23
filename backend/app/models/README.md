@@ -26,13 +26,38 @@ The OpenTranscribe database is designed around media files, users, and AI-powere
                     └─────────────┘
 ```
 
-## 📁 Model Files
+## Model Files
 
-### `user.py` - User Management
-Core user authentication and authorization models.
+### Core Models
+- `user.py` — User authentication and authorization
+- `media.py` — Media files, transcript segments, speakers, tasks, comments, tags
 
-### `media.py` - Media Processing
-All models related to media files, transcription, and AI processing.
+### Authentication & Security (v0.4.0)
+- `user_mfa.py` — MFA/TOTP settings per user (RFC 6238)
+- `password_history.py` — Password history tracking for reuse prevention
+- `refresh_token.py` — Refresh token management (rotation)
+- `password_reset.py` — Password reset token tracking
+- `auth_config.py` — Authentication provider configuration (LDAP/Keycloak/PKI settings)
+
+### User Settings & Configuration
+- `user_llm_settings.py` — Per-user LLM provider settings with encrypted API keys
+- `user_asr_settings.py` — Per-user ASR provider settings
+- `user_diarization_settings.py` — Per-user diarization preferences (min/max speakers)
+- `user_media_source.py` — User-specific media source configurations
+- `system_settings.py` — System-wide admin settings (key-value store)
+
+### Collaboration & Sharing (v0.4.0)
+- `group.py` — User groups
+- `sharing.py` — Collection sharing with permissions (`collection_share` table)
+- `prompt.py` — Shared prompt templates (shared_prompt, summary_prompt)
+
+### Media & Processing
+- `upload_batch.py` — Upload session/batch tracking
+- `topic.py` — LLM-extracted topics per transcript
+- `custom_vocabulary.py` — Per-user custom vocabulary for transcription
+
+### Mixins & Utilities
+- `mixins.py` — Shared model mixins (timestamps, soft-delete, etc.)
 
 ## 👤 User Models (`user.py`)
 
@@ -136,10 +161,11 @@ class MediaFile(Base):
 
 **Key Features:**
 - **File Management**: Storage path, size, content type tracking
-- **Processing Pipeline**: Status tracking through upload→processing→completed
+- **Processing Pipeline**: Status tracking (PENDING, PROCESSING, COMPLETED, ERROR, CANCELLING, CANCELLED, ORPHANED) — `FileStatus` enum centralized in `app/core/enums.py`
 - **Rich Metadata**: JSON fields for flexible metadata storage
 - **Media Specifications**: Video/audio technical details
 - **AI Integration**: Summary and translation storage
+- **v0.4.0 Columns**: `diarization_disabled`, `ai_summary_disabled`, `requested_whisper_model`, `diarization_source`
 - **Audit Trail**: Upload time and completion tracking
 
 ### TranscriptSegment
@@ -432,18 +458,17 @@ def test_media_file_relationships():
     # Test relationships work correctly
 ```
 
-## 📋 Migration Considerations
+## Migration Considerations
 
-### Development vs Production
-- **Development**: Direct SQL in `database/init_db.sql`
-- **Production**: Alembic migrations for versioned changes
+### Schema Authority
+Alembic migrations (`backend/alembic/versions/`) are the sole authority for schema in all environments. There is no `init_db.sql` — the bootstrap migration (`v010_baseline.py`) creates the full schema from scratch.
 
 ### Schema Changes
-1. Update model definitions
-2. Update Pydantic schemas
-3. Generate/write migration
-4. Test migration thoroughly
-5. Deploy with rollback plan
+1. Create Alembic migration in `backend/alembic/versions/` (use idempotent SQL with `IF NOT EXISTS`)
+2. Update SQLAlchemy model definitions in `app/models/`
+3. Update Pydantic schemas in `app/schemas/`
+4. Update `app/db/migrations.py` version detection
+5. Test with `./opentr.sh reset dev`
 
 ### Data Migration
 - **Additive changes**: Generally safe

@@ -29,11 +29,11 @@ This directory contains comprehensive documentation and improvements for LLM pro
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### For New Installations
 
-The improvements are **already included** in `database/init_db.sql`. Just run:
+The improvements are **already included** in the default database seed. Just run:
 ```bash
 ./opentr.sh start dev
 ```
@@ -42,13 +42,13 @@ All new installations will automatically have the enhanced prompts.
 
 ### Apply Improvements to Existing Installation
 
-The improvements are already in `database/init_db.sql`. To apply them to an existing installation:
+Prompt improvements are stored in the database and applied automatically on backend startup via Alembic migrations. To force a clean state:
 
 ```bash
 ./opentr.sh reset dev
 ```
 
-⚠️ **Note:** This resets the database with the enhanced prompts. All existing data will be lost.
+Note: This resets the database. All existing data will be lost.
 
 **After Reset:**
 1. Restart services (happens automatically with reset)
@@ -59,13 +59,15 @@ The improvements are already in `database/init_db.sql`. To apply them to an exis
 
 ---
 
-## 📋 What Changed
+## What Changed
 
-### Code Changes
+### Code Changes (v0.4.0)
 | File | Changes | Impact |
 |------|---------|--------|
 | `backend/app/services/llm_service.py` | Response prefilling, quote extraction, enhanced parsing | More reliable JSON, better speaker ID |
-| `database/prompt_improvements.sql` | XML structure, few-shot examples, BLUF guidelines | Higher quality summaries, consistent format |
+| `backend/alembic/versions/v190_add_collection_default_prompt.py` | Per-collection prompt storage | Domain-specific prompts per collection |
+| `backend/alembic/versions/v351_add_ai_summary_settings.py` | Per-file AI summary enable/disable | User control over LLM API calls |
+| `backend/app/services/llm_service.py` | Org context injection | Org-aware summaries for enterprise deployments |
 
 ### Key Features
 
@@ -124,21 +126,24 @@ See [Testing Checklist](./PROMPT_IMPROVEMENTS_IMPLEMENTATION.md#testing-checklis
 
 ---
 
-## 🎯 Priority Levels
+## Priority Levels
 
-### ✅ Priority 1 - Implemented
+### Priority 1 - Implemented
 - XML structure in prompts
 - Response prefilling for JSON
 - Lower temperature (0.3 → 0.1)
 - BLUF format guidelines
 - Quote extraction for speaker ID
+- Per-collection prompts (v0.4.0)
+- Organizational context injection (v0.4.0)
+- AI summary enable/disable toggle per file and per user (v0.4.0)
 
-### ⏳ Priority 2 - Planned
+### Priority 2 - Planned
 - Context overlap in multi-chunk processing
 - Enhanced error handling with retry logic
 - Prompt A/B testing framework
 
-### 🔮 Priority 3 - Future
+### Priority 3 - Future
 - Tool-based structured output (guaranteed schema)
 - Self-correction chain for high-stakes summaries
 - Contextual retrieval for historical search
@@ -291,6 +296,6 @@ To revert database prompts, you would need to restore from a backup or manually 
 
 ---
 
-**Last Updated:** January 3, 2025
+**Last Updated:** March 2026 (v0.4.0)
 **Based on:** Anthropic Claude Official Documentation
-**Status:** ✅ Ready for deployment
+**Status:** Production-deployed

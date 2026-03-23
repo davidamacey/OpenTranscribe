@@ -15,6 +15,7 @@ NC='\033[0m' # No Color
 DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME:-davidamacey}"
 REPO_BACKEND="${DOCKERHUB_USERNAME}/opentranscribe-backend"
 REPO_FRONTEND="${DOCKERHUB_USERNAME}/opentranscribe-frontend"
+REPO_DOCS="${DOCKERHUB_USERNAME}/opentranscribe-docs"
 
 # Get commit SHA for tagging
 COMMIT_SHA=$(git rev-parse --short HEAD)
@@ -233,6 +234,34 @@ build_frontend() {
     print_info "  - ${REPO_FRONTEND}:${VERSION_FULL}"
 }
 
+# Function to build and push docs (nginx:alpine + Docusaurus static build)
+build_docs() {
+    print_info "Building docs image..."
+    print_info "Platforms: ${PLATFORMS}"
+    print_info "Version: ${VERSION_FULL}"
+    print_info "Tags: latest, ${VERSION_FULL}"
+
+    cd docs-site
+
+    # Build with /docs/ base URL so internal links work when proxied at /docs/
+    docker buildx build \
+        --platform "${PLATFORMS}" \
+        --file Dockerfile \
+        --build-arg DOCS_BASE_URL=/docs/ \
+        --tag "${REPO_DOCS}:latest" \
+        --tag "${REPO_DOCS}:${VERSION_FULL}" \
+        ${CACHE_FLAG} \
+        --push \
+        .
+
+    cd ..
+
+    print_success "Docs image built and pushed successfully"
+    print_info "Tags pushed:"
+    print_info "  - ${REPO_DOCS}:latest"
+    print_info "  - ${REPO_DOCS}:${VERSION_FULL}"
+}
+
 # Function to run parallel security scans on both images
 run_parallel_scans() {
     local components=("$@")
@@ -411,8 +440,9 @@ Build and push Docker images to Docker Hub
 Options:
     backend     Build and push only backend image
     frontend    Build and push only frontend image
+    docs        Build and push only docs image (nginx:alpine + Docusaurus static)
     blackwell   Build and push Blackwell backend image (ARM64, :blackwell tag)
-    all         Build and push both images (default)
+    all         Build and push all three images (default)
     auto        Auto-detect changes and build only changed components
     scan        Security scan only (pull latest images, scan, push reports)
     cleanup     Delete old partial version tags (vX, vX.X) from Docker Hub
@@ -584,15 +614,21 @@ main() {
             build_frontend
             BUILT_COMPONENTS+=("frontend")
             ;;
+        docs)
+            print_info "Building docs only..."
+            build_docs
+            BUILT_COMPONENTS+=("docs")
+            ;;
         blackwell)
             print_info "Building Blackwell backend only (ARM64)..."
             build_backend_blackwell
             ;;
         all)
-            print_info "Building both backend and frontend..."
+            print_info "Building backend, frontend, and docs..."
             build_backend
             build_frontend
-            BUILT_COMPONENTS+=("backend" "frontend")
+            build_docs
+            BUILT_COMPONENTS+=("backend" "frontend" "docs")
             ;;
         auto)
             print_info "Auto-detecting changes..."
@@ -607,9 +643,14 @@ main() {
                 BUILT_COMPONENTS+=("frontend")
             fi
 
+            if detect_changes "docs-site"; then
+                build_docs
+                BUILT_COMPONENTS+=("docs")
+            fi
+
             if [ ${#BUILT_COMPONENTS[@]} -eq 0 ]; then
-                print_warning "No changes detected in backend or frontend"
-                print_info "Use '$0 all' to force build both images"
+                print_warning "No changes detected in backend, frontend, or docs-site"
+                print_info "Use '$0 all' to force build all images"
                 exit 0
             fi
             ;;

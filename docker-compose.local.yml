@@ -31,3 +31,6 @@ services:
 
   frontend:
     pull_policy: never
+
+  docs:
+    pull_policy: never

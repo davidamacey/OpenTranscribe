@@ -102,3 +102,28 @@ setup:
   label: Setup
   permalink: /setup
   description: Installation and setup topics
+
+enterprise:
+  label: Enterprise
+  permalink: /enterprise
+  description: Enterprise features and security
+
+performance:
+  label: Performance
+  permalink: /performance
+  description: Performance improvements and benchmarks
+
+ai:
+  label: AI
+  permalink: /ai
+  description: Artificial intelligence and machine learning features
+
+search:
+  label: Search
+  permalink: /search
+  description: Search and discovery features
+
+pwa:
+  label: PWA
+  permalink: /pwa
+  description: Progressive Web App features

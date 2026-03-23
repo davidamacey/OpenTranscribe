@@ -1,4 +1,5 @@
 # Docker Image Deployment Guide
+<!-- Updated for v0.4.0 -->
 
 This guide explains how Docker images are built and published for OpenTranscribe.
 
@@ -99,6 +100,39 @@ docker pull davidamacey/opentranscribe-backend:1e013ea
 |-----------|-------|-------|-------|
 | Frontend  | ✅ Auto | ✅ Auto | GitHub Actions builds both |
 | Backend   | ✅ Auto | ⚠️ Manual | ARM64 needs local build (13.8GB) |
+| Backend (Blackwell) | ✅ Manual | ✅ Manual | `Dockerfile.blackwell` for DGX Spark (SM_121) |
+
+### Blackwell / DGX Spark
+
+For NVIDIA Blackwell GPUs (DGX Spark, GB10/GB20x), a specialized image is required. See `docs/BLACKWELL_SETUP.md` for full details.
+
+```bash
+# Build Blackwell backend image
+docker build -t opentranscribe-backend-blackwell:latest \
+    -f backend/Dockerfile.blackwell backend/
+
+# Start with Blackwell overlay (auto-detected by opentr.sh on SM_12x hardware)
+./opentr.sh start dev
+```
+
+### Compose Overlay Reference
+
+| Overlay file | Purpose |
+|---|---|
+| `docker-compose.yml` | Base (all environments) |
+| `docker-compose.override.yml` | Dev hot-reload (auto-loaded) |
+| `docker-compose.prod.yml` | Production (Docker Hub images) |
+| `docker-compose.local.yml` | Local builds (`pull_policy: never`) |
+| `docker-compose.nginx.yml` | NGINX reverse proxy |
+| `docker-compose.pki.yml` | mTLS / PKI certificate auth |
+| `docker-compose.blackwell.yml` | Blackwell GPU (SM_121) |
+| `docker-compose.gpu-scale.yml` | Multi-GPU worker scaling |
+
+**PKI deployment** (requires NGINX):
+```bash
+./opentr.sh start prod --build --with-pki
+# Access at https://localhost:5182 with client certificate
+```
 
 ## Troubleshooting
 
@@ -159,10 +193,31 @@ See [Issue #81](https://github.com/davidamacey/OpenTranscribe/issues/81) for pla
 - ARM64: ~8-15 min
 - Size: ~13.8 GB
 
+## Blackwell GPU Support
+
+NVIDIA Blackwell GPUs (GB10x/GB20x series, e.g. DGX Spark) require a separate Dockerfile that links against the Blackwell CUDA libraries. Pass `--blackwell` to the build script:
+
+```bash
+./scripts/docker-build-push.sh --blackwell backend
+```
+
+This builds from `backend/Dockerfile.blackwell` instead of `backend/Dockerfile.prod`.
+
+## Lite Mode (GPU-Free) Images
+
+`DEPLOYMENT_MODE=lite` disables local GPU workers and routes transcription to cloud ASR providers. The same backend image supports both modes — set `DEPLOYMENT_MODE=lite` in `.env` before starting:
+
+```bash
+# .env
+DEPLOYMENT_MODE=lite        # full (default) or lite
+DEEPGRAM_API_KEY=your-key   # configure at least one cloud ASR provider
+```
+
 ## Related Files
 
 - [scripts/docker-build-push.sh](scripts/docker-build-push.sh) - Local build script
 - [scripts/README.md](scripts/README.md) - Detailed script documentation
 - [.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml) - GitHub Actions workflow
 - [backend/Dockerfile.prod](backend/Dockerfile.prod) - Backend production Dockerfile
+- [backend/Dockerfile.blackwell](backend/Dockerfile.blackwell) - Blackwell GPU Dockerfile
 - [frontend/Dockerfile.prod](frontend/Dockerfile.prod) - Frontend production Dockerfile

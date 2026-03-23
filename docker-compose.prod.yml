@@ -116,6 +116,17 @@ services:
       plugins.security.ssl.http.pemtrustedcas_filepath: "certs/root-ca.pem"
       plugins.security.allow_default_init_securityindex: "true"
 
+  docs:
+    image: davidamacey/opentranscribe-docs:latest
+    build:
+      context: ./docs-site
+      dockerfile: Dockerfile
+    pull_policy: always
+    ports:
+      - "${DOCS_PORT:-3030}:8080"
+    environment:
+      - NODE_ENV=production
+
   # GPU Scaled Worker - Production overrides
   # NOTE: No 'scale' parameter here - base has scale: 0, gpu-scale.yml sets scale: 1
   # This overlay only provides production-specific settings (image, build, pull_policy)

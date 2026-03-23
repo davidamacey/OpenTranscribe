@@ -170,7 +170,6 @@ export HUGGINGFACE_TOKEN=your_token_here
 3. **Downloads** AI models (~38GB):
    - WhisperX models (~1.5GB)
    - PyAnnote diarization models (~500MB)
-   - Wav2Vec2 alignment models (~360MB)
 4. **Packages** configuration files and scripts
 5. **Creates** checksums for integrity verification
 6. **Compresses** everything with multi-threaded xz compression
@@ -359,7 +358,6 @@ Python script for downloading AI models during package building.
 Downloads all required AI models for offline packaging:
 - WhisperX transcription models
 - PyAnnote speaker diarization models
-- Wav2Vec2 alignment models
 
 ### Usage
 

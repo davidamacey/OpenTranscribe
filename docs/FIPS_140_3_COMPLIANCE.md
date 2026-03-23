@@ -4,10 +4,10 @@ This document describes OpenTranscribe's compliance with FIPS 140-3 cryptographi
 
 ## Overview
 
-FIPS 140-3 (Federal Information Processing Standard) is the latest cryptographic module validation standard, mandatory for new federal system deployments since September 2021. OpenTranscribe supports FIPS 140-3 compliant cryptographic operations for:
+FIPS 140-3 (Federal Information Processing Standard) is the latest cryptographic module validation standard, mandatory for new federal system deployments since September 2021. OpenTranscribe v0.4.0 supports FIPS 140-3 compliant cryptographic operations for:
 
-- Password hashing (PBKDF2-SHA256)
-- Data encryption (AES-256-GCM)
+- Password hashing (PBKDF2-SHA256, 600,000 iterations)
+- Authentication configuration storage (AES-256-GCM encryption at rest)
 - JWT signing (HS512)
 - Token hashing (SHA-512)
 - MFA backup codes (PBKDF2-SHA256)
@@ -83,7 +83,14 @@ new_hash = get_password_hash(password)
 
 ### AES-256-GCM
 
-Sensitive data (API keys, TOTP secrets) is encrypted using AES-256-GCM with:
+Sensitive data is encrypted using AES-256-GCM. In v0.4.0, this covers:
+- LDAP bind passwords
+- Keycloak client secrets
+- TOTP secrets
+- API keys for external services
+- All authentication configuration values marked as sensitive
+
+Encryption parameters:
 - 256-bit key derived via PBKDF2-SHA256
 - 96-bit random nonce per encryption
 - 128-bit authentication tag
@@ -178,7 +185,7 @@ FIPS_VERSION=140-3
 FIPS_MIGRATION_MODE=compatible
 
 # Step 2: Restart services
-./opentr.sh restart-backend
+docker compose restart backend
 
 # Step 3: Monitor migration progress
 # Users will be upgraded on next login
@@ -198,7 +205,7 @@ FIPS_VERSION=140-2
 FIPS_MIGRATION_MODE=compatible
 
 # Restart services
-./opentr.sh restart-backend
+docker compose restart backend
 ```
 
 All data remains accessible; the system simply stops creating new FIPS 140-3 artifacts.
@@ -233,10 +240,12 @@ Logs are available in:
 
 | FedRAMP Control | Implementation |
 |-----------------|----------------|
-| IA-5 (Authenticator Management) | PBKDF2-SHA256, password policy, history |
-| SC-12 (Cryptographic Key Establishment) | PBKDF2 key derivation |
-| SC-13 (Cryptographic Protection) | AES-256-GCM, HS512 |
-| SC-28 (Protection of Information at Rest) | Encrypted sensitive data |
+| IA-5 (Authenticator Management) | PBKDF2-SHA256 (600k iter), password policy, history enforcement |
+| AC-7 (Unsuccessful Login Attempts) | Account lockout (NIST AC-7 compliant), progressive lockout |
+| SC-12 (Cryptographic Key Establishment) | PBKDF2 key derivation for AES-256-GCM |
+| SC-13 (Cryptographic Protection) | AES-256-GCM for config at rest, HS512 for JWT signing |
+| SC-28 (Protection of Information at Rest) | AES-256-GCM encrypted sensitive auth config in database |
+| AU-2/AU-3 (Audit Events) | JSON + CEF structured audit logging, OpenSearch integration |
 
 ## References
 

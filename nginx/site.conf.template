@@ -64,6 +64,14 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-Host $host;
 
+    # Embedded documentation site (served from docs container)
+    # Allows offline/corporate users to read docs without leaving the app
+    location /docs/ {
+        proxy_pass http://docs:8080/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
     # Frontend SPA (Svelte application)
     # Handles all routes not matched by other locations
     # Internal container port is 8080 (external host port is 5173)

@@ -27,7 +27,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **100+ Language Support**: Transcribe in 100+ languages with optional English translation
 - **Configurable Source Language**: Auto-detect or specify source language for improved accuracy
 - **Translation Toggle**: Choose to keep original language or translate non-English audio to English
-- **Batch Processing**: 70x realtime speed with large-v2 model on GPU
+- **Batch Processing**: ~40x realtime speed (full pipeline including diarization) on GPU with large-v3-turbo default model
 - **Pagination for Large Transcripts**: Efficient display of long transcripts without browser hanging
 - **Audio Waveform Visualization**: Interactive waveform player with precise timing and click-to-seek
 - **Browser Recording**: Built-in microphone recording with real-time audio level monitoring
@@ -49,6 +49,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Speaker Merge UI**: Combine duplicate speakers into single profiles with segment reassignment
 - **Per-File Speaker Settings**: Configure min/max speaker count per upload or reprocess operation
 - **User-Level Speaker Preferences**: Save default speaker detection settings (always prompt, use defaults, use custom values)
+- **GPU-Accelerated Clustering**: Fast speaker clustering using GPU-accelerated embeddings
+- **Gender Detection**: Automatic speaker gender detection for improved labeling suggestions
+- **Profile Avatars**: Visual speaker profile avatars for easy identification across the media library
 
 ### 🎬 **Rich Media Support**
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
@@ -76,6 +79,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Smart Tagging**: Organize content with custom tags and categories
 - **Collections System**: Group related media files into organized collections for better project management
 - **Speaker Usage Counts**: See which speakers appear most frequently across your media library
+- **Hybrid Search Fixed**: Critical OpenSearch 3.4 compatibility fix — semantic/vector search now fully operational with dramatically improved result quality
 
 ### 📊 **Analytics & Insights**
 - **Advanced Content Analysis**: Comprehensive speaker analytics including talk time, interruption detection, and turn-taking patterns
@@ -100,6 +104,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 💬 **Collaboration Features**
 - **Time-Stamped Comments**: Add annotations at specific moments
 - **User Management**: Role-based access control (admin/user) with personalized settings
+- **User Groups**: Organize users into groups for streamlined permission management
+- **Collection Sharing**: Share collections with viewer or editor permissions per user or group
+- **Cross-User Prompt Sharing**: Share custom AI prompts across users and teams
 - **Recording Settings Management**: User-specific audio recording preferences with quality controls
 - **Export Options**: Download transcripts in multiple formats
 - **Real-Time Updates**: Live progress tracking with detailed WebSocket notifications
@@ -110,6 +117,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Smart Error Recovery**: User-friendly error messages with specific guidance and auto-recovery options
 - **Full-Screen Transcript View**: Dedicated modal for reading and searching long transcripts
 - **Auto-Refresh Systems**: Background updates for file status without manual refreshing
+- **File Retention Policies**: Admin-configurable auto-deletion rules for GDPR/compliance requirements
 
 ### 🎙️ **Recording & Audio Features**
 - **Browser-Based Recording**: Direct microphone recording with no plugins required
@@ -129,6 +137,10 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **BLUF Format Summaries**: Bottom Line Up Front structured summaries with action items
 - **Multi-Model Support**: Works with models from 3B to 200B+ parameters
 - **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
+- **Cloud ASR Providers**: 8 cloud speech-to-text providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure, Speechmatics, Gladia) as alternatives to local GPU processing
+- **API-Lite Deployment**: `DEPLOYMENT_MODE=lite` for cloud-ASR-only deployments without requiring a local GPU
+- **Selective Reprocessing**: Re-run only specific pipeline stages (transcription, diarization, summarization) without full reprocessing
+- **Per-Upload Toggles**: Disable diarization or AI summarization on a per-file basis at upload or reprocess time
 
 ### 🔐 **Enterprise Authentication & Security**
 - **Enterprise Authentication System**: Support for 4 authentication methods with hybrid configuration
@@ -151,10 +163,11 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Configurable Concurrency**: GPU(1-4), CPU(8), Download(3), NLP(4) workers for optimal resource utilization
 - **Enhanced Speaker Detection**: Support for 20+ speakers (can scale to 50+ for large conferences)
 - **Accurate GPU Monitoring**: nvidia-smi integration for real-time system-wide memory tracking
+- **Blackwell GPU Support**: NVIDIA GB10x/GB20x (DGX Spark) supported via `--blackwell` flag
 
 ### 📱 **Enhanced User Experience**
-- **Progressive Web App**: Installable app experience with offline capabilities
-- **Responsive Design**: Optimized for desktop, tablet, and mobile devices
+- **Progressive Web App**: Installable PWA with offline capabilities and bottom navigation bar for mobile
+- **Mobile-Responsive Overhaul**: Full mobile-first redesign optimized for phones, tablets, and desktop
 - **UI Internationalization**: Interface available in 8 languages (English, Spanish, French, German, Portuguese, Chinese, Japanese, Russian)
 - **Interactive Waveform Player**: Click-to-seek audio visualization with precise timing
 - **Floating Upload Manager**: Draggable upload interface with real-time progress
@@ -174,7 +187,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Svelte** - Reactive UI framework with excellent performance
 - **TypeScript** - Type-safe development with modern JavaScript and comprehensive ESLint integration
 - **Progressive Web App** - Offline capabilities and native-like experience
-- **Internationalization (i18n)** - Multi-language UI support with 7 languages
+- **Internationalization (i18n)** - Multi-language UI support with 8 languages
 - **Responsive Design** - Seamless experience across all devices
 - **Advanced UI Components** - Draggable upload manager, modal consistency, and real-time status updates
 - **Code Quality Tooling** - ESLint, TypeScript strict mode, and automated formatting
@@ -192,7 +205,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### **AI/ML Stack**
 - **WhisperX** - Advanced speech recognition with 100+ language support
-- **large-v3-turbo Model** - Default ultra-fast transcription model with 6x speed improvement
+- **large-v3-turbo Model** - Default ultra-fast transcription model with 6x speed improvement over large-v3
+- **Native Word-Level Timestamps** - Always-on via faster-whisper cross-attention DTW (no separate alignment model needed)
 - **PyAnnote v4** - Advanced speaker diarization with speaker overlap detection capabilities
 - **Faster-Whisper** - Optimized inference engine
 - **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Anthropic Claude, and OpenRouter
@@ -304,6 +318,7 @@ Access the web interface at http://localhost:5173
    - 🌺 **Task Monitor**: http://localhost:5175/flower
    - 🔍 **Search Engine**: http://localhost:9200
    - 📁 **File Storage**: http://localhost:9091
+   - 📖 **Documentation**: http://localhost:3030/docs/
 
 ## 📋 OpenTranscribe Utility Commands
 
@@ -582,7 +597,7 @@ See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [Keycloak](docs/KEYCLOAK_
 HUGGINGFACE_TOKEN=your_huggingface_token_here
 
 # Model configuration
-WHISPER_MODEL=large-v2              # large-v2, medium, small, base
+WHISPER_MODEL=large-v3-turbo        # large-v3-turbo (default), large-v3, large-v2, medium, small, base
 COMPUTE_TYPE=float16                # float16, int8
 BATCH_SIZE=16                       # Reduce if GPU memory limited
 
@@ -965,7 +980,7 @@ docker stats
 # GPU optimization
 COMPUTE_TYPE=float16              # Use half precision
 BATCH_SIZE=32                     # Increase for more GPU memory
-WHISPER_MODEL=large-v2            # Best accuracy
+WHISPER_MODEL=large-v3-turbo      # Default: fast and accurate; use large-v3 for translation or max accuracy
 
 # CPU optimization (if no GPU)
 COMPUTE_TYPE=int8                 # Use quantization

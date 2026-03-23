@@ -26,64 +26,105 @@ The application follows a **layered architecture** with clear separation of conc
 
 ```
 app/
-├── api/                    # 🌐 API Layer
+├── api/                    # API Layer
 │   ├── endpoints/         # Route handlers organized by resource
 │   │   ├── files/        # Modular file management
-│   │   │   ├── streaming.py    # Video/audio streaming support
-│   │   │   ├── upload.py       # Enhanced upload handling
-│   │   │   └── url_processing.py # URL processing endpoints
-│   │   ├── admin.py      # Admin operations
-│   │   ├── auth.py       # Authentication
-│   │   ├── comments.py   # Comment system
-│   │   ├── search.py     # Search functionality
-│   │   ├── speakers.py   # Speaker management
-│   │   ├── summarization.py    # NEW: LLM-powered summarization
-│   │   ├── tags.py       # Tag operations
-│   │   ├── tasks.py      # Task monitoring
-│   │   ├── user_settings.py    # NEW: User settings management
-│   │   └── users.py      # User management
+│   │   │   ├── streaming.py       # Video/audio streaming
+│   │   │   ├── upload.py          # File upload with concurrency
+│   │   │   ├── url_processing.py  # yt-dlp URL processing
+│   │   │   ├── crud.py            # Basic CRUD
+│   │   │   ├── management.py      # File recovery/force-delete
+│   │   │   ├── filtering.py       # Advanced filtering
+│   │   │   ├── reprocess.py       # Selective reprocess
+│   │   │   ├── subtitles.py       # Subtitle export
+│   │   │   └── waveform.py        # Waveform data
+│   │   ├── admin.py               # Admin operations
+│   │   ├── asr_settings.py        # ASR provider + local model management
+│   │   ├── auth.py                # Authentication (all methods)
+│   │   ├── comments.py            # Comment system
+│   │   ├── groups.py              # User group management
+│   │   ├── llm_settings.py        # User LLM configuration
+│   │   ├── media_collections.py   # Collection sharing
+│   │   ├── search.py              # Hybrid BM25+neural search
+│   │   ├── speakers.py            # Speaker management and merging
+│   │   ├── speaker_profiles.py    # Global speaker profiles
+│   │   ├── summarization.py       # LLM-powered summarization
+│   │   ├── tags.py                # Tag operations
+│   │   ├── tasks.py               # Task monitoring
+│   │   ├── user_settings.py       # User settings management
+│   │   └── users.py               # User management
 │   ├── router.py         # Main API router configuration
 │   └── websockets.py     # Real-time WebSocket handlers
-├── auth/                  # 🔐 Authentication & Authorization
-│   └── direct_auth.py    # Authentication utilities
-├── core/                  # ⚙️ Core Configuration
-│   ├── celery.py         # Background task configuration
-│   ├── config.py         # Application settings
-│   ├── constants.py      # NEW: Application constants and defaults
-│   └── security.py       # Security utilities (JWT, hashing)
-├── db/                    # 🗄️ Database Layer
-│   ├── base.py           # Database connection and base setup
-│   └── session_utils.py  # Session management utilities
-├── middleware/            # 🔄 Request/Response Middleware
-│   ├── __init__.py
+├── auth/                  # Authentication & Authorization
+│   ├── direct_auth.py    # Local password auth
+│   ├── ldap_auth.py      # LDAP/Active Directory
+│   ├── keycloak_auth.py  # OIDC/Keycloak
+│   ├── pki_auth.py       # PKI/X.509 certificate auth
+│   ├── mfa.py            # TOTP multi-factor auth (RFC 6238)
+│   ├── password_policy.py # Password strength enforcement
+│   ├── rate_limit.py     # Per-IP/per-user rate limiting
+│   ├── lockout.py        # Account lockout management
+│   ├── session.py        # Session/token management
+│   ├── token_service.py  # JWT token operations
+│   └── audit.py          # Authentication audit logging
+├── core/                  # Core Configuration
+│   ├── celery.py         # Celery app + task routing
+│   ├── config.py         # Application settings (DEPLOYMENT_MODE, etc.)
+│   ├── constants.py      # Language constants, OpenSearch model registry
+│   ├── enums.py          # Centralized FileStatus enum (re-exported from models)
+│   ├── exceptions.py     # Custom exception hierarchy (OpenTranscribeError base)
+│   ├── redis.py          # Shared Redis singleton via get_redis()
+│   └── security.py       # JWT and password hashing utilities
+├── db/                    # Database Layer
+│   ├── base.py           # SQLAlchemy engine, SessionLocal, Base
+│   ├── migrations.py     # Startup Alembic runner + version detection
+│   └── session_utils.py  # session_scope(), get_refreshed_object()
+├── middleware/            # Request/Response Middleware
 │   └── audit.py          # Request ID tracking and audit logging
-├── models/                # 📊 Data Models (SQLAlchemy ORM)
-│   ├── media.py          # Media file and transcript models
-│   └── user.py           # User and authentication models
-├── schemas/               # 📝 Data Validation (Pydantic)
-│   ├── media.py          # Media file schemas
-│   └── user.py           # User schemas
-├── services/              # 🔧 Business Logic Layer
-│   ├── file_service.py        # File management service
-│   ├── transcription_service.py # Transcription workflows
-│   ├── minio_service.py       # Object storage service
-│   └── opensearch_service.py  # Search service
-├── tasks/                 # ⚡ Background Processing
-│   ├── transcription/    # Modular transcription pipeline
-│   │   └── notifications.py # Enhanced WebSocket notifications
-│   ├── analytics.py      # Analytics processing
-│   ├── summarization.py  # Multi-provider LLM summarization
-│   ├── transcription.py  # Main transcription router
-│   └── youtube_processing.py # NEW: Enhanced YouTube URL processing
-├── utils/                 # 🛠️ Common Utilities
-│   ├── auth_decorators.py    # Authorization decorators
-│   ├── db_helpers.py         # Database query helpers
-│   ├── error_handlers.py     # Error handling utilities
-│   ├── filename.py           # NEW: Filename processing utilities
-│   ├── task_utils.py         # Task management utilities
-│   └── thumbnail.py          # Enhanced thumbnail generation
-├── main.py               # 🚀 FastAPI Application Entry Point
-└── initial_data.py       # 📋 Database Initialization
+├── models/                # SQLAlchemy ORM Models (~20 files)
+├── schemas/               # Pydantic Validation Schemas
+├── services/              # Business Logic Layer (~40 modules)
+│   ├── interfaces.py          # Protocol interfaces (Storage, Search, Cache, Notification)
+│   ├── notification_service.py # Unified send_task_notification() wrapper
+│   ├── progress_tracker.py    # EWMA ETA preferred progress tracker
+│   ├── migration_progress_service.py  # Atomic Lua increments for concurrent batch migrations
+│   ├── opensearch_service.py  # Full-text + neural search, speaker alias indices
+│   ├── hybrid_search_service.py  # Hybrid BM25+vector search (OS 3.4 crash fix)
+│   ├── profile_embedding_service.py  # Profile centroid management (averaging fix)
+│   ├── speaker_matching_service.py   # Cosine score conversion from OS cosinesimil
+│   ├── asr/               # ASR service + 8 cloud provider clients
+│   └── ...
+├── tasks/                 # Background Processing
+│   ├── transcription/    # 3-stage pipeline
+│   │   ├── preprocess.py         # Stage 1: download, extract audio
+│   │   ├── core.py               # Stage 2 orchestrator (GPU)
+│   │   ├── postprocess.py        # Stage 3: index, notify, enrich
+│   │   ├── dispatch.py           # Task dispatch helpers
+│   │   ├── audio_processor.py    # Audio conversion/extraction
+│   │   ├── metadata_extractor.py # ExifTool metadata extraction
+│   │   ├── speaker_processor.py  # Speaker diarization processing
+│   │   ├── storage.py            # Database storage utilities
+│   │   ├── notifications.py      # WebSocket notifications
+│   │   └── waveform_generator.py # Waveform data generation
+│   ├── speaker_tasks.py          # Thin re-export module
+│   ├── speaker_identification_task.py  # LLM speaker ID
+│   ├── speaker_update_task.py    # Background speaker updates
+│   ├── speaker_embedding_task.py # Embedding extraction + reassignment
+│   ├── reindex_task.py           # Search reindex with stop/cancel
+│   ├── file_retention_task.py    # Auto-deletion by retention policy
+│   ├── summarization.py          # Multi-provider LLM summarization
+│   ├── analytics.py              # Analytics processing
+│   ├── cleanup.py                # Stuck file recovery
+│   └── youtube_processing.py     # yt-dlp URL processing
+├── utils/                 # Common Utilities (~25 modules)
+│   ├── auth_decorators.py        # Authorization decorators
+│   ├── db_helpers.py             # Database query helpers
+│   ├── error_handlers.py         # Standardized HTTP exceptions
+│   ├── transcript_builders.py    # Shared transcript formatting (v0.4.0)
+│   ├── task_utils.py             # Celery task management utilities
+│   └── ...
+├── main.py               # FastAPI Application Entry Point
+└── initial_data.py       # Database Initialization (admin user, defaults)
 ```
 
 ## 🔄 Request Flow
@@ -199,24 +240,30 @@ class MediaFileResponse(BaseModel):
         from_attributes = True  # Enable ORM mode
 ```
 
-## ⚡ Background Tasks (`tasks/`)
+## Background Tasks (`tasks/`)
 
 ### Organization
 - **Modular design**: Complex tasks split into modules
 - **Single responsibility**: Each task has one clear purpose
-- **Error handling**: Robust error recovery
-- **Progress tracking**: Real-time status updates
+- **Error handling**: Robust error recovery with retry logic
+- **Progress tracking**: Real-time status updates via `progress_tracker.py` (EWMA ETA)
 
-### Transcription Pipeline (`tasks/transcription/`)
+### 3-Stage Transcription Pipeline (`tasks/transcription/`)
 ```
 transcription/
-├── core.py              # Main orchestrator
-├── metadata_extractor.py # File metadata processing
-├── audio_processor.py   # Audio conversion/extraction
-├── speaker_processor.py # Speaker diarization
-├── storage.py          # Database storage
-└── notifications.py    # WebSocket updates
+├── preprocess.py        # Stage 1: download from MinIO, extract audio
+├── core.py              # Stage 2: GPU transcription + speaker diarization
+├── postprocess.py       # Stage 3: index, notify, async enrichment dispatch
+├── dispatch.py          # Task routing helpers
+├── audio_processor.py   # FFmpeg audio conversion
+├── metadata_extractor.py # ExifTool media metadata
+├── speaker_processor.py # Speaker segment processing
+├── storage.py           # Database storage
+├── notifications.py     # WebSocket updates via notification_service
+└── waveform_generator.py # Waveform data
 ```
+
+Postprocess no longer blocks GPU for enrichment — speaker embedding and LLM tasks are dispatched asynchronously.
 
 ## 🛠️ Utilities (`utils/`)
 
@@ -242,35 +289,49 @@ from app.utils.db_helpers import get_user_files_query
 query = get_user_files_query(db, user_id)
 ```
 
-## ⚙️ Core Configuration (`core/`)
+## Core Configuration (`core/`)
 
 ### Components
-- **config.py**: Environment-based settings
-- **security.py**: JWT and password utilities
-- **celery.py**: Background task configuration
+- **config.py**: Environment-based settings (supports `DEPLOYMENT_MODE=lite` for GPU-free deployments)
+- **security.py**: JWT and password hashing utilities
+- **celery.py**: Celery app and task routing configuration
+- **constants.py**: Language codes, OpenSearch embedding model registry, system defaults
+- **enums.py**: Centralized `FileStatus` enum (re-exported from `models/media.py` for compatibility)
+- **exceptions.py**: Custom exception hierarchy (`OpenTranscribeError` base class)
+- **redis.py**: Shared Redis singleton via `get_redis()` — use this for all sync Redis access (db 0)
 
 ### Configuration Pattern
 ```python
-# Settings management
 from app.core.config import settings
+from app.core.redis import get_redis
+from app.core.enums import FileStatus
+from app.core.exceptions import OpenTranscribeError
 
-# Use environment variables
 database_url = settings.DATABASE_URL
-secret_key = settings.SECRET_KEY
+redis = get_redis()
 ```
 
-## 🔐 Authentication & Authorization
+## Authentication & Authorization
 
-### Authentication Flow
-1. **Login**: Username/password → JWT token
+### Supported Authentication Methods
+- **Local (Direct)**: Username/password with bcrypt hashing
+- **LDAP/Active Directory**: Enterprise directory integration (`ldap_auth.py`)
+- **OIDC/Keycloak**: OpenID Connect with external identity providers (`keycloak_auth.py`)
+- **PKI/X.509**: Certificate-based authentication for high-security environments (`pki_auth.py`)
+- **MFA/TOTP**: RFC 6238 compliant; compatible with Google Authenticator, Authy, etc.
+
+Multiple methods can be enabled simultaneously (hybrid auth) via `AUTH_TYPE` config. Configure via Super Admin UI.
+
+### Token Flow
+1. **Login**: Credentials → short-lived JWT access token + long-lived refresh token
 2. **Request**: Bearer token in Authorization header
 3. **Validation**: JWT signature and expiration
-4. **User**: Extract user info from token
+4. **Refresh**: Refresh token rotation on access token expiry
 
 ### Authorization Patterns
 - **Ownership**: Users can only access their own resources
-- **Role-based**: Admin vs regular user permissions
-- **Resource-specific**: File-level access control
+- **Role-based**: User / admin / super_admin roles
+- **Resource-specific**: File-level and collection-level access control
 
 ## 🔄 Middleware (`middleware/`)
 

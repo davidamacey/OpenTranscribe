@@ -62,7 +62,7 @@ Single Sign-On via OpenID Connect:
 - Support for identity federation
 - Social login via Keycloak (Google, GitHub, etc.)
 - Role synchronization
-- **Federated logout** (New in v0.3.3): When a user logs out of OpenTranscribe, their Keycloak session is also terminated via the OIDC end-session endpoint, ensuring consistent session state across the identity provider
+- **Federated logout** (New in v0.4.0): When a user logs out of OpenTranscribe, their Keycloak session is also terminated via the OIDC end-session endpoint, ensuring consistent session state across the identity provider
 
 ### PKI/X.509 Certificates
 Certificate-based authentication:
@@ -70,7 +70,7 @@ Certificate-based authentication:
 - CAC/PIV smart card support
 - No passwords required
 - Government/military environment support
-- **Super admin password fallback** (New in v0.3.3): PKI-authenticated super admin accounts can optionally retain local password authentication as a fallback, ensuring administrative access even if certificate infrastructure is unavailable. Controlled via the `pki_allow_password_fallback` configuration setting
+- **Super admin password fallback** (New in v0.4.0): PKI-authenticated super admin accounts can optionally retain local password authentication as a fallback, ensuring administrative access even if certificate infrastructure is unavailable. Controlled via the `pki_allow_password_fallback` configuration setting
 
 ## Security Features
 

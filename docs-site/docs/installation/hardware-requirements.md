@@ -23,7 +23,7 @@ For small-scale testing or low-volume transcription work:
 - Suitable for: Testing, development, occasional use
 
 :::warning CPU-Only Limitations
-CPU-only mode provides significantly slower transcription speeds (0.5-1x realtime) compared to GPU acceleration (70x realtime). For production use or regular transcription work, GPU acceleration is strongly recommended.
+CPU-only mode provides significantly slower transcription speeds (0.5-1x realtime) compared to GPU acceleration (~40x realtime with large-v3-turbo, full pipeline). For production use or regular transcription work, GPU acceleration is strongly recommended.
 :::
 
 ## Recommended Configuration
@@ -48,7 +48,7 @@ For regular use and production deployments:
 - **Network**: 100Mbps+ for YouTube downloads
 
 **Performance**:
-- Transcription speed: 70x realtime with large-v2 model
+- Transcription speed: ~40x realtime with large-v3-turbo (full pipeline)
 - Example: 1-hour video processes in ~50 seconds
 - Suitable for: Production use, high-volume transcription
 
@@ -84,8 +84,8 @@ See [Multi-GPU Scaling](../configuration/multi-gpu-scaling.md) for configuration
 
 **Performance**:
 - With GPU scaling: Process 4+ videos simultaneously
-- Transcription speed: 70x realtime per worker
-- Total throughput: 280x realtime (4 workers)
+- Transcription speed: ~40x realtime per worker (full pipeline)
+- Total throughput: ~160x realtime (4 workers)
 
 ## Cloud & Server Deployments
 
@@ -130,10 +130,9 @@ AI models are cached locally to avoid re-downloading:
 |----------------|------|---------|
 | WhisperX Models | ~1.5GB | Speech recognition |
 | PyAnnote Models | ~500MB | Speaker diarization |
-| Wav2Vec2 Model | ~360MB | Word alignment |
 | Sentence Transformers | ~80MB | Semantic search |
 | NLTK Data | ~13MB | Text processing |
-| **Total** | **~2.9GB** | All AI models |
+| **Total** | **~2.1GB** | All AI models |
 
 **Configuration**: Set `MODEL_CACHE_DIR` in `.env` (default: `./models`)
 
@@ -270,6 +269,10 @@ For enterprise deployments:
 4. Migrate existing data
 
 **Benefits**: Centralized storage, easier backups, unlimited expansion
+
+## NVIDIA Blackwell GPUs
+
+NVIDIA Blackwell GPUs (GB10x/GB20x series, e.g., DGX Spark) require a separate build due to updated CUDA libraries and driver requirements. See [Installation → Blackwell Setup](./blackwell-setup.md) for configuration details.
 
 ## Next Steps
 

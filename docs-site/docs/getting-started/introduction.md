@@ -20,11 +20,12 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 ## Key Features
 
 ### Advanced Transcription
-- WhisperX integration with faster-whisper backend
-- Word-level timestamps with WAV2VEC2 alignment
-- Multi-language support with automatic English translation
-- 70x realtime speed on GPU (large-v2 model)
+- WhisperX 3.8.1 with faster-whisper BatchedInferencePipeline backend
+- Native word-level timestamps via cross-attention DTW (all 100+ languages, no separate alignment model)
+- Multi-language support with optional translation to English (requires `large-v3` model)
+- 40x+ realtime speed on GPU (`large-v3-turbo` default, 6x faster than `large-v2`)
 - Support for audio (MP3, WAV, FLAC, M4A) and video (MP4, MOV, AVI, MKV)
+- Cloud ASR providers: Deepgram, AssemblyAI, OpenAI, Google, AWS, Azure, Speechmatics, Gladia
 
 ### Smart Speaker Management
 - Automatic speaker diarization using PyAnnote.audio
@@ -41,10 +42,10 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 - Speaker analytics and interaction patterns
 
 ### Search & Discovery
-- Hybrid search combining keyword and semantic search
-- 9.5x faster vector search with OpenSearch 3.3.1
+- Hybrid search combining BM25 keyword and neural semantic search via OpenSearch ML Commons
+- OpenSearch 3.4.0 with ML Commons native neural search and RRF merging
 - Advanced filtering by speaker, date, tags, duration
-- Collections for organizing related media
+- Collections for organizing related media with group sharing
 - Interactive waveform visualization with click-to-seek
 
 ### Analytics & Insights
@@ -82,7 +83,7 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 
 ### User Interface
 - **Light and dark mode** - Toggle between themes via the sun/moon icon in the navbar, or let the app follow your system preference automatically
-- **7 UI languages** - Switch the interface language from Settings: English, Spanish, French, German, Portuguese, Chinese, and Japanese. The app also detects your browser language on first visit
+- **8 UI languages** - Switch the interface language from Settings: English, Spanish, French, German, Portuguese, Chinese, Japanese, and Russian. The app also detects your browser language on first visit
 - **Grid and list views** - Toggle between card-based grid view (with thumbnails) and compact list view in the file gallery using the view toggle button
 - **Virtual scrolling** - Smooth performance when browsing large libraries with thousands of files, loading only visible items
 - **Progressive Web App (PWA)** - Install OpenTranscribe as a standalone app on desktop or mobile from your browser's "Install" or "Add to Home Screen" option for a native app experience

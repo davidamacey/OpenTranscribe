@@ -101,8 +101,8 @@ export HUGGINGFACE_TOKEN="your_token_here"
 # Required: HuggingFace token for model downloads
 export HUGGINGFACE_TOKEN="your_token_here"
 
-# Optional: Specify Whisper model size (default: large-v2)
-export WHISPER_MODEL="large-v2"  # or tiny, base, small, medium
+# Optional: Specify Whisper model size (default: large-v3-turbo)
+export WHISPER_MODEL="large-v3-turbo"  # or large-v3, large-v2, medium, small, base, tiny
 ```
 
 Get your HuggingFace token: https://huggingface.co/settings/tokens
@@ -503,6 +503,7 @@ Expected output:
 NAME                    STATUS              PORTS
 opentranscribe-backend  running (healthy)   0.0.0.0:5174->8080/tcp
 opentranscribe-frontend running             0.0.0.0:5173->8080/tcp
+opentranscribe-docs     running             0.0.0.0:3030->8080/tcp
 postgres                running (healthy)   0.0.0.0:5176->5432/tcp
 minio                   running (healthy)   0.0.0.0:5178-5179->9000-9001/tcp
 redis                   running             0.0.0.0:5177->6379/tcp
@@ -727,7 +728,7 @@ Then rebuild installer. Output will be: `OpenTranscribe-Setup-1.1.0.exe`
 To change the Whisper model included:
 ```bash
 # Set before building
-export WHISPER_MODEL="medium"  # or tiny, base, small, large-v2
+export WHISPER_MODEL="large-v3-turbo"  # default; or large-v3, large-v2, medium, small, base, tiny
 ./scripts/build-windows-installer.sh
 ```
 

@@ -1,4 +1,5 @@
-# ✅ Cross-Platform Installation Verification Checklist
+# Cross-Platform Installation Verification Checklist
+<!-- Updated for v0.4.0 -->
 
 ## 🎯 One-Line Installation Confirmation
 
@@ -105,13 +106,16 @@ curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/s
 
 ## 📊 Performance Verification
 
-| Test Scenario | Expected Result | ✅ Status |
-|---------------|----------------|-----------|
-| RTX 4090 + large-v2 | ~0.05x RTF | Verified |
-| RTX 3080 + large-v2 | ~0.1x RTF | Verified |
-| M2 Max + medium | ~0.3x RTF | Verified |
-| M1 + small | ~0.5x RTF | Verified |
-| CPU 16c + base | ~1.5x RTF | Verified |
+Figures reflect the full pipeline (preprocess + GPU + postprocess) with `large-v3-turbo` (default model as of v0.4.0). `large-v3-turbo` is ~6x faster than `large-v2` for transcription; full-pipeline realtime factor is approximately 40x on modern NVIDIA GPUs.
+
+| Test Scenario | Expected Full-Pipeline RTF | Notes |
+|---------------|---------------------------|-------|
+| RTX A6000 + large-v3-turbo | ~40x realtime | Verified (v0.4.0 benchmark) |
+| RTX 4090 + large-v3-turbo | ~35–45x realtime | float16 |
+| RTX 3080 + large-v3-turbo | ~20–30x realtime | float16 |
+| M2 Max + large-v3-turbo | ~8–12x realtime | MPS float32 |
+| M1 + medium | ~4–6x realtime | MPS float32 |
+| CPU 16c + base | ~1–2x realtime | int8 |
 
 ## 🔐 Security Verification
 
@@ -173,4 +177,34 @@ curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/s
 
 ---
 
-**🌟 Cross-platform compatibility mission: ACCOMPLISHED! 🌟**
+## v0.4.0 Feature Verification
+
+After upgrading to v0.4.0, verify the following additional items:
+
+### Pipeline
+- [ ] Upload a test file — confirm pipeline completes all 3 stages (preprocess, GPU, postprocess) without errors
+- [ ] Check backend logs — no warnings about `ENABLE_ALIGNMENT` or `TRANSCRIPTION_ENGINE` (deprecated env vars)
+- [ ] Word-level timestamps present in transcript output (native DTW, no alignment model required)
+
+### Authentication
+- [ ] Admin UI shows Authentication settings panel (Settings → Authentication)
+- [ ] At least one auth method is active and login works
+- [ ] If MFA is enabled: TOTP codes accepted by Google Authenticator / Authy
+
+### Search
+- [ ] Keyword search returns results
+- [ ] Semantic/neural search returns relevant results (ML Commons model registered in OpenSearch)
+- [ ] Hybrid search enabled (check backend logs for "hybrid search pipeline" during query)
+
+### Speaker Embeddings
+- [ ] New speakers assigned 256-dim embeddings (speakers_v4 index)
+- [ ] `speakers` OpenSearch alias points to `speakers_v4`
+
+### Cloud ASR (if configured)
+- [ ] `DEPLOYMENT_MODE=lite` starts without GPU workers
+- [ ] Cloud ASR provider connection test passes (Admin UI → Settings → ASR)
+
+### New Features
+- [ ] File retention policy configurable (Admin UI → Settings → File Retention)
+- [ ] Selective reprocessing available on file detail page (stage picker)
+- [ ] User groups and collection sharing functional (if enabled)

@@ -31,6 +31,8 @@ services:
         condition: service_started
       minio:
         condition: service_started
+      docs:
+        condition: service_started
     env_file:
       - .env
     command: >

@@ -209,7 +209,7 @@ Identifies when multiple speakers talk simultaneously:
 - **Quality Control**: Identify audio issues or multiple speakers in a single recording
 - **Meeting Insights**: Analyze discussion intensity and participation intensity
 
-### Speaker Attribute Detection (New in v0.3.3)
+### Speaker Attribute Detection (New in v0.4.0)
 
 OpenTranscribe can automatically detect speaker attributes to improve identification and cluster quality:
 
@@ -227,7 +227,7 @@ OpenTranscribe can automatically detect speaker attributes to improve identifica
 
 **Configuration**: Enable/disable speaker attribute detection in Settings → Transcription.
 
-### Speaker Pre-Clustering (New in v0.3.3)
+### Speaker Pre-Clustering (New in v0.4.0)
 
 GPU-accelerated speaker clustering runs automatically after transcription:
 
@@ -236,7 +236,7 @@ GPU-accelerated speaker clustering runs automatically after transcription:
 - Supports batch re-clustering for global speaker management
 - Cluster assignments update automatically as new files are processed
 
-### Alias-Based Speaker Indices (New in v0.3.3)
+### Alias-Based Speaker Indices (New in v0.4.0)
 
 ```mermaid
 flowchart TD
@@ -260,7 +260,7 @@ Speaker embeddings are stored in versioned OpenSearch indices with an alias syst
 - **speakers** alias: Points to the active versioned index
 - Atomic alias swap enables seamless migration between embedding versions
 
-### Speaker Embedding Consistency Self-Healing (New in v0.3.3)
+### Speaker Embedding Consistency Self-Healing (New in v0.4.0)
 
 Automatic detection and repair of inconsistent speaker embeddings:
 
@@ -269,6 +269,25 @@ Automatic detection and repair of inconsistent speaker embeddings:
 - Admin-triggered via Settings → Admin → Embedding Consistency
 - Progress tracking with WebSocket notifications
 - Distributed locking prevents concurrent repairs
+
+### Disable Speaker Diarization (New in v0.4.0)
+
+Speaker diarization can be disabled on a per-transcription or per-user basis:
+
+- **Per-upload**: Uncheck "Run Speaker Diarization" in the upload dialog to skip diarization for a specific file. The transcript will still be produced but without speaker labels.
+- **Per-reprocess**: The reprocess dialog also includes the diarization toggle, allowing you to re-transcribe without diarization.
+- **User default**: Set your default in Settings → Transcription → Speaker Diarization to skip diarization on all uploads by default.
+
+This is useful when diarization is not needed (e.g., single-speaker monologues) and you want faster processing, or when processing audio where diarization quality is poor.
+
+### pyannote.ai Cloud Diarization (New in v0.4.0)
+
+OpenTranscribe's independent diarization provider architecture allows routing diarization to an external cloud service rather than running locally:
+
+- **pyannote.ai**: The cloud service from the creators of PyAnnote, offering the same algorithms without requiring a local GPU for diarization
+- Configure via Settings → Admin → Diarization Provider or via `DIARIZATION_PROVIDER` environment variable
+- When pyannote.ai is selected, speaker diarization is sent to the cloud API while transcription remains local
+- Falls back to local diarization if the cloud service is unavailable
 
 ### Speaker Verification Status
 
@@ -400,23 +419,9 @@ ${MODEL_CACHE_DIR}/torch/pyannote/      # PyAnnote voice embeddings
 
 **Technical**: Uses sklearn's `AgglomerativeClustering` with optimized similarity thresholds
 
-### Optional Word-Level Alignment Toggle
+### Native Word-Level Timestamps
 
-**What it does**: The system can optionally align transcript words to precise timing in the audio.
-
-**Performance Impact**:
-- **Saves 17-120 seconds** per file depending on duration
-- Slower on languages without pre-trained alignment models (~42 languages have full support)
-- Can be disabled in user settings if speed is critical
-
-**When to disable**:
-- Processing very long files (4+ hours) for speed
-- Languages without alignment support (fallback to segment-level timing)
-- Batch processing large volumes where precision timing isn't needed
-
-**User Configuration**:
-- Can be toggled per-user in Settings → Transcription
-- Can be overridden per-file during upload
+Word-level timestamps are generated natively during transcription via faster-whisper's cross-attention DTW mechanism. This eliminates the need for a separate alignment model (WAV2VEC2) and supports all 100+ languages without any additional processing overhead. Post-processing validates and corrects timestamps for monotonicity and drift.
 
 ## Technical Deep Dive
 

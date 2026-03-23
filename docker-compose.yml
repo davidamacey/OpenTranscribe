@@ -457,6 +457,19 @@ services:
       # Flower only needs persistent database for monitoring, not AI models
       - flower_data:/app
 
+  docs:
+    container_name: opentranscribe-docs
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    # image, build, ports defined in override files (dev vs prod)
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/docs/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
 volumes:
   postgres_data:
   minio_data:

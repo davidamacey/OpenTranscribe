@@ -4,7 +4,7 @@ This guide provides quick-start commands for deploying OpenTranscribe with diffe
 
 ## Overview
 
-OpenTranscribe supports four authentication methods:
+OpenTranscribe v0.4.0 supports four authentication methods that can all be active simultaneously (hybrid authentication):
 
 | Method | Use Case | Test Container | Dev Mode | Prod Mode |
 |--------|----------|----------------|----------|-----------|
@@ -14,6 +14,8 @@ OpenTranscribe supports four authentication methods:
 | **PKI/X.509** | Certificate-based (CAC/PIV cards) | ✅ Self-signed certs | ❌ No* | ✅ Yes |
 
 *PKI requires nginx with mTLS for client certificate verification. Dev mode uses Vite dev server which cannot handle this.
+
+> **v0.4.0 Change**: Authentication settings are now stored encrypted (AES-256-GCM) in the database and managed exclusively via the Super Admin UI (Settings → Authentication). Environment variables continue to work as an initial fallback seed but database configuration always takes precedence.
 
 ## Quick Start Commands
 
@@ -79,20 +81,43 @@ OpenTranscribe always maintains a local super_admin account for emergency access
 **Why super_admin exists:**
 - Configure LDAP/Keycloak/PKI settings via Admin UI
 - "Break glass" account if external IdP systems fail
+- PKI mode includes a password fallback so the super admin can always log in with a password even when PKI is the primary method
 - Regular admins (from LDAP/Keycloak/PKI) cannot configure authentication settings
 
 ### Configuration Methods
 
-1. **Admin UI (Recommended):**
+**Precedence order: Database > Environment Variables > Built-in defaults**
+
+1. **Admin UI (Recommended — v0.4.0+):**
    - Log in as super_admin
    - Navigate to Settings → Authentication
    - Configure LDAP, Keycloak, PKI, MFA settings
-   - Database-backed configuration (persists across restarts)
+   - Settings are stored encrypted (AES-256-GCM) in the database
+   - Changes take effect immediately without restart
 
 2. **Environment Variables (.env file):**
-   - Fallback if database not configured
-   - Database configuration takes precedence
+   - Used as the initial seed on first startup or when no database value exists
+   - Database configuration always takes precedence once saved
    - See `.env.example` for all options
+   - Changing `.env` after database config is saved has no effect until the database entry is cleared
+
+### Hybrid Authentication (Multiple Methods Simultaneously)
+
+All four authentication methods can be enabled at once. Users see all enabled options on the login screen and can choose their preferred method.
+
+- Each method has independent configuration
+- Same email address across methods maps to the same user account
+- MFA applies to local and LDAP users; PKI and Keycloak users bypass local MFA (their IdP handles it)
+
+### DEPLOYMENT_MODE for API-Lite Deployments
+
+For deployments that use cloud ASR providers and do not require a local GPU, set:
+
+```bash
+DEPLOYMENT_MODE=lite
+```
+
+This mode disables the GPU worker requirement and is suitable for cloud-only transcription setups.
 
 ## Test Container Details
 
@@ -205,13 +230,19 @@ OpenTranscribe always maintains a local super_admin account for emergency access
 ./opentr.sh start prod --build --with-pki
 
 # Configure via Admin UI:
-# Settings → Authentication → PKI
+# Settings → Authentication → PKI/X.509
 # - PKI Enabled: true
 # - CA Certificate: (upload your organization's CA cert)
-# - Admin DNs: (comma-separated list of admin certificate DNs)
-# - Verify Revocation: true (in production)
-# - CRL URL: https://your-ca.domain.com/crl
+# - Admin DNs: (pipe-separated list of admin certificate DNs)
+# - Enable OCSP: true (recommended — real-time revocation checking)
+# - OCSP Responder URL: https://ocsp.your-ca.domain.com
+# - Enable CRL: true (optional — periodic revocation list)
+# - CRL Endpoint URL: https://your-ca.domain.com/crl
 ```
+
+**Note:** OCSP provides real-time certificate revocation checking. When a certificate is revoked, the next login attempt is denied immediately without waiting for a CRL refresh cycle. CRL checking is also available and caches the revocation list locally (refreshed every 24 hours by default).
+
+**Super admin password fallback:** Even when PKI is the only enabled auth method, the super admin account can always log in with a password for emergency access and configuration management.
 
 ## Troubleshooting
 
@@ -240,6 +271,8 @@ OpenTranscribe always maintains a local super_admin account for emergency access
 - Ensure CA certificate is correctly configured in admin UI
 - Verify client certificate was issued by the configured CA
 - Check certificate is not expired or revoked
+- If OCSP is enabled, verify the OCSP responder is reachable from the backend container
+- If CRL is enabled, verify the CRL endpoint URL is accessible and the CRL has not expired
 
 ### Logs
 
@@ -338,5 +371,8 @@ Systematically test each authentication method:
 - **PKI Detailed Setup:** `docs/PKI_SETUP.md`
 - **LDAP/AD Detailed Setup:** `docs/LDAP_AUTH.md`
 - **Keycloak Detailed Setup:** `docs/KEYCLOAK_SETUP.md`
+- **Super Admin Guide:** `docs/SUPER_ADMIN_GUIDE.md`
+- **Security Policy:** `docs/SECURITY.md`
+- **FIPS Compliance:** `docs/FIPS_140_3_COMPLIANCE.md`
 - **Development Guide:** `CLAUDE.md`
 - **Environment Variables:** `.env.example`

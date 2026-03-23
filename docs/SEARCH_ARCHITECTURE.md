@@ -6,20 +6,40 @@ This document explains how OpenTranscribe's search system works, including how r
 
 OpenTranscribe uses **hybrid search** — a combination of keyword matching and semantic (meaning-based) similarity — powered by OpenSearch. When you search, two independent methods run simultaneously, and their results are merged into a single ranked list.
 
+## v0.4.0 Search Fixes
+
+### Hybrid Search Was Non-Functional in v0.3.x
+
+A critical bug in OpenSearch 3.4 caused an internal `ArrayIndexOutOfBoundsException` whenever a `hybrid` query was combined with all three of: `aggs` (cardinality aggregation), `collapse`, and an RRF `search_pipeline`. The exception was silently swallowed — searches returned BM25-only results with no error to the user. Semantic search was completely non-functional.
+
+The fix (v0.4.0) removes `aggs` from the hybrid query body. Total file count is now derived from the collapsed result set. BM25-only fallback retains `aggs` (no crash on that path).
+
+**Before the fix**: A search for `"pytorch"` returned 1 result. After: 83 results (semantic matches recovered).
+
+### Cosine Similarity Scores Were Systematically Inflated
+
+OpenSearch's `cosinesimil` kNN space type returns `(1 + cosine) / 2`, not raw cosine. A speaker with a true cosine similarity of 0.50 to a stored profile was being reported as 0.75. All speaker matching and profile matching thresholds were effectively applied at wrong values.
+
+Fixed at 8 locations in the codebase. The conversion `raw_cosine = 2.0 * score - 1.0` is now applied at every kNN score read site.
+
+---
+
 ## How Search Results Are Ranked
 
 ### Two Search Methods
 
 **1. Keyword Search (BM25)**
 
-Traditional full-text search that looks for exact word matches. It scores based on:
+Traditional full-text search that looks for word matches. It scores based on:
 - **Term frequency** — how often the search term appears in a segment
 - **Inverse document frequency** — rarer words score higher (matching "diarization" is worth more than matching "the")
 - **Field length normalization** — a match in a short title scores higher than the same match buried in a long transcript
 
+In v0.4.0 the BM25 leg uses `fuzziness: AUTO` (typo tolerance), `type: cross_fields` (terms can span multiple fields), and phrase slop for near-phrase matching.
+
 **2. Semantic Search (Neural/Vector)**
 
-Meaning-based search using a sentence-transformer model (`all-MiniLM-L6-v2` by default). The model converts both the query and transcript chunks into 384-dimensional vectors, then finds chunks whose *meaning* is similar to the query — even without shared keywords.
+Meaning-based search using a sentence-transformer model (`all-MiniLM-L6-v2` by default, 384 dimensions). In v0.4.0, embedding generation is handled entirely **server-side** by OpenSearch ML Commons — neither the backend nor the client generates embeddings. The model is registered and deployed within the OpenSearch 3.4.0 cluster. Queries are sent as text; OpenSearch generates the vector internally.
 
 For example, searching "compensation discussion" can match a segment about "salary negotiations" even though those exact words don't appear.
 
@@ -33,7 +53,7 @@ The formula for each document:
 RRF_score = 1/(k + rank_in_keyword) + 1/(k + rank_in_semantic)
 ```
 
-Where `k` is a constant (default: 40) that controls how much weight goes to top-ranked results.
+Where `k` is a constant (default: 30 in v0.4.0, configurable via `SEARCH_RRF_RANK_CONSTANT`) that controls how much weight goes to top-ranked results.
 
 **What this means in practice:**
 - A file ranked #1 in keyword search and #5 in semantic search scores higher than one ranked #3 in both
@@ -122,8 +142,9 @@ These settings can be tuned via environment variables:
 
 | Setting | Default | Description |
 |---|---|---|
-| `SEARCH_RRF_RANK_CONSTANT` | 40 | RRF weighting constant. Lower values give more weight to top-ranked results |
+| `SEARCH_RRF_RANK_CONSTANT` | 30 | RRF weighting constant. Lower values give more weight to top-ranked results |
 | `SEARCH_RRF_WINDOW_SIZE` | 500 | Number of results each search method retrieves before RRF combination |
+| `SEARCH_MAX_OVERFETCH` | 1000 | Maximum documents retrieved per leg before RRF collapse (raised from 200 in v0.4.0) |
 | `SEARCH_CHUNK_TARGET_WORDS` | 200 | Target word count per transcript chunk |
 | `SEARCH_CHUNK_OVERLAP_WORDS` | 40 | Word overlap between split chunks for context preservation |
 | `SEARCH_HYBRID_MIN_SCORE` | 0.01 | Minimum score threshold for semantic-only results |

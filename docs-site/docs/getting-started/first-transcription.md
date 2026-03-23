@@ -122,7 +122,7 @@ flowchart LR
 | 3 hours  | ~15 minutes    | ~3 hours     |
 
 :::info Processing Speed
-With GPU acceleration and the `large-v2` model, OpenTranscribe processes at **~70x realtime speed**. A 1-hour file transcribes in about 5 minutes!
+With GPU acceleration and the `large-v3-turbo` model (default), OpenTranscribe processes at **~40x realtime speed** (full pipeline). A 1-hour file transcribes in about 5 minutes!
 :::
 
 ## Step 4: View Your Transcript
@@ -266,7 +266,7 @@ Group related files:
 
 ### For Better Accuracy
 
-1. **Use large-v2 model** for best transcription quality
+1. **Use large-v3 model** for best transcription quality (including non-English and translation tasks)
 2. **Good audio quality** - clear, well-recorded audio
 3. **Edit speaker names** to improve future speaker matching
 4. **Verify and correct** any transcription errors
@@ -291,7 +291,7 @@ Group related files:
 
 - **Improve audio** - re-record with better microphone
 - **Reduce background noise** - use noise cancellation
-- **Larger model** - switch to `large-v2` for better accuracy
+- **Larger model** - switch to `large-v3` for better accuracy
 - **Language setting** - ensure correct language selected
 
 ### Speakers Not Detected

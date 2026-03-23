@@ -144,7 +144,7 @@ flowchart LR
 
 OpenSearch speaker indices use an alias-based architecture for zero-downtime version upgrades:
 
-- **`speakers_v3`**: Concrete index, 192-dim embeddings (PyAnnote v3)
+- **`speakers_v3`**: Concrete index, 512-dim embeddings (PyAnnote v3 / pyannote/embedding)
 - **`speakers_v4`**: Concrete index, 256-dim embeddings (WeSpeaker/PyAnnote v4)
 - **`speakers`**: OpenSearch alias pointing to the active versioned index
 
