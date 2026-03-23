@@ -123,7 +123,7 @@ services:
       dockerfile: Dockerfile
     pull_policy: always
     ports:
-      - "${DOCS_PORT:-3030}:8080"
+      - "${DOCS_PORT:-5183}:8080"
     environment:
       - NODE_ENV=production
 

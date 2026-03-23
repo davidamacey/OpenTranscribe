@@ -318,7 +318,7 @@ Access the web interface at http://localhost:5173
    - 🌺 **Task Monitor**: http://localhost:5175/flower
    - 🔍 **Search Engine**: http://localhost:9200
    - 📁 **File Storage**: http://localhost:9091
-   - 📖 **Documentation**: http://localhost:3030/docs/
+   - 📖 **Documentation**: http://localhost:5183/docs/
 
 ## 📋 OpenTranscribe Utility Commands
 

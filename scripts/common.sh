@@ -273,7 +273,7 @@ print_access_info() {
     echo "   - MinIO Console:       http://localhost:5179"
     echo "   - Flower Dashboard:    http://localhost:5175/flower"
     echo "   - OpenSearch:          http://localhost:5180"
-    echo "   - Documentation:       http://localhost:3030/docs/"
+    echo "   - Documentation:       http://localhost:5183/docs/"
     echo ""
     echo "📝 Note: Microphone recording only works on localhost in this mode."
     echo "   For HTTPS access from other devices, set NGINX_SERVER_NAME in .env"

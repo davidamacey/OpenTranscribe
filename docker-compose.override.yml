@@ -111,7 +111,7 @@ services:
       context: ./docs-site
       dockerfile: Dockerfile
     ports:
-      - "${DOCS_PORT:-3030}:8080"
+      - "${DOCS_PORT:-5183}:8080"
 
   # GPU Scaled Worker - Development build (only active with --gpu-scale flag)
   celery-worker-gpu-scaled:
