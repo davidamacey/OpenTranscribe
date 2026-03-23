@@ -475,7 +475,7 @@ Yes! OpenTranscribe supports LDAP/Active Directory authentication:
 - Admin roles configurable via `LDAP_ADMIN_USERS`
 - Hybrid mode supports both local and AD users
 
-See the [LDAP Setup Guide](/docs/LDAP_AUTH.md) for configuration.
+See the [LDAP Setup Guide](./authentication/ldap) for configuration.
 
 ### What password policies are available?
 
@@ -518,7 +518,7 @@ Yes! OpenTranscribe supports Single Sign-On via Keycloak/OIDC:
 - Social login (Google, GitHub, etc.) via Keycloak
 - Role synchronization from Keycloak
 
-See the [Keycloak Setup Guide](/docs/KEYCLOAK_SETUP.md) for configuration.
+See the [Keycloak Setup Guide](./authentication/keycloak) for configuration.
 
 ### Can I use CAC/PIV cards for authentication?
 
@@ -528,7 +528,7 @@ Yes! OpenTranscribe supports PKI/X.509 certificate authentication:
 - No passwords required
 - Admin designation via certificate DN
 
-See the [PKI Setup Guide](/docs/PKI_SETUP.md) for configuration.
+See the [PKI Setup Guide](./authentication/pki) for configuration.
 
 ### How is audit logging handled?
 

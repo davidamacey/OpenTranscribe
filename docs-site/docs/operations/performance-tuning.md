@@ -134,7 +134,7 @@ GPU_SCALE_DEVICE_ID=2       # Which GPU to use
 GPU_SCALE_WORKERS=4         # Parallel workers
 ```
 
-See the [Multi-GPU Scaling](/installation/multi-gpu) documentation for details.
+See the [Multi-GPU Scaling](../configuration/multi-gpu-scaling) documentation for details.
 
 ### Auto-Detection Logic
 

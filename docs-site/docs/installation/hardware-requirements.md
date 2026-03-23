@@ -272,7 +272,7 @@ For enterprise deployments:
 
 ## NVIDIA Blackwell GPUs
 
-NVIDIA Blackwell GPUs (GB10x/GB20x series, e.g., DGX Spark) require a separate build due to updated CUDA libraries and driver requirements. See [Installation → Blackwell Setup](./blackwell-setup.md) for configuration details.
+NVIDIA Blackwell GPUs (GB10x/GB20x series, e.g., DGX Spark) require a separate build due to updated CUDA libraries and driver requirements. See the `docs/BLACKWELL_SETUP.md` file in the repository for configuration details.
 
 ## Next Steps
 

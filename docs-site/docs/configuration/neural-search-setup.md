@@ -634,6 +634,5 @@ Search Configuration → Advanced Settings
 ## Next Steps
 
 - [Search & Filters User Guide](../user-guide/search-and-filters.md) - How users interact with search
-- [OpenSearch Cluster Setup](../installation/opensearch-cluster.md) - Multi-node deployments
-- [Performance Optimization](../installation/performance-tuning.md) - Advanced tuning
+- [Performance Optimization](../operations/performance-tuning.md) - Advanced tuning
 - [Troubleshooting](../installation/troubleshooting.md) - General system issues

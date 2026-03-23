@@ -101,7 +101,7 @@ docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 
 - Point your domain (e.g., `transcribe.example.com`) to your server's public IP via an A record.
 - Verify resolution: `dig +short transcribe.example.com`
-- For internal/homelab deployments, configure local DNS or hosts files (see the [NGINX Setup](../configuration/nginx-ssl.md) guide).
+- For internal/homelab deployments, configure local DNS or hosts files (see the [NGINX Setup](../configuration/nginx-setup.md) guide).
 
 ### SSL/TLS Certificates
 

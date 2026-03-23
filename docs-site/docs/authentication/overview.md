@@ -12,9 +12,9 @@ OpenTranscribe supports multiple authentication methods to integrate with your e
 | Method | Use Case | Configuration |
 |--------|----------|---------------|
 | **Local** | Default, standalone deployments | Built-in, no additional setup |
-| **LDAP/Active Directory** | Enterprise with existing AD infrastructure | [LDAP Setup Guide](/docs/LDAP_AUTH.md) |
-| **OIDC/Keycloak** | SSO with identity providers | [Keycloak Setup Guide](/docs/KEYCLOAK_SETUP.md) |
-| **PKI/X.509** | Government, high-security environments | [PKI Setup Guide](/docs/PKI_SETUP.md) |
+| **LDAP/Active Directory** | Enterprise with existing AD infrastructure | [LDAP Setup Guide](./ldap) |
+| **OIDC/Keycloak** | SSO with identity providers | [Keycloak Setup Guide](./keycloak) |
+| **PKI/X.509** | Government, high-security environments | [PKI Setup Guide](./pki) |
 
 ## Quick Comparison
 
@@ -145,7 +145,7 @@ OpenTranscribe's authentication system is designed with compliance requirements 
 
 ## Next Steps
 
-- [LDAP/Active Directory Setup](/docs/LDAP_AUTH.md) - Enterprise directory integration
-- [Keycloak/OIDC Setup](/docs/KEYCLOAK_SETUP.md) - Single Sign-On configuration
-- [PKI/X.509 Setup](/docs/PKI_SETUP.md) - Certificate-based authentication
+- [LDAP/Active Directory Setup](./ldap) - Enterprise directory integration
+- [Keycloak/OIDC Setup](./keycloak) - Single Sign-On configuration
+- [PKI/X.509 Setup](./pki) - Certificate-based authentication
 - [Environment Variables](../configuration/environment-variables.md) - Complete configuration reference
