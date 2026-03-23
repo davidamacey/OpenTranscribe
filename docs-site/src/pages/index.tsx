@@ -1,6 +1,7 @@
 import type {ReactNode} from 'react';
 import clsx from 'clsx';
 import Link from '@docusaurus/Link';
+import useBaseUrl from '@docusaurus/useBaseUrl';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
@@ -182,7 +183,7 @@ function Hero() {
 
         <div className={styles.heroDemo}>
           <img
-            src="/img/opentranscribe-workflow.gif"
+            src={useBaseUrl('/img/opentranscribe-workflow.gif')}
             alt="OpenTranscribe interface showing transcription with speaker labels"
             loading="eager"
           />
