@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { page } from '$app/stores';
   import { user as userStore, authStore, fetchUserInfo } from '$stores/auth';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
@@ -45,6 +46,16 @@
   // Settings state
   $: isOpen = $settingsModalStore.isOpen;
   $: activeSection = $settingsModalStore.activeSection;
+
+  // Close modal when the user navigates to a different page
+  let _prevPath = '';
+  $: {
+    const newPath = $page.url.pathname;
+    if (isOpen && _prevPath && newPath !== _prevPath) {
+      closeModal();
+    }
+    _prevPath = newPath;
+  }
   $: isAdmin = $userStore?.role === 'admin' || $userStore?.role === 'super_admin';
   $: isSuperAdmin = $userStore?.role === 'super_admin';
   $: isLocalUser = $userStore?.auth_type === 'local';
@@ -2670,6 +2681,11 @@
   /* Responsive Design */
 
   @media (max-width: 768px) {
+    /* On mobile the modal is full-screen — raise above the navbar so the close button is reachable */
+    .settings-modal-backdrop {
+      z-index: 1300;
+    }
+
     .settings-modal {
       width: 100vw;
       height: 100vh;
