@@ -251,35 +251,43 @@ def preload_models(**kwargs):
     """
     import os
 
-    # GPU model preloading
+    # GPU model preloading — ONLY on GPU workers (PRELOAD_GPU_MODELS=true).
+    # Other workers (cpu-processor, search-indexer, etc.) must NOT load models,
+    # even if CUDA is available, to avoid wasting 15+ GB of GPU memory.
+    # Set via docker-compose.yml environment for gpu worker containers only.
+    is_gpu_worker = os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+
     try:
-        from app.transcription.config import TranscriptionConfig
+        if is_gpu_worker:
+            from app.transcription.config import TranscriptionConfig
 
-        config = TranscriptionConfig.from_environment()
-        if config.device == "cuda":
-            import torch
+            config = TranscriptionConfig.from_environment()
+            if config.device == "cuda":
+                import torch
 
-            from app.transcription.model_manager import ModelManager
+                from app.transcription.model_manager import ModelManager
 
-            ModelManager.get_instance().ensure_models_loaded(config)
+                ModelManager.get_instance().ensure_models_loaded(config)
 
-            # Enable TF32 AFTER model loading. PyAnnote's fix_reproducibility()
-            # disables TF32 during Pipeline.from_pretrained(). Re-enabling here
-            # gives Whisper ~15-20% speedup on Ampere+ GPUs (RTX 3000+, A-series).
-            # pipeline.py also re-enables after each diarization run.
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
-            logger.info("TF32 enabled for Tensor Core acceleration")
+                # Enable TF32 AFTER model loading. PyAnnote's fix_reproducibility()
+                # disables TF32 during Pipeline.from_pretrained(). Re-enabling here
+                # gives Whisper ~15-20% speedup on Ampere+ GPUs (RTX 3000+, A-series).
+                # pipeline.py also re-enables after each diarization run.
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                logger.info("TF32 enabled for Tensor Core acceleration")
 
-            # Pin the model name so subsequent tasks use the loaded model,
-            # even if the admin changes the DB setting before restarting.
-            TranscriptionConfig.pin_model(config.model_name)
+                # Pin the model name so subsequent tasks use the loaded model,
+                # even if the admin changes the DB setting before restarting.
+                TranscriptionConfig.pin_model(config.model_name)
 
-            logger.info(
-                "GPU models preloaded and pinned "
-                f"(model={config.model_name}, "
-                f"concurrent_requests={config.concurrent_requests})"
-            )
+                logger.info(
+                    "GPU models preloaded and pinned "
+                    f"(model={config.model_name}, "
+                    f"concurrent_requests={config.concurrent_requests})"
+                )
+        else:
+            logger.info("Skipping GPU model preload (PRELOAD_GPU_MODELS not set)")
     except Exception as e:
         logger.debug(f"GPU model preloading skipped: {e}")
 

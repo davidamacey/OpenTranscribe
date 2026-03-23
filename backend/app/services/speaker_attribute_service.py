@@ -50,8 +50,13 @@ class SpeakerAttributeService:
             self._model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_NAME)
             self._model.eval()
 
-            # Use GPU if available and not forced to CPU
-            if not self._force_cpu and torch.cuda.is_available():
+            # Use GPU only on GPU workers (PRELOAD_GPU_MODELS=true).
+            # On CPU workers, this model would leak a CUDA context (~5GB)
+            # in the prefork child process that never gets released.
+            import os
+
+            is_gpu_worker = os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+            if not self._force_cpu and is_gpu_worker and torch.cuda.is_available():
                 self._device = "cuda"
                 self._model = self._model.to(self._device)
                 logger.info(f"Gender model loaded on GPU: {MODEL_NAME}")

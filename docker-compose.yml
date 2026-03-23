@@ -202,6 +202,9 @@ services:
       - TEMP_DIR=/app/temp
       # Per-container batch size override (default worker is typically a smaller GPU)
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
+      # Signal to celery.py preload_models() that this is a GPU worker.
+      # Without this, ALL workers preload Whisper + PyAnnote onto GPU (~15GB wasted).
+      - PRELOAD_GPU_MODELS=true
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcription@$$HOSTNAME"]
       interval: 30s

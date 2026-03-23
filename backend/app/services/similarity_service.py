@@ -10,6 +10,7 @@ No fallbacks - requires modern dependencies for optimal performance.
 """
 
 import logging
+import os
 from typing import Any
 from typing import Optional
 from typing import Union
@@ -24,8 +25,9 @@ logger = logging.getLogger(__name__)
 class SimilarityService:
     """GPU-accelerated similarity service leveraging PyTorch and OpenSearch."""
 
-    # Use GPU if available, fallback to CPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Use GPU only on GPU workers to avoid CUDA context leaks in CPU worker children.
+    _is_gpu_worker = os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+    device = torch.device("cuda" if _is_gpu_worker and torch.cuda.is_available() else "cpu")
 
     @staticmethod
     def cosine_similarity(

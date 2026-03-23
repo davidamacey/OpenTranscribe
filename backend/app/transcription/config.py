@@ -117,9 +117,10 @@ class TranscriptionConfig:
             concurrent_requests=cls._resolve_concurrent_requests(),
         )
 
-        # Divide batch sizes by concurrent_requests to share GPU bandwidth
-        if config.concurrent_requests > 1:
-            config.batch_size = max(4, config.batch_size // config.concurrent_requests)
+        # Note: batch_size is NOT divided by concurrent_requests. CTranslate2
+        # handles GPU compute scheduling internally, and reducing batch_size
+        # increases kernel launch overhead without meaningful VRAM savings.
+        # The GPU's SM scheduler naturally time-slices between concurrent tasks.
 
         # Apply task-level overrides (all overrides are intentional, including None
         # values like hallucination_silence_threshold=None meaning "disabled")

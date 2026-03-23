@@ -417,11 +417,13 @@ class SpeakerClusteringService:
             n = len(emb_rows)
 
             if n > 1:
-                # Use first available CUDA device (Docker maps the correct
-                # host GPU via device_ids in docker-compose.gpu.yml, so
-                # cuda:0 inside the container is always the right device
-                # regardless of host GPU topology or scaling config).
-                device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+                # Use GPU for large matrices, CPU for small ones.
+                # GPU is faster for matmul but creates a CUDA context (~1.4GB)
+                # that persists in prefork worker children. For small speaker
+                # counts, CPU is fast enough and avoids the context overhead.
+                use_gpu = torch.cuda.is_available() and n >= 500
+                device = torch.device("cuda:0" if use_gpu else "cpu")
+                dtype = torch.float16 if use_gpu else torch.float32
                 logger.info(
                     "Phase 2: computing similarities for %d speakers on %s (dim=%d)",
                     n,
@@ -437,10 +439,9 @@ class SpeakerClusteringService:
                 sim_full = np.empty((n, n), dtype=np.float32)
 
                 try:
-                    # Build (N, D) fp16 tensor on device for fast matmul
                     M = torch.tensor(
                         emb_matrix,
-                        dtype=torch.float16,
+                        dtype=dtype,
                         device=device,
                     )
                     del emb_matrix
@@ -452,8 +453,7 @@ class SpeakerClusteringService:
                     # Pre-transpose once — .T is not contiguous, make it so
                     MT = M.T.contiguous()
 
-                    # Larger chunks on GPU (much more VRAM headroom)
-                    sim_chunk = 2000 if device.type == "cuda" else SIM_CHUNK
+                    sim_chunk = 2000 if use_gpu else SIM_CHUNK
                     total_chunks = math.ceil(n / sim_chunk)
 
                     for ci in range(total_chunks):
@@ -474,7 +474,15 @@ class SpeakerClusteringService:
 
                     del M, MT
                 finally:
-                    if torch.cuda.is_available():
+                    if use_gpu:
+                        torch.cuda.empty_cache()
+                        # Release the CUDA context from this prefork child.
+                        # Without this, each child holds ~1.4GB+ of GPU memory
+                        # until it exits (max-tasks-per-child).
+                        torch.cuda.ipc_collect()
+                        import gc
+
+                        gc.collect()
                         torch.cuda.empty_cache()
 
                 # --- AHC with complete linkage ---

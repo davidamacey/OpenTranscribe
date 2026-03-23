@@ -162,10 +162,6 @@ class SpeakerDiarizer:
         else:
             batch_size = 4  # CPU
 
-        # In concurrent mode, divide batch size to share GPU bandwidth
-        if self.config.concurrent_requests > 1:
-            batch_size = max(1, batch_size // self.config.concurrent_requests)
-
         current = self._pipeline.segmentation_batch_size
         if batch_size != current:
             self._pipeline.segmentation_batch_size = batch_size
@@ -207,10 +203,6 @@ class SpeakerDiarizer:
         # batch_size to 64-256 based on free VRAM when it sees <= 32.
         # With stock PyAnnote, 32 is still 32x better than the default of 1.
         batch_size = 32
-
-        # In concurrent mode, reduce to share GPU bandwidth
-        if self.config.concurrent_requests > 1:
-            batch_size = max(4, batch_size // self.config.concurrent_requests)
 
         current = getattr(self._pipeline, "embedding_batch_size", 1)
         if batch_size != current:

@@ -11,6 +11,7 @@ No backwards compatibility - designed for modern infrastructure.
 """
 
 import logging
+import os
 from collections.abc import Iterator
 from typing import Any
 from typing import Union
@@ -24,8 +25,9 @@ logger = logging.getLogger(__name__)
 class OptimizedEmbeddingService:
     """High-performance embedding service with GPU acceleration and bulk operations."""
 
-    # Use GPU if available for tensor operations
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Use GPU only on GPU workers to avoid CUDA context leaks in CPU worker children.
+    _is_gpu_worker = os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+    device = torch.device("cuda" if _is_gpu_worker and torch.cuda.is_available() else "cpu")
 
     @staticmethod
     def bulk_store_embeddings(

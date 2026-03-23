@@ -57,6 +57,7 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       # Tell TranscriptionConfig how many concurrent tasks share GPU weights
       - GPU_CONCURRENT_REQUESTS=${GPU_SCALE_WORKERS:-4}
+      - PRELOAD_GPU_MODELS=true
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-scaled@$$HOSTNAME"]
       interval: 30s

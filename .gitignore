@@ -8,6 +8,10 @@ reference_repos/
 benchmark/
 benchmarks/
 benchmark_thorough_*.json
+
+# Papers (unpublished — remove from gitignore when ready to release)
+docs/performance-whitepaper/
+docs/research-paper/
 PLANS/
 
 # Environment variables

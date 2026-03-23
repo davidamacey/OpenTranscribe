@@ -851,6 +851,11 @@ def main():
              "Ensures consistent file selection across test runs.",
     )
     parser.add_argument(
+        "--sequential", action="store_true",
+        help="Process each file individually in sequence (for duration curve testing). "
+             "Ignores --batches and runs batch_size=1 for each file in the list.",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Show what would be done without triggering reprocessing",
     )
@@ -919,14 +924,28 @@ def main():
     r.ping()
     print("Redis connected.")
 
+    # Sequential mode: process each file individually (for duration curve testing)
+    if args.sequential:
+        batch_sizes = [1] * len(files)
+
     # Run batches
     all_batches: list[BatchResult] = []
+    file_offset = 0
     for i, batch_size in enumerate(batch_sizes):
         if i > 0:
             print(f"\n  Cooling down {args.cooldown}s before next batch...")
             time.sleep(args.cooldown)
 
-        batch_result = run_batch(token, r, files, batch_size, args.gpu_id)
+        # In sequential mode, advance through the file list one at a time
+        if args.sequential:
+            batch_files = files[file_offset:file_offset + 1]
+            file_offset += 1
+            if not batch_files:
+                break
+        else:
+            batch_files = files
+
+        batch_result = run_batch(token, r, batch_files, batch_size, args.gpu_id)
         all_batches.append(batch_result)
 
     # Write reports
