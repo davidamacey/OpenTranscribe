@@ -61,6 +61,12 @@ export interface ASRProviderInfo {
   supports_translation: boolean;
   /** Not in backend catalog — defaults to true */
   sdk_available: boolean;
+  /** Provider testing status: 'tested', 'experimental', or 'coming_soon' */
+  status: string;
+  /** Warning text shown when status is 'experimental' */
+  status_note: string;
+  /** Quality note about provider's built-in diarization */
+  diarization_quality: string;
   models: ASRModelInfo[];
 }
 
@@ -196,6 +202,10 @@ export class ASRSettingsApi {
       supports_translation: p.supports_translation ?? false,
       // sdk_available is not in the backend catalog — assume true unless explicitly false
       sdk_available: p.sdk_available ?? true,
+      // testing status and quality notes
+      status: p.status ?? 'experimental',
+      status_note: p.status_note ?? '',
+      diarization_quality: p.diarization_quality ?? '',
       // normalise each model entry
       models: (p.models ?? []).map((m: any) => ({
         id: m.id,

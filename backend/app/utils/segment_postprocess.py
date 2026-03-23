@@ -60,11 +60,20 @@ def resegment_by_speaker(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
     return result
 
 
-def merge_consecutive_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def merge_consecutive_segments(
+    segments: list[dict[str, Any]],
+    max_duration: float = 30.0,
+) -> list[dict[str, Any]]:
     """Merge adjacent segments that share the same speaker.
 
     After resegmentation, many small consecutive segments from the same speaker
     may exist. This merges them into larger, more natural segments.
+
+    Args:
+        segments: List of segment dicts with start/end/text/speaker/words keys.
+        max_duration: Maximum duration (seconds) for a merged segment. Prevents
+            unbounded merging when a provider returns only one speaker, which
+            would collapse the entire transcript into a single segment.
     """
     if not segments:
         return []
@@ -73,7 +82,9 @@ def merge_consecutive_segments(segments: list[dict[str, Any]]) -> list[dict[str,
     current = _copy_segment(segments[0])
 
     for segment in segments[1:]:
-        if segment.get("speaker") and segment.get("speaker") == current.get("speaker"):
+        current_duration = current.get("end", 0) - current.get("start", 0)
+        same_speaker = segment.get("speaker") and segment.get("speaker") == current.get("speaker")
+        if same_speaker and current_duration < max_duration:
             # Merge into current
             current["end"] = segment["end"]
             current["text"] = current["text"] + " " + segment.get("text", "")

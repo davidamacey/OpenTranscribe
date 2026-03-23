@@ -11,6 +11,7 @@ from typing import Optional
 from pydantic import BaseModel
 from pydantic import Field
 
+from app.core.constants import DEFAULT_DIARIZATION_SOURCE
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
@@ -23,6 +24,7 @@ from app.core.constants import DEFAULT_VAD_MIN_SILENCE_MS
 from app.core.constants import DEFAULT_VAD_MIN_SPEECH_MS
 from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
 from app.core.constants import DEFAULT_VAD_THRESHOLD
+from app.core.constants import VALID_DIARIZATION_SOURCES
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
 
 # Type alias for speaker prompt behavior
@@ -111,10 +113,13 @@ class TranscriptionSettings(BaseModel):
         description="Penalize repetitive output (1.0=off, 1.1-1.3=recommended)",
     )
     # Diarization control
-    disable_diarization: bool = Field(
-        default=False,
+    diarization_source: str = Field(
+        default=DEFAULT_DIARIZATION_SOURCE,
         description=(
-            "Skip speaker diarization entirely; all segments assigned to a single speaker"
+            "Diarization source: 'provider' (use ASR provider's diarization), "
+            "'local' (always use local PyAnnote on GPU), "
+            "'pyannote' (pyannote.ai cloud diarization), "
+            "'off' (no diarization)"
         ),
     )
 
@@ -135,7 +140,7 @@ class TranscriptionSettings(BaseModel):
                 "vad_speech_pad_ms": 400,
                 "hallucination_silence_threshold": None,
                 "repetition_penalty": 1.0,
-                "disable_diarization": False,
+                "diarization_source": "provider",
             }
         }
 
@@ -206,9 +211,9 @@ class TranscriptionSettingsUpdate(BaseModel):
         default=None, ge=1.0, le=2.0, description="Penalize repetitive output"
     )
     # Diarization control
-    disable_diarization: Optional[bool] = Field(
+    diarization_source: Optional[str] = Field(
         default=None,
-        description="Skip speaker diarization entirely",
+        description="Diarization source: 'provider', 'local', 'pyannote', or 'off'",
     )
 
     class Config:
@@ -224,7 +229,7 @@ class TranscriptionSettingsUpdate(BaseModel):
                 "llm_output_language": "es",
                 "vad_threshold": 0.3,
                 "repetition_penalty": 1.2,
-                "disable_diarization": False,
+                "diarization_source": "provider",
             }
         }
 
@@ -274,9 +279,13 @@ class TranscriptionSystemDefaults(BaseModel):
     )
     repetition_penalty: float = Field(description="System default repetition penalty")
     # Diarization default
-    disable_diarization_default: bool = Field(
-        default=False,
-        description="System default for disable_diarization",
+    diarization_source_default: str = Field(
+        default=DEFAULT_DIARIZATION_SOURCE,
+        description="System default diarization source",
+    )
+    valid_diarization_sources: list[str] = Field(
+        default=list(VALID_DIARIZATION_SOURCES),
+        description="Valid diarization source options",
     )
 
     class Config:

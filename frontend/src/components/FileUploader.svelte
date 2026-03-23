@@ -233,7 +233,9 @@
           vad_min_speech_ms: 250,
           vad_speech_pad_ms: 400,
           hallucination_silence_threshold: null,
-          repetition_penalty: 1.0
+          repetition_penalty: 1.0,
+          diarization_source_default: 'provider',
+          valid_diarization_sources: ['provider', 'local', 'pyannote', 'off']
         };
       }
     })();

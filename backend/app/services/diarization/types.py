@@ -1,0 +1,37 @@
+"""Shared data types for diarization providers."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from dataclasses import field
+
+
+@dataclass
+class DiarizeConfig:
+    """Configuration passed to each diarization provider."""
+
+    min_speakers: int = 1
+    max_speakers: int = 20
+    num_speakers: int | None = None
+    api_key: str | None = None
+    model_name: str | None = None
+
+
+@dataclass
+class DiarizeSegment:
+    """A speaker segment from diarization output."""
+
+    start: float
+    end: float
+    speaker: str  # Normalized SPEAKER_XX format
+
+
+@dataclass
+class DiarizeResult:
+    """Full result from a diarization provider."""
+
+    segments: list[DiarizeSegment]
+    num_speakers: int
+    provider_name: str
+    model_name: str = ""
+    metadata: dict = field(default_factory=dict)

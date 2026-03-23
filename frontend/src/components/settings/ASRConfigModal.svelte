@@ -242,6 +242,19 @@
             {/if}
           </div>
 
+          {#if selectedProvider.status === 'experimental'}
+            <div class="experimental-warning">
+              <span class="warning-icon">&#9888;</span>
+              <span>{selectedProvider.status_note || $t('settings.asrProvider.experimentalWarning')}</span>
+            </div>
+          {/if}
+
+          {#if selectedProvider.diarization_quality}
+            <p class="diarization-quality-note">
+              <strong>{$t('settings.asrProvider.diarizationQuality')}:</strong> {selectedProvider.diarization_quality}
+            </p>
+          {/if}
+
           <!-- Model -->
           <div class="form-group">
             <label for="asr-model">{$t('settings.asrProvider.fields.model')}</label>
@@ -446,6 +459,32 @@
     border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 500;
+  }
+
+  .experimental-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem 0.8rem;
+    margin: 0.5rem 0;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: var(--warning-color, #d97706);
+    line-height: 1.4;
+  }
+
+  .experimental-warning .warning-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .diarization-quality-note {
+    margin: 0.4rem 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
   }
 
   .cost-hint {

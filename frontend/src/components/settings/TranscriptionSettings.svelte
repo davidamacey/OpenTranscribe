@@ -38,7 +38,7 @@
   let hallucinationEnabled = false;
   let hallucinationValue = 2.0;
   let repetitionPenalty = 1.0;
-  let disableDiarization = false;
+  let diarizationSource: import('$lib/api/transcriptionSettings').DiarizationSource = 'provider';
 
   // Original values for change tracking
   let originalMinSpeakers = 1;
@@ -56,7 +56,7 @@
   let originalHallucinationEnabled = false;
   let originalHallucinationValue = 2.0;
   let originalRepetitionPenalty = 1.0;
-  let originalDisableDiarization = false;
+  let originalDiarizationSource: import('$lib/api/transcriptionSettings').DiarizationSource = 'provider';
 
   // Advanced section collapsed state
   let advancedExpanded = false;
@@ -102,7 +102,7 @@
     hallucinationEnabled !== originalHallucinationEnabled ||
     (hallucinationEnabled && hallucinationValue !== originalHallucinationValue) ||
     repetitionPenalty !== originalRepetitionPenalty ||
-    disableDiarization !== originalDisableDiarization;
+    diarizationSource !== originalDiarizationSource;
 
   // Update dirty state in store
   $: {
@@ -208,7 +208,7 @@
     hallucinationEnabled = settings.hallucination_silence_threshold !== null;
     hallucinationValue = settings.hallucination_silence_threshold ?? 2.0;
     repetitionPenalty = settings.repetition_penalty;
-    disableDiarization = settings.disable_diarization;
+    diarizationSource = settings.diarization_source;
   }
 
   function storeOriginalValues(settings: TranscriptionSettings) {
@@ -227,7 +227,7 @@
     originalHallucinationEnabled = settings.hallucination_silence_threshold !== null;
     originalHallucinationValue = settings.hallucination_silence_threshold ?? 2.0;
     originalRepetitionPenalty = settings.repetition_penalty;
-    originalDisableDiarization = settings.disable_diarization;
+    originalDiarizationSource = settings.diarization_source;
   }
 
   async function saveSettings() {
@@ -253,7 +253,7 @@
         vad_speech_pad_ms: vadSpeechPadMs,
         hallucination_silence_threshold: hallucinationSilenceThreshold,
         repetition_penalty: repetitionPenalty,
-        disable_diarization: disableDiarization
+        diarization_source: diarizationSource
       });
 
       storeOriginalValues(updatedSettings);
@@ -309,20 +309,39 @@
         </div>
         <p class="section-desc">{$t('settings.transcription.speakerDetectionDesc')}</p>
 
-        <!-- Disable Diarization Toggle -->
-        <div class="form-group toggle-group">
-          <label class="toggle-label">
-            <input
-              type="checkbox"
-              bind:checked={disableDiarization}
-              class="toggle-input"
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.transcription.disableDiarization')}</span>
+        <!-- Diarization Source -->
+        <div class="form-group">
+          <label for="diarization-source" class="form-label">
+            {$t('settings.transcription.diarizationSource')}
           </label>
-          <p class="field-desc">{$t('settings.transcription.disableDiarizationDesc')}</p>
-          {#if disableDiarization}
+          <select
+            id="diarization-source"
+            class="form-select"
+            bind:value={diarizationSource}
+          >
+            <option value="provider">{$t('settings.transcription.diarizationProvider')}</option>
+            <option value="local">{$t('settings.transcription.diarizationLocal')}</option>
+            <option value="pyannote">{$t('settings.transcription.diarizationPyannote')}</option>
+            <option value="off">{$t('settings.transcription.diarizationOff')}</option>
+          </select>
+          <p class="field-desc">
+            {#if diarizationSource === 'provider'}
+              {$t('settings.transcription.diarizationProviderDesc')}
+            {:else if diarizationSource === 'local'}
+              {$t('settings.transcription.diarizationLocalDesc')}
+            {:else if diarizationSource === 'pyannote'}
+              {$t('settings.transcription.diarizationPyannoteDesc')}
+            {:else}
+              {$t('settings.transcription.diarizationOffDesc')}
+            {/if}
+          </p>
+          {#if diarizationSource === 'off'}
             <p class="field-warning">{$t('settings.transcription.disableDiarizationWarning')}</p>
+          {/if}
+          {#if diarizationSource === 'pyannote'}
+            <p class="field-desc" style="margin-top: 0.5rem; font-style: italic;">
+              {$t('settings.transcription.diarizationPyannoteConfigHint')}
+            </p>
           {/if}
         </div>
 
@@ -356,7 +375,7 @@
         </div>
 
         <!-- Min/Max Speakers -->
-        {#if speakerBehavior === 'use_custom' && !disableDiarization}
+        {#if speakerBehavior === 'use_custom' && diarizationSource !== 'off'}
           <div class="speaker-range-row">
             <div class="form-group compact">
               <label for="min-speakers" class="form-label">{$t('settings.transcription.minSpeakers')}</label>
@@ -382,7 +401,7 @@
             </div>
           </div>
         {/if}
-        {#if disableDiarization}
+        {#if diarizationSource === 'off'}
           <p class="field-desc dimmed">{$t('settings.transcription.speakerDetectionDisabled')}</p>
         {/if}
 

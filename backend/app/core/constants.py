@@ -394,6 +394,10 @@ DEFAULT_REPETITION_PENALTY = 1.0  # 1.0 = no penalty
 # Valid speaker prompt behaviors
 VALID_SPEAKER_PROMPT_BEHAVIORS = ["always_prompt", "use_defaults", "use_custom"]
 
+# Diarization source options
+VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "off")
+DEFAULT_DIARIZATION_SOURCE = "provider"
+
 # =============================================================================
 # Language Settings (Multilingual Support)
 # =============================================================================

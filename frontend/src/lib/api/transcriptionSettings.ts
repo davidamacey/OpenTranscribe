@@ -18,6 +18,15 @@ import axiosInstance from '../axios';
 export type SpeakerPromptBehavior = 'always_prompt' | 'use_defaults' | 'use_custom';
 
 /**
+ * Valid diarization source options
+ * - provider: Use ASR provider's built-in diarization
+ * - local: Always use local PyAnnote on GPU
+ * - pyannote: Use pyannote.ai cloud diarization
+ * - off: No diarization
+ */
+export type DiarizationSource = 'provider' | 'local' | 'pyannote' | 'off';
+
+/**
  * Language option with code and display name
  */
 export interface LanguageOption {
@@ -43,6 +52,8 @@ export interface TranscriptionSystemDefaults {
   vad_speech_pad_ms: number;
   hallucination_silence_threshold: number | null;
   repetition_penalty: number;
+  diarization_source_default: DiarizationSource;
+  valid_diarization_sources: DiarizationSource[];
 }
 
 /**
@@ -63,7 +74,7 @@ export interface TranscriptionSettings {
   vad_speech_pad_ms: number;
   hallucination_silence_threshold: number | null;
   repetition_penalty: number;
-  disable_diarization: boolean;
+  diarization_source: DiarizationSource;
 }
 
 /**
@@ -84,7 +95,7 @@ export interface TranscriptionSettingsUpdate {
   vad_speech_pad_ms?: number;
   hallucination_silence_threshold?: number | null;
   repetition_penalty?: number;
-  disable_diarization?: boolean;
+  diarization_source?: DiarizationSource;
 }
 
 /**
@@ -114,7 +125,7 @@ export const DEFAULT_TRANSCRIPTION_SETTINGS: TranscriptionSettings = {
   vad_speech_pad_ms: 400,
   hallucination_silence_threshold: null,
   repetition_penalty: 1.0,
-  disable_diarization: false,
+  diarization_source: 'provider',
 };
 
 /**

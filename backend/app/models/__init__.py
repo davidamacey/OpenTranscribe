@@ -36,6 +36,7 @@ from .topic import TopicSuggestion
 from .upload_batch import UploadBatch
 from .user import User
 from .user_asr_settings import UserASRSettings
+from .user_diarization_settings import UserDiarizationSettings
 from .user_llm_settings import UserLLMSettings
 from .user_media_source import UserMediaSource
 from .user_mfa import UserMFA
@@ -63,6 +64,7 @@ __all__ = [
     "UserSetting",
     "UserLLMSettings",
     "UserASRSettings",
+    "UserDiarizationSettings",
     "UserMediaSource",
     "CustomVocabulary",
     "TopicSuggestion",

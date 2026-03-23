@@ -32,6 +32,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": True,
         "supports_translation": True,
         "description": "Local GPU transcription via faster-whisper + PyAnnote",
+        "status": "tested",
+        "status_note": "",
+        "diarization_quality": "Excellent — PyAnnote provides best-in-class speaker diarization",
         "models": [
             {
                 "id": "large-v3-turbo",
@@ -109,6 +112,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Nova-3 flagship model with medical terminology support",
+        "status": "tested",
+        "status_note": "",
+        "diarization_quality": "Fair — may detect fewer speakers than local PyAnnote. Consider using local diarization for multi-speaker content.",
         "models": [
             {
                 "id": "nova-3",
@@ -154,6 +160,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Best-in-class diarization with Universal-2 and Slam-1 models",
+        "status": "experimental",
+        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "diarization_quality": "Good — AssemblyAI offers strong diarization with speaker count support",
         "models": [
             {
                 "id": "universal",
@@ -200,6 +209,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": False,
         "supports_translation": True,
         "description": "Whisper-1 and GPT-4o Transcribe (25 MB file limit)",
+        "status": "experimental",
+        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "diarization_quality": "",
         "models": [
             {
                 "id": "gpt-4o-transcribe",
@@ -241,6 +253,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": False,
         "supports_translation": False,
         "description": "Chirp 3 model with 100+ language support (uses service account credentials)",
+        "status": "experimental",
+        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "diarization_quality": "Unknown — supports min/max speaker count parameters",
         "models": [
             {
                 "id": "chirp-3",
@@ -279,6 +294,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": False,
         "supports_translation": False,
         "description": "Azure Speech Services — Whisper and Standard models",
+        "status": "experimental",
+        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "diarization_quality": "Unknown — uses ConversationTranscriber for diarization",
         "models": [
             {
                 "id": "whisper",
@@ -309,6 +327,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Standard and Medical transcription (HIPAA-eligible)",
+        "status": "experimental",
+        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "diarization_quality": "Unknown — limited to 10 speakers maximum",
         "models": [
             {
                 "id": "standard",
@@ -340,6 +361,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Enterprise-grade with 55+ languages and 3 diarization modes",
+        "status": "experimental",
+        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "diarization_quality": "Unknown — offers 3 diarization modes",
         "models": [
             {
                 "id": "standard",
@@ -363,6 +387,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "All features bundled, 100+ languages",
+        "status": "experimental",
+        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "diarization_quality": "Unknown — diarization included in all plans",
         "models": [
             {
                 "id": "standard",
@@ -386,6 +413,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": False,
         "supports_translation": False,
         "description": "STT Orchestration — premium diarization + transcription in one API call",
+        "status": "experimental",
+        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "diarization_quality": "Excellent — premium cloud diarization from pyannote.ai",
         "models": [
             {
                 "id": "parakeet",

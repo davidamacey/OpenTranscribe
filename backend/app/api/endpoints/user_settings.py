@@ -28,6 +28,7 @@ from app.core.constants import AUDIO_QUALITY_OPTIONS
 from app.core.constants import COMMON_LANGUAGES
 from app.core.constants import DEFAULT_AUDIO_ONLY
 from app.core.constants import DEFAULT_AUDIO_QUALITY
+from app.core.constants import DEFAULT_DIARIZATION_SOURCE
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
 from app.core.constants import DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
@@ -51,6 +52,7 @@ from app.core.constants import DEFAULT_VAD_THRESHOLD
 from app.core.constants import DEFAULT_VIDEO_QUALITY
 from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.core.constants import VALID_AUDIO_QUALITIES
+from app.core.constants import VALID_DIARIZATION_SOURCES
 from app.core.constants import VALID_RECORDING_DURATIONS
 from app.core.constants import VALID_RECORDING_QUALITIES
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
@@ -112,7 +114,7 @@ DEFAULT_TRANSCRIPTION_SETTINGS = {
     "source_language": DEFAULT_SOURCE_LANGUAGE,
     "translate_to_english": DEFAULT_TRANSLATE_TO_ENGLISH,
     "llm_output_language": DEFAULT_LLM_OUTPUT_LANGUAGE,
-    "disable_diarization": False,
+    "diarization_source": DEFAULT_DIARIZATION_SOURCE,
 }
 
 
@@ -620,7 +622,7 @@ def get_transcription_settings(
                     "transcription_vad_speech_pad_ms",
                     "transcription_hallucination_silence_threshold",
                     "transcription_repetition_penalty",
-                    "transcription_disable_diarization",
+                    "transcription_diarization_source",
                 ]
             ),
         )
@@ -693,8 +695,9 @@ def get_transcription_settings(
         repetition_penalty=float(
             settings_map.get("transcription_repetition_penalty", str(DEFAULT_REPETITION_PENALTY))
         ),
-        disable_diarization=settings_map.get("transcription_disable_diarization", "false").lower()
-        == "true",
+        diarization_source=settings_map.get(
+            "transcription_diarization_source", DEFAULT_DIARIZATION_SOURCE
+        ),
     )
 
 
@@ -771,8 +774,22 @@ def update_transcription_settings(
             lambda v: str(v) if v is not None else "",
         ),
         "repetition_penalty": ("transcription_repetition_penalty", None),
-        "disable_diarization": ("transcription_disable_diarization", None),
+        "diarization_source": ("transcription_diarization_source", None),
     }
+
+    # Validate diarization_source value
+    diarization_src = update_data.get("diarization_source")
+    if diarization_src is not None:
+        from app.core.constants import VALID_DIARIZATION_SOURCES
+
+        if diarization_src not in VALID_DIARIZATION_SOURCES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Invalid diarization_source: '{diarization_src}'. "
+                    f"Must be one of {list(VALID_DIARIZATION_SOURCES)}"
+                ),
+            )
 
     # Update each setting in the database
     for frontend_key, value in update_data.items():
@@ -819,7 +836,7 @@ def reset_transcription_settings(
                     "transcription_vad_speech_pad_ms",
                     "transcription_hallucination_silence_threshold",
                     "transcription_repetition_penalty",
-                    "transcription_disable_diarization",
+                    "transcription_diarization_source",
                 ]
             ),
         )
@@ -884,7 +901,8 @@ def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
         vad_speech_pad_ms=DEFAULT_VAD_SPEECH_PAD_MS,
         hallucination_silence_threshold=DEFAULT_HALLUCINATION_SILENCE_THRESHOLD,
         repetition_penalty=DEFAULT_REPETITION_PENALTY,
-        disable_diarization_default=False,
+        diarization_source_default=DEFAULT_DIARIZATION_SOURCE,
+        valid_diarization_sources=list(VALID_DIARIZATION_SOURCES),
     )
 
 

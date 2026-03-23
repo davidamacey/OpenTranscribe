@@ -84,6 +84,9 @@ class User(Base):
     asr_settings = relationship(
         "UserASRSettings", back_populates="user", cascade="all, delete-orphan"
     )
+    diarization_settings = relationship(
+        "UserDiarizationSettings", back_populates="user", cascade="all, delete-orphan"
+    )
     media_sources = relationship(
         "UserMediaSource", back_populates="user", cascade="all, delete-orphan"
     )

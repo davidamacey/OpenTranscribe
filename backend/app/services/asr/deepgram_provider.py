@@ -175,12 +175,25 @@ class DeepgramProvider(ASRProvider):
         ch = result.channels[0]
         detected_language = getattr(ch, "detected_language", None) or config.language
 
+        utt_count = len(result.utterances) if result.utterances else 0
+        utt_speakers = {u.speaker for u in result.utterances} if result.utterances else set()
+        logger.info(
+            "Deepgram response: utterances=%d speakers=%s file=%s",
+            utt_count,
+            sorted(utt_speakers) if utt_speakers else "none",
+            filename,
+        )
+
         segments: list[ASRSegment] = []
         has_speakers = False
 
-        if config.enable_diarization and result.utterances:
-            has_speakers = True
+        if result.utterances:
+            # Use utterances for segment boundaries (better semantic grouping)
+            # Speaker labels only present when diarize=true
             for utt in result.utterances:
+                speaker = self._normalize_speaker_label(utt.speaker)
+                if speaker:
+                    has_speakers = True
                 words = [
                     ASRWord(
                         word=w.word,
@@ -195,7 +208,7 @@ class DeepgramProvider(ASRProvider):
                         text=utt.transcript,
                         start=utt.start,
                         end=utt.end,
-                        speaker=self._normalize_speaker_label(utt.speaker),
+                        speaker=speaker,
                         confidence=getattr(utt, "confidence", None),
                         words=words,
                     )

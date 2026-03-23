@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import tempfile
@@ -172,7 +173,7 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "transcription_repetition_penalty",
         "transcription_min_speakers",
         "transcription_max_speakers",
-        "transcription_disable_diarization",
+        "transcription_diarization_source",
     ]
     user_settings = (
         db.query(models.UserSetting)
@@ -210,10 +211,9 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
         "max_speakers": int(
             settings_map.get("transcription_max_speakers", str(settings.MAX_SPEAKERS))
         ),
-        "disable_diarization": settings_map.get(
-            "transcription_disable_diarization", "false"
-        ).lower()
-        == "true",
+        "diarization_source": settings_map.get("transcription_diarization_source", "provider"),
+        "disable_diarization": settings_map.get("transcription_diarization_source", "provider")
+        == "off",
     }
 
 
@@ -1488,6 +1488,106 @@ def _convert_asr_result_to_segments(result, media_file_id: int) -> list[dict]:
     return segments
 
 
+def _run_parallel_cloud_asr_and_diarization(
+    ctx: TranscriptionContext,
+    audio_file_path: str,
+    asr_config,
+    asr_provider,
+    progress_callback,
+    min_speakers: int = 1,
+    max_speakers: int = 20,
+    num_speakers: int | None = None,
+):
+    """Run cloud ASR and pyannote.ai diarization in parallel, then merge.
+
+    Both are I/O-bound HTTP calls, so ThreadPoolExecutor is the right pattern
+    (consistent with migration_pipeline.py, speaker_attribute_task.py, llm_service.py).
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import as_completed
+
+    from app.services.diarization.factory import DiarizationProviderFactory
+    from app.services.diarization.types import DiarizeConfig
+    from app.utils.diarization_merge import merge_cloud_diarization
+
+    # Create diarization provider for this user
+    with session_scope() as db:
+        diarize_provider = DiarizationProviderFactory.create_for_user(ctx.user_id, db)
+
+    if diarize_provider is None:
+        logger.warning(
+            "diarization_source=pyannote but no provider configured for user %d, "
+            "falling back to ASR-only",
+            ctx.user_id,
+        )
+        return asr_provider.transcribe(audio_file_path, asr_config, progress_callback)
+
+    diarize_config = DiarizeConfig(
+        min_speakers=min_speakers,
+        max_speakers=max_speakers,
+        num_speakers=num_speakers,
+    )
+
+    logger.info(
+        "Starting parallel cloud ASR (%s) + diarization (%s) for file %d",
+        asr_provider.provider_name,
+        diarize_provider.provider_name,
+        ctx.file_id,
+    )
+
+    asr_result = None
+    diarize_result = None
+    asr_error = None
+    diarize_error = None
+
+    def run_asr():
+        return asr_provider.transcribe(audio_file_path, asr_config, progress_callback)
+
+    def run_diarize():
+        return diarize_provider.diarize(audio_file_path, diarize_config)
+
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="cloud-parallel") as pool:
+        asr_future = pool.submit(run_asr)
+        diarize_future = pool.submit(run_diarize)
+
+        for future in as_completed([asr_future, diarize_future]):
+            with contextlib.suppress(Exception):
+                future.result()  # Errors collected below
+
+    # Collect results
+    try:
+        asr_result = asr_future.result()
+    except Exception as e:
+        asr_error = e
+        logger.error("Parallel cloud ASR failed: %s", e)
+
+    try:
+        diarize_result = diarize_future.result()
+    except Exception as e:
+        diarize_error = e
+        logger.error("Parallel cloud diarization failed: %s", e)
+
+    # ASR failure is fatal — can't proceed without transcript
+    if asr_error:
+        raise RuntimeError(f"Cloud ASR transcription failed: {asr_error}") from asr_error
+
+    # Diarization failure is non-fatal — return ASR result without speakers
+    if diarize_error or diarize_result is None:
+        logger.warning("Cloud diarization failed, proceeding without speakers: %s", diarize_error)
+        return asr_result
+
+    # Both succeeded — merge diarization results onto ASR transcript
+    assert asr_result is not None  # guaranteed by asr_error check above
+    merged = merge_cloud_diarization(asr_result, diarize_result)
+    logger.info(
+        "Parallel cloud pipeline complete: ASR=%s, diarization=%s, file=%d",
+        asr_provider.provider_name,
+        diarize_provider.provider_name,
+        ctx.file_id,
+    )
+    return merged
+
+
 def _run_cloud_asr_pipeline(
     ctx: TranscriptionContext,
     audio_file_path: str,
@@ -1495,6 +1595,7 @@ def _run_cloud_asr_pipeline(
     max_speakers: int | None,
     num_speakers: int | None,
     provider=None,
+    diarization_source: str = "provider",
 ) -> dict:
     """
     Run the cloud ASR transcription pipeline for a non-local provider.
@@ -1507,6 +1608,7 @@ def _run_cloud_asr_pipeline(
         num_speakers: Optional fixed speaker count
         provider: Already-instantiated ASR provider (avoids a redundant DB lookup).
             If None, a new provider is created from DB config (fallback path).
+        diarization_source: Where to run diarization ('provider', 'local', 'pyannote', 'off').
 
     Returns:
         Result dict with 'segments' and 'language' keys matching the WhisperX format
@@ -1563,7 +1665,7 @@ def _run_cloud_asr_pipeline(
         min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
         max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
         num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
-        enable_diarization=provider.supports_diarization(),
+        enable_diarization=(diarization_source == "provider" and provider.supports_diarization()),
         translate_to_english=translate_enabled,
         vocabulary=vocab_terms if vocab_terms else None,
     )
@@ -1576,16 +1678,44 @@ def _run_cloud_asr_pipeline(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
 
-    asr_result = provider.transcribe(audio_file_path, config, cloud_progress_callback)
+    # Parallel cloud execution: ASR + pyannote.ai diarization simultaneously
+    if diarization_source == "pyannote":
+        asr_result = _run_parallel_cloud_asr_and_diarization(
+            ctx,
+            audio_file_path,
+            config,
+            provider,
+            cloud_progress_callback,
+            min_speakers=min_speakers
+            if min_speakers is not None
+            else user_settings["min_speakers"],
+            max_speakers=max_speakers
+            if max_speakers is not None
+            else user_settings["max_speakers"],
+            num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        )
+    else:
+        asr_result = provider.transcribe(audio_file_path, config, cloud_progress_callback)
 
     # Convert ASRResult to the dict format the rest of the pipeline expects
     raw_segments = _convert_asr_result_to_segments(asr_result, ctx.file_id)
+
+    seg_speakers: set[str] = {s["speaker"] for s in raw_segments if s.get("speaker")}
+    logger.info(
+        "Cloud ASR pipeline: %d raw segments, %d speakers (%s), diarization_source=%s for file %d",
+        len(raw_segments),
+        len(seg_speakers),
+        sorted(seg_speakers) if seg_speakers else "none",
+        diarization_source,
+        ctx.file_id,
+    )
 
     return {
         "segments": raw_segments,
         "language": asr_result.language,
         "asr_provider": asr_result.provider_name,
         "asr_model": asr_result.model_name,
+        "diarization_source": diarization_source,
     }
 
 
@@ -1845,7 +1975,16 @@ def _process_and_save_critical(
     from app.utils.segment_postprocess import resegment_by_speaker
 
     send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
+    pre_merge_count = len(result["segments"])
     result["segments"] = merge_consecutive_segments(resegment_by_speaker(result["segments"]))
+    post_merge_speakers = {s.get("speaker") for s in result["segments"] if s.get("speaker")}
+    logger.info(
+        "Segment processing: %d pre-merge → %d post-merge, speakers: %s (file %d)",
+        pre_merge_count,
+        len(result["segments"]),
+        sorted(post_merge_speakers) if post_merge_speakers else "none",
+        ctx.file_id,
+    )
     unique_speakers = extract_unique_speakers(result["segments"])
 
     with session_scope() as db:
@@ -1932,6 +2071,8 @@ def _process_and_save_critical(
         "native_embeddings": native_embeddings_serialized,
         "use_native_embeddings": use_native,
         "asr_provider": result.get("asr_provider", "local"),
+        "diarization_source": result.get("diarization_source", "provider"),
+        "diarization_disabled": result.get("diarization_disabled", False),
         "downstream_tasks": preprocess_context.get("downstream_tasks"),
         "audio_temp_path": preprocess_context.get("audio_temp_path"),
     }
@@ -2003,8 +2144,9 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             except Exception:
                 provider = None
 
-            # Read and persist diarization_disabled flag
-            disable_diarization = preprocess_context.get("disable_diarization", False)
+            # Read diarization settings
+            diarization_source = preprocess_context.get("diarization_source", "provider")
+            disable_diarization = diarization_source == "off"
             with session_scope() as db:
                 media_file = get_refreshed_object(db, MediaFile, file_id)
                 if media_file:
@@ -2027,6 +2169,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                     preprocess_context.get("max_speakers"),
                     preprocess_context.get("num_speakers"),
                     provider=provider,
+                    diarization_source=diarization_source,
                 )
             else:
                 result = _run_transcription_pipeline(
@@ -2041,9 +2184,10 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
                     whisper_model=whisper_model,
                 )
 
-            # Annotate result with diarization_disabled flag for downstream
+            # Annotate result with diarization flags for downstream
             if isinstance(result, dict):
                 result["diarization_disabled"] = disable_diarization
+                result["diarization_source"] = diarization_source
 
             # Validate result
             validation_error = _validate_transcription_result(result, ctx, task_id)

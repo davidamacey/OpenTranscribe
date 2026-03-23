@@ -87,13 +87,38 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
 
     try:
         diarization_disabled = gpu_result.get("diarization_disabled", False)
+        diarization_source = gpu_result.get("diarization_source", "provider")
         is_cloud_asr = asr_provider and asr_provider != "local"
+        needs_local_diarization = (
+            is_cloud_asr and diarization_source == "local" and not diarization_disabled
+        )
 
         # Speaker matching must complete before marking "completed" so the
         # frontend shows matched profile names, not generic "Speaker 1" labels.
-        if not diarization_disabled:
+        if needs_local_diarization:
+            # Cloud ASR + local diarization: dispatch rediarize_task to GPU
+            # The rediarize task handles everything: diarization, speaker assignment,
+            # embedding extraction, and downstream task dispatch.
+            send_progress_notification(user_id, file_id, 0.85, "Queuing local speaker diarization")
+            try:
+                from app.tasks.rediarize_task import rediarize_task
+
+                rediarize_task.apply_async(
+                    kwargs={
+                        "file_uuid": str(file_uuid),
+                        "min_speakers": None,
+                        "max_speakers": None,
+                        "num_speakers": None,
+                        "downstream_tasks": downstream_tasks,
+                    },
+                    queue="gpu",
+                )
+                logger.info(f"Dispatched local rediarization for cloud-transcribed file {file_id}")
+            except Exception as e:
+                logger.warning(f"Failed to dispatch rediarization: {e}")
+        elif not diarization_disabled:
             if is_cloud_asr:
-                # Cloud ASR: no native embeddings, dispatch GPU task to extract them
+                # Cloud ASR with provider diarization: dispatch GPU embedding extraction
                 send_progress_notification(
                     user_id, file_id, 0.80, "Dispatching speaker embedding extraction"
                 )
@@ -129,8 +154,17 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         else:
             logger.info(f"Skipping speaker embeddings for file {file_id} (diarization disabled)")
 
-        if is_cloud_asr and not diarization_disabled:
-            # Cloud ASR: embedding task runs async on GPU — keep at 90% until it finishes
+        if needs_local_diarization:
+            # Cloud ASR + local diarization: mark transcription completed (text is usable),
+            # rediarize_task will send its own completion notification after GPU diarization
+            send_progress_notification(
+                user_id, file_id, 0.90, "Transcription complete, diarizing on GPU..."
+            )
+            with session_scope() as db:
+                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            send_completion_notification(user_id, file_id)
+        elif is_cloud_asr and not diarization_disabled:
+            # Cloud ASR with provider diarization: embedding task runs async on GPU
             send_progress_notification(user_id, file_id, 0.90, "Processing speaker identification")
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.90)

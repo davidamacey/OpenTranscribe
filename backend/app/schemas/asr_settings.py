@@ -141,6 +141,9 @@ class ASRProviderInfo(BaseModel):
     supports_vocabulary: bool
     supports_translation: bool
     description: str = ""
+    status: str = "experimental"  # "tested", "experimental", or "coming_soon"
+    status_note: str = ""  # Shown as warning when experimental
+    diarization_quality: str = ""  # Quality note about built-in diarization
     models: list[ASRModelInfo]
 
 

@@ -24,6 +24,11 @@
   let providers: ASRProviderInfo[] = [];
   let usingLocalDefault = true;
 
+  function isProviderExperimental(providerId: string): boolean {
+    const p = providers.find(pr => pr.id === providerId);
+    return p?.status === 'experimental';
+  }
+
   // Local model state (visible to all users; admin can change)
   let activeLocalModel = '';
   let activeLocalModelSource: 'database' | 'environment' = 'environment';
@@ -435,6 +440,9 @@
             <div class="config-info">
               <div class="config-badges">
                 <span class="badge provider-badge">{ASRSettingsApi.getProviderDisplayName(config.provider)}</span>
+                {#if isProviderExperimental(config.provider)}
+                  <span class="badge experimental-badge">{$t('settings.asrProvider.statusExperimental')}</span>
+                {/if}
                 {#if config.uuid === activeConfigurationId}
                   <span class="badge active-badge">{$t('settings.asrProvider.currentlyActive')}</span>
                 {/if}
@@ -765,6 +773,11 @@
   .provider-badge {
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-color);
+  }
+
+  .experimental-badge {
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--warning-color, #d97706);
   }
 
   .active-badge {
