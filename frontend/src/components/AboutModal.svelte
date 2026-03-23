@@ -513,21 +513,30 @@
       padding: 1rem !important;
     }
 
-    .features-grid {
-      grid-template-columns: 1fr;
-      gap: 1rem;
+    .about-content {
+      gap: 1.25rem;
     }
 
+    .features-grid {
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+
+    /* Keep steps as rows (number left, text right) — stacking them vertically
+       wastes too much space on a small screen */
     .step {
-      flex-direction: column;
-      text-align: center;
-      gap: 0.5rem;
+      gap: 0.75rem;
+    }
+
+    .workflow-steps {
+      gap: 0.75rem;
     }
 
     /* Credits responsive adjustments */
     .credits-grid {
       grid-template-columns: 1fr;
       gap: 1rem;
+      margin-bottom: 1rem;
     }
 
     .credit-link {
