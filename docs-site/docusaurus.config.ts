@@ -4,6 +4,16 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
+// When building for in-app embedding (DOCS_BASE_URL=/docs/), the NGINX proxy strips
+// the /docs/ prefix before forwarding to this container. So with routeBasePath='docs'
+// (the default), pages would live at /docs/docs/... which 404s after the proxy strips /docs/.
+// Setting routeBasePath='' places pages at /{page-path} in the build output, which after
+// NGINX strips /docs/ correctly resolves to /docs/{page-path} in the browser.
+const isEmbedded = process.env.DOCS_BASE_URL === '/docs/';
+// In embedded mode, links must NOT include the /docs/ prefix — Docusaurus adds the
+// baseUrl automatically. On the public site (baseUrl='/'), /docs/ prefix is needed.
+const docsPrefix = isEmbedded ? '' : '/docs';
+
 const config: Config = {
   title: 'OpenTranscribe',
   tagline: 'AI-Powered Transcription and Media Analysis Platform',
@@ -51,6 +61,7 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           editUrl:
             'https://github.com/davidamacey/OpenTranscribe/tree/master/docs-site/',
+          routeBasePath: isEmbedded ? '' : 'docs',
         },
         blog: {
           showReadingTime: true,
@@ -83,7 +94,7 @@ const config: Config = {
       },
       items: [
         {
-          to: '/docs/getting-started/introduction',
+          to: `${docsPrefix}/getting-started/introduction`,
           position: 'left',
           label: 'Docs',
         },
@@ -110,15 +121,15 @@ const config: Config = {
           items: [
             {
               label: 'Getting Started',
-              to: '/docs/getting-started/introduction',
+              to: `${docsPrefix}/getting-started/introduction`,
             },
             {
               label: 'Installation',
-              to: '/docs/installation/docker-compose',
+              to: `${docsPrefix}/installation/docker-compose`,
             },
             {
               label: 'FAQ',
-              to: '/docs/faq',
+              to: `${docsPrefix}/faq`,
             },
             // TODO: Add when pages are created
             // {
