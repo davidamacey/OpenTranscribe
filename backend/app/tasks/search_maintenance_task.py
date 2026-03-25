@@ -100,7 +100,7 @@ def _dispatch_reindex_tasks(unindexed_by_user: dict[int, list[str]]) -> None:
             logger.error(f"Failed to dispatch reindex for user {user_id}: {e}")
 
 
-@celery_app.task(name="search_index_maintenance", queue="cpu", priority=CPUPriority.MAINTENANCE)
+@celery_app.task(name="search_index_maintenance", priority=CPUPriority.MAINTENANCE)
 def search_index_maintenance_task() -> dict[str, Any]:
     """
     Check for completed files missing from the search index and trigger re-indexing.

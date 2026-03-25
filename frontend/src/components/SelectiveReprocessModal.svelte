@@ -3,7 +3,7 @@
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { t } from '$stores/locale';
-  import { isLLMAvailable } from '../stores/llmStatus';
+  import { isLLMAvailable, llmStatusStore } from '../stores/llmStatus';
   import axiosInstance from '../lib/axios';
   import { toastStore } from '../stores/toast';
   import Spinner from './ui/Spinner.svelte';
@@ -269,6 +269,8 @@
   $: if (showModal) {
     resetState();
     selectedReprocessModel = null;
+    // Ensure LLM status is loaded (may not be ready if user navigated quickly)
+    llmStatusStore.initialize();
     ASRSettingsApi.getStatus().then((status) => {
       isCloudASR = status.is_cloud_provider ?? false;
       activeASRProvider = status.active_provider ?? 'local';

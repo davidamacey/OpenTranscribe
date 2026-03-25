@@ -150,7 +150,7 @@ def _run_gender_inference_parallel(
 
 
 @celery_app.task(
-    bind=True, name="detect_speaker_attributes", queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL
+    bind=True, name="detect_speaker_attributes", priority=CPUPriority.PIPELINE_CRITICAL
 )
 def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     """Predict gender/age for all speakers in a media file.

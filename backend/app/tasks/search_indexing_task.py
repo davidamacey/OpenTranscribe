@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True,
     name="index_transcript_search",
-    queue="embedding",
     priority=EmbeddingPriority.PIPELINE_CRITICAL,
     max_retries=3,
     default_retry_delay=30,
@@ -187,7 +186,6 @@ def index_transcript_search_task(  # noqa: C901
 
 @celery_app.task(
     name="update_file_access_index",
-    queue="embedding",
     priority=UtilityPriority.ROUTINE,
     max_retries=3,
     default_retry_delay=10,

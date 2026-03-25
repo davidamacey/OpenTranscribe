@@ -441,7 +441,7 @@ services:
       --auto_refresh=True
       --tasks_columns=name,uuid,state,received,started,runtime,worker,args
       --purge_offline_workers=600
-      --queues=gpu,download,cpu,nlp,embedding,utility
+      --queues=gpu,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,celery
       --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}
     ports:
       - "${FLOWER_PORT:-5175}:5555"

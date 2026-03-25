@@ -414,9 +414,7 @@ def _send_reindex_progress(redis_client: Any, user_id: int, tracker: Any | None 
     )
 
 
-@celery_app.task(
-    bind=True, name="reindex_transcripts", queue="cpu", priority=CPUPriority.MAINTENANCE
-)
+@celery_app.task(bind=True, name="reindex_transcripts", priority=CPUPriority.MAINTENANCE)
 def reindex_transcripts_task(
     self,
     user_id: int,
@@ -573,7 +571,7 @@ def reindex_transcripts_task(
         return {"error": str(e)}
 
 
-@celery_app.task(name="reindex_batch", queue="cpu", priority=CPUPriority.MAINTENANCE)
+@celery_app.task(name="reindex_batch", priority=CPUPriority.MAINTENANCE)
 def reindex_batch_task(
     file_ids: list[int],
     user_id: int,

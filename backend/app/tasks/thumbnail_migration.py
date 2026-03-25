@@ -22,9 +22,7 @@ from app.utils.thumbnail import generate_thumbnail_from_url
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(
-    name="migrate_thumbnails_to_webp", bind=True, queue="cpu", priority=CPUPriority.ADMIN_BATCH
-)
+@celery_app.task(name="migrate_thumbnails_to_webp", bind=True, priority=CPUPriority.ADMIN_BATCH)
 def migrate_thumbnails_to_webp(self, batch_size: int = 20) -> dict:
     """
     Migrate existing JPEG thumbnails to optimized WebP format.

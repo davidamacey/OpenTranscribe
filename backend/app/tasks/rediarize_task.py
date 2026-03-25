@@ -161,7 +161,7 @@ def _dispatch_downstream(
             logger.warning(f"Failed to dispatch downstream task '{stage}' for {file_uuid}: {e}")
 
 
-@celery_app.task(bind=True, name="rediarize", queue="gpu", priority=GPUPriority.USER_REDIARIZ)
+@celery_app.task(bind=True, name="rediarize", priority=GPUPriority.USER_REDIARIZ)
 def rediarize_task(  # noqa: C901
     self,
     file_uuid: str,

@@ -18,6 +18,7 @@ import time
 import numpy as np
 
 from app.core.celery import celery_app
+from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
 from app.services.opensearch_service import index_transcript
@@ -111,7 +112,7 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                         "num_speakers": None,
                         "downstream_tasks": downstream_tasks,
                     },
-                    queue="gpu",
+                    queue=CeleryQueues.GPU,
                 )
                 logger.info(f"Dispatched local rediarization for cloud-transcribed file {file_id}")
             except Exception as e:
@@ -127,7 +128,7 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
 
                     extract_speaker_embeddings_task.apply_async(
                         args=[str(file_uuid), speaker_mapping],
-                        queue="gpu",
+                        queue=CeleryQueues.GPU,
                     )
                     logger.info(
                         f"Dispatched speaker embedding extraction to GPU queue for "
@@ -239,20 +240,23 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
 
 
 def _build_enrichment_task_list(downstream_tasks: list[str] | None) -> list[str]:
-    """Build the list of enrichment task names that will run in background."""
-    tasks = ["search_indexing"]
-    if downstream_tasks is None or "speaker_llm" not in downstream_tasks:
-        tasks.append("speaker_attributes")
+    """Build the list of enrichment task names that will run in background.
+
+    Only includes tasks that send enrichment_task_complete events (chip-worthy).
+    Summarization and topic extraction have their own progressive notification
+    bars and are NOT listed here.
+    """
+    tasks = ["search_indexing", "analytics"]
+    # Gender detection always runs — LLM speaker ID chains from it
+    tasks.append("speaker_attributes")
+    tasks.append("speaker_identification")
     if downstream_tasks is None or "speaker_clustering" not in downstream_tasks:
         tasks.append("speaker_clustering")
-    if downstream_tasks is None or "summarization" not in downstream_tasks:
-        tasks.append("summarization")
     return tasks
 
 
 @celery_app.task(
     name="transcription.enrich_and_dispatch",
-    queue="cpu",
     priority=CPUPriority.SYSTEM,
     max_retries=2,
     autoretry_for=(ConnectionError, TimeoutError),
@@ -421,9 +425,12 @@ def _index_transcript(file_id: int, file_uuid: str, user_id: int) -> None:
 def _dispatch_speaker_attributes(
     file_uuid: str, user_id: int, downstream_tasks: list[str] | None
 ) -> None:
-    """Dispatch speaker attribute detection (fire-and-forget)."""
-    if downstream_tasks is not None and "speaker_llm" in downstream_tasks:
-        return
+    """Dispatch speaker attribute detection (fire-and-forget).
+
+    Always runs when transcription completes — gender detection is part of the
+    standard pipeline. LLM speaker ID chains from gender (dispatched at the end
+    of detect_speaker_attributes_task).
+    """
     try:
         from app.tasks.speaker_attribute_task import _is_speaker_attribute_detection_enabled
         from app.tasks.speaker_attribute_task import detect_speaker_attributes_task

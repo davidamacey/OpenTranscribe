@@ -87,7 +87,6 @@ def _combined_result_writer(
 @celery_app.task(
     bind=True,
     name="analyze_speakers_combined_batch",
-    queue="gpu",
     priority=GPUPriority.ADMIN_MIGRATION,
     soft_time_limit=1800,
     time_limit=2100,
@@ -216,9 +215,7 @@ def analyze_speakers_combined_batch_task(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(
-    bind=True, name="migrate_speakers_combined", queue="cpu", priority=CPUPriority.ADMIN_BATCH
-)
+@celery_app.task(bind=True, name="migrate_speakers_combined", priority=CPUPriority.ADMIN_BATCH)
 def migrate_speakers_combined_task(self, user_id: int):
     """Orchestrator: dispatch batches for combined embedding + gender migration.
 

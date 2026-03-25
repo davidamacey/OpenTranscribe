@@ -24,6 +24,37 @@ _logger = logging.getLogger(__name__)
 # Configured via broker_transport_options: priority_steps=list(range(10)).
 
 
+class CeleryQueues:
+    """All valid Celery queue names — single source of truth.
+
+    Use these constants instead of raw strings to prevent typo-based phantom queues.
+    Celery is configured with task_create_missing_queues=False, so any queue name
+    not declared here will raise an error at dispatch time.
+    """
+
+    GPU = "gpu"
+    DOWNLOAD = "download"
+    CPU = "cpu"
+    NLP = "nlp"
+    EMBEDDING = "embedding"
+    UTILITY = "utility"
+    CLOUD_ASR = "cloud-asr"  # Dynamic: cloud ASR providers (CPU worker consumes)
+    CPU_TRANSCRIBE = "cpu-transcribe"  # Dynamic: lightweight CPU transcription
+    DEFAULT = "celery"  # Celery default queue (NLP worker consumes as fallback)
+
+    ALL: list[str] = [
+        GPU,
+        DOWNLOAD,
+        CPU,
+        NLP,
+        EMBEDDING,
+        UTILITY,
+        CLOUD_ASR,
+        CPU_TRANSCRIBE,
+        DEFAULT,
+    ]
+
+
 class GPUPriority:
     """GPU queue (concurrency=1). Controls what runs next when the worker is free.
     Interactive UI actions must preempt queued long-running jobs.

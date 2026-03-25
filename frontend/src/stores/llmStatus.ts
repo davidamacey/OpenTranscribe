@@ -26,37 +26,38 @@ const initialState: LLMStatusState = {
 function createLLMStatusStore() {
   const { subscribe, set, update } = writable<LLMStatusState>(initialState);
   let monitoringTimer: NodeJS.Timeout | undefined;
-  let isInitialized = false;
+  let initPromise: Promise<void> | null = null;
 
   const store = {
     subscribe,
 
-    // Initialize the store and start monitoring
-    async initialize() {
-      if (isInitialized) {
-        return;
+    // Initialize the store and start monitoring.
+    // Safe to call multiple times — deduplicates concurrent calls.
+    initialize() {
+      if (!initPromise) {
+        initPromise = (async () => {
+          try {
+            update((state) => ({ ...state, checking: true }));
+            const status = await llmService.getStatus(true);
+
+            update((state) => ({
+              ...state,
+              status,
+              available: status.available,
+              lastChecked: new Date(),
+              checking: false,
+            }));
+
+            store.startMonitoring();
+          } catch (error) {
+            console.error('[LLM Store] Failed to initialize LLM status:', error);
+            update((state) => ({ ...state, checking: false, available: false }));
+            // Reset so a retry can attempt again
+            initPromise = null;
+          }
+        })();
       }
-
-      try {
-        // Get initial status
-        update((state) => ({ ...state, checking: true }));
-        const status = await llmService.getStatus(true);
-
-        update((state) => ({
-          ...state,
-          status,
-          available: status.available,
-          lastChecked: new Date(),
-          checking: false,
-        }));
-
-        // Start periodic monitoring
-        store.startMonitoring();
-        isInitialized = true;
-      } catch (error) {
-        console.error('[LLM Store] Failed to initialize LLM status:', error);
-        update((state) => ({ ...state, checking: false, available: false }));
-      }
+      return initPromise;
     },
 
     // Start background monitoring
@@ -132,7 +133,7 @@ function createLLMStatusStore() {
     reset: () => {
       set(initialState);
       store.stopMonitoring();
-      isInitialized = false;
+      initPromise = null;
     },
 
     // Handle WebSocket notifications

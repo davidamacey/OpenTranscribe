@@ -4,6 +4,7 @@ from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
 from app.services.analytics_service import AnalyticsService
+from app.utils.websocket_notify import send_ws_event
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -64,6 +65,14 @@ def analyze_transcript_task(self, file_uuid: str):
             logger.info(
                 f"Successfully analyzed file {media_file.filename} with comprehensive analytics"
             )
+
+            # Notify enrichment tracker
+            send_ws_event(
+                int(media_file.user_id),
+                "enrichment_task_complete",
+                {"file_id": file_uuid, "task": "analytics"},
+            )
+
             return {"status": "success", "file_id": file_id}
 
         except Exception as e:

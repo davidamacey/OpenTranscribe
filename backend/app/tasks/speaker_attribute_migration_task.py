@@ -207,9 +207,7 @@ def _emit_attr_progress(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(
-    bind=True, name="migrate_speaker_attributes", queue="cpu", priority=CPUPriority.ADMIN_BATCH
-)
+@celery_app.task(bind=True, name="migrate_speaker_attributes", priority=CPUPriority.ADMIN_BATCH)
 def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
     """Orchestrate bulk speaker attribute detection for existing files."""
     task_id = self.request.id
@@ -331,7 +329,6 @@ def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
 @celery_app.task(
     bind=True,
     name="detect_speaker_attributes_batch",
-    queue="gpu",
     priority=GPUPriority.ADMIN_MIGRATION,
     soft_time_limit=1800,
     time_limit=2100,

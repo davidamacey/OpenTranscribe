@@ -296,7 +296,6 @@ def get_embedding_consistency_counts() -> dict[str, Any]:
 @celery_app.task(
     bind=True,
     name="speaker_embedding_consistency_check",
-    queue="cpu",
     priority=CPUPriority.MAINTENANCE,
 )
 def speaker_embedding_consistency_check_task(

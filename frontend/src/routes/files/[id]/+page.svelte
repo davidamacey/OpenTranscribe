@@ -1973,7 +1973,19 @@
   let wsUnsubscribe: () => void;
 
   // Component mount logic
+  // Handler for speaker-updated CustomEvent (dispatched by websocket.ts, never enters store)
+  function handleSpeakerUpdatedEvent(e: Event) {
+    const detail = (e as CustomEvent).detail;
+    // Only refresh if this event is for the current file
+    if (detail?.file_id && String(detail.file_id) === String(fileId)) {
+      loadSpeakers();
+    }
+  }
+
   onMount(() => {
+    // Listen for speaker-updated CustomEvents (gender detection, attribute changes)
+    window.addEventListener('speaker-updated', handleSpeakerUpdatedEvent);
+
     // Use dynamic URL based on current location (works with reverse proxy)
     apiBaseUrl = getAppBaseUrl();
 
@@ -2270,6 +2282,9 @@
     if (wsUnsubscribe) {
       wsUnsubscribe();
     }
+
+    // Clean up CustomEvent listeners
+    window.removeEventListener('speaker-updated', handleSpeakerUpdatedEvent);
 
     // Clear the transcript store when leaving the page
     transcriptStore.clear();

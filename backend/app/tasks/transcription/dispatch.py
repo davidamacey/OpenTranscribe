@@ -24,6 +24,7 @@ from celery import chain
 from celery import group
 
 from app.core.celery import celery_app
+from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
 from app.db.session_utils import session_scope
@@ -51,10 +52,10 @@ def _resolve_gpu_queue(user_id: int, db) -> str:
                 f"Resolved ASR queue 'cloud-asr' for user {user_id} "
                 f"(provider: {provider.provider_name})"
             )
-            return "cloud-asr"
+            return CeleryQueues.CLOUD_ASR
     except Exception as e:
         logger.debug(f"ASR provider resolution failed, defaulting to 'gpu': {e}")
-    return "gpu"
+    return CeleryQueues.GPU
 
 
 def dispatch_transcription_pipeline(
@@ -117,7 +118,7 @@ def dispatch_transcription_pipeline(
     if use_cpu:
         logger.info(f"Routing file {file_uuid} to CPU transcription (model={whisper_model})")
         transcribe_task = transcribe_cpu_task.s().set(
-            queue="cpu-transcribe", priority=CPUPriority.PIPELINE_CRITICAL
+            queue=CeleryQueues.CPU_TRANSCRIBE, priority=CPUPriority.PIPELINE_CRITICAL
         )
     else:
         transcribe_task = transcribe_gpu_task.s().set(
@@ -137,9 +138,11 @@ def dispatch_transcription_pipeline(
             disable_diarization=True if use_cpu else disable_diarization,
             diarization_source="off" if use_cpu else diarization_source,
             whisper_model=whisper_model,
-        ).set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
+        ).set(queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL),
         transcribe_task,
-        finalize_transcription.s().set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
+        finalize_transcription.s().set(
+            queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
+        ),
     )
 
     # Record dispatch timestamp for inter-stage gap measurement
@@ -150,7 +153,7 @@ def dispatch_transcription_pipeline(
 
     # Dispatch with error callback for cleanup
     pipeline.apply_async(
-        link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue="utility")],
+        link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue=CeleryQueues.UTILITY)],
     )
 
     route = "cpu-transcribe" if use_cpu else gpu_queue
@@ -214,7 +217,7 @@ def dispatch_batch_transcription(
 
             if use_cpu:
                 transcribe_task = transcribe_cpu_task.s().set(
-                    queue="cpu-transcribe", priority=CPUPriority.PIPELINE_CRITICAL
+                    queue=CeleryQueues.CPU_TRANSCRIBE, priority=CPUPriority.PIPELINE_CRITICAL
                 )
             else:
                 transcribe_task = transcribe_gpu_task.s().set(
@@ -226,11 +229,17 @@ def dispatch_batch_transcription(
                     file_uuid=file_uuid,
                     task_id=task_id,
                     **batch_kwargs,
-                ).set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
+                ).set(queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL),
                 transcribe_task,
-                finalize_transcription.s().set(queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL),
+                finalize_transcription.s().set(
+                    queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
+                ),
             )
-            pipeline.set(link_error=[on_pipeline_error.si(file_uuid, task_id).set(queue="utility")])
+            pipeline.set(
+                link_error=[
+                    on_pipeline_error.si(file_uuid, task_id).set(queue=CeleryQueues.UTILITY)
+                ]
+            )
 
             chains.append(pipeline)
             task_ids.append(task_id)

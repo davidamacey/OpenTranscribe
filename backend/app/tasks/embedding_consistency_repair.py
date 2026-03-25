@@ -313,7 +313,6 @@ def _run_repair_phase(
 @celery_app.task(
     bind=True,
     name="speaker_embedding_consistency_repair_batch",
-    queue="gpu",
     priority=GPUPriority.ADMIN_MIGRATION,
 )
 def speaker_embedding_consistency_repair_batch_task(

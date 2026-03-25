@@ -25,6 +25,7 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.lockout import unlock_account as lockout_unlock_account
 from app.core.config import settings
+from app.core.constants import CeleryQueues
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.media import Analytics
@@ -241,7 +242,7 @@ def get_gpu_usage():
         # nvidia-smi not available — dispatch to cpu worker (debounced)
         lock_acquired = redis_client.set("gpu_stats_pending", "1", nx=True, ex=30)
         if lock_acquired:
-            celery_app.send_task("system.update_gpu_stats", queue="cpu")
+            celery_app.send_task("system.update_gpu_stats", queue=CeleryQueues.CPU)
             logger.info("Dispatched on-demand GPU stats collection")
 
         return [
@@ -930,7 +931,7 @@ async def trigger_retention_run(
     task = celery_app.send_task(
         "cleanup_expired_files",
         kwargs={"force": True},
-        queue="utility",
+        queue=CeleryQueues.UTILITY,
     )
 
     return RetentionRunResponse(

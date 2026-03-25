@@ -31,8 +31,15 @@ from celery.schedules import crontab  # noqa: E402
 from celery.signals import task_postrun  # noqa: E402
 from celery.signals import worker_process_init  # noqa: E402
 from celery.signals import worker_ready  # noqa: E402
+from kombu import Queue  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
+from app.core.constants import CeleryQueues  # noqa: E402
+
+# Explicit queue declarations — single source of truth.
+# With task_create_missing_queues=False, any typo in a queue name will raise
+# an error at dispatch time instead of silently creating a phantom queue.
+CELERY_QUEUES = tuple(Queue(q) for q in CeleryQueues.ALL)
 
 # Initialize Celery
 celery_app = Celery(
@@ -41,6 +48,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         "app.tasks.transcription",
+        "app.tasks.transcription.core",
         "app.tasks.transcription.preprocess",
         "app.tasks.transcription.postprocess",
         "app.tasks.transcription.dispatch",
@@ -99,6 +107,8 @@ celery_app.conf.update(
     # Download:   3=single-url  6=playlist
     # Embedding:  2=pipeline-critical
     # Utility:    1=emergency  3=operational  5=routine  7=background  9=dev-tools
+    task_queues=CELERY_QUEUES,
+    task_create_missing_queues=False,  # Catch queue name typos at dispatch time
     broker_transport_options={
         "priority_steps": list(range(10)),
         "queue_order_strategy": "priority",
@@ -106,74 +116,72 @@ celery_app.conf.update(
     task_routes={
         # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)
         # See priority comment above for priority scheme
-        "transcription.process_file": {"queue": "gpu"},
+        "transcription.process_file": {"queue": CeleryQueues.GPU},
         # Pipeline chain tasks (3-stage: CPU preprocess → GPU transcribe → CPU postprocess)
         # NOTE: "transcription.gpu_transcribe" is intentionally NOT listed here so
         # dispatch.py can route it to either "gpu" or "cloud-asr" at call time.
-        "transcription.preprocess": {"queue": "cpu"},
-        "transcription.postprocess": {"queue": "cpu"},
-        "transcription.enrich_and_dispatch": {"queue": "cpu"},
-        "transcription.pipeline_error": {"queue": "utility"},
-        "rediarize": {"queue": "gpu"},
-        "update_speaker_embedding_on_reassignment": {"queue": "gpu"},
-        "extract_v4_embeddings": {"queue": "gpu"},
-        "extract_v4_embeddings_batch": {"queue": "gpu"},
-        "app.tasks.speaker_clustering.recluster_all_speakers": {"queue": "gpu"},
-        "app.tasks.speaker_clustering.cluster_speakers_for_file": {"queue": "cpu"},
-        # NOTE: "transcribe_audio" is intentionally NOT listed here so that
-        # apply_async(queue=task_queue) in upload.py / reprocess.py can route it
-        # to either "gpu" (local) or "cloud-asr" (cloud provider) at call time.
-        # A static task_routes entry would override the per-call queue argument.
+        # NOTE: "transcription.cpu_transcribe" is also intentionally NOT listed here
+        # so dispatch.py can route it to "cpu-transcribe" at call time.
+        "transcription.preprocess": {"queue": CeleryQueues.CPU},
+        "transcription.postprocess": {"queue": CeleryQueues.CPU},
+        "transcription.enrich_and_dispatch": {"queue": CeleryQueues.CPU},
+        "transcription.pipeline_error": {"queue": CeleryQueues.UTILITY},
+        "rediarize": {"queue": CeleryQueues.GPU},
+        "update_speaker_embedding_on_reassignment": {"queue": CeleryQueues.GPU},
+        "extract_v4_embeddings": {"queue": CeleryQueues.GPU},
+        "extract_v4_embeddings_batch": {"queue": CeleryQueues.GPU},
+        "speaker.recluster_all": {"queue": CeleryQueues.GPU},
+        "speaker.cluster_for_file": {"queue": CeleryQueues.CPU},
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
-        "download.media_url": {"queue": "download"},
-        "download.media_playlist": {"queue": "download"},
+        "download.media_url": {"queue": CeleryQueues.DOWNLOAD},
+        "download.media_playlist": {"queue": CeleryQueues.DOWNLOAD},
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
-        "media.generate_waveform": {"queue": "cpu"},
-        "media.generate_waveform_data": {"queue": "cpu"},
-        "analytics.analyze_transcript": {"queue": "cpu"},
-        "detect_speaker_attributes": {"queue": "cpu"},
-        "migrate_speaker_attributes": {"queue": "cpu"},
-        "detect_speaker_attributes_batch": {"queue": "gpu"},
-        "analyze_speakers_combined_batch": {"queue": "gpu"},
-        "migrate_speakers_combined": {"queue": "cpu"},
-        "system.update_gpu_stats": {"queue": "cpu"},
-        "migrate_speaker_embeddings_to_v4": {"queue": "cpu"},
-        "migration.normalize_embeddings": {"queue": "cpu"},
-        "generate_thumbnail": {"queue": "cpu"},
-        "migrate_thumbnails_to_webp": {"queue": "cpu"},
-        "reindex_transcripts": {"queue": "cpu"},
-        "reindex_batch": {"queue": "cpu"},
-        "search_index_maintenance": {"queue": "cpu"},
-        "opensearch_orphan_cleanup": {"queue": "cpu"},
-        "speaker_embedding_consistency_check": {"queue": "cpu"},
-        "speaker_embedding_consistency_repair_batch": {"queue": "gpu"},
+        "media.generate_waveform": {"queue": CeleryQueues.CPU},
+        "media.generate_waveform_data": {"queue": CeleryQueues.CPU},
+        "analytics.analyze_transcript": {"queue": CeleryQueues.CPU},
+        "detect_speaker_attributes": {"queue": CeleryQueues.CPU},
+        "migrate_speaker_attributes": {"queue": CeleryQueues.CPU},
+        "detect_speaker_attributes_batch": {"queue": CeleryQueues.GPU},
+        "analyze_speakers_combined_batch": {"queue": CeleryQueues.GPU},
+        "migrate_speakers_combined": {"queue": CeleryQueues.CPU},
+        "system.update_gpu_stats": {"queue": CeleryQueues.CPU},
+        "migrate_speaker_embeddings_to_v4": {"queue": CeleryQueues.CPU},
+        "migration.normalize_embeddings": {"queue": CeleryQueues.CPU},
+        "generate_thumbnail": {"queue": CeleryQueues.CPU},
+        "migrate_thumbnails_to_webp": {"queue": CeleryQueues.CPU},
+        "reindex_transcripts": {"queue": CeleryQueues.CPU},
+        "reindex_batch": {"queue": CeleryQueues.CPU},
+        "search_index_maintenance": {"queue": CeleryQueues.CPU},
+        "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
+        "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
+        "speaker_embedding_consistency_repair_batch": {"queue": CeleryQueues.GPU},
+        "process_speaker_update_background": {"queue": CeleryQueues.CPU},
+        "extract_speaker_embeddings": {"queue": CeleryQueues.GPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
-        "ai.generate_summary": {"queue": "nlp"},
-        "ai.identify_speakers": {"queue": "nlp"},
-        "process_speaker_update_background": {"queue": "cpu"},
-        "extract_speaker_embeddings": {"queue": "gpu"},
-        "ai.extract_topics": {"queue": "nlp"},
-        "ai.extract_topics_batch": {"queue": "nlp"},
-        "ai.group_batch_files": {"queue": "nlp"},
-        "ai.retroactive_auto_label": {"queue": "nlp"},
-        "ai.auto_label_batch": {"queue": "nlp"},
+        "ai.generate_summary": {"queue": CeleryQueues.NLP},
+        "ai.identify_speakers": {"queue": CeleryQueues.NLP},
+        "ai.extract_topics": {"queue": CeleryQueues.NLP},
+        "ai.extract_topics_batch": {"queue": CeleryQueues.NLP},
+        "ai.group_batch_files": {"queue": CeleryQueues.NLP},
+        "ai.retroactive_auto_label": {"queue": CeleryQueues.NLP},
+        "ai.auto_label_batch": {"queue": CeleryQueues.NLP},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
-        "index_transcript_search": {"queue": "embedding"},
+        "index_transcript_search": {"queue": CeleryQueues.EMBEDDING},
         # Access index updates are lightweight OpenSearch writes (no GPU/embedding needed)
-        "update_file_access_index": {"queue": "utility"},
+        "update_file_access_index": {"queue": CeleryQueues.UTILITY},
         # Utility Queue - Lightweight maintenance tasks (concurrency=8)
-        "system.startup_recovery": {"queue": "utility"},
-        "system.recover_user_files": {"queue": "utility"},
-        "system.health_check": {"queue": "utility"},
-        "cleanup_expired_files": {"queue": "utility"},
-        "cleanup.run_periodic_cleanup": {"queue": "utility"},
-        "cleanup.deep_cleanup": {"queue": "utility"},
-        "cleanup.health_check": {"queue": "utility"},
-        "cleanup.emergency_recovery": {"queue": "utility"},
-        "check_migration_status": {"queue": "utility"},
-        "finalize_v4_migration": {"queue": "utility"},
-        "export_transcript_baseline": {"queue": "utility"},
-        "compare_transcript_baseline": {"queue": "utility"},
+        "system.startup_recovery": {"queue": CeleryQueues.UTILITY},
+        "system.recover_user_files": {"queue": CeleryQueues.UTILITY},
+        "system.health_check": {"queue": CeleryQueues.UTILITY},
+        "cleanup_expired_files": {"queue": CeleryQueues.UTILITY},
+        "cleanup.run_periodic_cleanup": {"queue": CeleryQueues.UTILITY},
+        "cleanup.deep_cleanup": {"queue": CeleryQueues.UTILITY},
+        "cleanup.health_check": {"queue": CeleryQueues.UTILITY},
+        "cleanup.emergency_recovery": {"queue": CeleryQueues.UTILITY},
+        "check_migration_status": {"queue": CeleryQueues.UTILITY},
+        "finalize_v4_migration": {"queue": CeleryQueues.UTILITY},
+        "export_transcript_baseline": {"queue": CeleryQueues.UTILITY},
+        "compare_transcript_baseline": {"queue": CeleryQueues.UTILITY},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -313,6 +321,45 @@ def preload_models(**kwargs):
             logger.info(f"CPU lightweight model '{cpu_config.model_name}' preloaded successfully")
         except Exception as e:
             logger.warning(f"CPU lightweight model preloading failed: {e}")
+
+    # Validate that all registered tasks have explicit queue routes
+    _validate_task_routes()
+
+
+def _validate_task_routes():
+    """Log warnings for tasks missing from task_routes.
+
+    Runs once at worker startup. Tasks not in task_routes and without a
+    decorator-level queue= will silently go to the default 'celery' queue,
+    which may not be the intended behavior.
+    """
+    # Tasks intentionally excluded from task_routes (dynamically routed at call time)
+    intentionally_unrouted = {
+        "transcription.gpu_transcribe",  # Routed to "gpu" or "cloud-asr" by dispatch.py
+        "transcription.cpu_transcribe",  # Routed to "cpu-transcribe" by dispatch.py
+    }
+
+    routed_names = set(celery_app.conf.task_routes.keys())
+    unrouted = []
+
+    for name in celery_app.tasks:
+        if name.startswith("celery."):
+            continue
+        if name in intentionally_unrouted:
+            continue
+        if name not in routed_names:
+            unrouted.append(name)
+
+    if unrouted:
+        for name in sorted(unrouted):
+            logger.warning(
+                f"Task '{name}' has no task_routes entry — will go to default 'celery' queue"
+            )
+    else:
+        logger.info(
+            f"Task route validation passed: {len(routed_names)} routes, "
+            f"{len(intentionally_unrouted)} intentionally dynamic"
+        )
 
 
 @task_postrun.connect

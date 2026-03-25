@@ -19,9 +19,7 @@ from app.utils.thumbnail import generate_thumbnail_from_url
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(
-    name="generate_thumbnail", bind=True, queue="cpu", priority=CPUPriority.PIPELINE_CRITICAL
-)
+@celery_app.task(name="generate_thumbnail", bind=True, priority=CPUPriority.PIPELINE_CRITICAL)
 def generate_thumbnail_task(self, file_id: int, user_id: int, storage_path: str) -> dict:
     """
     Generate and upload a WebP thumbnail for a video file.

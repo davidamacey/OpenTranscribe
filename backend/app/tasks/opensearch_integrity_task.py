@@ -223,7 +223,7 @@ def run_orphan_cleanup(dry_run: bool = False) -> dict[str, Any]:
     return results
 
 
-@celery_app.task(name="opensearch_orphan_cleanup", queue="cpu", priority=CPUPriority.MAINTENANCE)
+@celery_app.task(name="opensearch_orphan_cleanup", priority=CPUPriority.MAINTENANCE)
 def opensearch_orphan_cleanup_task() -> dict[str, Any]:
     """Celery task: scan all OpenSearch indices and remove orphaned documents.
 

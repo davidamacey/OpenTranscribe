@@ -404,24 +404,62 @@ The cleanup tasks work with the enhanced file management system:
 - Progress tracking for bulk operations
 - User-friendly error messages and recommendations
 
-## Task Configuration
+## Task Naming & Queue Convention
 
-### Celery Workers
-Three worker types are defined in `docker-compose.yml`:
+### Naming Rules
 
-| Worker | Queue | Purpose |
-|--------|-------|---------|
-| `celery-worker` | `gpu`, `default` | GPU transcription pipeline (preprocess, gpu_transcription, postprocess) |
-| `celery-cpu-worker` | `cpu`, `default` | Summarization, analytics, cleanup, maintenance |
-| `celery-embedding-worker` | `embedding` | Speaker embedding extraction and reassignment |
+All Celery tasks **MUST** use explicit `name=` in their decorator with dotted namespace format:
 
-Worker pool defaults to `threads` (not prefork) so the Whisper model loads once and is shared.
+```
+<domain>.<action>
+```
+
+**Domains:**
+| Domain | Purpose | Example |
+|--------|---------|---------|
+| `transcription.*` | Core transcription pipeline | `transcription.process_file` |
+| `ai.*` | LLM/AI enrichment | `ai.generate_summary` |
+| `media.*` | Media processing (waveform, thumbnails) | `media.generate_waveform` |
+| `download.*` | URL/playlist downloads | `download.media_url` |
+| `speaker.*` | Speaker analysis (clustering, embeddings) | `speaker.cluster_for_file` |
+| `search.*` | Search indexing and maintenance | (future tasks) |
+| `analytics.*` | Transcript analytics | `analytics.analyze_transcript` |
+| `system.*` | Health checks, recovery, GPU stats | `system.health_check` |
+| `cleanup.*` | File cleanup and retention | `cleanup.run_periodic_cleanup` |
+| `migration.*` | Data migration tasks | `migration.normalize_embeddings` |
+
+**Legacy flat names** (e.g., `rediarize`, `generate_thumbnail`) are stable — do not rename, but do not create new flat names.
+
+### Queue Assignment Rules
+
+1. **Define queue routing in `task_routes` only** (`backend/app/core/celery.py`) — this is the single source of truth
+2. **Do NOT put `queue=` in task decorators** — it creates a maintenance hazard (decorator is silently overridden by `task_routes`)
+3. **Use `CeleryQueues.*` constants** from `app.core.constants` — never raw queue name strings
+4. **Exception:** Dynamically-routed tasks (e.g., `transcription.gpu_transcribe`) that are intentionally NOT in `task_routes` may use `.set(queue=CeleryQueues.X)` at call time
+
+### Queue Definitions
+
+All valid queues are declared in `CeleryQueues` class (`backend/app/core/constants.py`).
+`task_create_missing_queues=False` is set — any typo in a queue name raises an error at dispatch time.
+
+| Queue | Worker | Concurrency | Purpose |
+|-------|--------|-------------|---------|
+| `gpu` | `celery-worker` | 1 | GPU-intensive AI tasks (WhisperX, PyAnnote, embeddings) |
+| `download` | `celery-download-worker` | 3 | Network I/O for yt-dlp media downloads |
+| `cpu` | `celery-cpu-worker` | 8 | CPU-intensive processing (waveform, thumbnails, reindex) |
+| `nlp` | `celery-nlp-worker` | 4 | LLM API calls (summarization, topics, speaker ID) |
+| `embedding` | `celery-embedding-worker` | 1 | OpenSearch neural search indexing |
+| `utility` | `celery-cpu-worker` | 8 | Lightweight maintenance (health checks, cleanup) |
+| `cloud-asr` | `celery-cpu-worker` | 8 | Cloud ASR provider HTTP calls (dynamic routing) |
+| `cpu-transcribe` | `celery-cpu-worker` | 8 | Lightweight CPU transcription (dynamic routing) |
+| `celery` | `celery-nlp-worker` | 4 | Default fallback queue |
+
+### Startup Validation
+
+On worker startup, `_validate_task_routes()` logs a WARNING for any registered task missing from `task_routes`. This catches accidentally unrouted tasks that would silently go to the default `celery` queue.
 
 ### Task Registration
-Tasks are auto-discovered from `app.tasks`:
-```python
-celery_app.autodiscover_tasks(['app.tasks'])
-```
+Tasks are registered via explicit `include=` list in `celery_app` initialization (`backend/app/core/celery.py`). When adding a new task module, add it to this list.
 
 ## 📊 Task Monitoring
 

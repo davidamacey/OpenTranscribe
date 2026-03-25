@@ -365,6 +365,20 @@
                     </div>
                   {/if}
 
+                  <!-- Enrichment task chips -->
+                  {#if notification.completedEnrichments && notification.completedEnrichments.length > 0}
+                    <div class="enrichment-chips">
+                      {#each notification.completedEnrichments as task}
+                        <span class="enrichment-chip">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                          {$t(`notifications.enrichment.${task}`)}
+                        </span>
+                      {/each}
+                    </div>
+                  {/if}
+
                   <!-- Action link if available -->
                   {#if getFileLink(notification) !== null}
                     <a
@@ -688,6 +702,31 @@
     color: var(--text-secondary);
     line-height: 1.4;
     word-wrap: break-word;
+  }
+
+  .enrichment-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 8px 0;
+  }
+
+  .enrichment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--success-color, #10b981);
+    background: rgba(16, 185, 129, 0.1);
+    border-radius: 10px;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+
+  .enrichment-chip svg {
+    flex-shrink: 0;
   }
 
   .notification-action {

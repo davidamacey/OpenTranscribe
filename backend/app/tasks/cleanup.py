@@ -179,7 +179,7 @@ def emergency_file_recovery(self, file_uuids: list):
         raise
 
 
-@celery_app.task(name="cleanup_expired_files", queue="utility", priority=UtilityPriority.ROUTINE)
+@celery_app.task(name="cleanup_expired_files", priority=UtilityPriority.ROUTINE)
 def cleanup_expired_files(force: bool = False):
     """
     Delete media files that have exceeded the configured retention window.

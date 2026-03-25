@@ -110,9 +110,7 @@ def get_migration_status() -> dict:
     }
 
 
-@celery_app.task(
-    bind=True, name="check_migration_status", queue="utility", priority=UtilityPriority.BACKGROUND
-)
+@celery_app.task(bind=True, name="check_migration_status", priority=UtilityPriority.BACKGROUND)
 def check_migration_status_task(self):
     """Check the current embedding migration status."""
     return get_migration_status()
@@ -392,7 +390,6 @@ def _embedding_result_writer(
 @celery_app.task(
     bind=True,
     name="migrate_speaker_embeddings_to_v4",
-    queue="cpu",
     priority=CPUPriority.ADMIN_BATCH,
 )
 def migrate_speaker_embeddings_v4_task(
@@ -552,7 +549,7 @@ def migrate_speaker_embeddings_v4_task(
 
 
 @celery_app.task(
-    bind=True, name="extract_v4_embeddings_batch", queue="gpu", priority=GPUPriority.ADMIN_MIGRATION
+    bind=True, name="extract_v4_embeddings_batch", priority=GPUPriority.ADMIN_MIGRATION
 )
 def extract_v4_embeddings_batch_task(
     self,
@@ -700,9 +697,7 @@ def _emit_progress(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(
-    bind=True, name="extract_v4_embeddings", queue="gpu", priority=GPUPriority.ADMIN_MIGRATION
-)
+@celery_app.task(bind=True, name="extract_v4_embeddings", priority=GPUPriority.ADMIN_MIGRATION)
 def extract_v4_embeddings_task(
     self,
     file_uuid: str,
@@ -767,9 +762,7 @@ def extract_v4_embeddings_task(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(
-    bind=True, name="finalize_v4_migration", queue="utility", priority=UtilityPriority.BACKGROUND
-)
+@celery_app.task(bind=True, name="finalize_v4_migration", priority=UtilityPriority.BACKGROUND)
 def finalize_v4_migration_task(self, user_id: int = 1):
     """Finalize the v4 migration by swapping indices.
 

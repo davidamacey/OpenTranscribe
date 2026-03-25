@@ -372,11 +372,13 @@ def get_queue_depths() -> dict[str, int]:
     Returns:
         Dictionary mapping queue name to pending task count
     """
+    from app.core.constants import CeleryQueues
+
     try:
         from app.core.celery import celery_app
 
         redis_client = celery_app.backend.client
-        queues = ["gpu", "download", "nlp", "embedding", "cpu", "utility"]
+        queues = CeleryQueues.ALL
         depths: dict[str, int] = {}
         for queue_name in queues:
             try:
@@ -388,15 +390,7 @@ def get_queue_depths() -> dict[str, int]:
         return depths
     except Exception as e:
         logger.error(f"Error getting queue depths: {e}")
-        return {
-            "gpu": 0,
-            "download": 0,
-            "nlp": 0,
-            "embedding": 0,
-            "cpu": 0,
-            "utility": 0,
-            "total": 0,
-        }
+        return {q: 0 for q in CeleryQueues.ALL} | {"total": 0}
 
 
 def get_models_info() -> dict[str, dict[str, str]]:

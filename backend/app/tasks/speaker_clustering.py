@@ -68,11 +68,10 @@ def _send_clustering_error(user_id: int, error_message: str):
 
 
 @celery_app.task(
-    name="app.tasks.speaker_clustering.cluster_speakers_for_file",
+    name="speaker.cluster_for_file",
     bind=True,
     max_retries=2,
     default_retry_delay=30,
-    queue="cpu",
     priority=CPUPriority.PIPELINE_CRITICAL,
     acks_late=True,
     reject_on_worker_lost=True,
@@ -125,12 +124,11 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
 
 
 @celery_app.task(
-    name="app.tasks.speaker_clustering.recluster_all_speakers",
+    name="speaker.recluster_all",
     bind=True,
     max_retries=1,
     default_retry_delay=60,
     priority=GPUPriority.USER_RECLUSTER,
-    queue="gpu",
     acks_late=True,
     reject_on_worker_lost=True,
 )

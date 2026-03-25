@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.constants import CeleryQueues
 from app.core.constants import GPUPriority
 from app.core.constants import get_speaker_index_v4
 from app.db.session_utils import get_refreshed_object
@@ -950,7 +951,7 @@ def _run_post_gpu_background(
 
                     extract_speaker_embeddings_task.apply_async(
                         args=[str(ctx.file_uuid), speaker_mapping],
-                        queue="gpu",
+                        queue=CeleryQueues.GPU,
                     )
                     logger.info(
                         f"Dispatched speaker embedding extraction to GPU queue for "
@@ -1351,17 +1352,10 @@ def trigger_automatic_summarization(
                 f"Automatic analytics computation task {analytics_task.id} started for file {file_id}"
             )
 
-        # Speaker LLM identification: In the default full pipeline (tasks_to_run=None),
-        # this is chained from detect_speaker_attributes_task (dispatched after
-        # transcription completes) to ensure gender/age context is available.
-        # When explicitly requested via selective reprocessing, dispatch directly.
-        if tasks_to_run is not None and "speaker_llm" in tasks_to_run:
-            from app.tasks.speaker_tasks import identify_speakers_llm_task
-
-            speaker_task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
-            logger.info(
-                f"Selective speaker LLM identification task {speaker_task.id} started for file {file_id}"
-            )
+        # Speaker LLM identification: always chained from detect_speaker_attributes_task
+        # (dispatched by _dispatch_speaker_attributes in postprocess). Gender detection
+        # runs first, then chains to LLM speaker ID to ensure gender/age context is
+        # available. No direct dispatch needed here — would cause double dispatch.
 
         # Note: search_indexing is dispatched in _process_transcription_result (always
         # runs during transcription). No need to dispatch it here to avoid double dispatch.

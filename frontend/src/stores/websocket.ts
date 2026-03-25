@@ -46,7 +46,8 @@ export type NotificationType =
   | 'group_member_added'
   | 'group_member_removed'
   | 'enrichment_started'
-  | 'enrichment_task_complete';
+  | 'enrichment_task_complete'
+  | 'search_indexing_complete';
 
 // Notification interface
 export interface Notification {
@@ -70,6 +71,8 @@ export interface Notification {
   status?: 'processing' | 'completed' | 'error';
   dismissible?: boolean; // false while processing
   silent?: boolean; // if true, don't show in notification panel (for gallery-only updates)
+  enrichmentTasks?: string[]; // Expected enrichment tasks (from enrichment_started)
+  completedEnrichments?: string[]; // Completed enrichment task names (chips)
 }
 
 // WebSocket connection status
@@ -504,8 +507,15 @@ function createWebSocketStore() {
             // Admin task types that should also appear in NotificationsPanel
             const isAdminProgressType = data.type in ADMIN_TASK_PROGRESS_IDS;
 
-            // Handle silent notifications (gallery-only updates)
-            const isSilentType = data.type === 'file_created' || data.type === 'file_updated';
+            // Handle silent notifications (gallery-only updates, internal state events)
+            const isSilentType =
+              data.type === 'file_created' ||
+              data.type === 'file_updated' ||
+              data.type === 'search_indexing_complete' ||
+              data.type === 'clustering_file_complete';
+
+            const isEnrichmentType =
+              data.type === 'enrichment_started' || data.type === 'enrichment_task_complete';
 
             if (
               (isProgressiveType &&
@@ -651,6 +661,38 @@ function createWebSocketStore() {
                 }
 
                 saveNotificationsToStorage(s.notifications);
+                return s;
+              });
+            } else if (isEnrichmentType) {
+              // Enrichment events update the parent transcription notification with chips
+              const fileId = data.data.file_id;
+              const progressId = `transcription_status_${fileId}`;
+
+              update((s: WebSocketState) => {
+                const parentIndex = s.notifications.findIndex((n) => n.progressId === progressId);
+
+                if (parentIndex !== -1) {
+                  const parent = s.notifications[parentIndex];
+
+                  if (data.type === 'enrichment_started') {
+                    // Store expected task list
+                    parent.enrichmentTasks = data.data.tasks || [];
+                    parent.completedEnrichments = parent.completedEnrichments || [];
+                  } else if (data.type === 'enrichment_task_complete') {
+                    // Add completed task chip (avoid duplicates)
+                    const taskName = data.data.task;
+                    if (!parent.completedEnrichments) {
+                      parent.completedEnrichments = [];
+                    }
+                    if (!parent.completedEnrichments.includes(taskName)) {
+                      parent.completedEnrichments = [...parent.completedEnrichments, taskName];
+                    }
+                  }
+
+                  // Trigger reactivity
+                  s.notifications[parentIndex] = { ...parent };
+                  saveNotificationsToStorage(s.notifications);
+                }
                 return s;
               });
             } else if (isSilentType) {
