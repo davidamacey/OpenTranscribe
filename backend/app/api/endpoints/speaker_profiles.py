@@ -93,38 +93,62 @@ def list_speaker_profiles(
 
         from sqlalchemy import func as sa_func
 
+        profile_ids = [int(p.id) for p in profiles]
+
+        # Batch query: media count and instance count per profile (1 query)
+        count_rows = (
+            db.query(
+                Speaker.profile_id,
+                sa_func.count(sa_func.distinct(Speaker.media_file_id)).label("media_count"),
+                sa_func.count(Speaker.id).label("instance_count"),
+            )
+            .filter(Speaker.profile_id.in_(profile_ids))
+            .group_by(Speaker.profile_id)
+            .all()
+        )
+        counts_by_profile: dict[int, tuple[int, int]] = {
+            row.profile_id: (row.media_count, row.instance_count) for row in count_rows
+        }
+
+        # Batch query: most common gender per profile using window function (1 query)
+        gender_subq = (
+            db.query(
+                Speaker.profile_id,
+                Speaker.predicted_gender,
+                sa_func.count().label("cnt"),
+                sa_func.row_number()
+                .over(
+                    partition_by=Speaker.profile_id,
+                    order_by=sa_func.count().desc(),
+                )
+                .label("rn"),
+            )
+            .filter(
+                Speaker.profile_id.in_(profile_ids),
+                Speaker.predicted_gender.isnot(None),
+            )
+            .group_by(Speaker.profile_id, Speaker.predicted_gender)
+            .subquery()
+        )
+        gender_rows = (
+            db.query(gender_subq.c.profile_id, gender_subq.c.predicted_gender)
+            .filter(gender_subq.c.rn == 1)
+            .all()
+        )
+        gender_by_profile: dict[int, str] = {row[0]: row[1] for row in gender_rows}
+
+        # Batch avatar URLs
+        from app.services.minio_service import get_file_url
+
         result = []
         for profile in profiles:
             profile_id = int(profile.id)
             is_shared = profile_id not in owned_ids
-
-            # Count unique media files where this profile's speakers appear
-            media_count = (
-                db.query(sa_func.count(sa_func.distinct(Speaker.media_file_id)))
-                .filter(Speaker.profile_id == profile_id)
-                .scalar()
-            ) or 0
-
-            # Count speaker instances (one per media file where profile appears)
-            instance_count = db.query(Speaker).filter(Speaker.profile_id == profile_id).count()
-
-            # Get the most common predicted_gender from profile speakers
-            gender_row = (
-                db.query(Speaker.predicted_gender, sa_func.count().label("cnt"))
-                .filter(
-                    Speaker.profile_id == profile_id,
-                    Speaker.predicted_gender.isnot(None),
-                )
-                .group_by(Speaker.predicted_gender)
-                .order_by(sa_func.count().desc())
-                .first()
-            )
+            media_count, instance_count = counts_by_profile.get(profile_id, (0, 0))
 
             avatar_url = None
             if profile.avatar_path:
                 try:
-                    from app.services.minio_service import get_file_url
-
                     avatar_url = get_file_url(profile.avatar_path, expires=3600)
                 except Exception:
                     logger.warning(f"Failed to get avatar URL for profile {profile.uuid}")
@@ -138,7 +162,7 @@ def list_speaker_profiles(
                     "updated_at": profile.updated_at.isoformat(),
                     "instance_count": instance_count,
                     "media_count": media_count,
-                    "predicted_gender": gender_row[0] if gender_row else None,
+                    "predicted_gender": gender_by_profile.get(profile_id),
                     "avatar_url": avatar_url,
                     "is_shared": is_shared,
                     "owner_name": owner_names.get(int(profile.user_id)) if is_shared else None,

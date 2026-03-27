@@ -44,6 +44,7 @@
     SpeakerInboxItem as InboxItem,
     SpeakerProfile
   } from '$lib/types/speakerCluster';
+  import { apiCache } from '$lib/apiCache';
 
   type Tab = 'clusters' | 'profiles' | 'inbox';
   let activeTab: Tab = 'clusters';
@@ -272,7 +273,11 @@
   async function loadClusters(silent = false) {
     loadingClusters = true;
     try {
-      const res = await listClusters(clusterPage, 20, clusterSearch || undefined);
+      // Use prefetched data for initial default load (page 1, no search)
+      const prefetchKey = 'speakers:clusters';
+      const cached = (clusterPage === 1 && !clusterSearch) ? apiCache.get<any>(prefetchKey) : null;
+      const res = cached ?? await listClusters(clusterPage, 20, clusterSearch || undefined);
+      if (cached) apiCache.invalidate(prefetchKey);
       clusters = res.items;
       clusterTotal = res.total;
       clusterPages = res.pages;
@@ -290,7 +295,11 @@
   async function loadProfiles(silent = false) {
     loadingProfiles = true;
     try {
-      profiles = await listProfiles();
+      // Use prefetched data if available
+      const prefetchKey = 'speakers:profiles';
+      const cached = apiCache.get<SpeakerProfile[]>(prefetchKey);
+      profiles = cached ?? await listProfiles();
+      if (cached) apiCache.invalidate(prefetchKey);
     } catch (err) {
       if (!silent) toastStore.error($t('speakers.error.loadProfiles'));
       throw err;
@@ -302,7 +311,11 @@
   async function loadInbox(silent = false) {
     loadingInbox = true;
     try {
-      const res = await getUnverifiedSpeakers(inboxPage, 20);
+      // Use prefetched data for initial default load (page 1)
+      const prefetchKey = 'speakers:inbox';
+      const cached = (inboxPage === 1) ? apiCache.get<any>(prefetchKey) : null;
+      const res = cached ?? await getUnverifiedSpeakers(inboxPage, 20);
+      if (cached) apiCache.invalidate(prefetchKey);
       inboxItems = res.items;
       inboxTotal = res.total;
       inboxPages = res.pages;

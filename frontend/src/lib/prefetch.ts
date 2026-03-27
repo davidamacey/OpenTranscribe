@@ -89,6 +89,42 @@ export function prefetchDashboardData(): void {
 }
 
 /**
+ * Prefetch speakers page data on hover.
+ * Fires all three tab endpoints in parallel, fails silently.
+ */
+export function prefetchSpeakersData(): void {
+  apiCache
+    .getOrFetch(
+      'speakers:clusters',
+      () =>
+        axiosInstance
+          .get('/speaker-clusters', { params: { page: 1, per_page: 20 } })
+          .then((r) => r.data),
+      CacheTTL.SPEAKERS
+    )
+    .catch(() => {});
+
+  apiCache
+    .getOrFetch(
+      'speakers:profiles',
+      () => axiosInstance.get('/speaker-profiles/profiles').then((r) => r.data),
+      CacheTTL.SPEAKERS
+    )
+    .catch(() => {});
+
+  apiCache
+    .getOrFetch(
+      'speakers:inbox',
+      () =>
+        axiosInstance
+          .get('/speaker-clusters/unverified/inbox', { params: { page: 1, per_page: 20 } })
+          .then((r) => r.data),
+      CacheTTL.SPEAKERS
+    )
+    .catch(() => {});
+}
+
+/**
  * Prefetch the next page of search results after current page loads.
  * Delayed by 1 second to avoid competing with current page rendering.
  */
