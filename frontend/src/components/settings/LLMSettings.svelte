@@ -44,13 +44,13 @@
   let statusLastChecked: Date | null = null;
   let checkingStatus = false;
 
-  // Load initial data
+  // Load initial data — parallelize independent calls
   onMount(async () => {
-    await loadData();
-    await loadAutoSummarySetting();
+    const loads: Promise<void>[] = [loadData(), loadAutoSummarySetting()];
     if (isAdmin) {
-      await loadSystemSummarySetting();
+      loads.push(loadSystemSummarySetting());
     }
+    await Promise.allSettled(loads);
   });
 
   // Cleanup on destroy
@@ -62,13 +62,20 @@
     loading = true;
 
     try {
-      // Load supported providers
-      const providersResponse = await LLMSettingsApi.getSupportedProviders();
+      // Fetch providers and configurations in parallel
+      const [providersResponse, configurationsResponse] = await Promise.all([
+        LLMSettingsApi.getSupportedProviders(),
+        LLMSettingsApi.getUserConfigurations().catch((err: any) => {
+          if (err.response?.status === 404 || err.response?.status === 403) {
+            return null; // No configs — not an error
+          }
+          throw err;
+        }),
+      ]);
+
       supportedProviders = providersResponse.providers;
 
-      // Try to load user configurations
-      try {
-        const configurationsResponse = await LLMSettingsApi.getUserConfigurations();
+      if (configurationsResponse) {
         savedConfigurations = configurationsResponse.configurations;
         sharedConfigurations = configurationsResponse.shared_configurations || [];
         activeConfigurationId = configurationsResponse.active_configuration_id || null;
@@ -78,27 +85,33 @@
             || sharedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
           hasSettings = true;
 
-          // Check initial status if settings exist and update the central store
-          await checkCurrentStatus();
+          // Refresh global store from cached backend status (no external API call)
+          llmStatusStore.refreshStatus();
+
+          // Use last test result from configurations data instead of re-testing
+          if (currentSettings?.test_status === 'success') {
+            connectionStatus = 'connected';
+            statusMessage = currentSettings.test_message || '';
+            statusLastChecked = currentSettings.last_tested ? new Date(currentSettings.last_tested) : null;
+          } else if (currentSettings?.test_status === 'failed') {
+            connectionStatus = 'disconnected';
+            statusMessage = currentSettings.test_message || '';
+            statusLastChecked = currentSettings.last_tested ? new Date(currentSettings.last_tested) : null;
+          } else {
+            connectionStatus = 'unknown';
+          }
         } else {
           currentSettings = null;
           hasSettings = false;
           llmStatusStore.reset();
         }
-      } catch (err: any) {
-        // Handle cases where there are no configurations gracefully
-        if (err.response?.status !== 404 && err.response?.status !== 403) {
-          throw err;
-        }
-        // Set empty state for 404 (not found) or 403 (forbidden/no configs)
+      } else {
         currentSettings = null;
         hasSettings = false;
         llmStatusStore.reset();
       }
     } catch (err: any) {
-      // Only show error for serious provider loading issues
       console.error('Error loading LLM providers:', err);
-      // Only show error if it's not related to missing user configurations
       const detail = err.response?.data?.detail;
       const detailStr = typeof detail === 'string' ? detail : '';
       if (!err.message?.includes('LLM') && !detailStr.includes('configuration')) {
@@ -170,33 +183,18 @@
 
     try {
       const result = await LLMSettingsApi.testCurrentSettings();
-
-      if (result.success) {
-        connectionStatus = 'connected';
-        statusMessage = result.message;
-        statusLastChecked = new Date();
-
-        // Refresh the global LLM status store from backend
-        await llmStatusStore.refreshStatus();
-      } else {
-        connectionStatus = 'disconnected';
-        statusMessage = result.message;
-        statusLastChecked = new Date();
-
-        // Refresh the global LLM status store from backend
-        await llmStatusStore.refreshStatus();
-      }
+      connectionStatus = result.success ? 'connected' : 'disconnected';
+      statusMessage = result.message;
+      statusLastChecked = new Date();
     } catch (err: any) {
       connectionStatus = 'disconnected';
       const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.testFailed');
-      statusMessage = errorMsg;
+      statusMessage = typeof detail === 'string' ? detail : $t('settings.llmProvider.testFailed');
       statusLastChecked = new Date();
-
-      // Refresh the global LLM status store from backend
-      await llmStatusStore.refreshStatus();
     } finally {
       checkingStatus = false;
+      // Refresh global store once after test completes
+      llmStatusStore.refreshStatus();
     }
   }
 
@@ -468,7 +466,19 @@
 
 <div class="llm-settings">
   {#if loading}
-    <div class="loading">{$t('settings.llmProvider.loading')}</div>
+    <div class="llm-skeleton">
+      <div class="skeleton-header">
+        <div class="skeleton-line title"></div>
+        <div class="skeleton-chip"></div>
+      </div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card short"></div>
+      <div class="skeleton-section">
+        <div class="skeleton-line title"></div>
+        <div class="skeleton-line full"></div>
+        <div class="skeleton-line mid"></div>
+      </div>
+    </div>
   {:else}
     <!-- Saved Configurations -->
     <div class="saved-configs-section">
@@ -812,11 +822,68 @@
     margin: 0 auto;
   }
 
-  .loading {
-    text-align: center;
-    padding: 3rem;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
+  .llm-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 0.5rem 0;
+  }
+
+  .skeleton-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .skeleton-chip {
+    width: 80px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--border-color);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-card {
+    height: 72px;
+    border-radius: 8px;
+    background: var(--border-color);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-card.short {
+    height: 48px;
+  }
+
+  .skeleton-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .skeleton-line {
+    height: 12px;
+    border-radius: 4px;
+    background: var(--border-color);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  .skeleton-line.title {
+    width: 40%;
+    height: 16px;
+  }
+
+  .skeleton-line.full {
+    width: 100%;
+  }
+
+  .skeleton-line.mid {
+    width: 65%;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
   }
 
   .saved-configs-section {

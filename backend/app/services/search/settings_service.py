@@ -62,6 +62,49 @@ def save_search_embedding_model(model_id: str, dimension: int) -> None:
     logger.info(f"Saved search model setting: {model_id} ({dimension}d)")
 
 
+def get_search_embedding_settings() -> tuple[str, int]:
+    """Get both embedding model and dimension in a single DB query.
+
+    Returns:
+        Tuple of (model_id, dimension).
+    """
+    try:
+        from app.db.session_utils import session_scope
+        from app.models.system_settings import SystemSettings
+
+        with session_scope() as db:
+            rows = (
+                db.query(SystemSettings)
+                .filter(SystemSettings.key.in_([_KEY_EMBEDDING_MODEL, _KEY_EMBEDDING_DIMENSION]))
+                .all()
+            )
+            values = {row.key: row.value for row in rows}
+    except Exception as e:
+        logger.warning(f"Could not read search settings: {e}")
+        values = {}
+
+    # Resolve model
+    model_value = values.get(_KEY_EMBEDDING_MODEL)
+    if model_value and model_value in OPENSEARCH_EMBEDDING_MODELS:
+        model_id = model_value
+    elif model_value:
+        model_id = next(
+            (fid for fid in OPENSEARCH_EMBEDDING_MODELS if fid.endswith(f"/{model_value}")),
+            OPENSEARCH_DEFAULT_MODEL,
+        )
+    else:
+        model_id = OPENSEARCH_DEFAULT_MODEL
+
+    # Resolve dimension
+    dim_value = values.get(_KEY_EMBEDDING_DIMENSION)
+    try:
+        dimension = int(dim_value) if dim_value else _DEFAULT_DIMENSION
+    except (ValueError, TypeError):
+        dimension = _DEFAULT_DIMENSION
+
+    return model_id, dimension
+
+
 def _get_setting(key: str) -> Optional[str]:
     """Read a single setting from the database."""
     try:

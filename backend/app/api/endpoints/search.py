@@ -394,10 +394,9 @@ def stop_reindex(
 def _check_reindex_task_active(user_id: int) -> bool:
     """Check if a reindex task is currently active for this user.
 
-    Uses Celery's inspect API to check for active tasks, with a short
-    Redis cache (5-second TTL) to avoid blocking the event loop on
-    every call.  Returns False on any error to avoid blocking the
-    status endpoint.
+    Uses the ``reindex_lock:{user_id}`` Redis key that the reindex task
+    itself sets on start (NX, 1-hour TTL) and clears on finish.
+    This is a sub-millisecond Redis GET — no Celery broadcast needed.
 
     Args:
         user_id: The user ID to check for active reindex tasks.
@@ -406,52 +405,12 @@ def _check_reindex_task_active(user_id: int) -> bool:
         True if a reindex task is actively running for this user.
     """
     try:
-        import json
+        from app.core.redis import get_redis
 
-        from app.core.celery import celery_app
-
-        # Check Redis cache first (5-second TTL)
-        redis_client = None
-        cache_key = f"reindex_active:{user_id}"
-        try:
-            redis_client = celery_app.backend.client
-            cached = redis_client.get(cache_key)
-            if cached is not None:
-                return bool(json.loads(cached))
-        except Exception as cache_err:
-            logger.debug(f"Redis cache check failed, falling back to direct check: {cache_err}")
-
-        # Inspect active tasks across all workers (with short timeout)
-        inspector = celery_app.control.inspect(timeout=1.0)
-        active_tasks = inspector.active()
-
-        is_active = False
-        if active_tasks:
-            # Check all workers for active reindex tasks for this user
-            for _worker, tasks in active_tasks.items():
-                for task in tasks:
-                    if task.get("name") == "reindex_transcripts":
-                        # Check if task args contain this user_id
-                        task_kwargs = task.get("kwargs", {})
-                        if task_kwargs.get("user_id") == user_id:
-                            is_active = True
-                            break
-                if is_active:
-                    break
-
-        # Cache the result with 5-second TTL
-        try:
-            if redis_client is not None:
-                redis_client.setex(cache_key, 5, json.dumps(is_active))
-        except Exception as cache_err:
-            logger.debug(f"Could not cache reindex status: {cache_err}")
-
-        return is_active
+        return bool(get_redis().exists(f"reindex_lock:{user_id}"))
     except Exception as e:
-        # Log but don't fail the status endpoint
-        logger.debug(f"Could not check Celery task state: {e}")
-
-    return False
+        logger.debug(f"Could not check reindex lock: {e}")
+        return False
 
 
 @router.get("/reindex/status")
@@ -472,8 +431,7 @@ def reindex_status(
     from app.models.media import MediaFile
     from app.models.media import TranscriptSegment
     from app.services.opensearch_service import opensearch_client
-    from app.services.search.settings_service import get_search_embedding_dimension
-    from app.services.search.settings_service import get_search_embedding_model
+    from app.services.search.settings_service import get_search_embedding_settings
 
     with session_scope() as db:
         # Only count completed files that have transcript segments (indexable)
@@ -490,27 +448,25 @@ def reindex_status(
             .count()
         )
 
-    # Count indexed files in OpenSearch chunks index
+    # Count indexed files in OpenSearch chunks index (skip redundant exists check)
     indexed_files = 0
     last_indexed_at = None
     if opensearch_client:
         try:
-            index_name = settings.OPENSEARCH_CHUNKS_INDEX
-            if opensearch_client.indices.exists(index=index_name):
-                count_response = opensearch_client.search(
-                    index=index_name,
-                    body={
-                        "size": 0,
-                        "query": {"term": {"user_id": int(current_user.id)}},
-                        "aggs": {
-                            "unique_files": {"cardinality": {"field": "file_uuid"}},
-                            "last_indexed": {"max": {"field": "indexed_at"}},
-                        },
+            count_response = opensearch_client.search(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body={
+                    "size": 0,
+                    "query": {"term": {"user_id": int(current_user.id)}},
+                    "aggs": {
+                        "unique_files": {"cardinality": {"field": "file_uuid"}},
+                        "last_indexed": {"max": {"field": "indexed_at"}},
                     },
-                )
-                aggs = count_response.get("aggregations", {})
-                indexed_files = aggs.get("unique_files", {}).get("value", 0)
-                last_indexed_at = aggs.get("last_indexed", {}).get("value_as_string")
+                },
+            )
+            aggs = count_response.get("aggregations", {})
+            indexed_files = aggs.get("unique_files", {}).get("value", 0)
+            last_indexed_at = aggs.get("last_indexed", {}).get("value_as_string")
         except Exception as e:
             logger.error(f"Error checking index status: {e}")
 
@@ -526,14 +482,16 @@ def reindex_status(
         except Exception as e:
             logger.debug(f"Could not check reindex cancellation flag: {e}")
 
+    current_model, current_dimension = get_search_embedding_settings()
+
     return {
         "total_files": total_files,
         "indexed_files": indexed_files,
         "pending_files": max(0, total_files - indexed_files),
         "in_progress": in_progress,
         "stop_requested": stop_requested,
-        "current_model": get_search_embedding_model(),
-        "current_dimension": get_search_embedding_dimension(),
+        "current_model": current_model,
+        "current_dimension": current_dimension,
         "last_indexed_at": last_indexed_at,
     }
 
@@ -575,32 +533,48 @@ def get_index_health(
             }
         return health
 
-    for idx in indices:
-        try:
-            if not opensearch_client.indices.exists(index=idx):
-                health[idx] = {
-                    "status": "red",
-                    "doc_count": 0,
-                    "error": "Index does not exist",
-                }
-                continue
+    # Resolve aliases to concrete index names, then use a single _cat/indices
+    # call to get doc counts for everything at once (replaces 8 sequential
+    # HTTP calls with 1-2).
+    alias_map: dict[str, str] = {}  # alias → concrete index name
+    concrete_names: list[str] = []
+    try:
+        aliases_response = opensearch_client.cat.aliases(format="json", h="alias,index")
+        for row in aliases_response:
+            alias_map[row.get("alias", "")] = row.get("index", "")
+    except Exception as e:
+        logger.debug("Could not resolve aliases: %s", e)
 
-            response = opensearch_client.search(
-                index=idx,
-                body={"query": {"match_all": {}}, "size": 0},
-            )
-            doc_count = response.get("hits", {}).get("total", {}).get("value", 0)
+    for idx in indices:
+        concrete_names.append(alias_map.get(idx, idx))
+
+    index_stats: dict[str, int] = {}
+    try:
+        cat_response = opensearch_client.cat.indices(
+            index=",".join(concrete_names),
+            format="json",
+            h="index,docs.count",
+        )
+        for row in cat_response:
+            idx_name = row.get("index", "")
+            doc_count_str = row.get("docs.count", "0")
+            index_stats[idx_name] = int(doc_count_str) if doc_count_str else 0
+    except Exception as e:
+        logger.debug("Bulk _cat/indices call failed, will mark missing: %s", e)
+
+    for idx in indices:
+        concrete = alias_map.get(idx, idx)
+        if concrete in index_stats:
             health[idx] = {
                 "status": "green",
-                "doc_count": doc_count,
+                "doc_count": index_stats[concrete],
                 "error": None,
             }
-        except Exception as e:
-            logger.error("Index health check failed for %s: %s", idx, e)
+        else:
             health[idx] = {
                 "status": "red",
                 "doc_count": 0,
-                "error": "Index query failed. Check server logs for details.",
+                "error": "Index does not exist or is unreachable",
             }
 
     return health
