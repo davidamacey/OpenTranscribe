@@ -108,8 +108,7 @@
   }
 
   onMount(async () => {
-    await loadSettings();
-    await loadMigrationStatus();
+    await Promise.allSettled([loadSettings(), loadMigrationStatus()]);
 
     // WebSocket events provide real-time progress — no polling needed
     window.addEventListener('attribute-migration-progress', handleMigrationProgress as EventListener);

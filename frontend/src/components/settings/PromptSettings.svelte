@@ -75,19 +75,17 @@
     loading = true;
 
     try {
-      // Load all prompts
-      const promptsResponse = await PromptsApi.getPrompts({
-        include_system: true,
-        include_user: true,
-        limit: 100
-      });
+      // Load prompts and active prompt in parallel
+      const [promptsResponse, activeResponse] = await Promise.all([
+        PromptsApi.getPrompts({ include_system: true, include_user: true, limit: 100 }),
+        PromptsApi.getActivePrompt(),
+      ]);
+
       // Separate own prompts from shared prompts (shared are non-owner, non-system)
       const allLoaded = promptsResponse.prompts || [];
       allPrompts = allLoaded.filter(p => p.is_system_default || p.is_owner !== false);
       sharedPrompts = allLoaded.filter(p => !p.is_system_default && p.is_owner === false);
 
-      // Load active prompt
-      const activeResponse = await PromptsApi.getActivePrompt();
       activePrompt = activeResponse.active_prompt;
       selectedPromptId = activeResponse.active_prompt_id;
 

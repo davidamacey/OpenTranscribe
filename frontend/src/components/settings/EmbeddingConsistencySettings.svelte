@@ -75,12 +75,10 @@
 
     if (data.status === 'completed') {
       toastStore.success($t('settings.embeddingConsistency.repairComplete'));
-      loadStatus();
-      loadCounts();
+      Promise.allSettled([loadStatus(), loadCounts()]);
     } else if (data.status === 'stopped') {
       toastStore.info($t('settings.embeddingConsistency.repairStopped'));
-      loadStatus();
-      loadCounts();
+      Promise.allSettled([loadStatus(), loadCounts()]);
     } else if (data.status === 'error') {
       toastStore.error($t('settings.embeddingConsistency.repairFailed'));
     }

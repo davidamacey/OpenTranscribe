@@ -142,8 +142,7 @@
         window.dispatchEvent(new CustomEvent('consistency-status-loaded', { detail: data.consistency_status }));
       }
 
-      // Also fetch progress if migration might be running
-      await loadMigrationProgress();
+      // Progress is loaded in parallel from onMount — no need to await here
 
     } catch (err) {
       console.error('Failed to load migration status:', err);
@@ -353,7 +352,7 @@
   }
 
   onMount(() => {
-    loadMigrationStatus();
+    Promise.allSettled([loadMigrationStatus(), loadMigrationProgress()]);
 
     // Listen for WebSocket events
     window.addEventListener('migration-progress', handleMigrationProgress as EventListener);
