@@ -2432,35 +2432,18 @@
         </div>
       </div>
 
-      <div class="url-info">
-        <p class="url-description">
-          {$t('uploader.mediaUrlDescription')}
+      <div class="url-info-footer">
+        <p class="url-platforms-note">
+          {$t('uploader.urlPlatformsNote')}
         </p>
-        <p class="url-recommendation">
-          {$t('uploader.recommendedPlatforms')}
+        <p class="url-terms-notice">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 16v-4"></path>
+            <path d="M12 8h.01"></path>
+          </svg>
+          {$t('uploader.urlTermsNotice')}
         </p>
-        <details class="supported-platforms-details">
-          <summary class="supported-platforms-summary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="info-icon">
-              <circle cx="12" cy="12" r="10"></circle>
-              <path d="M12 16v-4"></path>
-              <path d="M12 8h.01"></path>
-            </svg>
-            {$t('uploader.supportedPlatforms')}
-          </summary>
-          <p class="supported-platforms-list">{$t('uploader.supportedPlatformsList')}</p>
-          <p class="platform-limitations">{$t('uploader.platformLimitations')}</p>
-        </details>
-        <div class="url-disclaimer">
-          <div class="url-disclaimer-icon" title={$t('uploader.urlDisclaimerFull')}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-              <path d="M12 9v4"/>
-              <path d="m12 17 .01 0"/>
-            </svg>
-          </div>
-          <p class="url-disclaimer-text">{$t('uploader.urlDisclaimerShort')}</p>
-        </div>
       </div>
     </div>
   {:else}
@@ -2846,97 +2829,41 @@
     color: var(--text-secondary);
   }
 
-  /* Supported platforms collapsible section */
-  .supported-platforms-details {
-    margin-top: 0.75rem;
-    text-align: center;
-  }
-
-  .supported-platforms-summary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    cursor: pointer;
-    font-size: 0.8rem;
-    color: var(--primary-color);
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    transition: background-color 0.2s ease;
-  }
-
-  .supported-platforms-summary:hover {
-    background-color: var(--hover-color);
-  }
-
-  .supported-platforms-summary .info-icon {
-    flex-shrink: 0;
-  }
-
-  .supported-platforms-list {
-    margin: 0.5rem 0 0;
+  /* URL info footer */
+  .url-info-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
     padding: 0.75rem;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    background-color: var(--surface-alt);
-    border-radius: 6px;
-    line-height: 1.5;
-    text-align: left;
-  }
-
-  :global(.dark) .supported-platforms-list {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     background-color: var(--surface-color);
   }
 
-  .url-recommendation {
-    margin: 0.5rem 0 0;
+  .url-platforms-note {
+    margin: 0;
     font-size: 0.75rem;
-    color: var(--success-color, #10b981);
-    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-secondary);
     text-align: center;
   }
 
-  .platform-limitations {
-    margin: 0.5rem 0 0;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.7rem;
-    color: var(--warning-color, #f59e0b);
-    background-color: rgba(245, 158, 11, 0.1);
-    border-radius: 4px;
-    border-left: 3px solid var(--warning-color, #f59e0b);
+  .url-terms-notice {
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    margin: 0;
+    font-size: 0.675rem;
+    line-height: 1.4;
+    color: var(--text-tertiary, var(--text-secondary));
     text-align: left;
   }
 
-  :global(.dark) .platform-limitations {
-    background-color: rgba(245, 158, 11, 0.15);
-  }
-
-  .url-disclaimer {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(245, 158, 11, 0.08);
-    border-radius: 6px;
-    border-left: 3px solid var(--warning-color, #f59e0b);
-  }
-
-  .url-disclaimer-icon {
+  .url-terms-notice svg {
     flex-shrink: 0;
-    color: var(--warning-color, #f59e0b);
-    margin-top: 1px;
-    cursor: help;
-  }
-
-  .url-disclaimer-text {
-    margin: 0;
-    font-size: 0.7rem;
-    line-height: 1.4;
-    color: var(--text-secondary);
-  }
-
-  :global(.dark) .url-disclaimer {
-    background-color: rgba(245, 158, 11, 0.12);
+    color: var(--text-tertiary, var(--text-secondary));
+    position: relative;
+    top: 1px;
   }
 
   .selected-file {
@@ -3900,19 +3827,7 @@
     cursor: not-allowed;
   }
 
-  .url-info {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1rem;
-  }
-
-  .url-description {
-    margin: 0 0 0.75rem 0;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    line-height: 1.5;
-  }
+  /* (url-info-footer styles are above, near supported-formats) */
 
   /* Dark mode adjustments for URL components */
   :global(.dark) .url-input {
@@ -3935,10 +3850,6 @@
     color: var(--primary-color);
   }
 
-  :global(.dark) .url-info {
-    background-color: var(--surface-color);
-    border-color: var(--border-color);
-  }
 
   /* Recording Tab Styles */
 
