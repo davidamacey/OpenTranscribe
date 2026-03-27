@@ -33,7 +33,8 @@ _index_verified = False
 _pipeline_verified = False
 _neural_search_available: bool | None = None
 _neural_search_check_time: float = 0.0
-_NEURAL_SEARCH_CACHE_TTL: float = 120.0  # Re-check every 2 minutes
+_NEURAL_SEARCH_CACHE_TTL: float = 120.0  # Re-check every 2 minutes (success)
+_NEURAL_SEARCH_FAILURE_TTL: float = 30.0  # Re-check every 30 seconds (failure)
 
 # Lock for module-level state mutations
 _state_lock = threading.Lock()
@@ -357,6 +358,7 @@ class SearchResponse:
     search_time_ms: float
     filters_applied: dict[str, Any] = field(default_factory=dict)
     search_mode: str = "hybrid"
+    _fell_back_to_bm25: bool = False  # Internal flag — skip caching if True
 
 
 # Module-level search cache (OrderedDict for O(1) LRU eviction)
@@ -625,17 +627,22 @@ class HybridSearchService:
             use_neural=use_neural,
         )
 
-        # Cache the response
-        _set_cached_response(cache_key, result)
+        # Cache the response — but NOT if it fell back to BM25-only due to
+        # a transient error, so the next request retries hybrid properly.
+        if not result._fell_back_to_bm25:
+            _set_cached_response(cache_key, result)
+        else:
+            logger.info("Skipping cache for BM25-fallback response (query='%s')", query)
 
         return result
 
     def _check_neural_search_available(self) -> bool:
         """Check if neural search is available in OpenSearch.
 
-        Caches the result to avoid repeated checks. The cached result expires
-        after _NEURAL_SEARCH_CACHE_TTL seconds so transient failures or
-        late model deployments are re-evaluated automatically.
+        Caches the result to avoid repeated checks. Success is cached for
+        _NEURAL_SEARCH_CACHE_TTL (120s); failure is cached for the shorter
+        _NEURAL_SEARCH_FAILURE_TTL (30s) so the system recovers quickly
+        from transient errors.
 
         Returns:
             True if neural search is available and a model is deployed.
@@ -644,7 +651,10 @@ class HybridSearchService:
         global _neural_search_check_time
 
         if _neural_search_available is not None:
-            if time.time() - _neural_search_check_time < _NEURAL_SEARCH_CACHE_TTL:
+            ttl = (
+                _NEURAL_SEARCH_CACHE_TTL if _neural_search_available else _NEURAL_SEARCH_FAILURE_TTL
+            )
+            if time.time() - _neural_search_check_time < ttl:
                 return _neural_search_available
             # TTL expired — reset to force re-check
             _neural_search_available = None
@@ -652,7 +662,12 @@ class HybridSearchService:
         with _state_lock:
             # Double-check after acquiring lock
             if _neural_search_available is not None:
-                if time.time() - _neural_search_check_time < _NEURAL_SEARCH_CACHE_TTL:
+                ttl = (
+                    _NEURAL_SEARCH_CACHE_TTL
+                    if _neural_search_available
+                    else _NEURAL_SEARCH_FAILURE_TTL
+                )
+                if time.time() - _neural_search_check_time < ttl:
                     return _neural_search_available
                 _neural_search_available = None
 
@@ -1254,6 +1269,12 @@ class HybridSearchService:
 
         if use_neural and query and query.strip():
             model_id = self._get_neural_model_id()
+            if not model_id:
+                logger.warning(
+                    "Neural model_id lookup returned None during query construction; "
+                    "falling through to BM25-only for query='%s'",
+                    query,
+                )
             if model_id:
                 body: dict[str, Any] = {
                     "size": 0,  # Placeholder — set by _apply_sort_clause
@@ -2278,6 +2299,7 @@ class HybridSearchService:
         # Execute with search pipeline if using hybrid
         t_opensearch = time.time()
         response: dict[str, Any] | None = None
+        fell_back_to_bm25 = False
         try:
             if not client:
                 return self._empty_response(query, page, page_size)
@@ -2291,26 +2313,39 @@ class HybridSearchService:
             )
         except Exception as e:
             if use_neural:
-                # Hybrid search failed — fall back to BM25-only so users
-                # still get results instead of an empty page.
-                logger.warning(f"Hybrid search failed, falling back to BM25: {e}")
+                # Retry once before falling back — transient errors are common
+                logger.warning(f"Hybrid search failed (attempt 1), retrying: {e}")
                 try:
-                    fallback_body = self._build_collapsed_bm25_body(
-                        search_query,
-                        filters,
-                        page,
-                        page_size,
-                        has_speaker_filter,
-                        sort_by=sort_by,
-                        sort_order=sort_order,
-                    )
                     response = client.search(
                         index=settings.OPENSEARCH_CHUNKS_INDEX,
-                        body=fallback_body,
+                        body=search_body,
+                        params=search_params,
                     )
-                except Exception as e2:
-                    logger.error(f"BM25 fallback also failed: {e2}")
-                    return self._empty_response(query, page, page_size)
+                except Exception:
+                    # Retry failed — fall back to BM25-only so users
+                    # still get results instead of an empty page.
+                    logger.warning(
+                        "Hybrid search retry failed, falling back to BM25 for query='%s'",
+                        query,
+                    )
+                    fell_back_to_bm25 = True
+                    try:
+                        fallback_body = self._build_collapsed_bm25_body(
+                            search_query,
+                            filters,
+                            page,
+                            page_size,
+                            has_speaker_filter,
+                            sort_by=sort_by,
+                            sort_order=sort_order,
+                        )
+                        response = client.search(
+                            index=settings.OPENSEARCH_CHUNKS_INDEX,
+                            body=fallback_body,
+                        )
+                    except Exception as e3:
+                        logger.error(f"BM25 fallback also failed: {e3}")
+                        return self._empty_response(query, page, page_size)
             else:
                 logger.error(f"Collapsed search failed: {e}")
                 return self._empty_response(query, page, page_size)
@@ -2366,6 +2401,9 @@ class HybridSearchService:
             f"process={process_ms}ms highlighting={highlight_ms}ms sort={sort_ms}ms "
             f"total={total_ms}ms files={len(grouped)} query='{query}'"
         )
+
+        if fell_back_to_bm25:
+            result._fell_back_to_bm25 = True
 
         return result
 
