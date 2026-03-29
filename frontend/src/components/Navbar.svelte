@@ -27,7 +27,7 @@
   // Import i18n
   import { t } from '../stores/locale';
   import { getFlowerUrl } from '$lib/utils/url';
-  import { prefetchSpeakersData } from '$lib/prefetch';
+  import { prefetchSpeakersData, prefetchFileStatusData } from '$lib/prefetch';
 
   // Gallery state detection based on location
   $: isGalleryPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '';
@@ -296,6 +296,7 @@
         <button
           class="tab-button {$galleryState.activeTab === 'status' ? 'active' : ''}"
           on:click={() => handleTabChange('status')}
+          on:mouseenter={prefetchFileStatusData}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
