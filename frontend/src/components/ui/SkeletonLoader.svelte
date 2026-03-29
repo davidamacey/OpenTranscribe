@@ -38,6 +38,17 @@
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 
+  :global(.dark) .skeleton-line,
+  :global([data-theme='dark']) .skeleton-line {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.06) 25%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.06) 75%
+    );
+    background-size: 200% 100%;
+  }
+
   @keyframes skeleton-pulse {
     0% {
       background-position: 200% 0;
