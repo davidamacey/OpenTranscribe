@@ -661,9 +661,13 @@ def debug_cross_media_data(
             "opensearch_profiles": [],
         }
 
-        # Get all media files for this user
-        media_files = db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
-        for mf in media_files:
+        # Get all media files for this user (project only needed fields)
+        media_rows = (
+            db.query(MediaFile.id, MediaFile.filename, MediaFile.title, MediaFile.status)
+            .filter(MediaFile.user_id == current_user.id)
+            .all()
+        )
+        for mf in media_rows:
             debug_info["media_files"].append(
                 {
                     "id": mf.id,
@@ -673,25 +677,34 @@ def debug_cross_media_data(
                 }
             )
 
-        # Get all speakers for this user
-        speakers = (
-            db.query(Speaker)
+        # Get all speakers for this user (project only needed fields)
+        speaker_rows = (
+            db.query(
+                Speaker.id,
+                Speaker.name,
+                Speaker.display_name,
+                Speaker.profile_id,
+                Speaker.media_file_id,
+                Speaker.verified,
+                Speaker.confidence,
+            )
             .filter(Speaker.user_id == current_user.id)
             .order_by(Speaker.media_file_id, Speaker.id)
             .all()
         )
 
-        for speaker in speakers:
-            speaker_data: dict[str, Any] = {
-                "id": speaker.id,
-                "name": speaker.name,
-                "display_name": speaker.display_name,
-                "profile_id": speaker.profile_id,
-                "media_file_id": speaker.media_file_id,
-                "verified": speaker.verified,
-                "confidence": speaker.confidence,
-            }
-            debug_info["speakers"].append(speaker_data)
+        for s in speaker_rows:
+            debug_info["speakers"].append(
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "display_name": s.display_name,
+                    "profile_id": s.profile_id,
+                    "media_file_id": s.media_file_id,
+                    "verified": s.verified,
+                    "confidence": s.confidence,
+                }
+            )
 
         # Get all speaker profiles
         profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id).all()
@@ -1367,9 +1380,9 @@ def _get_media_file_uuid(speaker: Speaker, db: Session) -> str | None:
         return str(speaker.media_file.uuid)
 
     if speaker.media_file_id:
-        media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
-        if media_file:
-            return str(media_file.uuid)
+        row = db.query(MediaFile.uuid).filter(MediaFile.id == speaker.media_file_id).first()
+        if row:
+            return str(row[0])
 
     return None
 

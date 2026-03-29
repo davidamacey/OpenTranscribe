@@ -42,11 +42,14 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         for segment in existing_segments:
             db.delete(segment)
 
-        # Clear any existing speaker data
-        existing_speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
-        speaker_uuids_to_clean = [str(s.uuid) for s in existing_speakers]
-        for speaker in existing_speakers:
-            db.delete(speaker)
+        # Clear any existing speaker data (extract UUIDs first, then bulk delete)
+        speaker_uuids_to_clean = [
+            str(r[0])
+            for r in db.query(Speaker.uuid).filter(Speaker.media_file_id == media_file.id).all()
+        ]
+        db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
+            synchronize_session=False
+        )
 
         # Clear any existing analytics data
         existing_analytics = (
@@ -144,12 +147,13 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
                 TranscriptSegment.media_file_id == media_file.id
             ).update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
 
-            existing_speakers = (
-                db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
+            speaker_uuids_to_clean = [
+                str(r[0])
+                for r in db.query(Speaker.uuid).filter(Speaker.media_file_id == media_file.id).all()
+            ]
+            db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
+                synchronize_session=False
             )
-            speaker_uuids_to_clean = [str(s.uuid) for s in existing_speakers]
-            for speaker in existing_speakers:
-                db.delete(speaker)
             # Remove deleted speakers from OpenSearch (non-fatal)
             if speaker_uuids_to_clean:
                 try:

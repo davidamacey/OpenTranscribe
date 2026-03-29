@@ -429,28 +429,30 @@ async def retry_failed_files(
     try:
         from app.tasks.embedding_migration_v4 import _count_embeddable_speakers_per_file
 
-        # Compute truly-missing files from ground truth
-        completed_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.COMPLETED).all()
+        # Compute truly-missing files from ground truth (project only id + uuid)
+        completed_rows = (
+            db.query(MediaFile.id, MediaFile.uuid)
+            .filter(MediaFile.status == FileStatus.COMPLETED)
+            .all()
+        )
         already_migrated = _get_already_migrated_file_ids()
 
         # Only retry files that have embeddable speakers (>= 0.5s segments)
-        embeddable_counts = _count_embeddable_speakers_per_file(
-            [int(f.id) for f in completed_files]
-        )
+        embeddable_counts = _count_embeddable_speakers_per_file([int(f.id) for f in completed_rows])
 
-        missing_files = [
+        missing_rows = [
             f
-            for f in completed_files
+            for f in completed_rows
             if f.id not in already_migrated and embeddable_counts.get(int(f.id), 0) > 0
         ]
-        if not missing_files:
+        if not missing_rows:
             return {
                 "status": "skipped",
                 "message": "No files need retry — all completed files have been migrated",
             }
 
-        total_retry = len(missing_files)
-        file_uuids = [str(f.uuid) for f in missing_files]
+        total_retry = len(missing_rows)
+        file_uuids = [str(f.uuid) for f in missing_rows]
 
         migration_progress.start_migration(total_files=total_retry)
 

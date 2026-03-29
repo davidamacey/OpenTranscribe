@@ -222,34 +222,39 @@ async def task_system_health(
         # Identify inconsistent media files
         inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
 
-        # Count actual tasks by status
+        # Count tasks by status in a single query (replaces 5 separate queries)
+        from sqlalchemy import case
+        from sqlalchemy import func
+
+        task_row = db.query(
+            func.count(TaskModel.id).label("total"),
+            func.count(case((TaskModel.status == TASK_STATUS_PENDING, 1))).label("pending"),
+            func.count(case((TaskModel.status == TASK_STATUS_IN_PROGRESS, 1))).label("in_progress"),
+            func.count(case((TaskModel.status == TASK_STATUS_COMPLETED, 1))).label("completed"),
+            func.count(case((TaskModel.status == TASK_STATUS_FAILED, 1))).label("failed"),
+        ).one()
         task_counts = {
-            TASK_STATUS_PENDING: db.query(TaskModel)
-            .filter(TaskModel.status == TASK_STATUS_PENDING)
-            .count(),
-            TASK_STATUS_IN_PROGRESS: db.query(TaskModel)
-            .filter(TaskModel.status == TASK_STATUS_IN_PROGRESS)
-            .count(),
-            TASK_STATUS_COMPLETED: db.query(TaskModel)
-            .filter(TaskModel.status == TASK_STATUS_COMPLETED)
-            .count(),
-            TASK_STATUS_FAILED: db.query(TaskModel)
-            .filter(TaskModel.status == TASK_STATUS_FAILED)
-            .count(),
-            "total": db.query(TaskModel).count(),
+            TASK_STATUS_PENDING: task_row.pending,
+            TASK_STATUS_IN_PROGRESS: task_row.in_progress,
+            TASK_STATUS_COMPLETED: task_row.completed,
+            TASK_STATUS_FAILED: task_row.failed,
+            "total": task_row.total,
         }
 
-        # Count media files by status
+        # Count files by status in a single query (replaces 5 separate queries)
+        file_row = db.query(
+            func.count(MediaFile.id).label("total"),
+            func.count(case((MediaFile.status == FileStatus.PENDING, 1))).label("pending"),
+            func.count(case((MediaFile.status == FileStatus.PROCESSING, 1))).label("processing"),
+            func.count(case((MediaFile.status == FileStatus.COMPLETED, 1))).label("completed"),
+            func.count(case((MediaFile.status == FileStatus.ERROR, 1))).label("error"),
+        ).one()
         file_counts = {
-            "pending": db.query(MediaFile).filter(MediaFile.status == FileStatus.PENDING).count(),
-            "processing": db.query(MediaFile)
-            .filter(MediaFile.status == FileStatus.PROCESSING)
-            .count(),
-            "completed": db.query(MediaFile)
-            .filter(MediaFile.status == FileStatus.COMPLETED)
-            .count(),
-            "error": db.query(MediaFile).filter(MediaFile.status == FileStatus.ERROR).count(),
-            "total": db.query(MediaFile).count(),
+            "pending": file_row.pending,
+            "processing": file_row.processing,
+            "completed": file_row.completed,
+            "error": file_row.error,
+            "total": file_row.total,
         }
 
         # Format stuck tasks for response

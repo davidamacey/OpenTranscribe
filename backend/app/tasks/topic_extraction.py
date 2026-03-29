@@ -173,16 +173,18 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                         from app.models.media import MediaFile
                         from app.models.topic import TopicSuggestion
 
-                        batch_files = (
-                            db.query(MediaFile).filter(MediaFile.upload_batch_id == batch.id).all()
+                        batch_file_id_rows = (
+                            db.query(MediaFile.id)
+                            .filter(MediaFile.upload_batch_id == batch.id)
+                            .all()
                         )
-                        batch_file_ids = [bf.id for bf in batch_files]
+                        batch_file_ids = [r[0] for r in batch_file_id_rows]
                         completed_count = (
                             db.query(TopicSuggestion)
                             .filter(TopicSuggestion.media_file_id.in_(batch_file_ids))
                             .count()
                         )
-                        if completed_count >= len(batch_files) and len(batch_files) >= 2:
+                        if completed_count >= len(batch_file_ids) and len(batch_file_ids) >= 2:
                             # Atomic compare-and-swap to prevent duplicate dispatches
                             rows_updated = (
                                 db.query(UploadBatch)

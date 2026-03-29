@@ -37,9 +37,12 @@ def export_baseline(db, file_id: int, output_path: str) -> dict:
         .order_by(TranscriptSegment.start_time)
         .all()
     )
-    speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
-
-    speaker_map = {speaker.id: speaker.name for speaker in speakers}
+    speakers = (
+        db.query(Speaker.id, Speaker.name, Speaker.display_name)
+        .filter(Speaker.media_file_id == file_id)
+        .all()
+    )
+    speaker_map = {s.id: s.name for s in speakers}
 
     baseline = {
         "file_id": file_id,
