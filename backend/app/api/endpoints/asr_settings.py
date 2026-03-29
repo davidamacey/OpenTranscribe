@@ -380,6 +380,21 @@ def get_asr_status(
 
     from app.services.asr.factory import ASRProviderFactory
 
+    # Inline capability lookup using already-resolved active_config
+    # (avoids 2 duplicate DB queries that get_active_model_capabilities would make)
+    if active_config:
+        provider_id = str(active_config.provider or "local")
+        model_id = str(active_config.model_name or "")
+        caps = ASRProviderFactory.get_model_capabilities(provider_id, model_id)
+        model_capabilities = {"provider": provider_id, "model_id": model_id, **caps}
+    elif asr_provider != "local":
+        caps = ASRProviderFactory.get_model_capabilities(asr_provider, "")
+        model_capabilities = {"provider": asr_provider, "model_id": "", **caps}
+    else:
+        whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
+        caps = ASRProviderFactory.get_model_capabilities("local", whisper_model)
+        model_capabilities = {"provider": "local", "model_id": whisper_model, **caps}
+
     return {
         "has_settings": has_settings,
         "active_config": _config_to_dict(active_config) if active_config else None,
@@ -390,9 +405,7 @@ def get_asr_status(
         "active_model": active_model,
         "active_config_uuid": active_config_uuid_str,
         "is_cloud_provider": is_cloud_provider,
-        "active_model_capabilities": ASRProviderFactory.get_active_model_capabilities(
-            current_user.id, db
-        ),
+        "active_model_capabilities": model_capabilities,
     }
 
 
