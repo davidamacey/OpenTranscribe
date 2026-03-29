@@ -1452,7 +1452,12 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
 
             logger.info(f"Health check using models endpoint: {models_url}")
 
-            response = self.session.get(models_url, headers=headers, timeout=10)
+            # Use a short timeout with no retries for health checks — this must
+            # not block a sync thread for 30+ seconds if the LLM server is down.
+            # Create a one-off session without the retry adapter.
+            import requests as _requests
+
+            response = _requests.get(models_url, headers=headers, timeout=3)
             logger.info(f"Health check response status: {response.status_code}")
 
             if response.status_code == 200:
@@ -1747,31 +1752,27 @@ class LLMServiceContext:
 
 # Utility function for quick LLM availability check
 async def is_llm_available(user_id: Optional[int] = None) -> bool:
-    """
-    Quick check to see if any LLM provider is available
+    """Quick check to see if any LLM provider is available.
 
-    Args:
-        user_id: Optional user ID to check user-specific LLM settings
-
-    Returns:
-        True if at least one LLM provider is available, False otherwise
+    Runs the blocking health check in a thread to avoid blocking the
+    async event loop. Uses a 3-second timeout to fail fast when the
+    LLM server is unreachable.
     """
-    try:
-        logger.info(f"Checking LLM availability for user {user_id}")
-        # First check if we can even create an LLM service
-        llm_service = LLMService.create_from_settings(user_id=user_id)
-        if llm_service is None:
-            logger.info("No LLM service configured")
+    import asyncio
+
+    def _check() -> bool:
+        try:
+            llm_service = LLMService.create_from_settings(user_id=user_id)
+            if llm_service is None:
+                return False
+            health_ok = llm_service.health_check()
+            llm_service.close()
+            return health_ok
+        except Exception as e:
+            logger.error(f"LLM availability check failed: {e}")
             return False
 
-        logger.info(
-            f"LLM service created successfully: {llm_service.config.provider}/{llm_service.config.model}"
-        )
-        # Then check if it's actually working
-        health_ok = llm_service.health_check()
-        logger.info(f"Health check result: {health_ok}")
-        llm_service.close()
-        return health_ok
-    except Exception as e:
-        logger.error(f"LLM availability check failed: {e}", exc_info=True)
+    try:
+        return await asyncio.to_thread(_check)
+    except Exception:
         return False
