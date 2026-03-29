@@ -58,15 +58,20 @@ sudo ufw status verbose
 
 ### More Restrictive Option (Docker Network Only)
 
-For tighter security, only allow connections from Docker's network:
+For tighter security, only allow connections from Docker's network. Use `172.16.0.0/12` to cover all Docker bridge subnets (Docker creates different subnets per compose project, e.g., `172.17.x.x`, `172.19.x.x`, `172.21.x.x`):
 
 ```bash
 # Allow vLLM only from Docker containers
-sudo ufw allow from 172.17.0.0/16 to any port 8000 proto tcp comment 'vLLM from Docker'
+sudo ufw allow from 172.16.0.0/12 to any port 8000 proto tcp comment 'vLLM from Docker'
+
+# If using a non-default port
+sudo ufw allow from 172.16.0.0/12 to any port 8012 proto tcp comment 'vLLM from Docker'
 
 # Allow Ollama only from Docker containers
-sudo ufw allow from 172.17.0.0/16 to any port 11434 proto tcp comment 'Ollama from Docker'
+sudo ufw allow from 172.16.0.0/12 to any port 11434 proto tcp comment 'Ollama from Docker'
 ```
+
+> **Why not `172.17.0.0/16`?** Docker Compose assigns each project a unique bridge subnet (172.17.x.x, 172.18.x.x, etc.). Using only `172.17.0.0/16` will miss containers on other subnets. The `172.16.0.0/12` range covers all private Docker networks and is not routable from the internet.
 
 ## Solution 2: Use Host IP Address
 
@@ -89,14 +94,14 @@ Docker's bridge network gateway IP (`172.17.0.1`) can reach the host:
 - vLLM: `http://172.17.0.1:8000/v1`
 - Ollama: `http://172.17.0.1:11434`
 
-## Solution 4: Use host.docker.internal (macOS/Windows)
+## Solution 4: Use host.docker.internal (All Platforms)
 
-On Docker Desktop (macOS and Windows), use the special hostname:
+Use the special hostname `host.docker.internal` to reach the host machine:
 
 - vLLM: `http://host.docker.internal:8000/v1`
 - Ollama: `http://host.docker.internal:11434`
 
-Note: This may also work on Linux with Docker Desktop, but not with native Docker Engine.
+On **Docker Desktop** (macOS/Windows) this works out of the box. On **Linux with Docker Engine**, you need the `extra_hosts` configuration from Solution 5 below to enable it.
 
 ## Solution 5: Add extra_hosts to Docker Compose (Advanced)
 
