@@ -268,7 +268,9 @@ class SpeakerMatchingService:
                 f"OpenSearch response for speaker {exclude_speaker_id}: {len(response['hits']['hits'])} hits"
             )
 
-            # Process each match and get speaker details
+            # Collect candidate IDs from hits, then batch-fetch
+            candidate_ids: set[int] = set()
+            candidate_scores: dict[int, float] = {}
             for hit in response["hits"]["hits"]:
                 confidence = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
                 if (
@@ -280,22 +282,32 @@ class SpeakerMatchingService:
                     if not match_speaker_id:
                         continue
 
-                    # Get the matched speaker details
-                    matched_speaker = (
-                        self.db.query(Speaker).filter(Speaker.id == match_speaker_id).first()
-                    )
+                    candidate_ids.add(match_speaker_id)
+                    candidate_scores[match_speaker_id] = confidence
 
-                    if matched_speaker and matched_speaker.media_file:
+            # Batch-fetch all candidate speakers (avoids N+1 per-hit queries)
+            if candidate_ids:
+                from sqlalchemy.orm import joinedload
+
+                candidates = (
+                    self.db.query(Speaker)
+                    .options(joinedload(Speaker.media_file))
+                    .filter(Speaker.id.in_(candidate_ids))
+                    .all()
+                )
+                for matched_speaker in candidates:
+                    if matched_speaker.media_file:
+                        conf = candidate_scores[int(matched_speaker.id)]
                         matches.append(
                             {
-                                "speaker_id": match_speaker_id,
+                                "speaker_id": int(matched_speaker.id),
                                 "speaker_name": matched_speaker.name,
                                 "display_name": matched_speaker.display_name,
                                 "media_file_id": matched_speaker.media_file_id,
                                 "media_file_title": matched_speaker.media_file.title
                                 or matched_speaker.media_file.filename,
-                                "confidence": confidence,
-                                "confidence_level": self.get_confidence_level(confidence),
+                                "confidence": conf,
+                                "confidence_level": self.get_confidence_level(conf),
                                 "verified": matched_speaker.verified,
                                 "is_cross_video_suggestion": True,
                             }
@@ -925,24 +937,30 @@ class SpeakerMatchingService:
                 exclude_ids=[matched_speaker_id],
             )
 
+            # Batch-fetch all candidate speakers (avoids N+1 per-match queries)
+            match_by_id = {
+                m["speaker_id"]: m["similarity"] for m in similar_matches if m.get("speaker_id")
+            }
+            candidate_speakers = (
+                self.db.query(Speaker).filter(Speaker.id.in_(match_by_id.keys())).all()
+                if match_by_id
+                else []
+            )
+
             updated_speakers = []
-            for match in similar_matches:
-                speaker_id = match.get("speaker_id")
-                if not speaker_id:
+            for speaker in candidate_speakers:
+                if not self._should_propagate_to_speaker(speaker):
                     continue
 
-                speaker = self.db.query(Speaker).filter(Speaker.id == speaker_id).first()
-                if not speaker or not self._should_propagate_to_speaker(speaker):
-                    continue
-
+                similarity = match_by_id[int(speaker.id)]
                 speaker.profile_id = profile_id  # type: ignore[assignment]
                 speaker.verified = True  # type: ignore[assignment]
-                speaker.confidence = match["similarity"]
+                speaker.confidence = similarity
                 updated_speakers.append(speaker)
 
                 logger.info(
-                    f"Propagated profile {profile_id} to similar speaker {speaker_id} "
-                    f"(confidence: {match['similarity']:.3f})"
+                    f"Propagated profile {profile_id} to similar speaker {speaker.id} "
+                    f"(confidence: {similarity:.3f})"
                 )
 
             if not updated_speakers:
@@ -1096,13 +1114,17 @@ class SpeakerMatchingService:
         Returns:
             True if match was created successfully
         """
-        speaker1_exists = self.db.query(Speaker).filter(Speaker.id == speaker1_id).first()
-        speaker2_exists = self.db.query(Speaker).filter(Speaker.id == speaker2_id).first()
-
-        if not speaker1_exists or not speaker2_exists:
+        existing_ids = {
+            r[0]
+            for r in self.db.query(Speaker.id)
+            .filter(Speaker.id.in_([speaker1_id, speaker2_id]))
+            .all()
+        }
+        if speaker1_id not in existing_ids or speaker2_id not in existing_ids:
             logger.debug(
                 f"Skipping speaker match - speaker1_id {speaker1_id} exists: "
-                f"{bool(speaker1_exists)}, speaker2_id {speaker2_id} exists: {bool(speaker2_exists)}"
+                f"{speaker1_id in existing_ids}, speaker2_id {speaker2_id} exists: "
+                f"{speaker2_id in existing_ids}"
             )
             return False
 
@@ -1284,33 +1306,41 @@ class SpeakerMatchingService:
                 .all()
             )
 
+            # Collect matched IDs and batch-fetch (avoids N+1 per-match queries)
+            match_map: dict[int, float] = {}
             for match in speaker_matches:
-                # Determine which speaker is the match
                 matched_speaker_id = (
                     match.speaker2_id if match.speaker1_id == speaker_id else match.speaker1_id
                 )
+                conf = float(match.confidence)
+                if conf >= ConfidenceLevel.HIGH:
+                    match_map[int(matched_speaker_id)] = conf
 
-                # Get the matched speaker details
-                matched_speaker = (
-                    self.db.query(Speaker).filter(Speaker.id == matched_speaker_id).first()
+            if match_map:
+                from sqlalchemy.orm import joinedload
+
+                matched_speakers = (
+                    self.db.query(Speaker)
+                    .options(joinedload(Speaker.media_file))
+                    .filter(Speaker.id.in_(match_map.keys()))
+                    .all()
                 )
-
-                if (
-                    matched_speaker and float(match.confidence) >= ConfidenceLevel.HIGH
-                ):  # Only include high-confidence matches (≥75%)
-                    matches.append(
-                        {
-                            "speaker_id": matched_speaker.id,
-                            "speaker_name": matched_speaker.name,
-                            "display_name": matched_speaker.display_name,
-                            "media_file_id": matched_speaker.media_file_id,
-                            "media_file_title": matched_speaker.media_file.title
-                            or matched_speaker.media_file.filename,
-                            "confidence": float(match.confidence),
-                            "confidence_level": self.get_confidence_level(float(match.confidence)),
-                            "verified": matched_speaker.verified,
-                        }
-                    )
+                for matched_speaker in matched_speakers:
+                    if matched_speaker.media_file:
+                        conf = match_map[int(matched_speaker.id)]
+                        matches.append(
+                            {
+                                "speaker_id": matched_speaker.id,
+                                "speaker_name": matched_speaker.name,
+                                "display_name": matched_speaker.display_name,
+                                "media_file_id": matched_speaker.media_file_id,
+                                "media_file_title": matched_speaker.media_file.title
+                                or matched_speaker.media_file.filename,
+                                "confidence": conf,
+                                "confidence_level": self.get_confidence_level(conf),
+                                "verified": matched_speaker.verified,
+                            }
+                        )
 
             # Sort by confidence (highest first)
             matches.sort(key=lambda x: x["confidence"], reverse=True)

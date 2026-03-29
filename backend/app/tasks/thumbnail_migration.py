@@ -51,8 +51,16 @@ def migrate_thumbnails_to_webp(self, batch_size: int = 20) -> dict:
             # 1. Have JPEG thumbnails (.jpg extension)
             # 2. Were directly uploaded (source_url is NULL)
             # 3. Have completed processing
+            from sqlalchemy.orm import defer
+
             files_to_migrate = (
                 db.query(MediaFile)
+                .options(
+                    defer(MediaFile.summary_data),
+                    defer(MediaFile.metadata_raw),
+                    defer(MediaFile.waveform_data),
+                    defer(MediaFile.transcript_text),
+                )
                 .filter(
                     MediaFile.thumbnail_path.like("%.jpg"),
                     MediaFile.source_url.is_(None),  # Skip YouTube/URL downloads

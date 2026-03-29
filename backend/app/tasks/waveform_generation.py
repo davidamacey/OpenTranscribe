@@ -35,9 +35,9 @@ def generate_waveform_data_task(self, file_uuid: str | None = None, skip_existin
 
     try:
         with session_scope() as db:
-            # Get files to process
+            # Get files to process (project only needed columns to avoid loading JSONB)
             query = (
-                db.query(MediaFile)
+                db.query(MediaFile.id, MediaFile.storage_path, MediaFile.filename)
                 .filter(MediaFile.status == FileStatus.COMPLETED)
                 .filter(
                     MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%")
@@ -45,7 +45,6 @@ def generate_waveform_data_task(self, file_uuid: str | None = None, skip_existin
             )
 
             if file_uuid:
-                # Get the file by UUID to filter by internal ID
                 file = get_file_by_uuid(db, file_uuid)
                 query = query.filter(MediaFile.id == file.id)
 

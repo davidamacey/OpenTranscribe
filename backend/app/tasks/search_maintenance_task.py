@@ -168,7 +168,7 @@ def _run_search_maintenance() -> dict[str, Any]:
                 select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
             )
             completed_files = (
-                db.query(MediaFile)
+                db.query(MediaFile.uuid, MediaFile.user_id)
                 .filter(MediaFile.status == FileStatus.COMPLETED, has_segments)
                 .all()
             )

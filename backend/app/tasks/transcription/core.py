@@ -606,13 +606,27 @@ def _store_native_centroids_in_v4_staging(
 
     # Phase 1: Store per-speaker centroids
     with session_scope() as db:
+        # Batch-fetch all speakers for this file (avoids N+1 per-label queries)
+        from sqlalchemy.orm import joinedload
+
+        needed_ids = [v for v in speaker_mapping.values() if v is not None]
+        speakers_batch = (
+            db.query(Speaker)
+            .options(joinedload(Speaker.profile))
+            .filter(Speaker.id.in_(needed_ids))
+            .all()
+            if needed_ids
+            else []
+        )
+        speaker_by_id = {int(s.id): s for s in speakers_batch}
+
         for label, embedding in native_embeddings.items():
             db_id = speaker_mapping.get(label)
             if db_id is None:
                 continue
 
             try:
-                speaker = db.query(Speaker).filter(Speaker.id == db_id).first()
+                speaker = speaker_by_id.get(db_id)
                 if not speaker:
                     logger.warning(f"v4 staging: Speaker ID {db_id} not found in DB")
                     continue

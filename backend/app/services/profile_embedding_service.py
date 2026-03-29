@@ -61,13 +61,15 @@ def _store_profile_embedding_to_opensearch(
 
 
 def _collect_speaker_embeddings(speakers: list[Speaker]) -> dict[int, list[float]]:
-    """Collect embeddings for all speakers, keyed by speaker ID."""
-    speaker_embeddings: dict[int, list[float]] = {}
-    for speaker in speakers:
-        embedding = get_speaker_embedding(str(speaker.uuid))
-        if embedding:
-            speaker_embeddings[int(speaker.id)] = embedding
-    return speaker_embeddings
+    """Collect embeddings for all speakers, keyed by speaker ID.
+
+    Uses batch fetch to avoid N+1 OpenSearch calls per speaker.
+    """
+    from app.services.opensearch_service import get_speaker_embeddings_batch
+
+    uuid_to_id = {str(s.uuid): int(s.id) for s in speakers}
+    batch_result = get_speaker_embeddings_batch(list(uuid_to_id.keys()))
+    return {uuid_to_id[uuid]: emb for uuid, emb in batch_result.items() if uuid in uuid_to_id}
 
 
 def _calculate_average_embedding(embeddings: list[list[float]]) -> list[float]:

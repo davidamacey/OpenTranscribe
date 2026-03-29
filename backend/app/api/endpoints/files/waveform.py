@@ -464,30 +464,30 @@ def get_waveform_status(
         )
 
     try:
+        # Get all counts in a single query (replaces 3 separate queries)
+        from sqlalchemy import func
+
         from app.models.media import FileStatus
 
-        # Get counts for audio/video files
-        total_media_files = (
-            db.query(MediaFile)
-            .filter(MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%"))
-            .count()
+        is_media = MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%")
+        counts = (
+            db.query(
+                func.count().label("total"),
+                func.count().filter(MediaFile.status == FileStatus.COMPLETED).label("completed"),
+                func.count()
+                .filter(
+                    MediaFile.status == FileStatus.COMPLETED,
+                    MediaFile.waveform_data.isnot(None),
+                )
+                .label("with_waveforms"),
+            )
+            .filter(is_media)
+            .one()
         )
 
-        completed_media_files = (
-            db.query(MediaFile)
-            .filter(MediaFile.status == FileStatus.COMPLETED)
-            .filter(MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%"))
-            .count()
-        )
-
-        files_with_waveforms = (
-            db.query(MediaFile)
-            .filter(MediaFile.status == FileStatus.COMPLETED)
-            .filter(MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%"))
-            .filter(MediaFile.waveform_data.isnot(None))
-            .count()
-        )
-
+        total_media_files = counts.total
+        completed_media_files = counts.completed
+        files_with_waveforms = counts.with_waveforms
         files_without_waveforms = completed_media_files - files_with_waveforms
 
         return {

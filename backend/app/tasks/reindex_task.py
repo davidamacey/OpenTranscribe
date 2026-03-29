@@ -614,8 +614,18 @@ def reindex_batch_task(
         batch_ids = file_ids[batch_start : batch_start + page_size]
 
         with session_scope() as db:
+            from sqlalchemy.orm import defer
+
             page_files = (
-                db.query(MediaFile).filter(MediaFile.id.in_(batch_ids)).order_by(MediaFile.id).all()
+                db.query(MediaFile)
+                .options(
+                    defer(MediaFile.summary_data),
+                    defer(MediaFile.metadata_raw),
+                    defer(MediaFile.waveform_data),
+                )
+                .filter(MediaFile.id.in_(batch_ids))
+                .order_by(MediaFile.id)
+                .all()
             )
 
             for media_file in page_files:

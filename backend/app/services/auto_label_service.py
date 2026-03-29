@@ -333,17 +333,22 @@ class AutoLabelService:
         if not batch:
             return {"collections_created": 0, "files_grouped": 0}
 
-        # Get all files in batch with their suggestions
+        # Get all files in batch with their suggestions (batch-fetch, no N+1)
         batch_files = self.db.query(MediaFile).filter(MediaFile.upload_batch_id == batch_id).all()
+        batch_file_ids = [mf.id for mf in batch_files]
+        suggestions_batch = (
+            self.db.query(TopicSuggestion)
+            .filter(TopicSuggestion.media_file_id.in_(batch_file_ids))
+            .all()
+            if batch_file_ids
+            else []
+        )
+        suggestion_by_file = {s.media_file_id: s for s in suggestions_batch}
 
         # Collect tag->files mapping
         tag_files: dict[str, list[MediaFile]] = {}
         for mf in batch_files:
-            suggestion = (
-                self.db.query(TopicSuggestion)
-                .filter(TopicSuggestion.media_file_id == mf.id)
-                .first()
-            )
+            suggestion = suggestion_by_file.get(mf.id)
             if not suggestion or not suggestion.suggested_tags:
                 continue
             for tag_data in suggestion.suggested_tags:

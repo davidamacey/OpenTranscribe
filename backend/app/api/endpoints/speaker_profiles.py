@@ -777,15 +777,25 @@ def list_speaker_collections(
             db.query(SpeakerCollection).filter(SpeakerCollection.user_id == current_user.id).all()
         )
 
+        # Batch-fetch member counts (avoids N+1 per-collection queries)
+        from sqlalchemy import func as sa_func
+
+        collection_ids = [c.id for c in collections]
+        count_rows = (
+            db.query(
+                SpeakerCollectionMember.collection_id,
+                sa_func.count().label("cnt"),
+            )
+            .filter(SpeakerCollectionMember.collection_id.in_(collection_ids))
+            .group_by(SpeakerCollectionMember.collection_id)
+            .all()
+            if collection_ids
+            else []
+        )
+        member_counts = {r.collection_id: r.cnt for r in count_rows}
+
         result = []
         for collection in collections:
-            # Count members
-            member_count = (
-                db.query(SpeakerCollectionMember)
-                .filter(SpeakerCollectionMember.collection_id == collection.id)
-                .count()
-            )
-
             result.append(
                 {
                     "uuid": str(collection.uuid),
@@ -794,7 +804,7 @@ def list_speaker_collections(
                     "is_public": collection.is_public,
                     "created_at": collection.created_at.isoformat(),
                     "updated_at": collection.updated_at.isoformat(),
-                    "member_count": member_count,
+                    "member_count": member_counts.get(collection.id, 0),
                 }
             )
 

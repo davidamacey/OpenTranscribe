@@ -398,24 +398,30 @@ class TaskDetectionService:
         boot_time = _get_container_boot_time()
         stuck_files = []
 
-        for media_file in downloading_files:
-            # Check for active download tasks
-            active_tasks = (
-                db.query(Task)
-                .filter(
-                    Task.media_file_id == media_file.id,
-                    Task.task_type.in_(["youtube_download", "url_download"]),
-                    Task.status.in_(["pending", "in_progress"]),
-                )
-                .all()
+        # Batch-fetch all active download tasks (avoids N+1 per-file queries)
+        dl_file_ids = [mf.id for mf in downloading_files]
+        active_dl_tasks = (
+            db.query(Task)
+            .filter(
+                Task.media_file_id.in_(dl_file_ids),
+                Task.task_type.in_(["youtube_download", "url_download"]),
+                Task.status.in_(["pending", "in_progress"]),
             )
+            .all()
+            if dl_file_ids
+            else []
+        )
+        tasks_by_file: dict[int, list] = {}
+        for task in active_dl_tasks:
+            tasks_by_file.setdefault(task.media_file_id, []).append(task)
 
-            # If no active tasks, or all tasks are from before container boot, it's stuck
-            if not active_tasks:
+        for media_file in downloading_files:
+            file_tasks = tasks_by_file.get(media_file.id, [])
+            if not file_tasks:
                 stuck_files.append(media_file)
             else:
                 has_post_boot_task = any(
-                    task.updated_at and task.updated_at > boot_time for task in active_tasks
+                    task.updated_at and task.updated_at > boot_time for task in file_tasks
                 )
                 if not has_post_boot_task:
                     stuck_files.append(media_file)
@@ -918,26 +924,32 @@ class TaskDetectionService:
             .all()
         )
 
+        # Batch-fetch all active tasks for processing files (avoids N+1)
+        proc_file_ids = [mf.id for mf in processing_files]
+        active_proc_tasks = (
+            db.query(Task)
+            .filter(
+                Task.media_file_id.in_(proc_file_ids),
+                Task.status.in_(["pending", "in_progress"]),
+            )
+            .all()
+            if proc_file_ids
+            else []
+        )
+        tasks_by_file: dict[int, list] = {}
+        for task in active_proc_tasks:
+            tasks_by_file.setdefault(task.media_file_id, []).append(task)
+
         files_without_tasks = []
         for media_file in processing_files:
-            active_db_tasks = (
-                db.query(Task)
-                .filter(
-                    Task.media_file_id == media_file.id,
-                    Task.status.in_(["pending", "in_progress"]),
-                )
-                .all()
-            )
-
-            if not active_db_tasks:
+            file_tasks = tasks_by_file.get(media_file.id, [])
+            if not file_tasks:
                 files_without_tasks.append(media_file)
                 continue
 
-            # Check if any task was created/updated after boot (i.e., by current workers)
             has_post_boot_task = any(
-                task.updated_at and task.updated_at > boot_time for task in active_db_tasks
+                task.updated_at and task.updated_at > boot_time for task in file_tasks
             )
-
             if not has_post_boot_task:
                 files_without_tasks.append(media_file)
 

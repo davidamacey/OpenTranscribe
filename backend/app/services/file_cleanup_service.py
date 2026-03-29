@@ -159,11 +159,15 @@ class FileCleanupService:
         """
         recommendations = []
 
-        # Count files by status
-        status_counts = {}
-        for status in FileStatus:
-            count = db.query(MediaFile).filter(MediaFile.status == status).count()
-            status_counts[status.value] = count
+        # Count files by status in a single query (replaces N separate queries)
+        from sqlalchemy import func
+
+        status_rows = (
+            db.query(MediaFile.status, func.count().label("cnt")).group_by(MediaFile.status).all()
+        )
+        status_counts = {
+            r.status.value if hasattr(r.status, "value") else r.status: r.cnt for r in status_rows
+        }
 
         # Check for concerning patterns
         error_rate = status_counts.get("error", 0) / max(sum(status_counts.values()), 1)
@@ -279,10 +283,16 @@ class FileCleanupService:
             "health_score": "unknown",
         }
 
-        # Count files by status
-        for status in FileStatus:
-            count = db.query(MediaFile).filter(MediaFile.status == status).count()
-            stats["file_counts_by_status"][status.value] = count
+        # Count files by status in a single query (replaces N separate queries)
+        from sqlalchemy import extract
+        from sqlalchemy import func
+
+        status_rows = (
+            db.query(MediaFile.status, func.count().label("cnt")).group_by(MediaFile.status).all()
+        )
+        for r in status_rows:
+            key = r.status.value if hasattr(r.status, "value") else r.status
+            stats["file_counts_by_status"][key] = r.cnt
 
         # Count stuck files
         stuck_files = check_for_stuck_files(db, self.stuck_threshold_hours)
@@ -292,26 +302,22 @@ class FileCleanupService:
         eligible_count = db.query(MediaFile).filter(MediaFile.force_delete_eligible).count()
         stats["files_eligible_for_cleanup"] = eligible_count
 
-        # Calculate average processing time for completed files
-        completed_files = (
-            db.query(MediaFile)
+        # Calculate average processing time via SQL aggregation (avoids full ORM hydration)
+        avg_row = (
+            db.query(
+                func.avg(
+                    extract("epoch", MediaFile.completed_at - MediaFile.task_started_at) / 3600.0
+                ).label("avg_hours")
+            )
             .filter(
                 MediaFile.status == FileStatus.COMPLETED,
                 MediaFile.task_started_at.isnot(None),
                 MediaFile.completed_at.isnot(None),
             )
-            .all()
+            .one()
         )
-
-        if completed_files:
-            total_processing_time = sum(
-                [
-                    (file.completed_at - file.task_started_at).total_seconds() / 3600
-                    for file in completed_files
-                    if file.completed_at and file.task_started_at
-                ]
-            )
-            stats["avg_processing_time_hours"] = total_processing_time / len(completed_files)
+        if avg_row.avg_hours is not None:
+            stats["avg_processing_time_hours"] = float(avg_row.avg_hours)
 
         # Calculate health score
         total_files = sum(stats["file_counts_by_status"].values())

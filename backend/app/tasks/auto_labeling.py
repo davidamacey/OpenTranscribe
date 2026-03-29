@@ -238,17 +238,26 @@ def auto_label_batch_task(
         apply_tags = user_settings.get("tags_enabled", True)
         apply_collections = user_settings.get("collections_enabled", True)
 
+        # Batch-fetch all suggestions and their media files (avoids N+1)
+        suggestions_batch = (
+            db.query(TopicSuggestion).filter(TopicSuggestion.id.in_(suggestion_ids)).all()
+        )
+        suggestion_by_id = {s.id: s for s in suggestions_batch}
+        media_file_ids_needed = {s.media_file_id for s in suggestions_batch if s.media_file_id}
+        media_files_batch = (
+            db.query(MediaFile).filter(MediaFile.id.in_(media_file_ids_needed)).all()
+            if media_file_ids_needed
+            else []
+        )
+        media_file_by_id = {mf.id: mf for mf in media_files_batch}
+
         for suggestion_id in suggestion_ids:
             try:
-                suggestion = (
-                    db.query(TopicSuggestion).filter(TopicSuggestion.id == suggestion_id).first()
-                )
+                suggestion = suggestion_by_id.get(suggestion_id)
                 if not suggestion:
                     continue
 
-                media_file = (
-                    db.query(MediaFile).filter(MediaFile.id == suggestion.media_file_id).first()
-                )
+                media_file = media_file_by_id.get(suggestion.media_file_id)
                 if not media_file:
                     continue
 
