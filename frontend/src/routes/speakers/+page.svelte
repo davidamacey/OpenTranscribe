@@ -1803,7 +1803,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1200;
+    z-index: 1300;
     overflow: hidden;
     overscroll-behavior: none;
   }
@@ -2125,11 +2125,6 @@
   }
 
   /* Raise modal above navbar (z-index 1200) on tablet/mobile */
-  @media (max-width: 1200px) {
-    .modal-backdrop {
-      z-index: 1300;
-    }
-  }
 
   @media (max-width: 768px) {
     .speakers-page {

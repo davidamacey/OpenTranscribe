@@ -1761,7 +1761,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 1300;
     overflow: hidden;
     overscroll-behavior: none;
   }
@@ -1857,13 +1857,8 @@
     margin: 0;
   }
 
-  /* Raise modals above navbar (z-index 1200) on tablet/iPad landscape */
+  /* Narrower filter sidebar on tablet to give more room to content */
   @media (max-width: 1200px) {
-    .modal-backdrop {
-      z-index: 1300;
-    }
-
-    /* Narrower filter sidebar on tablet to give more room to content */
     .filter-sidebar.show {
       width: 260px;
     }
@@ -1884,7 +1879,7 @@
       height: calc(100vh - var(--content-top, 60px));
       height: calc(100dvh - var(--content-top, 60px));
       background: var(--surface-color);
-      z-index: 1000;
+      z-index: 1300;
       transition: left 0.3s ease;
       border-right: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);

@@ -1123,7 +1123,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1200;
+    z-index: 1300;
     padding: 1rem;
     overflow: hidden;
     overscroll-behavior: none;
@@ -1344,13 +1344,6 @@
   }
 
   /* Mobile: fullscreen modals and tap-friendly buttons */
-  /* Raise above navbar (z-index 1200) on tablet and mobile */
-  @media (max-width: 1200px) {
-    .modal-backdrop {
-      z-index: 1300;
-    }
-  }
-
   @media (max-width: 768px) {
     .modal-backdrop {
       align-items: stretch;

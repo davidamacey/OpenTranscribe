@@ -1774,7 +1774,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1100;
+    z-index: 1300;
     animation: fadeIn 0.2s ease-out;
     overflow: hidden;
     overscroll-behavior: none;
@@ -2681,17 +2681,7 @@
   /* Responsive Design */
 
   /* Raise above navbar (z-index 1200) on tablet so close button is reachable */
-  @media (max-width: 1200px) {
-    .settings-modal-backdrop {
-      z-index: 1300;
-    }
-  }
-
   @media (max-width: 768px) {
-    .settings-modal-backdrop {
-      z-index: 1300;
-    }
-
     .settings-modal {
       width: 100vw;
       height: 100vh;
