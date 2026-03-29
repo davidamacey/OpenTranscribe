@@ -3002,7 +3002,6 @@
   "settings.dataIntegrity.docMetadata": "Метаданные",
   "settings.dataIntegrity.docChunks": "Поисковые фрагменты",
   "settings.dataIntegrity.docTotal": "Всего",
-
   "settings.embeddingConsistency.title": "Embedding Consistency",
   "settings.embeddingConsistency.description": "Detects speakers in the database that are missing from the OpenSearch speaker index and re-extracts their embeddings. Runs automatically every 10 minutes.",
   "settings.embeddingConsistency.loading": "Loading embedding consistency status...",
@@ -3045,7 +3044,6 @@
   "settings.embeddingConsistency.completedIn": "Completed in {{duration}}",
   "settings.embeddingConsistency.allSpeakersIndexed": "All speakers are indexed",
   "settings.embeddingConsistency.repairSummary": "{{repaired}} repaired, {{failed}} failed",
-
   "settings.session.introText": "Настройте время жизни сессий и токенов для баланса между безопасностью и удобством пользователя. Более короткие сроки повышают безопасность, но могут требовать более частой повторной аутентификации.",
   "settings.session.tokenLifetimes": "Время Жизни Токенов",
   "settings.session.accessTokenLifetime": "Время жизни токена доступа",
@@ -3086,7 +3084,6 @@
   "settings.session.days": "дней",
   "settings.session.week": "неделя",
   "settings.session.weeks": "недель",
-
   "settings.localAuth.enableLocal": "Включить локальную аутентификацию (имя пользователя/пароль)",
   "settings.localAuth.registrationSettings": "Настройки Регистрации",
   "settings.localAuth.allowSelfRegistration": "Разрешить самостоятельную регистрацию",
@@ -3120,9 +3117,7 @@
   "settings.localAuth.lowercase": "строчные",
   "settings.localAuth.numbers": "цифры",
   "settings.localAuth.specialChars": "спецсимволы",
-
   "loginBanner.consentText": "Нажимая \"Подтверждаю\", вы соглашаетесь с вышеуказанными условиями и подтверждаете, что имеете право доступа к этой системе.",
-
   "settings.accountStatus.overview": "Обзор статуса аккаунтов",
   "settings.accountStatus.dashboard": "Панель статуса аккаунтов",
   "settings.accountStatus.loadingStatus": "Загрузка статуса аккаунтов...",
@@ -3136,7 +3131,6 @@
   "settings.accountStatus.sectionTitle": "Статус аккаунтов",
   "settings.accountStatus.sectionDescription": "Обзор учётных записей пользователей, использования MFA и статуса безопасности.",
   "settings.accountStatus.navLabel": "Статус аккаунтов",
-
   "settings.auditLog.sectionTitle": "Журналы аудита",
   "settings.auditLog.sectionDescription": "Просмотр и экспорт журналов аутентификации и изменений конфигурации.",
   "settings.auditLog.navLabel": "Журналы аудита",
@@ -3179,7 +3173,6 @@
   "settings.auditLog.events.userDelete": "Удаление пользователя",
   "settings.auditLog.events.roleChange": "Изменение роли",
   "settings.auditLog.events.settingsChange": "Изменение настроек",
-
   "settings.authentication.heading": "Настройка аутентификации",
   "settings.authentication.dbBackedTitle": "Конфигурация аутентификации на основе базы данных",
   "settings.authentication.comingSoonDesc": "Эта функция скоро появится. Пока настраивайте аутентификацию через переменные окружения:",
@@ -3199,14 +3192,11 @@
   "settings.authentication.method.keycloak": "Keycloak/OIDC",
   "settings.authentication.method.pki": "PKI/Сертификаты X.509",
   "settings.authentication.method.mfa": "MFA/TOTP",
-
   "settings.statistics.previousGpu": "Предыдущий GPU",
   "settings.statistics.nextGpu": "Следующий GPU",
-
   "common.testing": "Тестирование...",
   "common.show": "Показать",
   "common.hide": "Скрыть",
-
   "settings.ldap.enable": "Включить аутентификацию LDAP/Active Directory",
   "settings.ldap.serverConnection": "Подключение к серверу",
   "settings.ldap.server": "LDAP-сервер",
@@ -3240,7 +3230,6 @@
   "settings.ldap.allowedUserGroupsHelp": "Оставьте пустым, чтобы разрешить всем аутентифицированным пользователям, или укажите группы для контроля доступа",
   "settings.ldap.testConnection": "Тест подключения",
   "settings.ldap.saveConfiguration": "Сохранить конфигурацию",
-
   "settings.keycloak.enable": "Включить аутентификацию OIDC/Keycloak",
   "settings.keycloak.oidcTitle": "OpenID Connect (OIDC)",
   "settings.keycloak.oidcDescription": "Эта интеграция поддерживает Keycloak и другие OIDC-совместимые поставщики удостоверений, включая Azure AD, Okta, Auth0 и Google Workspace.",
@@ -3272,7 +3261,6 @@
   "settings.keycloak.adminRoleHelp": "Пользователи с этой ролью в токене получат права администратора",
   "settings.keycloak.testConnection": "Тест подключения",
   "settings.keycloak.saveConfiguration": "Сохранить конфигурацию",
-
   "settings.pki.enable": "Включить аутентификацию PKI/Сертификат",
   "settings.pki.advancedConfiguration": "Расширенная конфигурация",
   "settings.pki.advancedConfigurationDesc": "Аутентификация PKI требует правильной настройки инфраструктуры, включая управление сертификатами, конфигурацию обратного прокси и распространение сертификатов CA. См. документацию для подробных инструкций по настройке.",
@@ -3304,28 +3292,23 @@
   "settings.pki.allowPasswordFallback": "Разрешить откат на пароль",
   "settings.pki.allowPasswordFallbackHelp": "При включении пользователи без сертификатов могут аутентифицироваться с помощью имени пользователя/пароля",
   "settings.pki.saveConfiguration": "Сохранить конфигурацию",
-  "settings.sharing.adminBadge": "\u0410\u0434\u043c\u0438\u043d",
-
-  "settings.llm.autoSummarySection": "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 \u0440\u0435\u0437\u044e\u043c\u0435 \u0418\u0418",
-  "settings.llm.autoSummary": "\u0410\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0440\u0435\u0437\u044e\u043c\u0435",
-  "settings.llm.autoSummaryDesc": "\u0410\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0440\u0435\u0437\u044e\u043c\u0435 \u0418\u0418 \u043f\u043e\u0441\u043b\u0435 \u043a\u0430\u0436\u0434\u043e\u0439 \u0442\u0440\u0430\u043d\u0441\u043a\u0440\u0438\u043f\u0446\u0438\u0438",
-  "settings.llm.autoSummaryDisabledHint": "\u0420\u0435\u0437\u044e\u043c\u0435 \u043d\u0435 \u0431\u0443\u0434\u0443\u0442 \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438. \u0412\u044b \u043c\u043e\u0436\u0435\u0442\u0435 \u0441\u043e\u0437\u0434\u0430\u0432\u0430\u0442\u044c \u0438\u0445 \u0432\u0440\u0443\u0447\u043d\u0443\u044e \u0434\u043b\u044f \u043a\u0430\u0436\u0434\u043e\u0433\u043e \u0444\u0430\u0439\u043b\u0430.",
-  "settings.llm.systemSummary": "\u0421\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435 \u0440\u0435\u0437\u044e\u043c\u0435 \u0418\u0418",
-  "settings.llm.systemSummaryDesc": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0438\u043b\u0438 \u043e\u0442\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u044e \u0440\u0435\u0437\u044e\u043c\u0435 \u0418\u0418 \u0434\u043b\u044f \u0432\u0441\u0435\u0445 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u0439 (\u0442\u043e\u043b\u044c\u043a\u043e \u0430\u0434\u043c\u0438\u043d)",
-  "settings.llm.systemSummaryDisabledHint": "\u0420\u0435\u0437\u044e\u043c\u0435 \u0418\u0418 \u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u044b \u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u043e\u043c.",
-  "settings.llm.systemSummaryDisabledWarning": "\u0420\u0435\u0437\u044e\u043c\u0435 \u0418\u0418 \u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u044b \u0434\u043b\u044f \u0412\u0421\u0415\u0425 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u0439. \u0420\u0443\u0447\u043d\u0430\u044f \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u044f \u0442\u0430\u043a\u0436\u0435 \u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u0430 \u0434\u043b\u044f \u043d\u0435-\u0430\u0434\u043c\u0438\u043d\u043e\u0432.",
-
-  "upload.skipSummary": "\u041f\u0440\u043e\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0440\u0435\u0437\u044e\u043c\u0435 \u0418\u0418 \u0434\u043b\u044f \u044d\u0442\u043e\u0439 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438",
-  "upload.skipSummaryHint": "\u0422\u0440\u0430\u043d\u0441\u043a\u0440\u0438\u043f\u0446\u0438\u044f \u0431\u0443\u0434\u0435\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0430 \u0431\u0435\u0437 \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438 \u0440\u0435\u0437\u044e\u043c\u0435 \u0418\u0418",
-
-  "summary.statusDisabled": "\u0413\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u044f \u0440\u0435\u0437\u044e\u043c\u0435 \u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u0430",
-  "summary.generateAnyway": "\u0421\u0433\u0435\u043d\u0435\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0440\u0435\u0437\u044e\u043c\u0435 \u0432 \u043b\u044e\u0431\u043e\u043c \u0441\u043b\u0443\u0447\u0430\u0435",
-  "summary.systemDisabled": "\u0420\u0435\u0437\u044e\u043c\u0435 \u0418\u0418 \u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u044b \u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u043e\u043c",
-  "summary.adminEnableHint": "\u0421\u0432\u044f\u0436\u0438\u0442\u0435\u0441\u044c \u0441 \u0430\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u043e\u043c \u0434\u043b\u044f \u0432\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438 \u0440\u0435\u0437\u044e\u043c\u0435 \u0418\u0418",
-
-  "common.enabled": "\u0412\u043a\u043b\u044e\u0447\u0435\u043d\u043e",
-  "common.disabled": "\u041e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u043e",
-
+  "settings.sharing.adminBadge": "Админ",
+  "settings.llm.autoSummarySection": "Настройки резюме ИИ",
+  "settings.llm.autoSummary": "Автоматически генерировать резюме",
+  "settings.llm.autoSummaryDesc": "Автоматически генерировать резюме ИИ после каждой транскрипции",
+  "settings.llm.autoSummaryDisabledHint": "Резюме не будут генерироваться автоматически. Вы можете создавать их вручную для каждого файла.",
+  "settings.llm.systemSummary": "Системные резюме ИИ",
+  "settings.llm.systemSummaryDesc": "Включить или отключить генерацию резюме ИИ для всех пользователей (только админ)",
+  "settings.llm.systemSummaryDisabledHint": "Резюме ИИ отключены администратором.",
+  "settings.llm.systemSummaryDisabledWarning": "Резюме ИИ отключены для ВСЕХ пользователей. Ручная генерация также заблокирована для не-админов.",
+  "upload.skipSummary": "Пропустить резюме ИИ для этой загрузки",
+  "upload.skipSummaryHint": "Транскрипция будет завершена без генерации резюме ИИ",
+  "summary.statusDisabled": "Генерация резюме отключена",
+  "summary.generateAnyway": "Сгенерировать резюме в любом случае",
+  "summary.systemDisabled": "Резюме ИИ отключены администратором",
+  "summary.adminEnableHint": "Свяжитесь с администратором для включения генерации резюме ИИ",
+  "common.enabled": "Включено",
+  "common.disabled": "Отключено",
   "uploader.whisperModel": "Модель транскрипции",
   "uploader.whisperModelHint": "Выберите модель Whisper для этой транскрипции",
   "uploader.useSystemDefault": "Использовать системное значение",
@@ -3338,10 +3321,29 @@
   "fileDetail.whisperModel": "Модель ASR",
   "fileDetail.modelFallback": "Откат",
   "fileDetail.requestedModel": "Запрошенная модель",
-
   "metadata.diarizationDisabled": "Отключено",
   "gallery.diarizationDisabledTooltip": "Диаризация говорящих была отключена для этого файла",
   "gallery.monologue": "Монолог",
   "reprocess.diarizationWasDisabled": "Этот файл был обработан без диаризации говорящих. Выберите «Повторная диаризация», чтобы включить определение говорящих.",
-  "exportOptions.diarizationDisabledHint": "Данные о говорящих недоступны"
+  "exportOptions.diarizationDisabledHint": "Данные о говорящих недоступны",
+  "reprocess.cloudASRInfo": "Используется {{provider}} ({{model}}) — определение говорящих выполняется облачным провайдером",
+  "reprocess.rediarizeCloudDisabled": "Недоступно для облачных ASR-провайдеров",
+  "search.filtersApplied": "Фильтры применены к результатам",
+  "settings.asrProvider.diarizationQuality": "Диаризация",
+  "settings.asrProvider.experimentalWarning": "Этот провайдер не был полностью протестирован. Качество транскрипции и точность диаризации могут варьироваться.",
+  "settings.asrProvider.statusExperimental": "Экспериментальный",
+  "settings.asrProvider.statusTested": "Протестирован",
+  "settings.asrProvider.switchedToLocal": "Переключено на локальную GPU-транскрипцию",
+  "settings.asrProvider.useLocal": "Локальный",
+  "settings.transcription.diarizationPyannoteConfigHint": "Настройте API-ключ pyannote.ai на вкладке настроек ASR для использования облачной диаризации.",
+  "common.clear": "Очистить",
+  "settings.transcription.diarizationLocal": "Локальный PyAnnote (GPU)",
+  "settings.transcription.diarizationLocalDesc": "Всегда использовать локальную диаризацию PyAnnote на GPU для определения говорящих. Лучшее качество, требуется GPU.",
+  "settings.transcription.diarizationOff": "Отключено",
+  "settings.transcription.diarizationOffDesc": "Пропустить разделение говорящих. Все сегменты назначаются одному говорящему.",
+  "settings.transcription.diarizationProvider": "ASR-провайдер",
+  "settings.transcription.diarizationProviderDesc": "Использовать встроенную диаризацию облачного ASR-провайдера. Качество зависит от провайдера.",
+  "settings.transcription.diarizationPyannote": "pyannote.ai Облако",
+  "settings.transcription.diarizationPyannoteDesc": "Использовать облачный API pyannote.ai для премиальной диаризации. GPU не требуется.",
+  "settings.transcription.diarizationSource": "Диаризация говорящих"
 }

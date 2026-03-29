@@ -3335,5 +3335,15 @@
   "gallery.diarizationDisabledTooltip": "A diarização de locutores foi desativada para este arquivo",
   "gallery.monologue": "Monólogo",
   "reprocess.diarizationWasDisabled": "Este arquivo foi processado sem diarização de locutores. Selecione \"Rediarizar\" para ativar a detecção de locutores.",
-  "exportOptions.diarizationDisabledHint": "Nenhum dado de locutor disponível"
+  "exportOptions.diarizationDisabledHint": "Nenhum dado de locutor disponível",
+  "reprocess.cloudASRInfo": "Usando {{provider}} ({{model}}) — a detecção de falantes é gerenciada pelo provedor na nuvem",
+  "reprocess.rediarizeCloudDisabled": "Não disponível com provedores ASR na nuvem",
+  "search.filtersApplied": "Filtros aplicados aos resultados",
+  "settings.asrProvider.diarizationQuality": "Diarização",
+  "settings.asrProvider.experimentalWarning": "Este provedor não foi totalmente testado. A qualidade da transcrição e a precisão da diarização podem variar.",
+  "settings.asrProvider.statusExperimental": "Experimental",
+  "settings.asrProvider.statusTested": "Testado",
+  "settings.asrProvider.switchedToLocal": "Alterado para transcrição GPU local",
+  "settings.asrProvider.useLocal": "Usar Local",
+  "settings.transcription.diarizationPyannoteConfigHint": "Configure sua chave de API pyannote.ai na aba Configurações ASR para usar diarização na nuvem."
 }

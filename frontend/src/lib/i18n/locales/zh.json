@@ -3335,5 +3335,15 @@
   "gallery.diarizationDisabledTooltip": "此文件已禁用说话人分离",
   "gallery.monologue": "独白",
   "reprocess.diarizationWasDisabled": "此文件在未启用说话人分离的情况下处理。选择「重新分离」以启用说话人检测。",
-  "exportOptions.diarizationDisabledHint": "无可用的说话人数据"
+  "exportOptions.diarizationDisabledHint": "无可用的说话人数据",
+  "reprocess.cloudASRInfo": "使用 {{provider}} ({{model}}) — 说话人检测由云服务提供商处理",
+  "reprocess.rediarizeCloudDisabled": "云端 ASR 提供商不支持此功能",
+  "search.filtersApplied": "已应用过滤条件",
+  "settings.asrProvider.diarizationQuality": "说话人分离",
+  "settings.asrProvider.experimentalWarning": "此提供商尚未完全测试。转录质量和说话人分离准确性可能有所不同。",
+  "settings.asrProvider.statusExperimental": "实验性",
+  "settings.asrProvider.statusTested": "已测试",
+  "settings.asrProvider.switchedToLocal": "已切换至本地 GPU 转录",
+  "settings.asrProvider.useLocal": "使用本地",
+  "settings.transcription.diarizationPyannoteConfigHint": "在 ASR 设置选项卡中配置您的 pyannote.ai API 密钥以使用云端说话人分离。"
 }

@@ -3335,5 +3335,15 @@
   "gallery.diarizationDisabledTooltip": "Sprechererkennung wurde für diese Datei deaktiviert",
   "gallery.monologue": "Monolog",
   "reprocess.diarizationWasDisabled": "Diese Datei wurde ohne Sprechererkennung verarbeitet. Wählen Sie \"Neu diarisieren\", um die Sprechererkennung zu aktivieren.",
-  "exportOptions.diarizationDisabledHint": "Keine Sprecherdaten verfügbar"
+  "exportOptions.diarizationDisabledHint": "Keine Sprecherdaten verfügbar",
+  "reprocess.cloudASRInfo": "Verwendung von {{provider}} ({{model}}) — Sprechererkennung wird vom Cloud-Anbieter übernommen",
+  "reprocess.rediarizeCloudDisabled": "Nicht verfügbar mit Cloud-ASR-Anbietern",
+  "search.filtersApplied": "Filter auf Ergebnisse angewendet",
+  "settings.asrProvider.diarizationQuality": "Diarisierung",
+  "settings.asrProvider.experimentalWarning": "Dieser Anbieter wurde nicht vollständig getestet. Transkriptionsqualität und Diarisierungsgenauigkeit können variieren.",
+  "settings.asrProvider.statusExperimental": "Experimentell",
+  "settings.asrProvider.statusTested": "Getestet",
+  "settings.asrProvider.switchedToLocal": "Auf lokale GPU-Transkription umgestellt",
+  "settings.asrProvider.useLocal": "Lokal verwenden",
+  "settings.transcription.diarizationPyannoteConfigHint": "Konfigurieren Sie Ihren pyannote.ai-API-Schlüssel im ASR-Einstellungen-Tab, um Cloud-Diarisierung zu verwenden."
 }

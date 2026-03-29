@@ -3335,5 +3335,15 @@
   "gallery.diarizationDisabledTooltip": "このファイルでは話者ダイアライゼーションが無効でした",
   "gallery.monologue": "モノローグ",
   "reprocess.diarizationWasDisabled": "このファイルは話者ダイアライゼーションなしで処理されました。話者検出を有効にするには「再ダイアライズ」を選択してください。",
-  "exportOptions.diarizationDisabledHint": "話者データがありません"
+  "exportOptions.diarizationDisabledHint": "話者データがありません",
+  "reprocess.cloudASRInfo": "{{provider}} ({{model}}) を使用中 — 話者検出はクラウドプロバイダーが処理します",
+  "reprocess.rediarizeCloudDisabled": "クラウドASRプロバイダーでは利用できません",
+  "search.filtersApplied": "フィルターが結果に適用されています",
+  "settings.asrProvider.diarizationQuality": "話者分離",
+  "settings.asrProvider.experimentalWarning": "このプロバイダーは完全にテストされていません。文字起こしの品質と話者分離の精度は異なる場合があります。",
+  "settings.asrProvider.statusExperimental": "実験的",
+  "settings.asrProvider.statusTested": "テスト済み",
+  "settings.asrProvider.switchedToLocal": "ローカルGPU文字起こしに切り替えました",
+  "settings.asrProvider.useLocal": "ローカルを使用",
+  "settings.transcription.diarizationPyannoteConfigHint": "クラウド話者分離を使用するには、ASR設定タブでpyannote.ai APIキーを設定してください。"
 }
