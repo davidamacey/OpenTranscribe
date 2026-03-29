@@ -10,6 +10,7 @@
   import SkeletonLoader from './ui/SkeletonLoader.svelte';
   import { DatePicker } from '@svelte-plugins/datepicker';
   import { format } from 'date-fns';
+  import SearchPagination from './search/SearchPagination.svelte';
 
   // Helper function to translate status values
   function translateStatus(status: string): string {
@@ -684,26 +685,11 @@
             </tbody>
           </table>
           {#if taskTotalPages > 1}
-            <div class="task-pagination">
-              <button
-                class="page-btn"
-                disabled={taskPage <= 1}
-                aria-label={$t('common.previous')}
-                on:click={() => { taskPage = taskPage - 1; fetchTasks(true); }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-              </button>
-              <span class="page-info">{taskPage} / {taskTotalPages}</span>
-              <button
-                class="page-btn"
-                disabled={taskPage >= taskTotalPages}
-                aria-label={$t('common.next')}
-                on:click={() => { taskPage = taskPage + 1; fetchTasks(true); }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              </button>
-              <span class="total-info">{taskTotal} total</span>
-            </div>
+            <SearchPagination
+              page={taskPage}
+              totalPages={taskTotalPages}
+              on:pageChange={(e) => { taskPage = e.detail; fetchTasks(true); }}
+            />
           {/if}
         </div>
       {/if}
@@ -2103,65 +2089,5 @@
     padding: 1rem 1.5rem;
   }
 
-  /* Task pagination */
-  .task-pagination {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    border-top: 1px solid var(--border-color);
-  }
 
-  .page-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .page-btn:hover:not(:disabled) {
-    background: var(--hover-bg, rgba(0, 0, 0, 0.05));
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-  }
-
-  :global(.dark) .page-btn,
-  :global([data-theme='dark']) .page-btn {
-    background: var(--surface-color);
-    border-color: var(--border-color);
-    color: var(--text-primary);
-  }
-
-  :global(.dark) .page-btn:hover:not(:disabled),
-  :global([data-theme='dark']) .page-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-  }
-
-  .page-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-  }
-
-  .page-info {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .total-info {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    margin-left: 0.5rem;
-  }
 </style>
