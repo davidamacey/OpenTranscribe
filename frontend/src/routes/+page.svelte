@@ -77,8 +77,8 @@
   let infiniteScrollSentinel: HTMLElement | null = null;
   let intersectionObserver: IntersectionObserver | null = null;
 
-  // View state
-  let selectedCollectionId: string | null = null;
+  // View state — restore from gallery store for navigation persistence
+  let selectedCollectionId: string | null = $galleryState.filterSelectedCollectionId;
   let showCollectionsModal = false;
 
   // Use gallery store for state management
@@ -99,22 +99,21 @@
     progress?: number;
   }
 
-  // Filter state
-  let searchQuery: string = '';
-  let selectedTags: string[] = [];
-  let selectedSpeakers: string[] = [];
-  let dateRange = { from: null as Date | null, to: null as Date | null };
-  let durationRange = { min: null as number | null, max: null as number | null };
-  let fileSizeRange = { min: null as number | null, max: null as number | null };
-  let selectedFileTypes: string[] = [];
-  let selectedStatuses: string[] = [];
-  let ownershipFilter: 'all' | 'mine' | 'shared' = 'all';
-  // Use store for showFilters
+  // Filter state — restore from gallery store for navigation persistence
+  let searchQuery: string = $galleryState.filterSearchQuery;
+  let selectedTags: string[] = [...$galleryState.filterSelectedTags];
+  let selectedSpeakers: string[] = [...$galleryState.filterSelectedSpeakers];
+  let dateRange = { ...$galleryState.filterDateRange };
+  let durationRange = { ...$galleryState.filterDurationRange };
+  let fileSizeRange = { ...$galleryState.filterFileSizeRange };
+  let selectedFileTypes: string[] = [...$galleryState.filterSelectedFileTypes];
+  let selectedStatuses: string[] = [...$galleryState.filterSelectedStatuses];
+  let ownershipFilter: 'all' | 'mine' | 'shared' = $galleryState.filterOwnershipFilter;
   $: showFilters = $galleryState.showFilters;
 
-  // Sort state
-  let sortBy: string = 'upload_time';
-  let sortOrder: 'asc' | 'desc' = 'desc';
+  // Sort state — restore from gallery store
+  let sortBy: string = $galleryState.filterSortBy;
+  let sortOrder: 'asc' | 'desc' = $galleryState.filterSortOrder;
 
   // Observe the sentinel element when it becomes available (after files load)
   $: if (infiniteScrollSentinel && intersectionObserver) {
@@ -610,6 +609,11 @@
     selectedFileTypes = [];
     selectedStatuses = [];
     ownershipFilter = 'all';
+    sortBy = 'upload_time';
+    sortOrder = 'desc';
+
+    // Clear persisted filter state in the store
+    galleryStore.resetFilters();
 
     // Skip animation when resetting filters to avoid highlighting previously filtered items
     fetchFiles(false, true);
@@ -1173,6 +1177,22 @@
       galleryStore.setScrollTop(scrollableContentEl.scrollTop);
     }
 
+    // Save filter state for back navigation restoration
+    galleryStore.saveFilters({
+      searchQuery,
+      selectedTags,
+      selectedSpeakers,
+      selectedCollectionId,
+      dateRange,
+      durationRange,
+      fileSizeRange,
+      selectedFileTypes,
+      selectedStatuses,
+      ownershipFilter,
+      sortBy,
+      sortOrder,
+    });
+
     // Clean up WebSocket subscription when component is destroyed
     if (unsubscribeFileStatus) {
       unsubscribeFileStatus();
@@ -1290,9 +1310,9 @@
               selectedTags={selectedTags}
               selectedSpeakers={selectedSpeakers}
               selectedCollectionId={selectedCollectionId}
-              dateRange={{from: null, to: null}}
-              durationRange={{min: null, max: null}}
-              fileSizeRange={{min: null, max: null}}
+              dateRange={dateRange}
+              durationRange={durationRange}
+              fileSizeRange={fileSizeRange}
               selectedFileTypes={selectedFileTypes}
               selectedStatuses={selectedStatuses}
               ownershipFilter={ownershipFilter}

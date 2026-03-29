@@ -42,6 +42,20 @@ export interface GalleryState {
   hasMoreFiles: boolean;
   isLoadingMore: boolean;
   scrollTop: number; // For scroll position restoration on back navigation
+
+  // Filter persistence (survives client-side navigation)
+  filterSearchQuery: string;
+  filterSelectedTags: string[];
+  filterSelectedSpeakers: string[];
+  filterSelectedCollectionId: string | null;
+  filterDateRange: { from: Date | null; to: Date | null };
+  filterDurationRange: { min: number | null; max: number | null };
+  filterFileSizeRange: { min: number | null; max: number | null };
+  filterSelectedFileTypes: string[];
+  filterSelectedStatuses: string[];
+  filterOwnershipFilter: 'all' | 'mine' | 'shared';
+  filterSortBy: string;
+  filterSortOrder: 'asc' | 'desc';
 }
 
 export interface GalleryActions {
@@ -86,6 +100,18 @@ const initialState: GalleryState = {
   hasMoreFiles: false,
   isLoadingMore: false,
   scrollTop: 0,
+  filterSearchQuery: '',
+  filterSelectedTags: [],
+  filterSelectedSpeakers: [],
+  filterSelectedCollectionId: null,
+  filterDateRange: { from: null, to: null },
+  filterDurationRange: { min: null, max: null },
+  filterFileSizeRange: { min: null, max: null },
+  filterSelectedFileTypes: [],
+  filterSelectedStatuses: [],
+  filterOwnershipFilter: 'all',
+  filterSortBy: 'upload_time',
+  filterSortOrder: 'desc',
 };
 
 // Create the store
@@ -302,6 +328,55 @@ function createGalleryStore() {
 
     setScrollTop: (scrollTop: number) => {
       update((state) => ({ ...state, scrollTop }));
+    },
+
+    saveFilters: (filters: {
+      searchQuery: string;
+      selectedTags: string[];
+      selectedSpeakers: string[];
+      selectedCollectionId: string | null;
+      dateRange: { from: Date | null; to: Date | null };
+      durationRange: { min: number | null; max: number | null };
+      fileSizeRange: { min: number | null; max: number | null };
+      selectedFileTypes: string[];
+      selectedStatuses: string[];
+      ownershipFilter: 'all' | 'mine' | 'shared';
+      sortBy: string;
+      sortOrder: 'asc' | 'desc';
+    }) => {
+      update((state) => ({
+        ...state,
+        filterSearchQuery: filters.searchQuery,
+        filterSelectedTags: [...filters.selectedTags],
+        filterSelectedSpeakers: [...filters.selectedSpeakers],
+        filterSelectedCollectionId: filters.selectedCollectionId,
+        filterDateRange: { ...filters.dateRange },
+        filterDurationRange: { ...filters.durationRange },
+        filterFileSizeRange: { ...filters.fileSizeRange },
+        filterSelectedFileTypes: [...filters.selectedFileTypes],
+        filterSelectedStatuses: [...filters.selectedStatuses],
+        filterOwnershipFilter: filters.ownershipFilter,
+        filterSortBy: filters.sortBy,
+        filterSortOrder: filters.sortOrder,
+      }));
+    },
+
+    resetFilters: () => {
+      update((state) => ({
+        ...state,
+        filterSearchQuery: '',
+        filterSelectedTags: [],
+        filterSelectedSpeakers: [],
+        filterSelectedCollectionId: null,
+        filterDateRange: { from: null, to: null },
+        filterDurationRange: { min: null, max: null },
+        filterFileSizeRange: { min: null, max: null },
+        filterSelectedFileTypes: [],
+        filterSelectedStatuses: [],
+        filterOwnershipFilter: 'all',
+        filterSortBy: 'upload_time',
+        filterSortOrder: 'desc',
+      }));
     },
 
     // Subscribe to action triggers (skip initial values)
