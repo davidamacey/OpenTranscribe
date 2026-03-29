@@ -2125,7 +2125,7 @@
   }
 
   /* Raise modal above navbar (z-index 1200) on tablet/mobile */
-  @media (max-width: 1024px) {
+  @media (max-width: 1200px) {
     .modal-backdrop {
       z-index: 1300;
     }

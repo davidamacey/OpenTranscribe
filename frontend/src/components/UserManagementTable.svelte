@@ -979,7 +979,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1200;
+    z-index: 1300;
     animation: fadeIn 0.2s ease-out;
     overflow: hidden;
     overscroll-behavior: none;

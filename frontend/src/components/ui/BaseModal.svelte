@@ -180,7 +180,7 @@
 
   /* Raise modals above navbar (z-index 1200) on mobile/tablet so
      close button is not hidden behind the navbar */
-  @media (max-width: 1024px) {
+  @media (max-width: 1200px) {
     .modal-backdrop {
       z-index: 1300 !important;
     }

@@ -1857,10 +1857,15 @@
     margin: 0;
   }
 
-  /* Raise modals above navbar (z-index 1200) on tablet */
-  @media (max-width: 1024px) and (min-width: 769px) {
+  /* Raise modals above navbar (z-index 1200) on tablet/iPad landscape */
+  @media (max-width: 1200px) {
     .modal-backdrop {
       z-index: 1300;
+    }
+
+    /* Narrower filter sidebar on tablet to give more room to content */
+    .filter-sidebar.show {
+      width: 260px;
     }
   }
 
@@ -2028,14 +2033,20 @@
     flex-shrink: 0;
   }
 
-  /* Tablet: allow gallery header to wrap if tight */
-  @media (max-width: 1024px) and (min-width: 769px) {
+  /* Tablet/iPad: wrap gallery header and right-justify controls */
+  @media (max-width: 1200px) and (min-width: 769px) {
     .gallery-header {
       flex-wrap: wrap;
       gap: 0.5rem;
     }
 
+    .gallery-header-left {
+      flex: 1 1 100%;
+    }
+
     .gallery-header-right {
+      flex: 1 1 auto;
+      justify-content: flex-end;
       gap: 0.375rem;
     }
   }

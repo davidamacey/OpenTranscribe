@@ -2681,7 +2681,7 @@
   /* Responsive Design */
 
   /* Raise above navbar (z-index 1200) on tablet so close button is reachable */
-  @media (max-width: 1024px) {
+  @media (max-width: 1200px) {
     .settings-modal-backdrop {
       z-index: 1300;
     }

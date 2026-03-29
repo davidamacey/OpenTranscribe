@@ -139,6 +139,8 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0.375rem 0.75rem;
+    height: 30px;
+    box-sizing: border-box;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 10px;
@@ -275,7 +277,7 @@
   }
 
   /* Hide sort label on tablet and below to save space */
-  @media (max-width: 1024px) {
+  @media (max-width: 1200px) {
     .sort-label {
       display: none;
     }

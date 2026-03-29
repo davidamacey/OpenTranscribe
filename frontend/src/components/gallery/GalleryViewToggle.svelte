@@ -95,7 +95,9 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    padding: 0.1875rem; /* Match sort/count chip vertical padding */
+    padding: 0.1875rem;
+    height: 30px;
+    box-sizing: border-box;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     backdrop-filter: blur(8px);
   }
@@ -175,15 +177,11 @@
     flex-shrink: 0;
   }
 
-  /* Ensure minimum touch target size per WCAG 2.2 on touch devices */
+  /* Touch devices: ensure good touch targets within the fixed height */
   @media (pointer: coarse) {
-    .view-toggle {
-      padding: 0.25rem;
-    }
-
     .toggle-btn {
-      min-width: 38px;
-      min-height: 38px;
+      min-width: 26px;
+      min-height: 26px;
     }
   }
 
@@ -195,6 +193,8 @@
     .toggle-btn {
       width: 22px;
       height: 22px;
+      min-width: 22px;
+      min-height: 22px;
     }
   }
 </style>

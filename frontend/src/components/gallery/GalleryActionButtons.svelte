@@ -490,22 +490,25 @@
   }
 
 
-  /* Mobile responsive */
-  @media (max-width: 768px) {
-    .gallery-action-buttons {
-      min-width: 0;
-      overflow: visible;
-    }
-
+  /* Tablet: allow action buttons to wrap */
+  @media (max-width: 1200px) {
     .normal-actions,
     .selection-actions {
-      gap: 0.375rem;
       flex-wrap: wrap;
+      gap: 0.375rem;
     }
 
     .action-btn {
       padding: 0.35rem 0.65rem;
       font-size: 0.8rem;
+    }
+  }
+
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .gallery-action-buttons {
+      min-width: 0;
+      overflow: visible;
     }
 
     .action-btn svg {

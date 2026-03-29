@@ -1113,11 +1113,26 @@
     border-width: 0;
   }
 
-  /* Tablet adjustments — iPad portrait/landscape (769–1024px) */
+  /* iPad landscape — reduce gap, hide username, keep nav labels */
+  @media (max-width: 1200px) {
+    .navbar-container {
+      gap: 1.5rem;
+      padding: 0.5rem 1rem;
+    }
+
+    .username {
+      display: none;
+    }
+
+    .dropdown-icon {
+      display: none;
+    }
+  }
+
+  /* iPad portrait — icon-only nav links, tighter layout */
   @media (max-width: 1024px) {
     .navbar-container {
       gap: 1rem;
-      padding: 0.5rem 1rem;
     }
 
     .nav-links {
@@ -1129,22 +1144,13 @@
       font-size: 0.875rem;
     }
 
-    /* Icon-only nav links on tablet */
+    /* Icon-only nav links on tablet portrait */
     .nav-label {
       display: none;
     }
 
     .logo-banner {
       height: 30px;
-    }
-
-    /* Hide username on tablet to save space */
-    .username {
-      display: none;
-    }
-
-    .dropdown-icon {
-      display: none;
     }
 
     .tab-button {
