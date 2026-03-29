@@ -61,6 +61,7 @@ export interface MediaFile {
   title?: string;
   author?: string;
   description?: string;
+  language?: string;
 
   // Speaker summary from backend
   speaker_summary?: {

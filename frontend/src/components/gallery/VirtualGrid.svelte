@@ -16,12 +16,12 @@
 
   const dispatch = createEventDispatcher<{ errorclick: MediaFile }>();
 
-  // Virtual scrolling config — responsive for mobile compact cards
+  // Virtual scrolling config — compact Apple-like cards
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-  const ROW_HEIGHT = isMobile ? 200 : 340; // compact cards are shorter on mobile
-  const CARD_MIN_WIDTH = isMobile ? 140 : 300;
-  const GAP = isMobile ? 12 : 24; // 0.75rem vs 1.5rem
-  const OVERSCAN = isMobile ? 3 : 2; // extra buffer rows on mobile for smoother scroll
+  const ROW_HEIGHT = isMobile ? 155 : 195;
+  const CARD_MIN_WIDTH = isMobile ? 140 : 220;
+  const GAP = isMobile ? 8 : 12;
+  const OVERSCAN = isMobile ? 3 : 2;
 
   // State
   let columnsPerRow = 1;
@@ -227,69 +227,89 @@
             on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid)}
             on:mouseleave={cancelPrefetch}
           >
-            <div class="file-content">
+            <!-- Thumbnail area — edge-to-edge -->
+            <div class="thumbnail-container">
               {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
-                <div class="file-thumbnail">
-                  <img
-                    use:cachedThumbnail={{ uuid: file.uuid, url: file.thumbnail_url }}
-                    alt={$t('gallery.thumbnailAlt', { title: file.title || file.filename })}
-                    loading="lazy"
-                    decoding="async"
-                    class="thumbnail-image"
-                  />
-                  <div class="video-overlay">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                    </svg>
-                  </div>
-                </div>
+                <img
+                  use:cachedThumbnail={{ uuid: file.uuid, url: file.thumbnail_url }}
+                  alt={$t('gallery.thumbnailAlt', { title: file.title || file.filename })}
+                  loading="lazy"
+                  decoding="async"
+                  class="thumbnail-image"
+                />
               {:else if file.content_type && file.content_type.startsWith('video/')}
-                <div class="file-thumbnail video-placeholder">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <div class="placeholder video-placeholder">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="23 7 16 12 23 17 23 7"></polygon>
                     <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
                   </svg>
                 </div>
               {:else if file.content_type && file.content_type.startsWith('audio/')}
-                <div class="file-thumbnail audio-placeholder">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <div class="placeholder audio-placeholder">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
                     <line x1="12" y1="19" x2="12" y2="23"></line>
                     <line x1="8" y1="23" x2="16" y2="23"></line>
                   </svg>
                 </div>
+              {:else}
+                <div class="placeholder file-placeholder">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                  </svg>
+                </div>
               {/if}
 
-              <h2 class="file-name">{file.title || file.filename}</h2>
-
-              <div class="file-meta">
-                <span class="file-date">{file.formatted_upload_date}</span>
-                {#if file.formatted_duration}
-                  <span class="file-duration">{file.formatted_duration}</span>
-                {/if}
-                <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
-                  <span class="status-dot"></span>
-                  {#if file.status === 'error' && file.last_error_message}
-                    <!-- svelte-ignore a11y-click-events-have-key-events -->
-                    <!-- svelte-ignore a11y-no-static-element-interactions -->
-                    <span
-                      class="error-details-trigger"
-                      on:click|preventDefault|stopPropagation={() => handleErrorClick(file)}
-                      title={$t('gallery.errorClickForDetails')}
-                    >
-                      {$t('common.error')}
-                    </span>
-                  {:else if file.status === 'completed'}
-                    {$t('common.completed')}
-                  {:else if file.status === 'processing'}
-                    {$t('common.processing')}
-                  {:else if file.status === 'pending'}
-                    {$t('common.pending')}
+              <!-- Type badge (top-left) -->
+              {#if file.content_type}
+                <div class="type-badge">
+                  {#if file.content_type.startsWith('video/')}
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                    </svg>
                   {:else}
-                    {file.display_status || file.status}
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    </svg>
                   {/if}
                 </div>
+              {/if}
+
+              <!-- Duration badge (bottom-right) -->
+              {#if file.formatted_duration}
+                <div class="duration-badge">{file.formatted_duration}</div>
+              {/if}
+            </div>
+
+            <!-- Text area -->
+            <div class="card-text">
+              <h2 class="file-name">{file.title || file.filename}</h2>
+
+              <div class="meta-line">
+                <span>{file.formatted_upload_date}</span>
+                {#if file.formatted_file_size}
+                  <span class="meta-dot">&middot;</span>
+                  <span>{file.formatted_file_size}</span>
+                {/if}
+                {#if file.speaker_summary && file.speaker_summary.count > 0}
+                  <span class="meta-dot">&middot;</span>
+                  <span>{file.speaker_summary.count} spk</span>
+                {/if}
+                <!-- Status dot with inline label on hover -->
+                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                <!-- svelte-ignore a11y-no-static-element-interactions -->
+                <span
+                  class="status-wrap status-{file.status}"
+                  class:clickable-error={file.status === 'error' && file.last_error_message}
+                  on:click|preventDefault|stopPropagation={() => file.status === 'error' && file.last_error_message && handleErrorClick(file)}
+                >
+                  <span class="status-label">{file.status === 'error' && file.last_error_message ? $t('gallery.errorClickForDetails') : (file.display_status || file.status)}</span>
+                  <span class="status-dot"></span>
+                </span>
               </div>
             </div>
           </a>
@@ -316,17 +336,19 @@
 
   .file-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-    padding: 0 2px 0.5rem;  /* Prevent edge clipping from hover/shadow */
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.75rem;
+    padding: 0 2px 0.5rem;
   }
+
+  /* --- Card --- */
 
   .file-card {
     position: relative;
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     border-radius: 12px;
-    transition: all 0.3s ease-in-out;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     cursor: pointer;
     overflow: hidden;
     display: flex;
@@ -374,13 +396,13 @@
   }
 
   .file-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 12px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
     border-color: var(--border-hover);
   }
 
   .file-card:hover .thumbnail-image {
-    transform: scale(1.05);
+    transform: scale(1.03);
   }
 
   .file-card.selected {
@@ -400,10 +422,12 @@
     -webkit-user-select: none;
   }
 
+  /* --- Selection checkbox (top-right, Apple Photos style) --- */
+
   .file-selector {
     position: absolute;
-    bottom: 12px;
-    right: 12px;
+    top: 6px;
+    right: 6px;
     z-index: 10;
     display: flex;
     align-items: center;
@@ -411,8 +435,8 @@
   }
 
   .checkmark {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     background-color: var(--background-color);
     border: 2px solid var(--border-color);
     border-radius: 4px;
@@ -443,8 +467,8 @@
     content: "";
     position: absolute;
     display: none;
-    left: 6px;
-    top: 2px;
+    left: 5px;
+    top: 1px;
     width: 5px;
     height: 10px;
     border: solid white;
@@ -456,200 +480,214 @@
     display: block;
   }
 
-  .file-thumbnail {
+  /* --- Thumbnail container --- */
+
+  .thumbnail-container {
     position: relative;
     width: 100%;
-    max-height: 180px;
-    min-height: 100px;
-    margin-bottom: 1rem;
-    border-radius: 8px;
+    height: 120px;
     overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.04);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    background-color: rgba(0, 0, 0, 0.03);
   }
 
-  :global(.dark) .file-thumbnail {
+  :global(.dark) .thumbnail-container {
     background-color: rgba(255, 255, 255, 0.05);
   }
 
   .thumbnail-image {
     width: 100%;
-    height: auto;
-    max-height: 180px;
-    object-fit: contain;
+    height: 100%;
+    object-fit: cover;
     transition: transform 0.3s ease;
   }
 
-  .video-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.3);
+  .placeholder {
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.8;
-    transition: opacity 0.3s ease;
-  }
-
-  .file-card:hover .video-overlay {
-    opacity: 1;
-  }
-
-  .video-placeholder,
-  .audio-placeholder {
-    background-color: rgba(0, 0, 0, 0.04);
+    width: 100%;
+    height: 100%;
     color: var(--text-secondary);
+    opacity: 0.5;
   }
 
-  :global(.dark) .video-placeholder,
-  :global(.dark) .audio-placeholder {
-    background-color: rgba(255, 255, 255, 0.05);
-    color: var(--text-secondary);
-  }
-
-  .file-content {
-    padding: 1.5rem;
+  .type-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 22px;
+    height: 22px;
     display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    flex: 1;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 4px;
+    color: #fff;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
+
+  .type-badge svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .duration-badge {
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 4px;
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  /* --- Card text area --- */
 
   .file-card-link {
-    display: block;
+    display: flex;
+    flex-direction: column;
     text-decoration: none;
     color: inherit;
     height: 100%;
   }
 
+  .card-text {
+    padding: 8px 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+  }
+
   .file-name {
-    font-size: 1.125rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
+    white-space: nowrap;
     line-height: 1.4;
   }
 
-  .file-date {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-top: auto;
-  }
-
-  .file-duration {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    font-weight: 500;
-  }
-
-  .file-meta {
+  .meta-line {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
+    font-size: 0.6875rem;
     color: var(--text-secondary);
-  }
-
-  .file-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.65rem;
-    font-weight: 500;
-    padding: 0.15rem 0.5rem;
-    border-radius: 9999px;
-    background-color: rgba(0, 0, 0, 0.05);
-    width: fit-content;
-    margin-left: auto;
+    line-height: 1.4;
+    min-width: 0;
     white-space: nowrap;
   }
 
-  :global(.dark) .file-status {
-    background-color: rgba(255, 255, 255, 0.05);
+  .meta-dot {
+    margin: 0 4px;
+    opacity: 0.5;
   }
 
-  .status-pending,
-  .status-processing {
-    color: #f59e0b;
-    background-color: rgba(245, 158, 11, 0.1);
-  }
+  /* --- Status indicator (dot + label on hover) --- */
 
-  .status-completed {
-    color: #10b981;
-    background-color: rgba(16, 185, 129, 0.1);
-  }
-
-  .status-error {
-    color: #ef4444;
-    background-color: rgba(239, 68, 68, 0.1);
-  }
-
-  .clickable-error {
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .clickable-error:hover {
-    background-color: rgba(239, 68, 68, 0.2);
-    transform: scale(1.02);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .error-details-trigger {
-    display: inline-flex;
+  .status-wrap {
+    display: flex;
     align-items: center;
-    gap: 0.25rem;
-    text-decoration: underline;
-    text-decoration-style: dotted;
+    gap: 4px;
+    margin-left: auto;
+    flex-shrink: 0;
+    cursor: help;
   }
 
-  .error-details-trigger:hover {
-    text-decoration-style: solid;
+  .status-label {
+    font-size: 0.5625rem;
+    font-weight: 500;
+    color: currentColor;
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-width 0.15s ease, opacity 0.1s ease;
+    white-space: nowrap;
   }
 
-  .status-cancelling {
-    color: #f59e0b;
-    background-color: rgba(245, 158, 11, 0.1);
-  }
-
-  .status-cancelled {
-    color: #6b7280;
-    background-color: rgba(107, 114, 128, 0.1);
-  }
-
-  .status-orphaned {
-    color: #dc2626;
-    background-color: rgba(220, 38, 38, 0.1);
+  .status-wrap:hover .status-label {
+    max-width: 120px;
+    opacity: 1;
   }
 
   .status-dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
+    flex-shrink: 0;
     background-color: currentColor;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .status-wrap:hover .status-dot {
+    transform: scale(1.5);
+  }
+
+  /* Status colors */
+  .status-wrap.status-completed {
+    color: #10b981;
+  }
+
+  .status-wrap.status-error {
+    color: #ef4444;
+  }
+
+  .status-wrap.status-processing {
+    color: #f59e0b;
+  }
+
+  .status-wrap.status-pending,
+  .status-wrap.status-cancelling {
+    color: #f59e0b;
+  }
+
+  .status-wrap.status-pending .status-dot,
+  .status-wrap.status-cancelling .status-dot {
+    opacity: 0.6;
+  }
+
+  .status-wrap.status-pending:hover .status-dot,
+  .status-wrap.status-cancelling:hover .status-dot {
+    opacity: 1;
+  }
+
+  .status-wrap.status-cancelled {
+    color: #6b7280;
+  }
+
+  .status-wrap.status-orphaned {
+    color: #dc2626;
+  }
+
+  .status-wrap.clickable-error {
+    cursor: pointer;
   }
 
   @keyframes pulse {
-    0% { opacity: 0.6; }
+    0% { opacity: 0.5; }
     50% { opacity: 1; }
-    100% { opacity: 0.6; }
+    100% { opacity: 0.5; }
   }
 
-  .status-processing .status-dot {
+  .status-wrap.status-processing .status-dot {
     animation: pulse 2s ease-in-out infinite;
   }
+
+  .status-wrap.status-processing:hover .status-dot {
+    animation: none;
+    opacity: 1;
+  }
+
+  /* --- Dark mode --- */
 
   :global(.dark) .file-card {
     background: var(--surface-color);
@@ -664,65 +702,76 @@
     color: var(--text-primary);
   }
 
-  :global(.dark) .file-date,
-  :global(.dark) .file-duration {
+  :global(.dark) .meta-line {
     color: var(--text-secondary);
   }
+
+  /* --- Responsive: Mobile --- */
 
   @media (max-width: 768px) {
     .file-grid {
       grid-template-columns: repeat(2, 1fr);
-      gap: 0.75rem;
+      gap: 0.5rem;
     }
 
-    .file-content {
-      padding: 0.625rem;
-      gap: 0.375rem;
+    .thumbnail-container {
+      height: 80px;
     }
 
-    .file-thumbnail {
-      max-height: 100px;
-      min-height: 60px;
-      margin-bottom: 0;
-      border-radius: 6px;
-    }
-
-    .video-placeholder svg,
-    .audio-placeholder svg {
-      width: 28px;
-      height: 28px;
+    .card-text {
+      padding: 6px 8px 8px;
     }
 
     .file-name {
-      font-size: 0.8125rem;
-      -webkit-line-clamp: 2;
-      line-clamp: 2;
-      line-height: 1.3;
+      font-size: 0.75rem;
     }
 
-    .file-meta {
-      flex-wrap: wrap;
-      gap: 0.25rem;
-      font-size: 0.6875rem;
+    .meta-line {
+      font-size: 0.625rem;
     }
 
-    .file-date,
-    .file-duration {
-      font-size: 0.6875rem;
-    }
-
-    .file-status {
-      font-size: 0.55rem;
-      padding: 0.1rem 0.35rem;
+    .status-line {
+      font-size: 0.5625rem;
     }
 
     .file-card {
       border-radius: 8px;
     }
 
+    .placeholder svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .duration-badge {
+      font-size: 0.6rem;
+      padding: 1px 4px;
+    }
+
+    .type-badge {
+      width: 18px;
+      height: 18px;
+      top: 4px;
+      left: 4px;
+    }
+
+    .type-badge svg {
+      width: 10px;
+      height: 10px;
+    }
+
     .file-selector {
-      bottom: 6px;
-      right: 6px;
+      top: 4px;
+      right: 4px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+    }
+
+    .status-label {
+      font-size: 0.5rem;
     }
   }
 
@@ -732,7 +781,7 @@
     }
 
     .file-name {
-      font-size: 1rem;
+      font-size: 0.8125rem;
     }
   }
 

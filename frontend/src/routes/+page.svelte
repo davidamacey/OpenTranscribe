@@ -1709,7 +1709,7 @@
   .scrollable-content {
     flex: 1;
     overflow-y: auto;
-    padding: 1.5rem;
+    padding: 1rem;
     padding-top: 0; /* Gallery header provides top spacing */
   }
 
@@ -1970,11 +1970,11 @@
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.75rem;
-    padding: 0.75rem 1.5rem;
+    padding: 0.75rem 1rem;
     background-color: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
-    margin-left: -1.5rem;
-    margin-right: -1.5rem;
+    margin-left: -1rem;
+    margin-right: -1rem;
   }
 
   .gallery-header-left {

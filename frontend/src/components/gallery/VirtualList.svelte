@@ -16,7 +16,7 @@
   const dispatch = createEventDispatcher<{ errorclick: MediaFile }>();
 
   // Virtual scrolling config
-  const ROW_HEIGHT = 48;
+  const ROW_HEIGHT = 44;
   const OVERSCAN = 5;
 
   // State
@@ -293,7 +293,7 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: 10px;
     overflow: hidden;
     background: var(--surface-color);
   }
@@ -309,11 +309,11 @@
     gap: 0.5rem;
     padding: 0.75rem 1rem;
     background: var(--surface-color);
-    border-bottom: 2px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     color: var(--text-secondary);
     position: sticky;
     top: 0;
@@ -346,7 +346,7 @@
     display: grid;
     grid-template-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
     gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 1rem;
     text-decoration: none;
     color: inherit;
     align-items: center;
@@ -354,22 +354,22 @@
   }
 
   .file-list-row.selecting-mode .file-list-link {
-    padding: 0.75rem 1rem 0.75rem 0;
+    padding: 0.5rem 1rem 0.5rem 0;
   }
 
   .file-list-row.selecting-mode .list-cell-checkbox {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.75rem 0 0.75rem 1rem;
+    padding: 0.5rem 0 0.5rem 1rem;
   }
 
   .file-list-row:hover {
-    background-color: var(--hover-bg, rgba(0, 0, 0, 0.02));
+    background-color: var(--hover-bg, rgba(0, 0, 0, 0.03));
   }
 
   :global([data-theme='dark']) .file-list-row:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: rgba(255, 255, 255, 0.06);
   }
 
   .file-list-row.even {
@@ -549,45 +549,42 @@
   .file-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 4px;
     font-size: 0.65rem;
     font-weight: 500;
-    padding: 0.15rem 0.5rem;
-    border-radius: 9999px;
-    background-color: rgba(0, 0, 0, 0.05);
     width: fit-content;
     white-space: nowrap;
   }
 
-  :global(.dark) .file-status {
-    background-color: rgba(255, 255, 255, 0.05);
-  }
-
   .status-pending,
-  .status-processing {
+  .status-processing,
+  .status-cancelling {
     color: #f59e0b;
-    background-color: rgba(245, 158, 11, 0.1);
   }
 
   .status-completed {
     color: #10b981;
-    background-color: rgba(16, 185, 129, 0.1);
   }
 
   .status-error {
     color: #ef4444;
-    background-color: rgba(239, 68, 68, 0.1);
+  }
+
+  .status-cancelled {
+    color: #6b7280;
+  }
+
+  .status-orphaned {
+    color: #dc2626;
   }
 
   .clickable-error {
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease;
   }
 
   .clickable-error:hover {
-    background-color: rgba(239, 68, 68, 0.2);
-    transform: scale(1.02);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+    opacity: 0.8;
   }
 
   .error-details-trigger {
@@ -600,21 +597,6 @@
 
   .error-details-trigger:hover {
     text-decoration-style: solid;
-  }
-
-  .status-cancelling {
-    color: #f59e0b;
-    background-color: rgba(245, 158, 11, 0.1);
-  }
-
-  .status-cancelled {
-    color: #6b7280;
-    background-color: rgba(107, 114, 128, 0.1);
-  }
-
-  .status-orphaned {
-    color: #dc2626;
-    background-color: rgba(220, 38, 38, 0.1);
   }
 
   .status-dot {
