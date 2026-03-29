@@ -33,6 +33,18 @@
   let filterSelectedFileTypes: string[] = [];
   let filterSelectedStatuses: string[] = [];
 
+  // Detect if any sidebar filters are active
+  $: hasActiveFilters =
+    filterSelectedTags.length > 0 ||
+    filterSelectedSpeakers.length > 0 ||
+    filterSelectedFileTypes.length > 0 ||
+    filterSelectedStatuses.length > 0 ||
+    filterSelectedCollectionId !== null ||
+    filterDateRange.from !== null ||
+    filterDurationRange.min !== null || filterDurationRange.max !== null ||
+    filterFileSizeRange.min !== null || filterFileSizeRange.max !== null ||
+    filterSearchQuery !== '';
+
   // Sticky preview player state
   let previewData: { fileUuid: string; title: string; startTime: number; speaker: string; contentType: string } | null = null;
   let previewMiniPlayer: PlyrMiniPlayer | null = null;
@@ -558,6 +570,19 @@
           </button>
         </div>
 
+        {#if hasActiveFilters}
+          <div class="filter-hint">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
+              <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
+              <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line>
+              <line x1="17" y1="16" x2="23" y2="16"></line>
+            </svg>
+            {$t('search.filtersApplied')}
+          </div>
+        {/if}
+
         <!-- Results Info Bar -->
         {#if $searchStore.query && !$searchStore.isLoading && $searchStore.totalResults >= 0 && $searchStore.results.length > 0}
           <div class="results-info">
@@ -881,6 +906,16 @@
   .search-bar {
     display: flex;
     gap: 0.5rem;
+  }
+
+  .filter-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--primary-color, #3b82f6);
+    opacity: 0.7;
+    margin-top: 0.25rem;
   }
 
   .search-btn {

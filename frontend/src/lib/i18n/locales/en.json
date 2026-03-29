@@ -2305,6 +2305,7 @@
   "search.title": "Search Transcripts",
   "searchPage.placeholder": "Search across all transcripts...",
   "searchPage.search": "Search",
+  "search.filtersApplied": "Filters applied to results",
   "search.results": "About {{count}} files ({{time}} seconds)",
   "searchPage.noResults": "No results found for \"{{query}}\"",
   "search.searching": "Searching...",
