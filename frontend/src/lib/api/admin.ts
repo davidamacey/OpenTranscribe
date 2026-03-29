@@ -106,10 +106,18 @@ export class AdminApi {
     outcome?: string;
     limit?: number;
     offset?: number;
-  }): Promise<AuditLogEntry[]> {
+  }): Promise<{ logs: AuditLogEntry[]; total: number; offset: number; limit: number }> {
     const response = await axiosInstance.get('/admin/audit-logs', { params });
     const data = response.data;
-    return Array.isArray(data) ? data : data.logs ?? [];
+    if (Array.isArray(data)) {
+      return { logs: data, total: data.length, offset: 0, limit: data.length };
+    }
+    return {
+      logs: data.logs ?? [],
+      total: data.total ?? 0,
+      offset: data.offset ?? 0,
+      limit: data.limit ?? 100,
+    };
   }
 
   static async exportAuditLogs(

@@ -6,13 +6,18 @@
 
   let auditLogs: AuditLogEntry[] = [];
   let loading = false;
+  let loadingMore = false;
   let backendNotReady = false; // Backend is fully implemented
+  let totalLogs = 0;
+  let hasMore = false;
+  const PAGE_SIZE = 50;
   let filters = {
     startDate: '',
     endDate: '',
     eventType: '',
     outcome: ''
   };
+  let tableContainer: HTMLElement | null = null;
 
   const eventTypeKeys: { value: string; key: string }[] = [
     { value: 'auth.login.success', key: 'settings.auditLog.events.loginSuccess' },
@@ -41,18 +46,51 @@
   async function loadAuditLogs() {
     loading = true;
     try {
-      auditLogs = await AdminApi.getAuditLogs({
+      const result = await AdminApi.getAuditLogs({
         start_date: filters.startDate || undefined,
         end_date: filters.endDate || undefined,
         event_type: filters.eventType || undefined,
         outcome: filters.outcome || undefined,
-        limit: 100
+        limit: PAGE_SIZE,
+        offset: 0
       });
+      auditLogs = result.logs;
+      totalLogs = result.total;
+      hasMore = auditLogs.length < totalLogs;
     } catch (error) {
       console.error('Failed to load audit logs:', error);
       toastStore.error($t('settings.auditLog.loadError'));
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadMoreLogs() {
+    if (loadingMore || !hasMore) return;
+    loadingMore = true;
+    try {
+      const result = await AdminApi.getAuditLogs({
+        start_date: filters.startDate || undefined,
+        end_date: filters.endDate || undefined,
+        event_type: filters.eventType || undefined,
+        outcome: filters.outcome || undefined,
+        limit: PAGE_SIZE,
+        offset: auditLogs.length
+      });
+      auditLogs = [...auditLogs, ...result.logs];
+      totalLogs = result.total;
+      hasMore = auditLogs.length < totalLogs;
+    } catch (error) {
+      console.error('Failed to load more audit logs:', error);
+    } finally {
+      loadingMore = false;
+    }
+  }
+
+  function handleTableScroll(e: Event) {
+    const el = e.target as HTMLElement;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
+      loadMoreLogs();
     }
   }
 
@@ -167,7 +205,10 @@
     {#if loading}
       <div class="loading">{$t('settings.auditLog.loadingShort')}</div>
     {:else}
-      <div class="audit-table-container">
+      <div class="audit-table-container" bind:this={tableContainer} on:scroll={handleTableScroll}>
+        {#if totalLogs > 0}
+          <div class="log-count">{auditLogs.length} / {totalLogs}</div>
+        {/if}
         <table class="audit-table">
           <thead>
             <tr>
@@ -201,6 +242,9 @@
           </tbody>
         </table>
       </div>
+      {#if loadingMore}
+        <div class="loading-more">{$t('settings.auditLog.loadingShort')}</div>
+      {/if}
       {#if auditLogs.length === 0}
         <div class="loading">{$t('settings.auditLog.noLogs')}</div>
       {/if}
@@ -529,6 +573,26 @@
     overflow-y: auto;
     border: 1px solid var(--color-border);
     border-radius: 4px;
+    position: relative;
+  }
+
+  .log-count {
+    position: sticky;
+    top: 0;
+    right: 0;
+    text-align: right;
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    background: var(--surface-color);
+    z-index: 2;
+  }
+
+  .loading-more {
+    text-align: center;
+    padding: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
   }
 
   /* Details Modal */

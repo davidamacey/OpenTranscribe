@@ -1,4 +1,5 @@
 import logging
+import math
 from datetime import datetime
 from datetime import timezone
 from typing import Any
@@ -7,6 +8,7 @@ from fastapi import APIRouter
 from fastapi import BackgroundTasks
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -17,6 +19,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
 from app.models.user import User
+from app.schemas.media import PaginatedTaskResponse
 from app.schemas.media import Task
 from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
@@ -167,18 +170,20 @@ def get_active_progress(
 # =============================================================================
 
 
-@router.get("", response_model=list[Task])
+@router.get("", response_model=PaginatedTaskResponse)
 def list_tasks(
     status: str | None = None,  # Filter by task status
     task_type: str | None = None,  # Filter by task type
     age_filter: str | None = None,  # Filter by age: "today", "week", "month", "older"
     date_from: str | None = None,  # Filter from date (YYYY-MM-DD)
     date_to: str | None = None,  # Filter to date (YYYY-MM-DD)
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    List all tasks for the current user with server-side filtering and computed fields
+    List tasks for the current user with server-side filtering and pagination.
     """
     try:
         # Get media files based on user permissions
@@ -197,12 +202,29 @@ def list_tasks(
             date_to=date_to,
         )
 
+        # Pagination
+        total = len(filtered_tasks)
+        total_pages = max(1, math.ceil(total / page_size))
+        offset = (page - 1) * page_size
+        page_items = filtered_tasks[offset : offset + page_size]
+
         # Convert to Task schema objects
-        return [Task(**task_dict) for task_dict in filtered_tasks]
+        items = [Task(**task_dict) for task_dict in page_items]
+
+        return PaginatedTaskResponse(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+            has_more=page < total_pages,
+        )
 
     except Exception as e:
         logger.error(f"Error in list_tasks: {e}")
-        return []
+        return PaginatedTaskResponse(
+            items=[], total=0, page=1, page_size=page_size, total_pages=0, has_more=False
+        )
 
 
 @router.get("/system/health", response_model=dict[str, Any])

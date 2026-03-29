@@ -607,6 +607,17 @@ class Task(TaskBase):
     model_config = {"from_attributes": True}
 
 
+class PaginatedTaskResponse(BaseModel):
+    """Paginated response for task listings."""
+
+    items: list[Task]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_more: bool
+
+
 # Analytics-related schemas
 class SpeakerTimeStats(BaseModel):
     by_speaker: dict[str, float] = {}

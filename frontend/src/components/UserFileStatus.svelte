@@ -76,6 +76,13 @@
   let taskDateTo = '';
   let filteredTasks: any[] = [];
 
+  // Task pagination state
+  let taskPage = 1;
+  let taskPageSize = 25;
+  let taskTotal = 0;
+  let taskTotalPages = 0;
+  let filtersReady = false;
+
   // WebSocket subscription
   let unsubscribeWebSocket: any = null;
   let lastProcessedNotificationId = '';
@@ -102,9 +109,10 @@
     }
   });
 
-  // Refetch tasks when filters change
-  $: if (showTasksSection && (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo)) {
-    fetchTasks(true); // Silent reload when filters change
+  // Refetch tasks when filters change (reset to page 1)
+  $: if (filtersReady && showTasksSection && (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo)) {
+    taskPage = 1;
+    fetchTasks(true);
   }
 
   async function fetchFileStatus(silent = false) {
@@ -145,7 +153,7 @@
     tasksError = null;
 
     try {
-      // Build query parameters for backend filtering
+      // Build query parameters for backend filtering + pagination
       const params = new URLSearchParams();
       if (taskFilter !== 'all') {
         params.append('status', taskFilter);
@@ -162,14 +170,25 @@
       if (taskDateTo) {
         params.append('date_to', taskDateTo);
       }
+      params.append('page', taskPage.toString());
+      params.append('page_size', taskPageSize.toString());
 
-      const queryString = params.toString();
-      const url = queryString ? `/tasks?${queryString}` : '/tasks';
+      const response = await axiosInstance.get(`/tasks?${params.toString()}`);
+      const data = response.data;
 
-      const response = await axiosInstance.get(url);
-      // Tasks are already filtered and include computed fields from backend
-      tasks = response.data;
-      filteredTasks = tasks; // No frontend filtering needed
+      // Handle paginated response
+      if (data.items) {
+        tasks = data.items;
+        taskTotal = data.total;
+        taskTotalPages = data.total_pages;
+      } else {
+        // Fallback for non-paginated response
+        tasks = Array.isArray(data) ? data : [];
+        taskTotal = tasks.length;
+        taskTotalPages = 1;
+      }
+      filteredTasks = tasks;
+      filtersReady = true;
     } catch (err: any) {
       console.error('Error fetching tasks:', err);
       if (!silent) {
@@ -738,6 +757,28 @@
               {/each}
             </tbody>
           </table>
+          {#if taskTotalPages > 1}
+            <div class="task-pagination">
+              <button
+                class="page-btn"
+                disabled={taskPage <= 1}
+                aria-label={$t('common.previous')}
+                on:click={() => { taskPage = taskPage - 1; fetchTasks(true); }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <span class="page-info">{taskPage} / {taskTotalPages}</span>
+              <button
+                class="page-btn"
+                disabled={taskPage >= taskTotalPages}
+                aria-label={$t('common.next')}
+                on:click={() => { taskPage = taskPage + 1; fetchTasks(true); }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+              <span class="total-info">{taskTotal} total</span>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -1935,5 +1976,52 @@
     .status-cards {
       grid-template-columns: repeat(2, 1fr);
     }
+  }
+
+  /* Task pagination */
+  .task-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .page-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .page-btn:hover:not(:disabled) {
+    background: var(--hover-bg, rgba(0, 0, 0, 0.03));
+    border-color: var(--primary-color);
+  }
+
+  .page-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .page-info {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .total-info {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-left: 0.5rem;
   }
 </style>
