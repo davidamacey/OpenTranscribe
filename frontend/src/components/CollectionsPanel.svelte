@@ -1348,6 +1348,7 @@
     .modal-backdrop {
       align-items: stretch;
       padding: 0;
+      z-index: 1300;
     }
 
     .modal-container {

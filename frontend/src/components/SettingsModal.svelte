@@ -2680,8 +2680,14 @@
 
   /* Responsive Design */
 
+  /* Raise above navbar (z-index 1200) on tablet so close button is reachable */
+  @media (max-width: 1024px) {
+    .settings-modal-backdrop {
+      z-index: 1300;
+    }
+  }
+
   @media (max-width: 768px) {
-    /* On mobile the modal is full-screen — raise above the navbar so the close button is reachable */
     .settings-modal-backdrop {
       z-index: 1300;
     }

@@ -1857,6 +1857,13 @@
     margin: 0;
   }
 
+  /* Raise modals above navbar (z-index 1200) on tablet */
+  @media (max-width: 1024px) and (min-width: 769px) {
+    .modal-backdrop {
+      z-index: 1300;
+    }
+  }
+
   /* Responsive design */
   @media (max-width: 768px) {
     .media-library-container {
@@ -1897,9 +1904,11 @@
       background-color: var(--background-color);
     }
 
-    /* Upload & Collections modals: fullscreen on mobile */
+    /* Upload & Collections modals: fullscreen on mobile.
+       Raise above navbar (z-index 1200) so close button is reachable. */
     .modal-backdrop {
       align-items: stretch;
+      z-index: 1300;
     }
 
     .modal-container {
@@ -2017,6 +2026,18 @@
 
   .mobile-filter-toggle svg {
     flex-shrink: 0;
+  }
+
+  /* Tablet: allow gallery header to wrap if tight */
+  @media (max-width: 1024px) and (min-width: 769px) {
+    .gallery-header {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .gallery-header-right {
+      gap: 0.375rem;
+    }
   }
 
   @media (max-width: 768px) {

@@ -325,7 +325,7 @@
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
-          {$t('nav.backToGallery')}
+          <span class="nav-label">{$t('nav.backToGallery')}</span>
         </a>
       {/if}
 
@@ -339,7 +339,7 @@
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        {$t('nav.search')}
+        <span class="nav-label">{$t('nav.search')}</span>
       </a>
 
       <!-- Speakers link -->
@@ -356,7 +356,7 @@
           <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
           <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
         </svg>
-        {$t('nav.speakers')}
+        <span class="nav-label">{$t('nav.speakers')}</span>
       </a>
 
       <!-- Notifications button -->
@@ -764,6 +764,7 @@
     cursor: pointer;
     position: relative;
     font-weight: 500;
+    white-space: nowrap;
   }
 
   .nav-link:hover {
@@ -1110,6 +1111,50 @@
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border-width: 0;
+  }
+
+  /* Tablet adjustments — iPad portrait/landscape (769–1024px) */
+  @media (max-width: 1024px) {
+    .navbar-container {
+      gap: 1rem;
+      padding: 0.5rem 1rem;
+    }
+
+    .nav-links {
+      gap: 0.75rem;
+    }
+
+    .nav-link {
+      padding: 0.4rem 0.6rem;
+      font-size: 0.875rem;
+    }
+
+    /* Icon-only nav links on tablet */
+    .nav-label {
+      display: none;
+    }
+
+    .logo-banner {
+      height: 30px;
+    }
+
+    /* Hide username on tablet to save space */
+    .username {
+      display: none;
+    }
+
+    .dropdown-icon {
+      display: none;
+    }
+
+    .tab-button {
+      padding: 0.35rem 0.6rem;
+      font-size: 0.85rem;
+    }
+
+    .gallery-tabs {
+      gap: 0.375rem;
+    }
   }
 
   @media (max-width: 768px) {

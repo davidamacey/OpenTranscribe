@@ -2124,6 +2124,13 @@
     color: #a5b4fc;
   }
 
+  /* Raise modal above navbar (z-index 1200) on tablet/mobile */
+  @media (max-width: 1024px) {
+    .modal-backdrop {
+      z-index: 1300;
+    }
+  }
+
   @media (max-width: 768px) {
     .speakers-page {
       padding: 16px 12px;

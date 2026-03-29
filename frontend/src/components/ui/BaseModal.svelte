@@ -178,6 +178,14 @@
     }
   }
 
+  /* Raise modals above navbar (z-index 1200) on mobile/tablet so
+     close button is not hidden behind the navbar */
+  @media (max-width: 1024px) {
+    .modal-backdrop {
+      z-index: 1300 !important;
+    }
+  }
+
   @media (max-width: 768px) {
     .modal-container {
       width: 100%;
@@ -189,9 +197,6 @@
     }
 
     .modal-backdrop {
-      /* Raise above the navbar (z-index 1200) on mobile so the modal
-         header and close button are not hidden behind it */
-      z-index: 1300 !important;
       align-items: stretch;
     }
 

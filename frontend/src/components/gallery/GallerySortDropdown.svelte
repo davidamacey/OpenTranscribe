@@ -274,14 +274,17 @@
     transform: rotate(180deg);
   }
 
+  /* Hide sort label on tablet and below to save space */
+  @media (max-width: 1024px) {
+    .sort-label {
+      display: none;
+    }
+  }
+
   @media (max-width: 768px) {
     .sort-button {
       font-size: 0.8125rem;
       padding: 0.4rem 0.75rem;
-    }
-
-    .sort-label {
-      display: none;
     }
 
     .dropdown-menu {
