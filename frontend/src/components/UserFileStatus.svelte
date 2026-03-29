@@ -103,14 +103,14 @@
     // Listen for push-based cache invalidation from WebSocket
     window.addEventListener('cache-invalidated', handleCacheInvalidation);
 
-    // Load tasks if section should be shown
-    if (showTasksSection && tasks.length === 0) {
+    // Always load tasks on mount
+    if (tasks.length === 0) {
       fetchTasks();
     }
   });
 
   // Refetch tasks when filters change (reset to page 1)
-  $: if (filtersReady && showTasksSection && (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo)) {
+  $: if (filtersReady && (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo)) {
     taskPage = 1;
     fetchTasks(true);
   }
@@ -400,26 +400,23 @@
         {$t('nav.flowerDashboard')}
       </button>
 
-      <button
-        class="tasks-toggle-btn"
-        on:click={toggleTasksSection}
-        title={$t('fileStatus.tasksToggleTooltip')}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 11l3 3L22 4"></path>
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-        </svg>
-        {showTasksSection ? $t('fileStatus.hideTasks') : $t('fileStatus.showAllTasks')}
-      </button>
+      {#if fileStatus?.has_problems}
+        <button
+          class="recovery-btn"
+          on:click={requestRecovery}
+          disabled={loading}
+          title={$t('fileStatus.requestRecoveryAll')}
+        >
+          {$t('fileStatus.requestRecoveryAll')}
+        </button>
+      {/if}
 
-      <div class="auto-refresh-info">
+      <span class="auto-refresh-icon" title={$t('fileStatus.autoRefresh')}>
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M12 16v-4"/>
-          <path d="M12 8h.01"/>
+          <polyline points="1 4 1 10 7 10"></polyline>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
         </svg>
-        {$t('fileStatus.autoRefresh')}
-      </div>
+      </span>
     </div>
   </div>
 
@@ -460,151 +457,27 @@
         </div>
       </div>
 
-      {#if fileStatus.has_problems}
-        <div class="problems-section">
-          <div class="problems-header">
-            <h3>{$t('fileStatus.filesNeedAttention')}</h3>
-            <div class="header-actions">
-              <button
-                class="section-toggle-btn"
-                on:click={toggleProblemsSection}
-                title={showProblemsSection ? 'Collapse section' : 'Expand section'}
-                aria-expanded={showProblemsSection}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({showProblemsSection ? '180deg' : '0deg'}); transition: transform 0.2s ease;">
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-              </button>
-              <button
-                class="recovery-btn"
-                on:click={requestRecovery}
-                disabled={loading}
-              >
-                {$t('fileStatus.requestRecoveryAll')}
-              </button>
-            </div>
-          </div>
-
-          {#if showProblemsSection}
-            <div class="problem-files">
-              {#each fileStatus.problem_files.files as file}
-              <div class="problem-file">
-                <div class="file-info">
-                  <div class="filename">{file.filename}</div>
-                  <div class="file-meta">
-                    <span class="status-badge {file.status_badge_class || 'status-unknown'}">
-                      {translateStatus(file.display_status || file.status)}
-                    </span>
-                    <span class="file-age">{file.formatted_file_age || $t('common.unknown')}</span>
-                  </div>
-                </div>
-
-                <div class="file-actions">
-                  <button
-                    class="info-button"
-                    on:click={() => fetchDetailedStatus(file.uuid)}
-                    title={$t('fileStatus.viewDetailsTooltip')}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="16" x2="12" y2="12"></line>
-                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                  </button>
-
-                  <button
-                    class="details-btn"
-                    on:click={() => fetchDetailedStatus(file.uuid)}
-                  >
-                    {$t('fileStatus.details')}
-                  </button>
-
-                  {#if file.can_retry}
-                    <button
-                      class="retry-btn"
-                      on:click={() => retryFile(file.uuid)}
-                      disabled={retryingFiles.has(file.uuid)}
-                    >
-                      {retryingFiles.has(file.uuid) ? $t('fileStatus.retrying') : $t('fileStatus.retry')}
-                    </button>
-                  {/if}
-                </div>
-              </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {:else}
-        <div class="no-problems">
-          <p>{$t('fileStatus.allFilesNormal')}</p>
-        </div>
-      {/if}
-
-      {#if fileStatus.recent_files.count > 0}
-        <div class="recent-files">
-          <div class="recent-header">
-            <h3>{$t('fileStatus.recentFiles')}</h3>
-            <button
-              class="section-toggle-btn"
-              on:click={toggleRecentSection}
-              title={showRecentSection ? 'Collapse section' : 'Expand section'}
-              aria-expanded={showRecentSection}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({showRecentSection ? '180deg' : '0deg'}); transition: transform 0.2s ease;">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-            </button>
-          </div>
-
-          {#if showRecentSection}
-            <div class="recent-files-grid">
-              {#each fileStatus.recent_files.files as file}
-              <div class="recent-file-card">
-                <div class="filename">{file.filename}</div>
-                <div class="file-status-row">
-                  <div class="status-info">
-                    <span class="status-badge {file.status_badge_class || 'status-unknown'}">
-                      {translateStatus(file.display_status || file.status)}
-                    </span>
-                    <span class="file-age">{file.formatted_file_age || $t('common.unknown')}</span>
-                  </div>
-                  <button
-                    class="info-button small"
-                    on:click={() => fetchDetailedStatus(file.uuid)}
-                    title={$t('fileStatus.viewDetailsTooltip')}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="16" x2="12" y2="12"></line>
-                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
     </div>
   {/if}
 
-  <!-- Tasks Section -->
-  {#if showTasksSection}
-    <div class="tasks-section">
-      <div class="tasks-header">
-        <h3>{$t('fileStatus.allTasks')}</h3>
-      </div>
+  <!-- Unified Tasks Section (always visible) -->
+  <div class="tasks-section">
+    <!-- Quick filter chips -->
+    <div class="quick-filters">
+      <button class="quick-chip" class:active={taskFilter === 'all'} on:click={() => { taskFilter = 'all'; }}>{$t('fileStatus.allStatuses')}</button>
+      <button class="quick-chip attention" class:active={taskFilter === 'needs_attention'} on:click={() => { taskFilter = 'needs_attention'; }}>
+        {$t('fileStatus.filesNeedAttention')}
+        {#if fileStatus?.has_problems}
+          <span class="chip-badge">{fileStatus.problem_files.count}</span>
+        {/if}
+      </button>
+      <button class="quick-chip" class:active={taskFilter === 'in_progress'} on:click={() => { taskFilter = 'in_progress'; }}>{$t('fileStatus.inProgress')}</button>
+      <button class="quick-chip" class:active={taskFilter === 'pending'} on:click={() => { taskFilter = 'pending'; }}>{$t('common.pending')}</button>
+      <button class="quick-chip" class:active={taskFilter === 'failed'} on:click={() => { taskFilter = 'failed'; }}>{$t('common.error')}</button>
+      <button class="quick-chip" class:active={taskFilter === 'completed'} on:click={() => { taskFilter = 'completed'; }}>{$t('common.completed')}</button>
+    </div>
 
-      <div class="compact-filters">
-        <select bind:value={taskFilter} class="compact-filter-select">
-          <option value="all">{$t('fileStatus.allStatuses')}</option>
-          <option value="pending">{$t('common.pending')}</option>
-          <option value="in_progress">{$t('fileStatus.inProgress')}</option>
-          <option value="completed">{$t('common.completed')}</option>
-          <option value="failed">{$t('fileStatus.failed')}</option>
-        </select>
-
+    <div class="compact-filters">
         <select bind:value={taskTypeFilter} class="compact-filter-select">
           <option value="all">{$t('fileStatus.allTypes')}</option>
           <option value="transcription">{$t('fileStatus.transcription')}</option>
@@ -765,7 +638,7 @@
                 aria-label={$t('common.previous')}
                 on:click={() => { taskPage = taskPage - 1; fetchTasks(true); }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
               </button>
               <span class="page-info">{taskPage} / {taskTotalPages}</span>
               <button
@@ -774,7 +647,7 @@
                 aria-label={$t('common.next')}
                 on:click={() => { taskPage = taskPage + 1; fetchTasks(true); }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
               </button>
               <span class="total-info">{taskTotal} total</span>
             </div>
@@ -782,7 +655,6 @@
         </div>
       {/if}
     </div>
-  {/if}
 
   {#if detailedStatus && selectedFile}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -1041,21 +913,16 @@
     transform: none;
   }
 
-  .auto-refresh-info {
+  .auto-refresh-icon {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
     color: var(--text-secondary);
-    font-size: 0.875rem;
-    font-weight: 500;
-    padding: 0.5rem 0.75rem;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
+    opacity: 0.5;
+    cursor: help;
   }
 
-  .auto-refresh-info svg {
-    opacity: 0.7;
+  .auto-refresh-icon:hover {
+    opacity: 0.8;
   }
 
   .status-cards {
@@ -1369,13 +1236,64 @@
     padding: 4px;
   }
 
+  /* Quick filter chips */
+  .quick-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .quick-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    height: 30px;
+    box-sizing: border-box;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    background: var(--surface-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .quick-chip:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  .quick-chip.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+
+  .quick-chip.attention .chip-badge {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    font-size: 0.6875rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  .quick-chip.attention.active .chip-badge {
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
+  }
+
   /* Tasks Section Styles */
   .tasks-section {
-    margin-top: 2rem;
+    margin-top: 1.5rem;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1.5rem;
+    padding: 1rem 1.5rem 1.5rem;
   }
 
   .tasks-header {
@@ -1401,15 +1319,21 @@
   }
 
   .compact-filter-select {
-    padding: 0.35rem 0.5rem;
+    padding: 0.375rem 0.625rem;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 8px;
     background: var(--surface-color);
     color: var(--text-color);
-    font-size: 0.8rem;
+    font-size: 0.8125rem;
     cursor: pointer;
     width: auto;
     min-width: 0;
+    height: 30px;
+    transition: border-color 0.15s ease;
+  }
+
+  .compact-filter-select:hover {
+    border-color: var(--primary-color);
   }
 
   .compact-filter-select:focus {
@@ -1418,14 +1342,20 @@
   }
 
   .compact-date-input {
-    padding: 0.35rem 0.5rem;
+    padding: 0.375rem 0.625rem;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 8px;
     background: var(--surface-color);
     color: var(--text-color);
-    font-size: 0.8rem;
+    font-size: 0.8125rem;
     font-family: inherit;
     width: 115px;
+    height: 30px;
+    transition: border-color 0.15s ease;
+  }
+
+  .compact-date-input:hover {
+    border-color: var(--primary-color);
   }
 
   .compact-date-input:focus {
@@ -2003,8 +1933,23 @@
   }
 
   .page-btn:hover:not(:disabled) {
-    background: var(--hover-bg, rgba(0, 0, 0, 0.03));
+    background: var(--hover-bg, rgba(0, 0, 0, 0.05));
     border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  :global(.dark) .page-btn,
+  :global([data-theme='dark']) .page-btn {
+    background: var(--surface-color);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+  }
+
+  :global(.dark) .page-btn:hover:not(:disabled),
+  :global([data-theme='dark']) .page-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
   }
 
   .page-btn:disabled {

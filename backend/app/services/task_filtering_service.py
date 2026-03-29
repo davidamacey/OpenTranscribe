@@ -52,8 +52,11 @@ class TaskFilteringService:
         filtered_tasks = []
 
         for task in tasks:
-            # Filter by status
-            if status and task.get("status") != status:
+            # Filter by status (special "needs_attention" filter)
+            if status == "needs_attention":
+                if not TaskFilteringService._needs_attention(task):
+                    continue
+            elif status and task.get("status") != status:
                 continue
 
             # Filter by task type
@@ -286,3 +289,25 @@ class TaskFilteringService:
             "failed": "Failed",
         }
         return status_map.get(status, status.title())  # type: ignore[no-any-return]
+
+    @staticmethod
+    def _needs_attention(task: dict[str, Any]) -> bool:
+        """Check if a task needs attention (error, stuck processing, or long pending)."""
+        task_status = task.get("status", "")
+        if task_status in ("failed", "error"):
+            return True
+        created_at = task.get("created_at")
+        if not created_at:
+            return False
+        now = datetime.now(timezone.utc)
+        if isinstance(created_at, str):
+            try:
+                created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return False
+        if not created_at.tzinfo:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        age_hours = (now - created_at).total_seconds() / 3600
+        if task_status == "in_progress" and age_hours > 1:
+            return True
+        return bool(task_status == "pending" and age_hours > 2)
