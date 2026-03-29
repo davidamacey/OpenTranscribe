@@ -349,6 +349,14 @@ def _build_media_file_response(
     response.collections = collections  # type: ignore[assignment]
     response.speakers = speakers  # type: ignore[assignment]
 
+    # Set lightweight summary indicator and strip heavy JSONB from response
+    response.has_summary = bool(
+        getattr(db_file, "summary_opensearch_id", None)
+        or getattr(db_file, "summary_status", None) == "completed"
+        or response.summary_data
+    )
+    response.summary_data = None  # Full summary fetched via /summary endpoint
+
     # Convert analytics to schema if it exists
     if analytics:
         from app.schemas.media import Analytics as AnalyticsSchema
@@ -410,9 +418,11 @@ def get_media_file_detail(
         MediaFileDetail object with all computed and formatted data
     """
     try:
-        # Get the file by uuid and user id (admin can access any file)
         is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        # Expire heavy JSONB columns so they're not loaded unless explicitly accessed
+        # (waveform_data fetched via /waveform, summary via /summary, metadata_raw rarely needed)
+        db.expire(db_file, ["waveform_data", "metadata_raw"])
         file_id = int(db_file.id)
 
         # Get related data
@@ -435,10 +445,12 @@ def get_media_file_detail(
         # Count merged speaker segments (adjacent same-speaker groups)
         total_speaker_segments = _count_speaker_segments(db, file_id)
 
-        # Add computed status to speakers in segments
+        # Add computed status to segment speakers (skip already-processed)
+        processed_speaker_ids = {int(s.id) for s in speakers}
         for segment in transcript_segments:
-            if segment.speaker:
+            if segment.speaker and int(segment.speaker.id) not in processed_speaker_ids:
                 SpeakerStatusService.add_computed_status(segment.speaker)
+                processed_speaker_ids.add(int(segment.speaker.id))
 
         # Compute caller's effective permission for frontend
         if db_file.user_id == int(current_user.id):

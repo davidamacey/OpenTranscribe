@@ -430,19 +430,18 @@
     // Find speakers that need cross-media data (labeled speakers without individual matches)
     const speakersNeedingCrossMedia = speakerList.filter(speaker => speaker.needsCrossMediaCall);
 
-    // Load cross-media data for each labeled speaker
-    for (const speaker of speakersNeedingCrossMedia) {
-      try {
-        const response = await axiosInstance.get(`/speakers/${speaker.uuid}/cross-media`);
-
-        // Update the speaker's cross_video_matches with actual file appearances
-        speaker.cross_video_matches = response.data || [];
-
-      } catch (error) {
-        console.error(`Error loading cross-media data for speaker ${speaker.uuid}:`, error);
-        speaker.cross_video_matches = [];
-      }
-    }
+    // Load cross-media data for all labeled speakers in parallel
+    await Promise.allSettled(
+      speakersNeedingCrossMedia.map(async (speaker) => {
+        try {
+          const response = await axiosInstance.get(`/speakers/${speaker.uuid}/cross-media`);
+          speaker.cross_video_matches = response.data || [];
+        } catch (error) {
+          console.error(`Error loading cross-media data for speaker ${speaker.uuid}:`, error);
+          speaker.cross_video_matches = [];
+        }
+      })
+    );
 
 
     // Trigger reactivity by updating the speakerList reference
@@ -1829,7 +1828,7 @@
         // Only clear transcript data if full transcription is being rerun
         if (!stages || stages.includes('transcription')) {
           file.transcript_segments = [];
-          file.summary_data = null;
+          file.has_summary = false;
           file.summary_opensearch_id = null;
         }
 
@@ -1879,7 +1878,7 @@
         // Only clear transcript data if full transcription is being rerun
         if (stages && stages.includes('transcription')) {
           file.transcript_segments = [];
-          file.summary_data = null;
+          file.has_summary = false;
           file.summary_opensearch_id = null;
         }
 
@@ -2172,7 +2171,7 @@
 
                   // Set a flag to indicate summary exists (full data fetched via API)
                   if (summaryPreview || summaryId) {
-                    file.summary_data = { preview: summaryPreview }; // Minimal indicator
+                    file.has_summary = true; // Summary now available
                   }
                   if (summaryId) {
                     file.summary_opensearch_id = summaryId;
@@ -2402,8 +2401,8 @@
                 {$t('fileDetail.transcript')}
               </button>
             {/if}
-          <!-- Debug: Summary button state: hasSummary={!!(file?.summary_data || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
-          {#if file?.summary_data || file?.summary_opensearch_id}
+          <!-- Debug: Summary button state: hasSummary={!!(file?.has_summary || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
+          {#if file?.has_summary || file?.summary_opensearch_id}
             <button
               class="view-summary-btn"
               on:click={handleShowSummary}
@@ -2719,7 +2718,7 @@
 
       // 3. Clear the summary from file object to trigger "generating" button state
       if (file) {
-        file.summary_data = null;
+        file.has_summary = false;
         file.summary_opensearch_id = null;
         file = { ...file }; // Trigger reactivity
       }
@@ -2742,7 +2741,7 @@
       summaryGenerating = true;
 
       if (file) {
-        file.summary_data = null;
+        file.has_summary = false;
         file.summary_opensearch_id = null;
         file = { ...file };
       }

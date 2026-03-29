@@ -453,6 +453,10 @@ class MediaFileDetail(MediaFile):
     analytics: Optional["Analytics"] = None
     speakers: list[Speaker] = []
 
+    # Lightweight summary indicator (full summary fetched via /summary endpoint)
+    has_summary: bool = False
+    summary_data: Optional[dict[str, Any]] = None  # Excluded from detail response
+
     # Additional formatted fields for detail view
     speaker_summary: Optional[dict[str, Any]] = None  # Speaker count and primary speakers
 
