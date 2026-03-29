@@ -1297,24 +1297,40 @@
     box-sizing: border-box;
     font-size: 0.8125rem;
     font-weight: 500;
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
-    background: var(--surface-color);
-    color: var(--text-secondary);
+    border: none;
+    border-radius: 10px;
+    background: rgba(59, 130, 246, 0.08);
+    color: #3b82f6;
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
   }
 
+  :global(.dark) .quick-chip,
+  :global([data-theme='dark']) .quick-chip {
+    background: rgba(96, 165, 250, 0.12);
+    color: #93c5fd;
+  }
+
   .quick-chip:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
+    background: rgba(59, 130, 246, 0.15);
+    transform: translateY(-1px);
+  }
+
+  :global(.dark) .quick-chip:hover,
+  :global([data-theme='dark']) .quick-chip:hover {
+    background: rgba(96, 165, 250, 0.2);
   }
 
   .quick-chip.active {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
-    border-color: var(--primary-color);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .quick-chip.active:hover {
+    background: #2563eb;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   .quick-chip.attention .chip-badge {
