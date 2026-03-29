@@ -93,11 +93,11 @@ class PermissionService:
 
         Returns highest permission, or None if no access.
         """
-        # Check direct ownership first
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-        if not media_file:
+        # Check direct ownership first (project only user_id, not full ORM object)
+        owner_row = db.query(MediaFile.user_id).filter(MediaFile.id == file_id).first()
+        if not owner_row:
             return None
-        if media_file.user_id == user_id:
+        if owner_row[0] == user_id:
             return "owner"
 
         # Check if file is in any collection shared with user

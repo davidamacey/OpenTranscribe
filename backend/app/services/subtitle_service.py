@@ -310,11 +310,13 @@ class SubtitleService:
         speaker_map: dict[int, str] = {}
         if include_speakers:
             speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
-            speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
-            for speaker in speakers:
-                speaker_map[speaker.id] = (  # type: ignore[index]
-                    str(speaker.display_name) if speaker.display_name else str(speaker.name)
-                )
+            speaker_rows = (
+                db.query(Speaker.id, Speaker.name, Speaker.display_name)
+                .filter(Speaker.id.in_(speaker_ids))
+                .all()
+            )
+            for row in speaker_rows:
+                speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)
@@ -377,11 +379,13 @@ class SubtitleService:
         speaker_map: dict[int, str] = {}
         if include_speakers:
             speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
-            speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
-            for speaker in speakers:
-                speaker_map[speaker.id] = (  # type: ignore[index]
-                    str(speaker.display_name) if speaker.display_name else str(speaker.name)
-                )
+            speaker_rows = (
+                db.query(Speaker.id, Speaker.name, Speaker.display_name)
+                .filter(Speaker.id.in_(speaker_ids))
+                .all()
+            )
+            for row in speaker_rows:
+                speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)
@@ -470,11 +474,13 @@ class SubtitleService:
         speaker_map: dict[int, str] = {}
         if include_speakers:
             speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
-            speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
-            for speaker in speakers:
-                speaker_map[speaker.id] = (  # type: ignore[index]
-                    str(speaker.display_name) if speaker.display_name else str(speaker.name)
-                )
+            speaker_rows = (
+                db.query(Speaker.id, Speaker.name, Speaker.display_name)
+                .filter(Speaker.id.in_(speaker_ids))
+                .all()
+            )
+            for row in speaker_rows:
+                speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)

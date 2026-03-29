@@ -388,12 +388,13 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         db: Database session
         user_id: ID of the user whose media files to delete
     """
-    media_files = db.query(MediaFile).filter(MediaFile.user_id == user_id).all()
-    media_count = len(media_files)
+    media_ids = [
+        row[0] for row in db.query(MediaFile.id).filter(MediaFile.user_id == user_id).all()
+    ]
+    media_count = len(media_ids)
 
     if media_count > 0:
         logger.info(f"Found {media_count} media files for user {user_id}")
-        media_ids = [m.id for m in media_files]
 
         # Delete transcript segments for these media files
         segments_deleted = (

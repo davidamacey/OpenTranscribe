@@ -54,11 +54,29 @@ TASK_STATUS_FAILED = "failed"
 
 
 def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
-    """Get media files based on user permissions."""
-    if current_user.is_admin:
-        return db.query(MediaFile).all()  # type: ignore[no-any-return]
-    else:
-        return db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()  # type: ignore[no-any-return]
+    """Get media files based on user permissions.
+
+    Projects only the columns needed for task list display, avoiding
+    loading large JSONB columns (summary_data, metadata_raw, waveform_data).
+    """
+    columns = [
+        MediaFile.id,
+        MediaFile.uuid,
+        MediaFile.filename,
+        MediaFile.file_size,
+        MediaFile.content_type,
+        MediaFile.duration,
+        MediaFile.language,
+        MediaFile.status,
+        MediaFile.upload_time,
+        MediaFile.completed_at,
+        MediaFile.media_format,
+        MediaFile.codec,
+    ]
+    query = db.query(*columns)
+    if not current_user.is_admin:
+        query = query.filter(MediaFile.user_id == current_user.id)
+    return query.all()  # type: ignore[no-any-return]
 
 
 def _map_file_status_to_task_status(file_status: FileStatus) -> str:
@@ -81,33 +99,30 @@ def _extract_file_format(content_type: str, filename: str) -> str | None:
     return None
 
 
-def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> dict:
-    """Convert a media file to a task dictionary."""
-    task_status = _map_file_status_to_task_status(file.status)  # type: ignore[arg-type]
+def _create_task_dict_from_media_file(file: Any, current_user: User) -> dict:
+    """Convert a media file row (ORM or named tuple) to a task dictionary."""
+    file_status = file.status
+    task_status = _map_file_status_to_task_status(file_status)  # type: ignore[arg-type]
 
-    # Handle completed_at time
-    completed_at = getattr(file, "completed_at", None)
+    completed_at = file.completed_at if hasattr(file, "completed_at") else None
 
-    # Extract file format
     file_format = _extract_file_format(str(file.content_type), str(file.filename))
 
-    # Calculate progress
-    if file.status == FileStatus.COMPLETED:
+    if file_status == FileStatus.COMPLETED:
         progress = 1.0
-    elif file.status == FileStatus.PROCESSING:
+    elif file_status == FileStatus.PROCESSING:
         progress = 0.5
     else:
         progress = 0.0
 
-    # Determine error message
-    error_message = "Transcription failed" if file.status == FileStatus.ERROR else None
+    error_message = "Transcription failed" if file_status == FileStatus.ERROR else None
 
     return {
         "id": f"task_{file.id}",
-        "user_id": str(current_user.uuid),  # Convert to UUID string
+        "user_id": str(current_user.uuid),
         "task_type": "transcription",
         "status": task_status,
-        "media_file_id": str(file.uuid),  # Convert to UUID string
+        "media_file_id": str(file.uuid),
         "progress": progress,
         "created_at": file.upload_time,
         "updated_at": file.upload_time,
@@ -121,8 +136,8 @@ def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> di
             "duration": file.duration,
             "language": file.language,
             "format": file_format,
-            "media_format": getattr(file, "media_format", None),
-            "codec": getattr(file, "codec", None),
+            "media_format": file.media_format if hasattr(file, "media_format") else None,
+            "codec": file.codec if hasattr(file, "codec") else None,
             "upload_time": file.upload_time,
         },
     }

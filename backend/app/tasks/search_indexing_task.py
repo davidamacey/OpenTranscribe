@@ -82,8 +82,12 @@ def index_transcript_search_task(  # noqa: C901
             speaker_ids = {seg.speaker_id for seg in segments if seg.speaker_id}
             speakers_map: dict[int, str] = {}
             if speaker_ids:
-                speaker_rows = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
-                speakers_map = {s.id: s.display_name or s.name or "Unknown" for s in speaker_rows}
+                spk_rows = (
+                    db.query(Speaker.id, Speaker.name, Speaker.display_name)
+                    .filter(Speaker.id.in_(speaker_ids))
+                    .all()
+                )
+                speakers_map = {r.id: r.display_name or r.name or "Unknown" for r in spk_rows}
 
             # Convert to dicts
             segment_dicts = []

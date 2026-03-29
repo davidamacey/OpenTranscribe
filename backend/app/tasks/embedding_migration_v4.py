@@ -433,25 +433,27 @@ def migrate_speaker_embeddings_v4_task(
         logger.error("Failed to create v4 staging index")
         return {"status": "error", "message": "Failed to create v4 staging index"}
 
-    # Get completed files from DB
+    # Get completed files from DB (project only id + uuid to avoid loading JSONB)
     with session_scope() as db:
-        query = db.query(MediaFile).filter(MediaFile.status == FileStatus.COMPLETED)
+        query = db.query(MediaFile.id, MediaFile.uuid).filter(
+            MediaFile.status == FileStatus.COMPLETED
+        )
         if user_id:
             query = query.filter(MediaFile.user_id == user_id)
-        media_files = query.all()
+        media_rows = query.all()
 
         # Filter out files already in v4 index (force mode: nothing to skip)
         if force:
-            files_to_migrate = list(media_files)
+            files_to_migrate = list(media_rows)
             skipped = 0
         else:
             already_migrated = _get_already_migrated_file_ids()
-            files_to_migrate = [f for f in media_files if f.id not in already_migrated]
-            skipped = len(media_files) - len(files_to_migrate)
+            files_to_migrate = [f for f in media_rows if f.id not in already_migrated]
+            skipped = len(media_rows) - len(files_to_migrate)
 
         total_files = len(files_to_migrate)
         logger.info(
-            f"Found {len(media_files)} completed files, "
+            f"Found {len(media_rows)} completed files, "
             f"{skipped} already migrated, {total_files} to process"
         )
 

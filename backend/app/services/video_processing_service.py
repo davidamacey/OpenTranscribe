@@ -466,11 +466,11 @@ class VideoProcessingService:
         """
         from app.models.media import MediaFile
 
-        db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-        if not db_file:
+        filename_row = db.query(MediaFile.filename).filter(MediaFile.id == file_id).first()
+        if not filename_row:
             raise Exception(f"Media file {file_id} not found")
 
-        cache_key = self.generate_cache_key(file_id, str(db_file.filename), include_speakers)
+        cache_key = self.generate_cache_key(file_id, str(filename_row[0]), include_speakers)
 
         # Return cached version if available
         if self.is_video_cached(cache_key):
@@ -524,13 +524,11 @@ class VideoProcessingService:
         # Get the MediaFile to access original filename
         from app.models.media import MediaFile
 
-        db_file_for_name = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-        if not db_file_for_name:
+        filename_row = db.query(MediaFile.filename).filter(MediaFile.id == file_id).first()
+        if not filename_row:
             raise Exception(f"Media file {file_id} not found")
 
-        cache_key = self.generate_cache_key(
-            file_id, str(db_file_for_name.filename), include_speakers
-        )
+        cache_key = self.generate_cache_key(file_id, str(filename_row[0]), include_speakers)
 
         # Check cache first
         if self.is_video_cached(cache_key):

@@ -561,8 +561,8 @@ def _cleanup_opensearch_data(db: Session, file_id: int, file_uuid: str) -> None:
         from app.services.opensearch_service import opensearch_client
         from app.services.opensearch_service import settings
 
-        speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
-        speaker_uuids = [str(speaker.uuid) for speaker in speakers]
+        speaker_uuid_rows = db.query(Speaker.uuid).filter(Speaker.media_file_id == file_id).all()
+        speaker_uuids = [str(r[0]) for r in speaker_uuid_rows]
 
         if not opensearch_client:
             logger.warning("OpenSearch client not available for cleanup")

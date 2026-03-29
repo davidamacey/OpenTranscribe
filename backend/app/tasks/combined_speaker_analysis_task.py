@@ -244,13 +244,13 @@ def migrate_speakers_combined_task(self, user_id: int):
 
     try:
         with session_scope() as db:
-            files = db.query(MediaFile).filter(MediaFile.status == FileStatus.COMPLETED).all()
-            total_files = len(files)
+            rows = db.query(MediaFile.uuid).filter(MediaFile.status == FileStatus.COMPLETED).all()
+            total_files = len(rows)
 
             if total_files == 0:
                 return {"status": "skipped", "message": "No files to process"}
 
-            file_uuids = [str(f.uuid) for f in files]
+            file_uuids = [str(r[0]) for r in rows]
 
         combined_migration_progress.start_migration(total_files=total_files, task_id=task_id)
 

@@ -235,9 +235,9 @@ def delete_comment(
         db.commit()
         return None
 
-    # Allow deletion by file owner
-    media_file = db.query(MediaFile).filter(MediaFile.id == comment.media_file_id).first()
-    if media_file and media_file.user_id == current_user.id:
+    # Allow deletion by file owner (project only user_id, not full ORM object)
+    owner_row = db.query(MediaFile.user_id).filter(MediaFile.id == comment.media_file_id).first()
+    if owner_row and owner_row[0] == current_user.id:
         db.delete(comment)
         db.commit()
         return None

@@ -741,11 +741,10 @@ async def remove_media_from_collection(
 
     # Collection owner can remove any file; shared editors can only remove their own
     is_owner = collection.user_id == current_user.id
-    query = db.query(MediaFile).filter(MediaFile.uuid.in_(media_file_uuids))
+    id_query = db.query(MediaFile.id).filter(MediaFile.uuid.in_(media_file_uuids))
     if not is_owner:
-        query = query.filter(MediaFile.user_id == current_user.id)
-    media_files = query.all()
-    media_file_ids = [f.id for f in media_files]
+        id_query = id_query.filter(MediaFile.user_id == current_user.id)
+    media_file_ids = [r[0] for r in id_query.all()]
 
     # Remove members
     removed_count = (
