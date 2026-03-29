@@ -523,6 +523,44 @@ def _process_single_speaker(
     )
 
 
+def _process_single_speaker_with_suggestions(
+    speaker: Speaker,
+    current_user: User,
+    segment_count: int,
+    smart_suggestions: list,
+    segment_timestamps: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Process a single speaker with pre-fetched suggestions (avoids N+1 OpenSearch)."""
+    from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
+
+    status_info = SpeakerStatusService.compute_speaker_status(speaker)
+    speaker.computed_status = status_info["computed_status"]  # type: ignore[assignment]
+    speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
+    speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
+    speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
+
+    raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(smart_suggestions)
+    profile_suggestions = _get_profile_suggestions(raw_cross_video_matches)
+    cross_video_matches: list[dict[str, Any]] = []
+    suggested_name = _compute_suggested_name(speaker)
+    suggestion_source = _get_suggestion_source(speaker)
+    display_flags = _compute_display_flags(
+        speaker, suggested_name, suggestion_source, profile_suggestions
+    )
+
+    return _build_speaker_dict(
+        speaker,
+        current_user,
+        suggested_name,
+        suggestion_source,
+        profile_suggestions,
+        cross_video_matches,
+        display_flags,
+        segment_count,
+        segment_timestamps,
+    )
+
+
 def _create_no_cache_response(content: list[dict[str, Any]]) -> JSONResponse:
     """Create a JSONResponse with cache-busting headers."""
     return JSONResponse(
@@ -598,13 +636,24 @@ def list_speakers(
         if file_id is not None and speaker_ids:
             all_timestamps = _get_first_segment_timestamps_for_speakers(speaker_ids, file_id, db)
 
-        # Process each speaker and build result
+        # Batch-fetch all speaker suggestions (3 OS calls total vs 3N before)
+        from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
+
+        batch_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions_batch(
+            speakers=speakers,
+            user_id=int(current_user.id),
+            db=db,
+            confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
+            max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
+        )
+
+        # Process each speaker with pre-fetched suggestions
         result = [
-            _process_single_speaker(
+            _process_single_speaker_with_suggestions(
                 speaker,
                 current_user,
                 segment_counts.get(int(speaker.id), 0),
-                db,
+                batch_suggestions.get(int(speaker.id), []),
                 all_timestamps.get(int(speaker.id)),
             )
             for speaker in speakers

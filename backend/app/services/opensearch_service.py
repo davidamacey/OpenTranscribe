@@ -2447,6 +2447,96 @@ def get_speaker_embeddings_batch(speaker_uuids: list[str]) -> dict[str, list[flo
         return {}
 
 
+def msearch_profile_knn_batch(
+    speaker_embeddings: dict[str, list[float]],
+    user_id: int,
+    threshold: float = 0.5,
+    k: int = 10,
+    accessible_profile_ids: set[int] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Batch kNN search for profile matches across multiple speakers.
+
+    Executes a single msearch request containing one kNN query per speaker,
+    each searching for matching profile documents.
+
+    Args:
+        speaker_embeddings: Dict mapping speaker_uuid -> embedding vector.
+        user_id: Owner user ID for filtering.
+        threshold: Minimum raw cosine similarity to include.
+        k: Number of nearest neighbors per query.
+        accessible_profile_ids: Optional set of profile IDs to restrict search.
+
+    Returns:
+        Dict mapping speaker_uuid -> list of profile match dicts.
+    """
+    if not opensearch_client or not speaker_embeddings:
+        return {uid: [] for uid in speaker_embeddings}
+
+    try:
+        ensure_indices_exist()
+        speaker_index = get_speaker_index()
+
+        # Build filter (same for all queries)
+        if accessible_profile_ids is not None:
+            must_filters: list[dict[str, Any]] = [
+                {"term": {"document_type": "profile"}},
+                {"terms": {"profile_id": list(accessible_profile_ids)}},
+            ]
+        else:
+            must_filters = [
+                {"term": {"document_type": "profile"}},
+                {"term": {"user_id": user_id}},
+            ]
+
+        # Build msearch body
+        msearch_body: list[dict[str, Any]] = []
+        uuid_order: list[str] = []
+
+        for speaker_uuid, embedding in speaker_embeddings.items():
+            uuid_order.append(speaker_uuid)
+            msearch_body.append({"index": speaker_index})
+            msearch_body.append(
+                {
+                    "size": k,
+                    "query": {
+                        "knn": {
+                            "embedding": {
+                                "vector": embedding,
+                                "k": k,
+                                "filter": {"bool": {"must": must_filters}},
+                            }
+                        }
+                    },
+                }
+            )
+
+        response = opensearch_client.msearch(body=msearch_body)
+
+        results: dict[str, list[dict[str, Any]]] = {}
+        for i, speaker_uuid in enumerate(uuid_order):
+            matches: list[dict[str, Any]] = []
+            resp = response["responses"][i]
+            for hit in resp.get("hits", {}).get("hits", []):
+                score = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
+                if score >= threshold:
+                    source = hit["_source"]
+                    matches.append(
+                        {
+                            "profile_id": source.get("profile_id"),
+                            "profile_name": source.get("profile_name"),
+                            "speaker_count": source.get("speaker_count"),
+                            "similarity": score,
+                        }
+                    )
+            results[speaker_uuid] = matches
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Error in batch profile kNN search: {e}")
+        return {uid: [] for uid in speaker_embeddings}
+
+
 def get_profile_embedding(profile_uuid: str) -> list[float] | None:
     """
     Get the embedding vector for a speaker profile from OpenSearch

@@ -435,6 +435,106 @@ class SmartSpeakerSuggestionService:
         return suggestions
 
     @staticmethod
+    def consolidate_suggestions_batch(
+        speakers: list[Speaker],
+        user_id: int,
+        db: Session,
+        confidence_threshold: float = 0.5,
+        max_suggestions: int = 10,
+    ) -> dict[int, list[ConsolidatedSuggestion]]:
+        """Batch-generate suggestions for multiple speakers with minimal OS round-trips.
+
+        Replaces N calls to consolidate_suggestions() with:
+        1. One mget for all speaker embeddings
+        2. One search to check if profiles exist
+        3. One msearch for all kNN profile queries
+
+        Returns dict mapping speaker.id (int) -> list[ConsolidatedSuggestion].
+        """
+        from app.services.opensearch_service import get_speaker_embeddings_batch
+        from app.services.opensearch_service import msearch_profile_knn_batch
+        from app.services.opensearch_service import opensearch_client
+
+        result: dict[int, list[ConsolidatedSuggestion]] = {int(s.id): [] for s in speakers}
+        if not speakers:
+            return result
+
+        # Phase 1: Collect LLM suggestions (pure DB, no OS calls)
+        uuid_to_id: dict[str, int] = {}
+        for speaker in speakers:
+            sid = int(speaker.id)
+            suuid = str(speaker.uuid)
+            uuid_to_id[suuid] = sid
+
+            if (
+                speaker.suggested_name
+                and speaker.confidence
+                and speaker.suggestion_source == "llm_analysis"
+            ):
+                result[sid].append(
+                    ConsolidatedSuggestion(
+                        name=speaker.suggested_name,  # type: ignore[arg-type]
+                        confidence=float(speaker.confidence),
+                        suggestion_type="llm_analysis",
+                        reason="AI identified from transcript context",
+                        auto_accept=float(speaker.confidence) >= 0.75,
+                    )
+                )
+
+        # Phase 2: Batch-fetch all speaker embeddings (1 mget)
+        embeddings_map = get_speaker_embeddings_batch(list(uuid_to_id.keys()))
+
+        # Phase 3: Check if profiles exist at all (1 search, same for all speakers)
+        profiles_exist = False
+        if embeddings_map and opensearch_client:
+            profiles_exist = _check_opensearch_profiles_exist(opensearch_client, user_id)
+
+        # Phase 4: Batch kNN profile search (1 msearch)
+        profile_matches_map: dict[str, list[dict[str, Any]]] = {}
+        if profiles_exist and embeddings_map:
+            profile_matches_map = msearch_profile_knn_batch(
+                speaker_embeddings=embeddings_map,
+                user_id=user_id,
+                threshold=confidence_threshold,
+            )
+
+        # Phase 5: Assemble per-speaker suggestions
+        for speaker in speakers:
+            sid = int(speaker.id)
+            suuid = str(speaker.uuid)
+
+            for match in profile_matches_map.get(suuid, []):
+                suggestion = _convert_profile_match_to_suggestion(match)
+                if suggestion:
+                    result[sid].append(suggestion)
+
+            # Deduplicate by (type, name)
+            unique: dict[str, ConsolidatedSuggestion] = {}
+            for s in result[sid]:
+                key = f"{s.suggestion_type}:{s.name.lower()}"
+                if key not in unique or s.confidence > unique[key].confidence:
+                    unique[key] = s
+
+            # Sort and filter
+            final = sorted(
+                unique.values(),
+                key=lambda s: (0 if s.suggestion_type == "profile" else 1, -s.confidence),
+            )
+            type_counts: dict[str, int] = {}
+            filtered: list[ConsolidatedSuggestion] = []
+            for s in final:
+                if s.name.startswith("SPEAKER_"):
+                    continue
+                if type_counts.get(s.suggestion_type, 0) >= max_suggestions:
+                    continue
+                type_counts[s.suggestion_type] = type_counts.get(s.suggestion_type, 0) + 1
+                filtered.append(s)
+
+            result[sid] = filtered
+
+        return result
+
+    @staticmethod
     def format_for_api(suggestions: list[ConsolidatedSuggestion]) -> list[dict[str, Any]]:
         """Format consolidated suggestions for API response with clear type labels"""
         formatted = []
