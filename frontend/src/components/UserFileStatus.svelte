@@ -7,6 +7,7 @@
   import { toastStore } from '../stores/toast';
   import { t } from '../stores/locale';
   import { getFlowerUrl } from '$lib/utils/url';
+  import SkeletonLoader from './ui/SkeletonLoader.svelte';
 
   // Helper function to translate status values
   function translateStatus(status: string): string {
@@ -389,6 +390,14 @@
   <div class="header">
     <h2>{$t('fileStatus.title')}</h2>
     <div class="controls">
+      <span class="live-status-icon" data-tooltip="Live updates via WebSocket. Fallback poll every 2 minutes.">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+      </span>
+
       <button
         class="flower-btn"
         on:click={openFlowerDashboard}
@@ -410,13 +419,6 @@
           {$t('fileStatus.requestRecoveryAll')}
         </button>
       {/if}
-
-      <span class="auto-refresh-icon" title={$t('fileStatus.autoRefresh')}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="1 4 1 10 7 10"></polyline>
-          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-        </svg>
-      </span>
     </div>
   </div>
 
@@ -427,7 +429,19 @@
   {/if}
 
   {#if loading && !fileStatus}
-    <div class="loading">{$t('fileStatus.loading')}</div>
+    <div class="skeleton-status">
+      <div class="status-cards">
+        {#each Array(5) as _}
+          <div class="status-card skeleton-card">
+            <SkeletonLoader lines={1} height={28} />
+            <SkeletonLoader lines={1} height={12} />
+          </div>
+        {/each}
+      </div>
+      <div class="skeleton-table">
+        <SkeletonLoader lines={6} height={36} />
+      </div>
+    </div>
   {:else if fileStatus}
     <div class="status-overview">
       <div class="status-cards">
@@ -913,7 +927,8 @@
     transform: none;
   }
 
-  .auto-refresh-icon {
+  .live-status-icon {
+    position: relative;
     display: flex;
     align-items: center;
     color: var(--text-secondary);
@@ -921,8 +936,37 @@
     cursor: help;
   }
 
-  .auto-refresh-icon:hover {
+  .live-status-icon:hover {
     opacity: 0.8;
+  }
+
+  .live-status-icon::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    padding: 6px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.08s ease;
+    z-index: 20;
+    line-height: 1.3;
+  }
+
+  .live-status-icon:hover::after {
+    opacity: 1;
+  }
+
+  :global(.dark) .live-status-icon::after,
+  :global([data-theme='dark']) .live-status-icon::after {
+    background: rgba(255, 255, 255, 0.92);
+    color: #111;
   }
 
   .status-cards {
@@ -1906,6 +1950,26 @@
     .status-cards {
       grid-template-columns: repeat(2, 1fr);
     }
+  }
+
+  /* Skeleton loading state */
+  .skeleton-status {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .skeleton-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .skeleton-table {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
   }
 
   /* Task pagination */
