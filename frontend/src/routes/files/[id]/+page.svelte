@@ -270,7 +270,7 @@
       const currentCount = file?.transcript_segments?.length || 0;
       const nextOffset = currentCount;
 
-      const response = await axiosInstance.get(`/files/${fileId}`, {
+      const response = await axiosInstance.get(`/files/${fileId}/segments`, {
         params: {
           segment_limit: segmentLimit,
           segment_offset: nextOffset
@@ -322,7 +322,7 @@
       const buffer = 50;
       const neededCount = targetIndex - currentCount + buffer + 1;
 
-      const response = await axiosInstance.get(`/files/${fileId}`, {
+      const response = await axiosInstance.get(`/files/${fileId}/segments`, {
         params: {
           segment_limit: neededCount,
           segment_offset: currentCount
@@ -715,8 +715,8 @@
     if (!file?.uuid) return;
 
     try {
-      // Silently refresh file data to get updated analytics
-      const response = await axiosInstance.get(`/files/${file.uuid}`);
+      // Fetch only analytics (lightweight, no full file detail)
+      const response = await axiosInstance.get(`/files/${file.uuid}/analytics`);
 
       if (response.data && typeof response.data === 'object') {
         // Update analytics from refreshed response

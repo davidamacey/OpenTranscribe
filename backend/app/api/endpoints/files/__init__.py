@@ -10,6 +10,7 @@ This module contains the refactored files endpoint split into modular components
 
 import logging
 from datetime import datetime
+from typing import Any
 from typing import NamedTuple
 from typing import Optional
 from uuid import UUID
@@ -45,6 +46,7 @@ from app.services.formatting_service import FormattingService
 
 from . import cancel_upload
 from . import prepare_upload
+from .crud import _get_or_compute_analytics
 from .crud import delete_media_file
 from .crud import get_media_file_by_id
 from .crud import get_media_file_by_uuid
@@ -56,6 +58,7 @@ from .crud import update_single_transcript_segment
 from .filtering import apply_all_filters
 from .filtering import get_metadata_filters
 from .reprocess import process_file_reprocess
+from .segments import router as segments_router
 from .streaming import get_content_streaming_response
 from .streaming import get_enhanced_video_streaming_response
 from .streaming import get_thumbnail_streaming_response
@@ -125,6 +128,7 @@ router.include_router(prepare_upload.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
 router.include_router(waveform_router, prefix="", tags=["waveform"])
 router.include_router(url_processing_router, prefix="", tags=["url-processing"])
+router.include_router(segments_router, prefix="", tags=["files"])
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
 
@@ -951,6 +955,23 @@ def clear_video_cache(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error clearing video cache: {str(e)}",
         ) from e
+
+
+@router.get("/{file_uuid}/analytics")
+def get_file_analytics(
+    file_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """Get analytics for a media file (lightweight, no transcript/speaker data)."""
+    from app.schemas.media import Analytics as AnalyticsSchema
+
+    is_admin = current_user.is_admin
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    analytics = _get_or_compute_analytics(db, int(db_file.id), str(db_file.status))
+    return {
+        "analytics": AnalyticsSchema.model_validate(analytics) if analytics else None,
+    }
 
 
 @router.post("/{file_uuid}/analytics/refresh", status_code=204)
