@@ -73,6 +73,18 @@
   // Scroll container ref for virtual scrolling
   let scrollableContentEl: HTMLElement | null = null;
 
+  // Continuously save scroll position for back-nav restoration
+  let scrollSaveRaf: number | null = null;
+  function onGalleryScroll() {
+    if (scrollSaveRaf !== null) return;
+    scrollSaveRaf = requestAnimationFrame(() => {
+      scrollSaveRaf = null;
+      if (scrollableContentEl) {
+        galleryStore.setScrollTop(scrollableContentEl.scrollTop);
+      }
+    });
+  }
+
   // Infinite scroll state
   let infiniteScrollSentinel: HTMLElement | null = null;
   let intersectionObserver: IntersectionObserver | null = null;
@@ -317,18 +329,8 @@
 
       updateFileMap();
 
-      // Restore scroll position on back navigation
-      // Use tick() + double rAF to ensure VirtualGrid has recalculated after DOM update
-      if (isInitialLoad && $galleryState.scrollTop > 0 && scrollableContentEl) {
-        await tick();
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (scrollableContentEl) {
-              scrollableContentEl.scrollTop = $galleryState.scrollTop;
-            }
-          });
-        });
-      }
+      // Note: scroll position restoration for back-nav is handled in onMount
+      // before fetchFiles is called, using the cached files from the store.
 
     } catch (err: any) {
       console.error('Error fetching files:', err);
@@ -1147,7 +1149,30 @@
     window.addEventListener('openAddMediaModal', handleOpenModalEvent as EventListener);
     window.addEventListener('uploadRecordedFile', handleUploadRecordedFile as EventListener);
 
-    fetchFiles(true); // Initial load
+    // On back navigation, restore files from store instead of re-fetching
+    const savedScrollTop = $galleryState.scrollTop;
+    const savedFiles = $galleryState.files;
+    if (savedFiles.length > 0 && savedScrollTop > 0) {
+      // Restore cached files so VirtualGrid has data to render
+      files = [...savedFiles];
+      updateFileMap();
+      loading = false;
+
+      // Repeatedly attempt scroll restoration until VirtualGrid has
+      // computed its full height and the scroll actually takes effect.
+      let attempts = 0;
+      const tryRestore = () => {
+        if (!scrollableContentEl || attempts > 30) return;
+        attempts++;
+        scrollableContentEl.scrollTop = savedScrollTop;
+        if (Math.abs(scrollableContentEl.scrollTop - savedScrollTop) > 10) {
+          requestAnimationFrame(tryRestore);
+        }
+      };
+      tick().then(() => requestAnimationFrame(tryRestore));
+    } else {
+      fetchFiles(true); // Fresh load
+    }
 
     // Setup infinite scroll observer (will observe sentinel via reactive statement)
     intersectionObserver = new IntersectionObserver(
@@ -1176,10 +1201,9 @@
   });
 
   onDestroy(() => {
-    // Save scroll position for back navigation restoration
-    if (scrollableContentEl) {
-      galleryStore.setScrollTop(scrollableContentEl.scrollTop);
-    }
+    // Scroll position is saved continuously by onGalleryScroll handler.
+    // Do NOT read scrollableContentEl.scrollTop here — DOM is already
+    // detached and it returns 0, overwriting the saved value.
 
     // Save filter state for back navigation restoration
     galleryStore.saveFilters({
@@ -1204,6 +1228,11 @@
 
     // Clean up periodic notification cleanup interval
     clearInterval(notificationCleanupInterval);
+
+    // Clean up scroll save rAF
+    if (scrollSaveRaf !== null) {
+      cancelAnimationFrame(scrollSaveRaf);
+    }
 
     // Clean up any pending refresh timeouts
     refreshTimeouts.forEach((timeoutId) => {
@@ -1329,7 +1358,7 @@
 
       <!-- Right Content: Scrollable Media Grid -->
       <div class="content-area">
-        <div class="scrollable-content" bind:this={scrollableContentEl}>
+        <div class="scrollable-content" bind:this={scrollableContentEl} on:scroll={onGalleryScroll}>
       <!-- Gallery Header (sticky) - always visible for action buttons -->
       <div class="gallery-header">
         <div class="gallery-header-left">
