@@ -19,7 +19,7 @@
   export let isOpen = false;
   export let title = '';
   export let maxWidth = '600px';
-  export let zIndex = 1000;
+  export let zIndex = 1300;
   export let onClose: () => void = () => {};
 
   // Lock page scroll when modal is open

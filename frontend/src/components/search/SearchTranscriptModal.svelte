@@ -751,7 +751,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <div class="search-transcript-modal-wrapper">
-<BaseModal {isOpen} maxWidth="1200px" zIndex={1050} onClose={handleClose}>
+<BaseModal {isOpen} maxWidth="1200px" zIndex={1300} onClose={handleClose}>
       <svelte:fragment slot="header">
         <div class="header-left">
           <h2 class="modal-title">{$t('searchTranscript.title', { fileName })}</h2>

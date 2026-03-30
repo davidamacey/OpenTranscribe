@@ -48,7 +48,7 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<BaseModal {isOpen} {title} onClose={handleClose} maxWidth="500px" zIndex={1200}>
+<BaseModal {isOpen} {title} onClose={handleClose} maxWidth="500px" zIndex={1300}>
   <p id="modal-message" class="modal-message">{message}</p>
 
   <svelte:fragment slot="footer">

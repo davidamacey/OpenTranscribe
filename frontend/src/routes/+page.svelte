@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
 
   import { fade, scale } from 'svelte/transition';
   import { websocketStore } from '$stores/websocket';
@@ -318,11 +318,15 @@
       updateFileMap();
 
       // Restore scroll position on back navigation
+      // Use tick() + double rAF to ensure VirtualGrid has recalculated after DOM update
       if (isInitialLoad && $galleryState.scrollTop > 0 && scrollableContentEl) {
+        await tick();
         requestAnimationFrame(() => {
-          if (scrollableContentEl) {
-            scrollableContentEl.scrollTop = $galleryState.scrollTop;
-          }
+          requestAnimationFrame(() => {
+            if (scrollableContentEl) {
+              scrollableContentEl.scrollTop = $galleryState.scrollTop;
+            }
+          });
         });
       }
 

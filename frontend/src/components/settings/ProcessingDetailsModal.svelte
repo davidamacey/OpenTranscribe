@@ -36,7 +36,7 @@
   };
 </script>
 
-<BaseModal {isOpen} title={$t('settings.statistics.processingDetails')} onClose={close} maxWidth="600px" zIndex={1200}>
+<BaseModal {isOpen} title={$t('settings.statistics.processingDetails')} onClose={close} maxWidth="600px" zIndex={1300}>
         <!-- Tab navigation -->
         <div class="detail-tabs">
           <button class="tab" class:active={section === 'performance'} on:click={() => section = 'performance'}>

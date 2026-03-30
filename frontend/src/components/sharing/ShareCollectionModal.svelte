@@ -116,7 +116,7 @@
   });
 </script>
 
-<BaseModal isOpen={true} title={$t('sharing.shareCollection')} onClose={handleClose} maxWidth="540px" zIndex={1200}>
+<BaseModal isOpen={true} title={$t('sharing.shareCollection')} onClose={handleClose} maxWidth="540px" zIndex={1300}>
         <p class="collection-name">{collectionName}</p>
 
         <!-- Search for users/groups to share with -->
