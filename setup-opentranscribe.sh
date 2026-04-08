@@ -1,4 +1,26 @@
 #!/bin/bash
+# OpenTranscribe Cross-Platform Setup Script
+#
+# Environment variables:
+#   OPENTRANSCRIBE_BRANCH      Git branch to download files from (default: master)
+#   OPENTRANSCRIBE_UNATTENDED  When non-empty, skip all interactive prompts and
+#                              use safe defaults or pre-set environment variables
+#                              (used by CI and release-test harnesses)
+#
+# Env vars honored in unattended mode (all optional; any can be pre-set):
+#   PROJECT_DIR                Where to install (default: ./opentranscribe)
+#   HUGGINGFACE_TOKEN          PyAnnote HuggingFace token
+#   WHISPER_MODEL              Whisper model id (e.g. large-v3-turbo)
+#   OPENSEARCH_MODELS          OpenSearch embedding model id
+#   GPU_DEVICE_ID              CUDA device index to pin (default: 0)
+#   LLM_PROVIDER               vllm|openai|ollama|anthropic|openrouter (default: vllm, no-op)
+#   NGINX_SERVER_NAME          If set, enables HTTPS/NGINX setup; else skipped
+#   VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL_NAME
+#   OPENAI_API_KEY, OPENAI_MODEL_NAME
+#   OLLAMA_BASE_URL, OLLAMA_MODEL_NAME
+#   ANTHROPIC_API_KEY, ANTHROPIC_MODEL_NAME
+#   OPENROUTER_API_KEY, OPENROUTER_MODEL_NAME
+
 set -e
 
 YELLOW='\033[1;33m'
@@ -7,6 +29,18 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# ─── Unattended-mode helpers ─────────────────────────────────────────────────
+# When OPENTRANSCRIBE_UNATTENDED is set, interactive prompts are skipped and
+# pre-set environment variables (or safe defaults) are used instead.
+is_unattended() {
+    [[ -n "${OPENTRANSCRIBE_UNATTENDED:-}" ]]
+}
+
+# ot_log_unattended: emit a log line when a prompt is skipped in unattended mode
+ot_log_unattended() {
+    echo -e "${BLUE}[unattended]${NC} $*"
+}
 
 # Helper functions for colored output
 print_success() {
@@ -214,6 +248,10 @@ check_network_connectivity() {
         echo -e "${YELLOW}⚠️  GitHub may not be accessible for downloading files${NC}"
         echo "This could affect the setup process. Please check your internet connection."
         echo ""
+        if is_unattended; then
+            ot_log_unattended "Aborting on network check failure (unattended mode cannot continue without GitHub)."
+            exit 1
+        fi
         read -p "Do you want to continue anyway? (y/N) " -n 1 -r </dev/tty
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -787,6 +825,17 @@ create_production_env_example() {
 }
 
 prompt_huggingface_token() {
+    # Unattended mode: use HUGGINGFACE_TOKEN from environment (or leave empty)
+    if is_unattended; then
+        if [[ -n "${HUGGINGFACE_TOKEN:-}" ]]; then
+            ot_log_unattended "Using HUGGINGFACE_TOKEN from environment"
+        else
+            ot_log_unattended "HUGGINGFACE_TOKEN not set; continuing without it"
+            HUGGINGFACE_TOKEN=""
+        fi
+        return 0
+    fi
+
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
@@ -992,27 +1041,37 @@ select_whisper_model() {
     echo "      and processing time. You can change this later in the .env file."
     echo ""
 
-    # Prompt user for model selection
-    while true; do
-        read -p "Select model (tiny/base/small/medium/large-v2/large-v3/large-v3-turbo) [${RECOMMENDED_MODEL}]: " user_model </dev/tty
-
-        # Use recommended if user just presses Enter
-        if [ -z "$user_model" ]; then
+    # Unattended: honor WHISPER_MODEL env var if set, else use recommended
+    if is_unattended; then
+        if [[ -n "${WHISPER_MODEL:-}" ]]; then
+            ot_log_unattended "Using WHISPER_MODEL=${WHISPER_MODEL} from environment"
+        else
             WHISPER_MODEL="$RECOMMENDED_MODEL"
-            break
+            ot_log_unattended "WHISPER_MODEL defaulted to ${WHISPER_MODEL}"
         fi
+    else
+        # Prompt user for model selection
+        while true; do
+            read -p "Select model (tiny/base/small/medium/large-v2/large-v3/large-v3-turbo) [${RECOMMENDED_MODEL}]: " user_model </dev/tty
 
-        # Validate input
-        case "$user_model" in
-            tiny|base|small|medium|large-v1|large-v2|large-v3|large-v3-turbo)
-                WHISPER_MODEL="$user_model"
+            # Use recommended if user just presses Enter
+            if [ -z "$user_model" ]; then
+                WHISPER_MODEL="$RECOMMENDED_MODEL"
                 break
-                ;;
-            *)
-                echo -e "${RED}Invalid model. Please choose: tiny, base, small, medium, large-v2, large-v3, or large-v3-turbo${NC}"
-                ;;
-        esac
-    done
+            fi
+
+            # Validate input
+            case "$user_model" in
+                tiny|base|small|medium|large-v1|large-v2|large-v3|large-v3-turbo)
+                    WHISPER_MODEL="$user_model"
+                    break
+                    ;;
+                *)
+                    echo -e "${RED}Invalid model. Please choose: tiny, base, small, medium, large-v2, large-v3, or large-v3-turbo${NC}"
+                    ;;
+            esac
+        done
+    fi
 
     echo ""
     echo -e "${GREEN}✓ Selected model: ${WHISPER_MODEL}${NC}"
@@ -1060,6 +1119,20 @@ select_opensearch_models() {
     echo "  7) all-models   - Download all 6 models (~2.6GB total, complete offline support)"
     echo "  8) skip         - Don't download now (download on first use)"
     echo ""
+
+    # Unattended: honor OPENSEARCH_MODELS env var if set, else default to fast model
+    if is_unattended; then
+        if [[ -n "${OPENSEARCH_MODELS:-}" ]]; then
+            OPENSEARCH_NEURAL_MODEL="${OPENSEARCH_NEURAL_MODEL:-huggingface/sentence-transformers/${OPENSEARCH_MODELS}}"
+            ot_log_unattended "Using OPENSEARCH_MODELS=${OPENSEARCH_MODELS} from environment"
+        else
+            OPENSEARCH_MODELS="all-MiniLM-L6-v2"
+            OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-MiniLM-L6-v2"
+            ot_log_unattended "OPENSEARCH_MODELS defaulted to ${OPENSEARCH_MODELS}"
+        fi
+        echo ""
+        return 0
+    fi
 
     # Prompt user for model selection
     while true; do
@@ -1136,6 +1209,12 @@ select_gpu_device() {
         return 0
     fi
 
+    # Unattended: honor GPU_DEVICE_ID env var if set, else keep the auto-detected default
+    if is_unattended; then
+        ot_log_unattended "GPU_DEVICE_ID pinned to ${GPU_DEVICE_ID:-0}"
+        return 0
+    fi
+
     echo ""
     echo -e "${YELLOW}🎮 Multiple GPUs Detected${NC}"
     echo "================================================="
@@ -1191,6 +1270,13 @@ select_gpu_device() {
 }
 
 configure_llm_settings() {
+    # Unattended: honor LLM_PROVIDER and provider-specific env vars if set, else skip
+    if is_unattended; then
+        LLM_PROVIDER="${LLM_PROVIDER:-vllm}"
+        ot_log_unattended "LLM_PROVIDER=${LLM_PROVIDER} (interactive LLM wizard skipped)"
+        return 0
+    fi
+
     echo ""
     echo -e "${YELLOW}🤖 LLM Configuration for AI Features${NC}"
     echo "=================================================="
@@ -1394,6 +1480,19 @@ create_env_file() {
 }
 
 configure_https_settings() {
+    # Unattended: only configure HTTPS if NGINX_SERVER_NAME is pre-set in the environment
+    if is_unattended; then
+        if [[ -z "${NGINX_SERVER_NAME:-}" ]]; then
+            ot_log_unattended "NGINX_SERVER_NAME not set; skipping HTTPS/NGINX setup"
+            NGINX_SERVER_NAME=""
+            SSL_CONFIGURED=false
+            return 0
+        fi
+        ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME}; certificates must be generated out of band"
+        SSL_CONFIGURED=false
+        return 0
+    fi
+
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}🔒 HTTPS/SSL Configuration${NC}"
@@ -1536,6 +1635,12 @@ configure_https_settings() {
 
 download_ai_models() {
     print_header "AI Model Pre-Download"
+
+    # Unattended: skip all model downloads and let them fetch at first use
+    if is_unattended; then
+        ot_log_unattended "Skipping model pre-download (models will lazy-download on first use)"
+        return 0
+    fi
 
     echo "OpenTranscribe requires AI models (~2.9GB) for transcription, speaker diarization, and semantic search."
     echo ""
@@ -1793,6 +1898,10 @@ validate_setup() {
         echo "  3. Missing required files referenced in docker-compose"
         echo "  4. Backend failed to apply Alembic migrations"
         echo ""
+        if is_unattended; then
+            ot_log_unattended "Aborting on compose validation failure (unattended mode)"
+            exit 1
+        fi
         read -p "Continue setup anyway? (y/N) " -n 1 -r </dev/tty
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
