@@ -42,14 +42,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Hadolint on backend Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: backend/Dockerfile.prod
           config: .hadolint.yaml
           failure-threshold: warning
 
       - name: Run Hadolint on frontend Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: frontend/Dockerfile.prod
           config: .hadolint.yaml
