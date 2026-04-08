@@ -43,20 +43,26 @@ TEST_USE_GPU="${TEST_USE_GPU:-true}"
 TEST_GPU_DEVICE_ID="${TEST_GPU_DEVICE_ID:-1}"
 export TEST_USE_GPU TEST_GPU_DEVICE_ID
 
-# Disjoint port range (Scenario A uses 6173-6180; this uses 6273-6280)
-TEST_FRONTEND_PORT="${TEST_FRONTEND_PORT:-6273}"
-TEST_BACKEND_PORT="${TEST_BACKEND_PORT:-6274}"
-TEST_FLOWER_PORT="${TEST_FLOWER_PORT:-6275}"
-TEST_POSTGRES_PORT="${TEST_POSTGRES_PORT:-6276}"
-TEST_REDIS_PORT="${TEST_REDIS_PORT:-6277}"
-TEST_MINIO_PORT="${TEST_MINIO_PORT:-6278}"
-TEST_MINIO_CONSOLE_PORT="${TEST_MINIO_CONSOLE_PORT:-6279}"
-TEST_OPENSEARCH_PORT="${TEST_OPENSEARCH_PORT:-6280}"
+# Use the one-liner's default ports (5173-5180) since the live deployment is
+# stopped and Scenario A's containers will be torn down before this scenario
+# starts. The compose project name 'opentranscribe' (the one-liner default)
+# isolates this scenario's named volumes from any other run.
+TEST_FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+TEST_BACKEND_PORT="${BACKEND_PORT:-5174}"
+TEST_FLOWER_PORT="${FLOWER_PORT:-5175}"
+TEST_POSTGRES_PORT="${POSTGRES_PORT:-5176}"
+TEST_REDIS_PORT="${REDIS_PORT:-5177}"
+TEST_MINIO_PORT="${MINIO_PORT:-5178}"
+TEST_MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-5179}"
+TEST_OPENSEARCH_PORT="${OPENSEARCH_PORT:-5180}"
 TEST_PORTS="$TEST_FRONTEND_PORT $TEST_BACKEND_PORT $TEST_FLOWER_PORT $TEST_POSTGRES_PORT $TEST_REDIS_PORT $TEST_MINIO_PORT $TEST_MINIO_CONSOLE_PORT $TEST_OPENSEARCH_PORT"
 
 # Default admin user created by backend on first start (override if changed)
 TEST_ADMIN_EMAIL="${TEST_ADMIN_EMAIL:-admin@example.com}"
 TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-password}"
+
+# Test media: directory of small real media files (mp3/m4a/wav/mp4) to upload.
+TEST_MEDIA_DIR="${TEST_MEDIA_DIR:-/mnt/nvm/opentranscribe-test-runs/test-media}"
 
 DO_CLEANUP=0
 DO_FORCE=0
@@ -225,17 +231,23 @@ phase_05_seed_data() {
     # start, so registration is not needed.
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
 
-    local urls_file="$SCRIPT_DIR/fixtures/test-urls.txt"
-    [[ -f "$urls_file" ]] || gr_die "missing $urls_file"
+    [[ -d "$TEST_MEDIA_DIR" ]] || gr_die "TEST_MEDIA_DIR missing: $TEST_MEDIA_DIR"
+    local media_files=()
+    while IFS= read -r f; do
+        media_files+=("$f")
+    done < <(find "$TEST_MEDIA_DIR" -maxdepth 1 -type f \
+                \( -iname "*.mp3" -o -iname "*.m4a" -o -iname "*.mp4" \
+                   -o -iname "*.wav" -o -iname "*.flac" -o -iname "*.ogg" \) \
+                -size -5M | head -2)
+    (( ${#media_files[@]} > 0 )) || gr_die "no media files in $TEST_MEDIA_DIR (need 1-2 small audio/video files)"
 
     local file_ids=()
-    while IFS= read -r url; do
-        [[ -z "$url" || "$url" == \#* ]] && continue
+    for path in "${media_files[@]}"; do
         local fid
-        fid=$(ac_upload_from_url "$url")
-        gr_log "queued upload: $url -> file_id=$fid"
+        fid=$(ac_upload_file "$path")
+        gr_log "queued upload: $(basename "$path") -> uuid=$fid"
         file_ids+=("$fid")
-    done < "$urls_file"
+    done
 
     for fid in "${file_ids[@]}"; do
         ac_wait_for_file_status "$fid" 1800
@@ -251,20 +263,21 @@ snapshot_state() {
 
     gr_log "snapshotting state to $out"
 
-    # Postgres deterministic queries
-    local pg="${TEST_PROJECT_NAME}-postgres"
-    docker exec "$pg" psql -U opentranscribe -d opentranscribe -tAc \
+    # Postgres deterministic queries (the one-liner uses the stock
+    # 'opentranscribe-postgres' container name and 'postgres' superuser).
+    local pg="opentranscribe-postgres"
+    docker exec "$pg" psql -U postgres -d opentranscribe -tAc \
         "SELECT version_num FROM alembic_version" > "$out/alembic_head.txt"
-    docker exec "$pg" psql -U opentranscribe -d opentranscribe -tAc \
+    docker exec "$pg" psql -U postgres -d opentranscribe -tAc \
         "SELECT id, filename, status FROM media_file ORDER BY id" > "$out/media_files.txt"
-    docker exec "$pg" psql -U opentranscribe -d opentranscribe -tAc \
+    docker exec "$pg" psql -U postgres -d opentranscribe -tAc \
         "SELECT file_id, COUNT(*) FROM transcript_segment GROUP BY file_id ORDER BY file_id" > "$out/segment_counts.txt"
-    docker exec "$pg" psql -U opentranscribe -d opentranscribe -tAc \
+    docker exec "$pg" psql -U postgres -d opentranscribe -tAc \
         "SELECT id, name FROM speaker ORDER BY id" > "$out/speakers.txt" 2>/dev/null || \
         echo "(speaker table query failed — schema may differ)" > "$out/speakers.txt"
 
     # MinIO ETag list (proves no object body mutation)
-    local minio="${TEST_PROJECT_NAME}-minio"
+    local minio="opentranscribe-minio"
     docker exec "$minio" sh -c '
         mc alias set local http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1 || true
         mc ls --recursive --json local/opentranscribe 2>/dev/null
