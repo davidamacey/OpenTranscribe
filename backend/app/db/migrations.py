@@ -284,15 +284,21 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         return "v071_add_transcript_segment_unique_constraint"
     if has_model_tracking:
         return "v130_add_processing_model_tracking"
-    if has_remaining_fk_indexes:
+    # The v120/v110/v100/v091/v090 markers can ALSO be present in older
+    # init_db.sql-bootstrapped schemas (notably v0.3.3) that pre-date the
+    # FedRAMP auth tables. Only treat the database as truly at v120/v110/etc
+    # if the fedramp auth tables (created by v040) actually exist. Otherwise
+    # the schema is inconsistent and we must stamp BEFORE v040 so the
+    # missing tables get created.
+    if has_remaining_fk_indexes and has_fedramp:
         return "v120_add_remaining_fk_indexes"
-    if has_fk_indexes:
+    if has_fk_indexes and has_fedramp:
         return "v110_add_missing_fk_indexes"
-    if has_perf_indexes:
+    if has_perf_indexes and has_fedramp:
         return "v100_optimize_query_performance"
-    if has_suggestion_source:
+    if has_suggestion_source and has_fedramp:
         return "v091_add_speaker_suggestion_source"
-    if has_error_category:
+    if has_error_category and has_fedramp:
         return "v090_add_error_category"
     if has_auth_config:
         return "v080_add_auth_config"
