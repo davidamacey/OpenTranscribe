@@ -292,7 +292,18 @@ class TaskDetectionService:
         """
         from sqlalchemy import or_
 
-        # Only look at PROCESSING files - explicitly exclude QUEUED/DOWNLOADING
+        # Only look at PROCESSING files - explicitly exclude QUEUED/DOWNLOADING.
+        # CRITICAL: also exclude files whose task_last_update is recent (within
+        # the stuck threshold). Without this filter, fresh uploads were getting
+        # flagged as "abandoned" because the periodic health-check forks new
+        # ForkPoolWorker subprocesses on demand — those forks have a
+        # _MODULE_LOAD_TIME (boot_time) that is *later* than a freshly-created
+        # task's updated_at, which makes the boot-time check below incorrectly
+        # decide the task pre-dates the worker. The 5-minute threshold gives
+        # in-flight transcription pipelines breathing room before recovery
+        # logic considers them abandoned.
+        now = datetime.now(timezone.utc)
+        stuck_threshold = now - timedelta(minutes=5)
         abandoned_files = (
             db.query(MediaFile)
             .filter(
@@ -300,6 +311,10 @@ class TaskDetectionService:
                 or_(
                     MediaFile.file_size > 0,  # Downloaded files
                     MediaFile.source_url.isnot(None),  # YouTube download-in-progress files
+                ),
+                or_(
+                    MediaFile.task_last_update.is_(None),  # never had a task update
+                    MediaFile.task_last_update < stuck_threshold,  # haven't been touched in 5+ min
                 ),
             )
             .all()
@@ -907,10 +922,17 @@ class TaskDetectionService:
 
         Checks DB task records and compares against container boot time to
         catch files whose workers died (e.g., after container restart).
+
+        Includes the same 5-minute task_last_update guard as
+        identify_abandoned_files / identify_stuck_files_without_active_celery_tasks
+        so that fresh uploads are never considered "inconsistent" while their
+        transcription pipeline is still spinning up.
         """
         from sqlalchemy import or_
 
         boot_time = _get_container_boot_time()
+        now = datetime.now(timezone.utc)
+        stuck_threshold = now - timedelta(minutes=5)
 
         processing_files = (
             db.query(MediaFile)
@@ -919,6 +941,10 @@ class TaskDetectionService:
                 or_(
                     MediaFile.file_size > 0,
                     MediaFile.source_url.isnot(None),
+                ),
+                or_(
+                    MediaFile.task_last_update.is_(None),
+                    MediaFile.task_last_update < stuck_threshold,
                 ),
             )
             .all()
