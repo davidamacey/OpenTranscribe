@@ -311,19 +311,24 @@ scan_component() {
     local component=$1
     local dockerfile=""
     local image=""
+    # Tag to scan. Defaults to :latest for dev/post-push workflows.
+    # Set IMAGE_TAG=0.4.0 (or any other tag) to scan a release candidate
+    # before pushing it — e.g. the Phase 1 pre-release security scan in
+    # .claude/commands/release.md should pass IMAGE_TAG=X.Y.Z.
+    local tag="${IMAGE_TAG:-latest}"
 
     case "${component}" in
         backend)
             dockerfile="backend/Dockerfile.prod"
-            image="${REPO_BACKEND}:latest"
+            image="${REPO_BACKEND}:${tag}"
             ;;
         frontend)
             dockerfile="frontend/Dockerfile.prod"
-            image="${REPO_FRONTEND}:latest"
+            image="${REPO_FRONTEND}:${tag}"
             ;;
         docs)
             dockerfile="docs-site/Dockerfile"
-            image="${REPO_DOCS}:latest"
+            image="${REPO_DOCS}:${tag}"
             ;;
         *)
             print_error "Invalid component: ${component}"
@@ -479,14 +484,21 @@ Environment Variables:
     SEVERITY_THRESHOLD      Minimum severity to report (default: MEDIUM)
     FAIL_ON_CRITICAL        Fail if CRITICAL vulnerabilities found (default: true)
     DOCKERHUB_USERNAME      Docker Hub username (default: davidamacey)
+    IMAGE_TAG               Image tag to scan (default: latest). Set to a
+                            release-candidate tag like 0.4.0 to scan a
+                            built-but-not-yet-pushed image.
 
 Examples:
-    $0                      # Scan both images
+    $0                      # Scan both images (uses :latest)
     $0 backend              # Scan only backend
     $0 install              # Install all required tools
 
     # Customize scanning
     OUTPUT_DIR=./reports SEVERITY_THRESHOLD=HIGH $0 all
+
+    # Scan a release-candidate tag before pushing (required by Phase 1
+    # of the .claude/commands/release.md checklist):
+    IMAGE_TAG=0.4.0 $0 all
     FAIL_ON_CRITICAL=false $0 backend
 
 Reports:
@@ -558,14 +570,37 @@ main() {
             install_hadolint
             check_dockle
 
-            scan_component "backend"
+            # Run the three component scans in parallel so total wall time
+            # is roughly max(backend, frontend, docs) instead of the sum.
+            # Each sub-scan logs independently to the same OUTPUT_DIR with
+            # unique per-component filenames so there is no contention.
+            print_info "Running backend, frontend, and docs scans in parallel..."
+            local backend_log="${OUTPUT_DIR}/.scan-backend.log"
+            local frontend_log="${OUTPUT_DIR}/.scan-frontend.log"
+            local docs_log="${OUTPUT_DIR}/.scan-docs.log"
+
+            ( scan_component "backend" > "${backend_log}" 2>&1 ) &
+            local backend_pid=$!
+            ( scan_component "frontend" > "${frontend_log}" 2>&1 ) &
+            local frontend_pid=$!
+            ( scan_component "docs" > "${docs_log}" 2>&1 ) &
+            local docs_pid=$!
+
+            wait "${backend_pid}"
             backend_exit=$?
-
-            scan_component "frontend"
+            wait "${frontend_pid}"
             frontend_exit=$?
-
-            scan_component "docs"
+            wait "${docs_pid}"
             docs_exit=$?
+
+            # Replay each sub-scan's log in order so user sees normal output
+            print_info "=== backend scan output ==="
+            cat "${backend_log}"
+            print_info "=== frontend scan output ==="
+            cat "${frontend_log}"
+            print_info "=== docs scan output ==="
+            cat "${docs_log}"
+            rm -f "${backend_log}" "${frontend_log}" "${docs_log}"
 
             exit_code=$((backend_exit + frontend_exit + docs_exit))
             ;;
