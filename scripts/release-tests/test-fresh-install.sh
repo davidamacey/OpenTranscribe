@@ -374,6 +374,20 @@ d = json.load(sys.stdin)
 print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
 ' 2>/dev/null || echo 0)
             as_assert_ge "hybrid search returns hits" "$hits" 1
+
+            # Stricter neural-search assertion: confirm that the OpenSearch
+            # ML model is actually DEPLOYED (not just that hybrid search
+            # silently fell back to BM25 keyword matching). Without this
+            # check the heap-too-small bug from v0.3.x can ship undetected.
+            local ml_deployed
+            ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
+                'http://localhost:9200/_plugins/_ml/models/_search' \
+                -H 'Content-Type: application/json' \
+                -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
+                2>/dev/null \
+                | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
+                2>/dev/null || echo 0)
+            as_assert_ge "OpenSearch ML model deployed (neural search active)" "$ml_deployed" 1
         fi
     fi
 
