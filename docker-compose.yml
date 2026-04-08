@@ -170,7 +170,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      # start_period must be long enough to cover the worst-case startup:
+      #   - Alembic running 45+ migrations against a populated v0.3.x → 0.4.x
+      #     upgrade DB (can take 60-90s on its own)
+      #   - PyAnnote model warm preload (15-30s)
+      #   - OpenSearch neural ML model deploy (10-20s)
+      # 30s was too short and caused compose to declare backend unhealthy
+      # mid-upgrade. 5 min gives plenty of headroom for any realistic upgrade
+      # path while still failing fast on a genuinely broken backend.
+      start_period: 300s
     depends_on:
       postgres:
         condition: service_healthy
