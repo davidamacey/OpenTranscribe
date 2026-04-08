@@ -48,7 +48,7 @@ def upgrade():
     ]
 
     for col_name, col_type in pki_columns:
-        sql = f"""  # noqa: S608  # nosec B608
+        sql = f"""
             DO $$
             BEGIN
                 IF NOT EXISTS (
@@ -59,7 +59,7 @@ def upgrade():
                     ADD COLUMN {col_name} {col_type};
                 END IF;
             END $$;
-            """
+            """  # noqa: S608  # nosec B608
         op.execute(sql)
 
     # Add index on pki_fingerprint_sha256 for fast certificate lookup
