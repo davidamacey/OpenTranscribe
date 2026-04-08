@@ -1,0 +1,15 @@
+# Public-domain test media URLs for OpenTranscribe release tests.
+#
+# These are uploaded via the /api/files/upload-from-url endpoint (yt-dlp under
+# the hood) so the test deployment fetches them itself — the host machine
+# never downloads them directly. Pinned to archive.org because the URLs and
+# extractor are stable; YouTube extractors break far more often.
+#
+# If a line 404s during a test run, swap in a replacement and update this
+# comment. Each clip should be 1-3 minutes for fast CPU transcription.
+
+# Public domain speech sample (~1 min) — Library of Congress recording
+https://archive.org/download/Greatest_Speeches_of_the_20th_Century/JFKInauguralAddress.mp3
+
+# Public domain news clip (~2 min) — Internet Archive
+https://archive.org/download/Speeches_201801/Eisenhower_Farewell.mp3

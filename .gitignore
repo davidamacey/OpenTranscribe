@@ -23,6 +23,12 @@ PLANS/
 .env.test
 .env.*.local
 
+# Release-test secrets (template at .env.test-secrets.example is committed)
+scripts/release-tests/.env.test-secrets
+
+# Release-test sandbox runs (created by scripts/release-tests/*.sh)
+opentranscribe-test-runs/
+
 # Docker bind-mount stubs (created by OCI runtime when host path doesn't exist)
 # Occurs because ./backend:/app and ./VERSION:/app/VERSION:ro overlap in dev compose
 backend/VERSION
