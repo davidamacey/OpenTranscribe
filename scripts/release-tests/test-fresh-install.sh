@@ -52,8 +52,15 @@ TEST_OPENSEARCH_PORT="${OPENSEARCH_PORT:-5180}"
 TEST_PORTS="$TEST_FRONTEND_PORT $TEST_BACKEND_PORT $TEST_FLOWER_PORT $TEST_POSTGRES_PORT $TEST_REDIS_PORT $TEST_MINIO_PORT $TEST_MINIO_CONSOLE_PORT $TEST_OPENSEARCH_PORT"
 
 # Test admin user
-TEST_ADMIN_EMAIL="${TEST_ADMIN_EMAIL:-reltest-fresh@opentranscribe.local}"
-TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-ReleaseTest!2026}"
+# Default admin user is created by the backend on first start.
+TEST_ADMIN_EMAIL="${TEST_ADMIN_EMAIL:-admin@example.com}"
+TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-password}"
+
+# Test media: directory of small real media files (mp3/m4a/wav/mp4) to upload
+# and transcribe. Files are copied from this dir into the test container via
+# multipart upload — this exercises the same code path a real user uses when
+# dragging a file into the UI. Files in this dir are NOT committed to git.
+TEST_MEDIA_DIR="${TEST_MEDIA_DIR:-/mnt/nvm/opentranscribe-test-runs/test-media}"
 
 # Cleanup mode
 DO_CLEANUP=0
@@ -237,6 +244,21 @@ phase_03_pin_local_image() {
     cp "$target/docker-compose.yml" "$target/docker-compose.yml.bak"
     cp_inject_labels "$target/docker-compose.yml" "$TEST_LABEL"
 
+    # Pre-create the model cache directory with appuser (UID 1000) ownership.
+    # The setup-opentranscribe.sh fix_model_cache_permissions step runs before
+    # docker compose up, so when bind mounts auto-create subdirs, docker
+    # creates them as root. We chown them now so the appuser inside the
+    # backend/celery containers can write the model cache.
+    local model_cache_dir
+    model_cache_dir=$(awk -F= '/^MODEL_CACHE_DIR=/{print $2; exit}' "$target/.env")
+    [[ -z "$model_cache_dir" || "$model_cache_dir" == "./models" ]] && model_cache_dir="$target/models"
+    [[ "$model_cache_dir" != /* ]] && model_cache_dir="$target/${model_cache_dir#./}"
+    mkdir -p "$model_cache_dir"/{huggingface,torch,nltk_data,sentence-transformers,opensearch-ml}
+    docker run --rm -v "$model_cache_dir:/m" busybox sh -c \
+        "chown -R 1000:1000 /m && chmod -R u+w /m" >/dev/null 2>&1 || \
+        gr_warn "could not chown $model_cache_dir to 1000:1000 (model downloads may fail)"
+    gr_ok "model cache pre-created at $model_cache_dir with UID 1000 ownership"
+
     # Override GPU_DEVICE_ID in the .env if a non-default was requested
     if [[ "$TEST_GPU_DEVICE_ID" != "0" ]]; then
         if grep -q '^GPU_DEVICE_ID=' "$target/.env"; then
@@ -290,7 +312,8 @@ phase_06_api_smoke() {
     } >> "$TEST_REPORT_FILE"
     export TEST_REPORT_FILE
 
-    ac_register_admin "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
+    # The backend creates a default admin (admin@example.com / password) on first
+    # start, so registration is not needed. Just log in.
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
 
     local fe_code
@@ -298,41 +321,60 @@ phase_06_api_smoke() {
     as_assert_http "frontend GET /" 200 "$fe_code"
 
     local api_code
-    api_code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/docs")
-    as_assert_http "backend GET /docs" 200 "$api_code"
+    api_code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/api/docs")
+    as_assert_http "backend GET /api/docs" 200 "$api_code"
 
-    local urls_file="$SCRIPT_DIR/fixtures/test-urls.txt"
-    if [[ -f "$urls_file" ]]; then
-        local file_ids=()
-        while IFS= read -r url; do
-            [[ -z "$url" || "$url" == \#* ]] && continue
-            local fid
-            fid=$(ac_upload_from_url "$url") || { as_record FAIL "upload $url"; continue; }
-            file_ids+=("$fid")
-            as_record PASS "upload accepted: $url (file_id=$fid)"
-        done < "$urls_file"
-
-        for fid in "${file_ids[@]}"; do
-            if ac_wait_for_file_status "$fid" 1800; then
-                as_record PASS "transcription completed for file $fid"
-                local seg_count
-                seg_count=$(ac_get_transcript "$fid" | python3 -c '
-import sys, json
-data = json.load(sys.stdin)
-segs = data.get("segments") or data.get("transcript_segments") or []
-print(len(segs))
-' 2>/dev/null || echo 0)
-                as_assert_ge "segments[] non-empty for $fid" "$seg_count" 1
-            else
-                as_record FAIL "transcription for file $fid"
-            fi
-        done
-
-        local hits
-        hits=$(ac_search "the" | python3 -c 'import sys, json; print(len((json.load(sys.stdin).get("hits") or json.load(sys.stdin).get("results") or [])))' 2>/dev/null || echo 0)
-        as_assert_ge "hybrid search returns hits" "$hits" 1
+    if [[ ! -d "$TEST_MEDIA_DIR" ]]; then
+        as_record FAIL "TEST_MEDIA_DIR missing: $TEST_MEDIA_DIR"
     else
-        as_record FAIL "missing fixtures/test-urls.txt"
+        # Pick up to 3 small real media files from the dir
+        local media_files=()
+        while IFS= read -r f; do
+            media_files+=("$f")
+        done < <(find "$TEST_MEDIA_DIR" -maxdepth 1 -type f \
+                    \( -iname "*.mp3" -o -iname "*.m4a" -o -iname "*.mp4" \
+                       -o -iname "*.wav" -o -iname "*.flac" -o -iname "*.ogg" \) \
+                    -size -5M | head -2)
+        if (( ${#media_files[@]} == 0 )); then
+            as_record FAIL "no media files found in $TEST_MEDIA_DIR (need at least one .mp3/.m4a/.wav/.mp4 under 5 MB)"
+        else
+            local file_ids=()
+            for path in "${media_files[@]}"; do
+                local fid
+                fid=$(ac_upload_file "$path") || { as_record FAIL "upload $(basename "$path")"; continue; }
+                file_ids+=("$fid")
+                as_record PASS "upload accepted: $(basename "$path") (uuid=$fid)"
+            done
+
+            for fid in "${file_ids[@]}"; do
+                if ac_wait_for_file_status "$fid" 1800; then
+                    as_record PASS "transcription completed for file $fid"
+                    local seg_count
+                    seg_count=$(ac_get_segments "$fid" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if isinstance(d, list):
+    print(len(d))
+else:
+    segs = d.get("segments") or d.get("transcript_segments") or d.get("results") or []
+    print(len(segs))
+' 2>/dev/null || echo 0)
+                    as_assert_ge "segments[] non-empty for $fid" "$seg_count" 1
+                else
+                    as_record FAIL "transcription for file $fid"
+                fi
+            done
+
+            # Hybrid search — query for a common English stop word that any
+            # transcribed audiobook will contain.
+            local hits
+            hits=$(ac_search "the" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
+' 2>/dev/null || echo 0)
+            as_assert_ge "hybrid search returns hits" "$hits" 1
+        fi
     fi
 
     # Alembic head check (one-liner uses the standard 'opentranscribe-postgres' name)

@@ -27,12 +27,15 @@ ac_curl() {
 }
 
 ac_wait_for_health() {
-    # Poll /api/health until 200 or timeout (default 15 minutes).
+    # Poll the backend /health endpoint until 200 or timeout (default 15 minutes).
+    # /health lives at the server root (e.g. http://localhost:5174/health),
+    # not under /api/, so we strip the /api suffix from API_BASE.
     local timeout="${1:-900}"
     local deadline=$(( $(date +%s) + timeout ))
-    ac_log "waiting up to ${timeout}s for $API_BASE/health"
+    local health_url="${API_BASE%/api}/health"
+    ac_log "waiting up to ${timeout}s for $health_url"
     while (( $(date +%s) < deadline )); do
-        if curl -fsS --max-time 5 "$API_BASE/health" >/dev/null 2>&1; then
+        if curl -fsS --max-time 5 "$health_url" >/dev/null 2>&1; then
             ac_log "backend healthy"
             return 0
         fi
@@ -46,16 +49,30 @@ ac_register_admin() {
     # if registration fails because the user already exists.
     local email="$1"
     local password="$2"
-    local username="${3:-admin}"
+    local full_name="${3:-${TEST_ADMIN_FULL_NAME:-QA Bot}}"
     ac_log "registering $email"
+    # UserCreate schema requires email + password; full_name is optional but
+    # we send it for completeness. There is NO 'username' field — it was
+    # rejected by pydantic 'extra=forbid' validation in earlier runs.
     local payload
-    payload=$(printf '{"email":"%s","password":"%s","username":"%s","full_name":"Release Test"}' \
-        "$email" "$password" "$username")
-    if ! curl -fsS -X POST "$API_BASE/auth/register" \
+    payload=$(printf '{"email":"%s","password":"%s","full_name":"%s"}' \
+        "$email" "$password" "$full_name")
+    local response code
+    response=$(curl -sS -o /tmp/ac_register_resp.$$ -w '%{http_code}' \
+        -X POST "$API_BASE/auth/register" \
         -H "Content-Type: application/json" \
-        -d "$payload" >/dev/null 2>&1; then
-        ac_warn "register returned non-2xx (probably already exists) — continuing"
+        -d "$payload" 2>/dev/null || echo 000)
+    code="$response"
+    if [[ "$code" =~ ^2 ]]; then
+        ac_log "register OK ($code)"
+    elif [[ "$code" == "409" || "$code" == "400" ]]; then
+        ac_warn "register returned $code — assuming user already exists"
+    else
+        ac_warn "register failed with HTTP $code:"
+        cat /tmp/ac_register_resp.$$ >&2
+        echo >&2
     fi
+    rm -f /tmp/ac_register_resp.$$
 }
 
 ac_login() {
@@ -72,39 +89,74 @@ ac_login() {
     ac_log "login OK (token len $(echo -n "$API_TOKEN" | wc -c))"
 }
 
-ac_upload_from_url() {
-    # POST /files/upload-from-url
-    # Echoes the file_id of the new task.
-    local url="$1"
-    ac_log "uploading via URL: $url"
+ac_upload_file() {
+    # POST /api/files (multipart/form-data) — uploads a local media file
+    # for transcription. Echoes the new media_file uuid.
+    #
+    # The backend validates content_type, so we set an explicit MIME type from
+    # the file extension instead of relying on curl's autodetection (which often
+    # uses application/octet-stream and gets rejected).
+    local path="$1"
+    [[ -f "$path" ]] || ac_die "file not found: $path"
+    local mime
+    case "${path##*.}" in
+        mp3|MP3)        mime="audio/mpeg" ;;
+        m4a|M4A)        mime="audio/mp4" ;;
+        wav|WAV)        mime="audio/wav" ;;
+        flac|FLAC)      mime="audio/flac" ;;
+        ogg|oga|OGG)    mime="audio/ogg" ;;
+        opus|OPUS)      mime="audio/opus" ;;
+        mp4|MP4)        mime="video/mp4" ;;
+        m4v|M4V)        mime="video/mp4" ;;
+        mov|MOV)        mime="video/quicktime" ;;
+        webm|WEBM)      mime="video/webm" ;;
+        mkv|MKV)        mime="video/x-matroska" ;;
+        *)              mime="application/octet-stream" ;;
+    esac
+    ac_log "uploading file: $path (type=$mime)"
     local body
-    body=$(ac_curl -X POST "$API_BASE/files/upload-from-url" \
-        -H "Content-Type: application/json" \
-        -d "$(printf '{"url":"%s"}' "$url")")
-    echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("id") or json.load(sys.stdin).get("file_id"))'
+    body=$(ac_curl -X POST "$API_BASE/files" \
+        -F "file=@${path};type=${mime}")
+    echo "$body" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+if isinstance(d, dict):
+    for key in ("uuid", "file_uuid", "id"):
+        if key in d:
+            print(d[key]); sys.exit(0)
+    if "file" in d and isinstance(d["file"], dict):
+        for key in ("uuid", "file_uuid", "id"):
+            if key in d["file"]:
+                print(d["file"][key]); sys.exit(0)
+sys.exit("could not extract file uuid: " + json.dumps(d)[:200])
+'
 }
 
+# Backward-compat alias for any callers still using the old name
+ac_upload_from_url() { ac_upload_file "$@"; }
+
 ac_wait_for_file_status() {
-    # Poll /files/<id> until status == completed (or error/timeout).
-    local file_id="$1"
-    local timeout="${2:-1800}"  # 30 min default for CPU transcription
+    # Poll /api/files/<uuid> until status == completed (or error/timeout).
+    local file_uuid="$1"
+    local timeout="${2:-1800}"
     local deadline=$(( $(date +%s) + timeout ))
     local status=""
     while (( $(date +%s) < deadline )); do
-        status=$(ac_curl "$API_BASE/files/$file_id" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo "")
+        status=$(ac_curl "$API_BASE/files/$file_uuid" 2>/dev/null \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo "")
         case "$status" in
             completed)
-                ac_log "file $file_id reached status=completed"
+                ac_log "file $file_uuid reached status=completed"
                 return 0
                 ;;
             error|failed)
-                ac_die "file $file_id ended in status=$status"
+                ac_die "file $file_uuid ended in status=$status"
                 ;;
         esac
-        ac_log "  file $file_id status=$status (waiting)"
+        ac_log "  file $file_uuid status=${status:-<unknown>} (waiting)"
         sleep 10
     done
-    ac_die "file $file_id never reached completed status within ${timeout}s"
+    ac_die "file $file_uuid never reached completed status within ${timeout}s"
 }
 
 ac_get_file() {
@@ -112,24 +164,25 @@ ac_get_file() {
 }
 
 ac_get_transcript() {
-    # Returns full transcript JSON for a file.
-    ac_curl "$API_BASE/files/$1/transcript" 2>/dev/null \
+    # Returns transcript content for a file. /content returns the full
+    # transcript JSON in 0.4.0; older builds may use /segments.
+    ac_curl "$API_BASE/files/$1/content" 2>/dev/null \
         || ac_curl "$API_BASE/files/$1/segments"
 }
 
 ac_list_files() {
-    ac_curl "$API_BASE/files/" 2>/dev/null \
-        || ac_curl "$API_BASE/files"
+    ac_curl "$API_BASE/files"
 }
 
 ac_list_speakers() {
-    ac_curl "$API_BASE/speakers/" 2>/dev/null \
-        || ac_curl "$API_BASE/speakers"
+    ac_curl "$API_BASE/speakers" 2>/dev/null || ac_curl "$API_BASE/speakers/"
 }
 
 ac_search() {
+    # GET /api/search?q=<term>&page=1&page_size=10
     local q="$1"
-    ac_curl -X POST "$API_BASE/search/" \
-        -H "Content-Type: application/json" \
-        -d "$(printf '{"query":"%s","page":1,"page_size":10}' "$q")"
+    ac_curl --get "$API_BASE/search" \
+        --data-urlencode "q=$q" \
+        --data-urlencode "page=1" \
+        --data-urlencode "page_size=10"
 }
