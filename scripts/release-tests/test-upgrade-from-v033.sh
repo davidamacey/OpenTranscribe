@@ -54,8 +54,9 @@ TEST_MINIO_CONSOLE_PORT="${TEST_MINIO_CONSOLE_PORT:-6279}"
 TEST_OPENSEARCH_PORT="${TEST_OPENSEARCH_PORT:-6280}"
 TEST_PORTS="$TEST_FRONTEND_PORT $TEST_BACKEND_PORT $TEST_FLOWER_PORT $TEST_POSTGRES_PORT $TEST_REDIS_PORT $TEST_MINIO_PORT $TEST_MINIO_CONSOLE_PORT $TEST_OPENSEARCH_PORT"
 
-TEST_ADMIN_EMAIL="${TEST_ADMIN_EMAIL:-reltest-upgrade@opentranscribe.local}"
-TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-ReleaseTest!2026}"
+# Default admin user created by backend on first start (override if changed)
+TEST_ADMIN_EMAIL="${TEST_ADMIN_EMAIL:-admin@example.com}"
+TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-password}"
 
 DO_CLEANUP=0
 DO_FORCE=0
@@ -169,16 +170,23 @@ phase_03_prepare_v033_compose() {
     local stage="$TEST_ROOT/before"
     mkdir -p "$stage"
     cp "$worktree/docker-compose.yml" "$stage/docker-compose.yml"
-    [[ -f "$worktree/docker-compose.prod.yml" ]] && cp "$worktree/docker-compose.prod.yml" "$stage/docker-compose.prod.yml"
+    [[ -f "$worktree/docker-compose.prod.yml" ]] || gr_die "v$FROM_VERSION worktree missing docker-compose.prod.yml"
+    cp "$worktree/docker-compose.prod.yml" "$stage/docker-compose.prod.yml"
 
+    # Base file: container/volume names + labels (no image keys here)
     cp_apply_name_patch "$stage/docker-compose.yml"
     cp_apply_volume_patch "$stage/docker-compose.yml" \
         postgres_data minio_data redis_data opensearch_data flower_data
     cp_inject_labels "$stage/docker-compose.yml" "$TEST_LABEL"
-    # FROM stack pulls from Docker Hub explicitly to exercise the real user path
-    cp_force_pull_policy "$stage/docker-compose.yml" always
-    cp_pin_image_tag "$stage/docker-compose.yml" backend "$FROM_VERSION"
-    cp_pin_image_tag "$stage/docker-compose.yml" frontend "$FROM_VERSION"
+
+    # Prod file: image tag pinning to FROM_VERSION + pull always (real Docker Hub pull)
+    cp_inject_labels "$stage/docker-compose.prod.yml" "$TEST_LABEL"
+    cp_force_pull_policy "$stage/docker-compose.prod.yml" always
+    cp_pin_image_tag "$stage/docker-compose.prod.yml" backend "$FROM_VERSION"
+    cp_pin_image_tag "$stage/docker-compose.prod.yml" frontend "$FROM_VERSION"
+    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+        cp_pin_image_tag "$stage/docker-compose.prod.yml" "$svc" "$FROM_VERSION" 2>/dev/null || true
+    done
 
     # GPU overlay (use the v0.3.3 worktree's copy if present, else current head's)
     if [[ "$TEST_USE_GPU" == "true" ]]; then
@@ -195,7 +203,7 @@ phase_03_prepare_v033_compose() {
 phase_04_start_v033() {
     local stage="$TEST_ROOT/before"
     pushd "$stage" >/dev/null
-    local compose_args=(-f docker-compose.yml)
+    local compose_args=(-f docker-compose.yml -f docker-compose.prod.yml)
     if [[ "$TEST_USE_GPU" == "true" && -f docker-compose.gpu.yml ]]; then
         compose_args+=(-f docker-compose.gpu.yml)
     fi
@@ -213,7 +221,8 @@ phase_04_start_v033() {
 phase_05_seed_data() {
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
     export API_BASE
-    ac_register_admin "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
+    # The backend creates a default admin (admin@example.com / password) on first
+    # start, so registration is not needed.
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
 
     local urls_file="$SCRIPT_DIR/fixtures/test-urls.txt"
@@ -283,15 +292,21 @@ phase_07_swap_to_new() {
     # IMPORTANT: keep the same bind-mount data dirs so the upgrade is in-place
     mkdir -p "$stage_after"
     cp "$REPO_ROOT/docker-compose.yml" "$stage_after/docker-compose.yml"
-    [[ -f "$REPO_ROOT/docker-compose.prod.yml" ]] && cp "$REPO_ROOT/docker-compose.prod.yml" "$stage_after/docker-compose.prod.yml"
+    [[ -f "$REPO_ROOT/docker-compose.prod.yml" ]] || gr_die "current head missing docker-compose.prod.yml"
+    cp "$REPO_ROOT/docker-compose.prod.yml" "$stage_after/docker-compose.prod.yml"
 
     cp_apply_name_patch "$stage_after/docker-compose.yml"
     cp_apply_volume_patch "$stage_after/docker-compose.yml" \
         postgres_data minio_data redis_data opensearch_data flower_data
     cp_inject_labels "$stage_after/docker-compose.yml" "$TEST_LABEL"
-    cp_force_pull_policy "$stage_after/docker-compose.yml" never
-    cp_pin_image_tag "$stage_after/docker-compose.yml" backend "$LOCAL_IMAGE_TAG"
-    cp_pin_image_tag "$stage_after/docker-compose.yml" frontend "$LOCAL_IMAGE_TAG"
+
+    cp_inject_labels "$stage_after/docker-compose.prod.yml" "$TEST_LABEL"
+    cp_force_pull_policy "$stage_after/docker-compose.prod.yml" never
+    cp_pin_image_tag "$stage_after/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
+    cp_pin_image_tag "$stage_after/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
+    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+        cp_pin_image_tag "$stage_after/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
+    done
 
     if [[ "$TEST_USE_GPU" == "true" && -f "$REPO_ROOT/docker-compose.gpu.yml" ]]; then
         cp "$REPO_ROOT/docker-compose.gpu.yml" "$stage_after/docker-compose.gpu.yml"
@@ -301,7 +316,7 @@ phase_07_swap_to_new() {
 
     # Stop the BEFORE stack — IMPORTANT: no -v, no --remove-orphans
     pushd "$stage_before" >/dev/null
-    local before_args=(-f docker-compose.yml)
+    local before_args=(-f docker-compose.yml -f docker-compose.prod.yml)
     [[ -f docker-compose.gpu.yml && "$TEST_USE_GPU" == "true" ]] && before_args+=(-f docker-compose.gpu.yml)
     gr_log "stopping ${FROM_VERSION} stack (preserving volumes)"
     docker compose "${before_args[@]}" down
@@ -311,7 +326,7 @@ phase_07_swap_to_new() {
 phase_08_start_new() {
     local stage_after="$TEST_ROOT/after"
     pushd "$stage_after" >/dev/null
-    local compose_args=(-f docker-compose.yml)
+    local compose_args=(-f docker-compose.yml -f docker-compose.prod.yml)
     if [[ "$TEST_USE_GPU" == "true" && -f docker-compose.gpu.yml ]]; then
         compose_args+=(-f docker-compose.gpu.yml)
     fi
@@ -325,7 +340,7 @@ phase_08_start_new() {
     ac_wait_for_health 900
 
     # Tail backend logs for "Alembic upgrade complete" or similar marker
-    docker logs "${TEST_PROJECT_NAME}-backend" 2>&1 | grep -iE 'alembic|migration' | tail -20 \
+    docker logs opentranscribe-backend 2>&1 | grep -iE 'alembic|migration' | tail -20 \
         > "$TEST_ROOT/migration-log.txt" || true
 }
 
