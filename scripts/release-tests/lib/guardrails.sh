@@ -48,10 +48,7 @@ readonly GR_PROTECTED_PATHS=(
     "/mnt/nas/datasets"
 )
 
-# Production container, volume, and network names that must never be reused.
-readonly GR_PROTECTED_CONTAINER_PREFIXES=(
-    "opentranscribe-"
-)
+# Production volume names that must never be deleted by cleanup.
 readonly GR_PROTECTED_VOLUMES=(
     "postgres_data"
     "minio_data"
@@ -92,11 +89,15 @@ gr_require_vars() {
 }
 
 gr_check_project_name() {
+    # TEST_PROJECT_NAME is now used only as a label namespace and informational
+    # tag, not for container/volume name isolation (since the live deployment
+    # is stopped before tests run). Still require ot-reltest- prefix so cleanup
+    # logs and reports clearly identify the source.
     case "$TEST_PROJECT_NAME" in
         ot-reltest-*) ;;
         *) gr_die "TEST_PROJECT_NAME must start with 'ot-reltest-', got '$TEST_PROJECT_NAME'" ;;
     esac
-    gr_ok "project name '$TEST_PROJECT_NAME' is isolated"
+    gr_ok "test scenario label namespace: '$TEST_PROJECT_NAME'"
 }
 
 gr_check_test_root() {
@@ -137,22 +138,28 @@ gr_check_mount_path() {
 }
 
 gr_check_container_names() {
-    # Abort if any protected-prefix container already exists unless it carries our label.
-    local name running_label
-    for prefix in "${GR_PROTECTED_CONTAINER_PREFIXES[@]}"; do
-        while IFS= read -r name; do
-            [[ -z "$name" ]] && continue
-            # Production containers are allowed to exist — we just must not manage them.
-            # What we refuse is any container whose name overlaps with the test prefix.
-            if [[ "$name" == "$TEST_PROJECT_NAME"* ]]; then
-                running_label="$(docker inspect -f '{{index .Config.Labels "com.opentranscribe.release-test"}}' "$name" 2>/dev/null || echo "")"
-                if [[ -z "$running_label" ]]; then
-                    gr_die "container '$name' matches our test prefix but lacks the release-test label — refuse to manage"
-                fi
-            fi
-        done < <(docker ps -a --format '{{.Names}}' --filter "name=^${prefix}")
-    done
-    gr_ok "no unlabeled containers claim the '$TEST_PROJECT_NAME' prefix"
+    # Refuse if any container that matches the production prefix is currently
+    # RUNNING. We expect the caller to have stopped the live deployment first
+    # (via ./opentr.sh stop), so opentranscribe-* containers should be gone.
+    local running
+    running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    if [[ -n "$running" ]]; then
+        gr_die "live opentranscribe-* containers still running:
+$running
+
+Stop them first with: ./opentr.sh stop  (preserves all data)"
+    fi
+    # Stopped opentranscribe-* containers (from a previous live `down`) would
+    # also collide on container_name during create — flag them so the caller
+    # can decide whether to remove them.
+    local stopped
+    stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    if [[ -n "$stopped" ]]; then
+        gr_warn "stopped opentranscribe-* containers exist (will collide on create):"
+        echo "$stopped" >&2
+        gr_warn "the test driver will 'docker rm' them in phase 0 (no data loss — bind mounts persist)"
+    fi
+    gr_ok "no live opentranscribe-* containers running"
 }
 
 gr_check_volume_names() {
