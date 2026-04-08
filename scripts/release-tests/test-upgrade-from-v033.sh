@@ -38,6 +38,11 @@ TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 FROM_VERSION="${FROM_VERSION:-v0.3.3}"
 LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-0.4.0}"
 
+# GPU policy: default to GPU 1 (RTX 3080 Ti, free on this host).
+TEST_USE_GPU="${TEST_USE_GPU:-true}"
+TEST_GPU_DEVICE_ID="${TEST_GPU_DEVICE_ID:-1}"
+export TEST_USE_GPU TEST_GPU_DEVICE_ID
+
 # Disjoint port range (Scenario A uses 6173-6180; this uses 6273-6280)
 TEST_FRONTEND_PORT="${TEST_FRONTEND_PORT:-6273}"
 TEST_BACKEND_PORT="${TEST_BACKEND_PORT:-6274}"
@@ -175,6 +180,14 @@ phase_03_prepare_v033_compose() {
     cp_pin_image_tag "$stage/docker-compose.yml" backend "$FROM_VERSION"
     cp_pin_image_tag "$stage/docker-compose.yml" frontend "$FROM_VERSION"
 
+    # GPU overlay (use the v0.3.3 worktree's copy if present, else current head's)
+    if [[ "$TEST_USE_GPU" == "true" ]]; then
+        local src_gpu="$worktree/docker-compose.gpu.yml"
+        [[ -f "$src_gpu" ]] || src_gpu="$REPO_ROOT/docker-compose.gpu.yml"
+        cp "$src_gpu" "$stage/docker-compose.gpu.yml"
+        gr_ok "GPU overlay copied from $(basename "$(dirname "$src_gpu")")"
+    fi
+
     et_write_env "$stage/.env"
     gr_ok "v0.3.3 compose staged at $stage"
 }
@@ -182,10 +195,14 @@ phase_03_prepare_v033_compose() {
 phase_04_start_v033() {
     local stage="$TEST_ROOT/before"
     pushd "$stage" >/dev/null
+    local compose_args=(-f docker-compose.yml)
+    if [[ "$TEST_USE_GPU" == "true" && -f docker-compose.gpu.yml ]]; then
+        compose_args+=(-f docker-compose.gpu.yml)
+    fi
     gr_log "compose pull (Docker Hub: ${FROM_VERSION})"
-    docker compose -f docker-compose.yml pull
+    docker compose "${compose_args[@]}" pull
     gr_log "compose up -d"
-    docker compose -f docker-compose.yml up -d
+    docker compose "${compose_args[@]}" up -d
     popd >/dev/null
 
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
@@ -276,20 +293,30 @@ phase_07_swap_to_new() {
     cp_pin_image_tag "$stage_after/docker-compose.yml" backend "$LOCAL_IMAGE_TAG"
     cp_pin_image_tag "$stage_after/docker-compose.yml" frontend "$LOCAL_IMAGE_TAG"
 
+    if [[ "$TEST_USE_GPU" == "true" && -f "$REPO_ROOT/docker-compose.gpu.yml" ]]; then
+        cp "$REPO_ROOT/docker-compose.gpu.yml" "$stage_after/docker-compose.gpu.yml"
+    fi
+
     cp "$stage_before/.env" "$stage_after/.env"
 
     # Stop the BEFORE stack — IMPORTANT: no -v, no --remove-orphans
     pushd "$stage_before" >/dev/null
+    local before_args=(-f docker-compose.yml)
+    [[ -f docker-compose.gpu.yml && "$TEST_USE_GPU" == "true" ]] && before_args+=(-f docker-compose.gpu.yml)
     gr_log "stopping ${FROM_VERSION} stack (preserving volumes)"
-    docker compose -f docker-compose.yml down
+    docker compose "${before_args[@]}" down
     popd >/dev/null
 }
 
 phase_08_start_new() {
     local stage_after="$TEST_ROOT/after"
     pushd "$stage_after" >/dev/null
+    local compose_args=(-f docker-compose.yml)
+    if [[ "$TEST_USE_GPU" == "true" && -f docker-compose.gpu.yml ]]; then
+        compose_args+=(-f docker-compose.gpu.yml)
+    fi
     gr_log "starting ${LOCAL_IMAGE_TAG} stack"
-    docker compose -f docker-compose.yml up -d
+    docker compose "${compose_args[@]}" up -d
     popd >/dev/null
 
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"

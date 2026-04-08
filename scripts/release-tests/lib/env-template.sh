@@ -70,12 +70,17 @@ ENCRYPTION_KEY=${enc_key}
 # ─── Model cache (isolated per test run) ─────────────────────
 MODEL_CACHE_DIR=${TEST_ROOT}/models
 
-# ─── AI models and hardware (CPU-only by default for safety) ─
+# ─── AI models and hardware ──────────────────────────────────
+# GPU usage is opt-in via TEST_USE_GPU=true (the scenario scripts default
+# this to true and pin to TEST_GPU_DEVICE_ID, defaulting to GPU 1 on this
+# host because GPU 0 is occupied by the live celery worker).
 WHISPER_MODEL=${WHISPER_MODEL:-large-v3-turbo}
-COMPUTE_TYPE=${COMPUTE_TYPE:-int8}
-BATCH_SIZE=${BATCH_SIZE:-4}
-USE_GPU=${USE_GPU:-false}
-CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
+COMPUTE_TYPE=${COMPUTE_TYPE:-${TEST_COMPUTE_TYPE:-float16}}
+BATCH_SIZE=${BATCH_SIZE:-${TEST_BATCH_SIZE:-16}}
+USE_GPU=${USE_GPU:-${TEST_USE_GPU:-true}}
+GPU_DEVICE_ID=${GPU_DEVICE_ID:-${TEST_GPU_DEVICE_ID:-1}}
+CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-${TEST_GPU_DEVICE_ID:-1}}
+TORCH_DEVICE=${TORCH_DEVICE:-cuda}
 
 # ─── HuggingFace token (from .env.test-secrets) ──────────────
 HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}

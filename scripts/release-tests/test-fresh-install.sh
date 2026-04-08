@@ -29,6 +29,12 @@ TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 TO_BRANCH="${TO_BRANCH:-master}"
 LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-0.4.0}"  # the tag built locally in Phase 3
 
+# GPU policy: default to using GPU 1 (RTX 3080 Ti, free on this host).
+# Override with TEST_USE_GPU=false to fall back to CPU-only.
+TEST_USE_GPU="${TEST_USE_GPU:-true}"
+TEST_GPU_DEVICE_ID="${TEST_GPU_DEVICE_ID:-1}"
+export TEST_USE_GPU TEST_GPU_DEVICE_ID
+
 # Ports — kept far away from the live 5173-5180 range
 TEST_FRONTEND_PORT="${TEST_FRONTEND_PORT:-6173}"
 TEST_BACKEND_PORT="${TEST_BACKEND_PORT:-6174}"
@@ -211,6 +217,13 @@ phase_03_patch_compose() {
     cp_inject_labels "$target/docker-compose.yml" "$TEST_LABEL"
     cp_force_pull_policy "$target/docker-compose.yml" never
 
+    # GPU overlay (optional): copy + label, no name patches needed because the
+    # overlay only adds deploy.resources.devices stanzas to existing services.
+    if [[ "$TEST_USE_GPU" == "true" && -f "$REPO_ROOT/docker-compose.gpu.yml" ]]; then
+        cp "$REPO_ROOT/docker-compose.gpu.yml" "$target/docker-compose.gpu.yml"
+        gr_ok "GPU overlay copied (will pin GPU $TEST_GPU_DEVICE_ID)"
+    fi
+
     # Generate a fresh .env that overrides the one the installer wrote
     et_write_env "$target/.env"
 
@@ -251,8 +264,14 @@ phase_04_start_stack() {
     local target="$TEST_ROOT/install/opentranscribe"
     [[ -d "$target" ]] || target="$TEST_ROOT/install"
     pushd "$target" >/dev/null
-    gr_log "docker compose up -d"
-    docker compose -f docker-compose.yml up -d
+    local compose_args=(-f docker-compose.yml)
+    if [[ "$TEST_USE_GPU" == "true" && -f docker-compose.gpu.yml ]]; then
+        compose_args+=(-f docker-compose.gpu.yml)
+        gr_log "docker compose up -d (GPU overlay enabled, GPU_DEVICE_ID=$TEST_GPU_DEVICE_ID)"
+    else
+        gr_log "docker compose up -d (CPU-only)"
+    fi
+    docker compose "${compose_args[@]}" up -d
     popd >/dev/null
 }
 
