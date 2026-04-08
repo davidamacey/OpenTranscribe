@@ -501,7 +501,17 @@ phase_10_assert_and_report() {
     local pre="$TEST_ROOT/snapshots/before"
     local post="$TEST_ROOT/snapshots/after"
 
-    as_assert_diff_files "media_file rows preserved" "$pre/media_files.txt" "$post/media_files.txt"
+    # Compare media_file rows case-insensitively because v0.3.3 stores
+    # filestatus as a native PG enum (uppercase: COMPLETED) and v0.4.0 stores
+    # it as VARCHAR (lowercase: completed) after the v073 enum→varchar
+    # migration. The IDs and filenames must match exactly; only the case of
+    # the status string changes — that's the migration doing its job.
+    if diff -q <(tr 'A-Z' 'a-z' < "$pre/media_files.txt") <(tr 'A-Z' 'a-z' < "$post/media_files.txt") >/dev/null 2>&1; then
+        as_record PASS "media_file rows preserved (case-insensitive)"
+    else
+        as_record FAIL "media_file rows preserved (case-insensitive)" \
+            "$(diff -u "$pre/media_files.txt" "$post/media_files.txt" | head -10 | tr '\n' ' ')"
+    fi
     as_assert_diff_files "transcript_segment counts preserved" "$pre/segment_counts.txt" "$post/segment_counts.txt"
     as_assert_diff_files "MinIO ETag list unchanged" "$pre/minio_etags.json" "$post/minio_etags.json"
 
@@ -551,7 +561,7 @@ PY
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD" || true
     local code
 
-    code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/docs")
+    code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/api/docs")
     as_assert_http "API docs reachable post-upgrade" 200 "$code"
 
     code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_FRONTEND_PORT}/")
