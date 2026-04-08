@@ -40,6 +40,13 @@ LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \
       org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
       org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
 
+# Upgrade system packages to pick up the latest Alpine security patches
+# (libcrypto3, libexpat, libpng, etc.) without having to chase nginx base
+# image tag updates every time a CVE lands. This runs before the COPY +
+# chown step below so the final USER nginx directive at the bottom of the
+# file is the only identity switch.
+RUN apk upgrade --no-cache
+
 # Copy the built files from the build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 

@@ -57,8 +57,13 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
       org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
       org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
 
-# Install only runtime dependencies (no build tools)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install only runtime dependencies (no build tools).
+# `apt-get upgrade -y` pulls the latest security patches for system libs
+# (libssl, libexpat, libpng, libgdk-pixbuf, etc.) on every image build, so
+# we pick up Debian security updates without having to bump the base image
+# tag manually. This is important because the base image (python:3.13-slim-
+# trixie) may have been built before the latest security advisories landed.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     libsndfile1 \
