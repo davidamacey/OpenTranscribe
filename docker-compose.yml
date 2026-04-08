@@ -102,7 +102,17 @@ services:
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      # Neural search requires substantially more heap than the 1 GB
+      # OpenSearch default. The ML plugin sizes its `neural_search` JVM
+      # circuit breaker at ~10% of total heap, so:
+      #   1 GB heap → 102 MB breaker → all models fail to load
+      #   2 GB heap → 204 MB breaker → all-MiniLM-L6-v2 (240 MB) marginal
+      #   4 GB heap → 410 MB breaker → comfortable for all default models
+      # 4 GB is the recommended minimum once neural search is enabled.
+      # Override with OPENSEARCH_JAVA_OPTS env var (e.g. for systems with
+      # limited RAM, set -Xms2g -Xmx2g and use a smaller embedding model
+      # like all-MiniLM-L6-v2 explicitly).
+      - "OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms4g -Xmx4g}"
       - DISABLE_SECURITY_PLUGIN=true
       # ML Commons settings for neural search (CPU-based embedding inference)
       - plugins.ml_commons.only_run_on_ml_node=false
