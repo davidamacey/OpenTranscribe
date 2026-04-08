@@ -163,12 +163,15 @@ ac_get_file() {
     ac_curl "$API_BASE/files/$1"
 }
 
-ac_get_transcript() {
-    # Returns transcript content for a file. /content returns the full
-    # transcript JSON in 0.4.0; older builds may use /segments.
-    ac_curl "$API_BASE/files/$1/content" 2>/dev/null \
-        || ac_curl "$API_BASE/files/$1/segments"
+ac_get_segments() {
+    # Returns transcript segments JSON for a file (uuid).
+    # IMPORTANT: /content returns the raw audio file body, NOT JSON. The
+    # canonical transcript endpoint is /segments.
+    ac_curl "$API_BASE/files/$1/segments"
 }
+
+# Backward-compat alias
+ac_get_transcript() { ac_get_segments "$@"; }
 
 ac_list_files() {
     ac_curl "$API_BASE/files"
