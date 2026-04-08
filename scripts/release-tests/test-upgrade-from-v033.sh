@@ -138,9 +138,43 @@ ensure_secrets_file() {
 
 # ─── Phase implementations ──────────────────────────────────────────────────
 
+ensure_clean_test_state() {
+    # Refuse if any live opentranscribe-* container is currently running.
+    local running
+    running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    if [[ -n "$running" ]]; then
+        gr_die "live opentranscribe-* containers are running:
+$running
+
+Stop them with: ./opentr.sh stop  (preserves all data)"
+    fi
+    # Remove stopped opentranscribe-* containers (would collide on container_name)
+    local stopped
+    stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    if [[ -n "$stopped" ]]; then
+        gr_log "removing stopped opentranscribe-* containers from previous runs"
+        docker rm $stopped >/dev/null 2>&1 || true
+    fi
+    # Remove any leftover opentranscribe_* named volumes from previous test
+    # runs. (Production volumes are namespaced under transcribe-app_* and are
+    # never touched.)
+    local stale_vols
+    stale_vols=$(docker volume ls --format '{{.Name}}' | grep "^opentranscribe_" || true)
+    if [[ -n "$stale_vols" ]]; then
+        gr_log "removing stale opentranscribe_* volumes from previous runs:"
+        echo "$stale_vols" | sed 's/^/  /' >&2
+        for vol in $stale_vols; do
+            docker volume rm "$vol" >/dev/null 2>&1 \
+                || gr_warn "could not remove volume $vol (may be in use)"
+        done
+    fi
+    gr_ok "test state clean — no live containers, no stale volumes"
+}
+
 phase_00_preflight() {
     ensure_secrets_file
     gr_preflight
+    ensure_clean_test_state
 }
 
 phase_01_build_local_images() {
