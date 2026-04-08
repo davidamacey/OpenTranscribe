@@ -416,6 +416,10 @@ echo "Started: $(date -Iseconds)"
 echo "Repo:    $REPO_ROOT (commit $(git -C "$REPO_ROOT" rev-parse --short HEAD))"
 echo
 
+# Always source secrets before any phase runs (phases 02+ need
+# HUGGINGFACE_TOKEN and friends; phase 00 may have been skipped on resume).
+ensure_secrets_file
+
 phase 00 phase_00_preflight
 phase 01 phase_01_build_local_images
 phase 02 phase_02_run_one_liner
