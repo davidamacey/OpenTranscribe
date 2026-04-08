@@ -216,6 +216,17 @@ phase_03_patch_compose() {
         postgres_data minio_data redis_data opensearch_data flower_data
     cp_inject_labels "$target/docker-compose.yml" "$TEST_LABEL"
     cp_force_pull_policy "$target/docker-compose.yml" never
+    # Pin image tags to the locally built version so the patched compose
+    # references :${LOCAL_IMAGE_TAG} instead of the freshly-pulled :latest
+    # from Docker Hub. The celery-* services share the backend image, so
+    # they all get the same tag automatically by name.
+    cp_pin_image_tag "$target/docker-compose.yml" backend "$LOCAL_IMAGE_TAG"
+    cp_pin_image_tag "$target/docker-compose.yml" frontend "$LOCAL_IMAGE_TAG"
+    # Celery services in the base compose all reference the backend image too;
+    # patch each one if present (failures are non-fatal — service may be absent).
+    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+        cp_pin_image_tag "$target/docker-compose.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
+    done
 
     # GPU overlay (optional): copy + label, no name patches needed because the
     # overlay only adds deploy.resources.devices stanzas to existing services.
