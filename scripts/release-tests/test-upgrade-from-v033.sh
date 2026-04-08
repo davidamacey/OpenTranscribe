@@ -129,6 +129,9 @@ phase_00_preflight() {
 }
 
 phase_01_build_local_images() {
+    # Intentionally tag ONLY :${LOCAL_IMAGE_TAG}, never :latest — retagging
+    # :latest locally would affect the live production deployment on this host
+    # if its containers ever restart.
     if docker image inspect "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" >/dev/null 2>&1 \
        && docker image inspect "davidamacey/opentranscribe-frontend:${LOCAL_IMAGE_TAG}" >/dev/null 2>&1; then
         gr_ok "local ${LOCAL_IMAGE_TAG} images already built"

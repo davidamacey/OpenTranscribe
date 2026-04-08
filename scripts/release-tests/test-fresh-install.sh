@@ -143,6 +143,9 @@ phase_00_preflight() {
 }
 
 phase_01_build_local_images() {
+    # Intentionally tag ONLY :${LOCAL_IMAGE_TAG}, never :latest — retagging
+    # :latest locally would affect the live production deployment on this host
+    # if its containers ever restart.
     gr_log "checking for local image davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}"
     if docker image inspect "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" >/dev/null 2>&1; then
         gr_ok "backend image already present"
@@ -150,7 +153,6 @@ phase_01_build_local_images() {
         gr_log "building backend (this can take ~5-10 min)"
         docker build \
             -t "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" \
-            -t "davidamacey/opentranscribe-backend:latest" \
             -f "$REPO_ROOT/backend/Dockerfile.prod" \
             "$REPO_ROOT/backend"
     fi
@@ -160,7 +162,6 @@ phase_01_build_local_images() {
         gr_log "building frontend"
         docker build \
             -t "davidamacey/opentranscribe-frontend:${LOCAL_IMAGE_TAG}" \
-            -t "davidamacey/opentranscribe-frontend:latest" \
             -f "$REPO_ROOT/frontend/Dockerfile.prod" \
             "$REPO_ROOT/frontend"
     fi
