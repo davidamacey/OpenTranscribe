@@ -29,6 +29,16 @@ depends_on = None
 
 def upgrade():
     """Create all tables for v0.1.0 schema."""
+    # Widen the alembic_version.version_num column from the default VARCHAR(32)
+    # so future migrations can use long, descriptive revision IDs
+    # (e.g. v071_add_transcript_segment_unique_constraint = 45 chars).
+    # On a fresh install Alembic creates alembic_version as part of the very
+    # first upgrade with VARCHAR(32); this ALTER widens it inside the same
+    # transaction before any long-named UPDATE is attempted.
+    # Existing deployments are widened separately by app.db.migrations
+    # (see _ensure_alembic_version_column_width).
+    op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
+
     # Enable UUID extension
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
 
