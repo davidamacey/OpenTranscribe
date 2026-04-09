@@ -1,6 +1,6 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-04-09T07:59:10.853377231-04:00",
+  "CreatedAt": "2026-04-09T08:11:58.226705844-04:00",
   "ArtifactName": "davidamacey/opentranscribe-backend:latest",
   "ArtifactType": "container_image",
   "Metadata": {
@@ -29,7 +29,8 @@
     ],
     "RepoDigests": [
       "davidamacey/opentranscribe-backend@sha256:638efd738297a7c081c298b5679491f56c22c87a520cb824a858b0fea2bbe8f2",
-      "davidamacey/opentranscribe-backend@sha256:75def90d08e330075611e895b8e28552caf28918814e32184411682b0e316f43"
+      "davidamacey/opentranscribe-backend@sha256:75def90d08e330075611e895b8e28552caf28918814e32184411682b0e316f43",
+      "davidamacey/opentranscribe-backend@sha256:d34f8af7591c964bf837ec58303ca3106db72c3d8fc9785b09e93f2943091d35"
     ],
     "ImageConfig": {
       "architecture": "amd64",
@@ -23599,6 +23600,19 @@
           "Name": "av",
           "Identifier": {
             "PURL": "pkg:pypi/av@17.0.0?file_name=av-17.0.0-cp311-abi3-manylinux_2_28_x86_64.whl",
+            "UID": "1bbfe59381c4e60a",
+            "BOMRef": "pkg:pypi/av@17.0.0?file_name=av-17.0.0-cp311-abi3-manylinux_2_28_x86_64.whl"
+          },
+          "Version": "17.0.0",
+          "Layer": {
+            "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
+          }
+        },
+        {
+          "ID": "av@17.0.0",
+          "Name": "av",
+          "Identifier": {
+            "PURL": "pkg:pypi/av@17.0.0?file_name=av-17.0.0-cp311-abi3-manylinux_2_28_x86_64.whl",
             "UID": "3a198f5c21a30078",
             "BOMRef": "pkg:pypi/av@17.0.0?file_name=av-17.0.0-cp311-abi3-manylinux_2_28_x86_64.whl"
           },
@@ -23611,19 +23625,6 @@
             "libxcb@1.13.1-1.el8",
             "libxcb@1.13.1-1.el8"
           ],
-          "Layer": {
-            "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
-          }
-        },
-        {
-          "ID": "av@17.0.0",
-          "Name": "av",
-          "Identifier": {
-            "PURL": "pkg:pypi/av@17.0.0?file_name=av-17.0.0-cp311-abi3-manylinux_2_28_x86_64.whl",
-            "UID": "1bbfe59381c4e60a",
-            "BOMRef": "pkg:pypi/av@17.0.0?file_name=av-17.0.0-cp311-abi3-manylinux_2_28_x86_64.whl"
-          },
-          "Version": "17.0.0",
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
@@ -25373,13 +25374,10 @@
           "Name": "pillow",
           "Identifier": {
             "PURL": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "a8d419e1caa312c1",
+            "UID": "ee46a7936b34f4f4",
             "BOMRef": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "12.2.0",
-          "DependsOn": [
-            "libXau@1.0.9-3.el8"
-          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
@@ -25389,10 +25387,13 @@
           "Name": "pillow",
           "Identifier": {
             "PURL": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "ee46a7936b34f4f4",
+            "UID": "a8d419e1caa312c1",
             "BOMRef": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "12.2.0",
+          "DependsOn": [
+            "libXau@1.0.9-3.el8"
+          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
@@ -26063,10 +26064,13 @@
           "Name": "scikit_learn",
           "Identifier": {
             "PURL": "pkg:pypi/scikit-learn@1.8.0?file_name=scikit_learn-1.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "8a76e3ee358c655e",
+            "UID": "6865485085542ca9",
             "BOMRef": "pkg:pypi/scikit_learn@1.8.0?file_name=scikit_learn-1.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "1.8.0",
+          "DependsOn": [
+            "libgomp@8.5.0-28.el8_10.alma.1"
+          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
@@ -26076,13 +26080,10 @@
           "Name": "scikit_learn",
           "Identifier": {
             "PURL": "pkg:pypi/scikit-learn@1.8.0?file_name=scikit_learn-1.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "6865485085542ca9",
+            "UID": "8a76e3ee358c655e",
             "BOMRef": "pkg:pypi/scikit_learn@1.8.0?file_name=scikit_learn-1.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "1.8.0",
-          "DependsOn": [
-            "libgomp@8.5.0-28.el8_10.alma.1"
-          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
