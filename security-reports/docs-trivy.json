@@ -1,7 +1,7 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-04-08T08:23:27.651822488-04:00",
-  "ArtifactName": "davidamacey/opentranscribe-docs:0.4.0",
+  "CreatedAt": "2026-04-08T21:51:51.155457734-04:00",
+  "ArtifactName": "davidamacey/opentranscribe-docs:latest",
   "ArtifactType": "container_image",
   "Metadata": {
     "Size": 78307840,
@@ -245,7 +245,7 @@
   },
   "Results": [
     {
-      "Target": "davidamacey/opentranscribe-docs:0.4.0 (alpine 3.21.3)",
+      "Target": "davidamacey/opentranscribe-docs:latest (alpine 3.21.3)",
       "Class": "os-pkgs",
       "Type": "alpine",
       "Packages": [
@@ -3941,7 +3941,7 @@
           ],
           "VendorSeverity": {
             "alma": 2,
-            "amazon": 2,
+            "amazon": 1,
             "oracle-oval": 2,
             "photon": 3,
             "redhat": 2,
@@ -5482,7 +5482,7 @@
           ],
           "VendorSeverity": {
             "alma": 2,
-            "amazon": 2,
+            "amazon": 1,
             "oracle-oval": 2,
             "photon": 3,
             "redhat": 2,
@@ -5831,7 +5831,7 @@
           ],
           "VendorSeverity": {
             "alma": 3,
-            "amazon": 3,
+            "amazon": 2,
             "azure": 3,
             "cbl-mariner": 3,
             "oracle-oval": 3,
@@ -6277,6 +6277,7 @@
             "CWE-416"
           ],
           "VendorSeverity": {
+            "azure": 3,
             "photon": 3,
             "redhat": 2
           },
@@ -6328,6 +6329,7 @@
             "CWE-787"
           ],
           "VendorSeverity": {
+            "azure": 3,
             "photon": 3,
             "redhat": 2
           },
@@ -6375,7 +6377,7 @@
             "CWE-125"
           ],
           "VendorSeverity": {
-            "amazon": 3,
+            "amazon": 2,
             "azure": 2,
             "cbl-mariner": 2,
             "photon": 2,

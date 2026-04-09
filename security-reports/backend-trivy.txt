@@ -1,7 +1,7 @@
 
-davidamacey/opentranscribe-backend:0.4.0 (debian 13.4)
-======================================================
-Total: 80 (UNKNOWN: 0, LOW: 0, MEDIUM: 62, HIGH: 15, CRITICAL: 3)
+davidamacey/opentranscribe-backend:latest (debian 13.4)
+=======================================================
+Total: 83 (UNKNOWN: 0, LOW: 0, MEDIUM: 66, HIGH: 14, CRITICAL: 3)
 
 ┌─────────────────────────┬────────────────┬──────────┬──────────────┬──────────────────────────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
 │         Library         │ Vulnerability  │ Severity │    Status    │          Installed Version           │ Fixed Version │                            Title                             │
@@ -10,9 +10,17 @@ Total: 80 (UNKNOWN: 0, LOW: 0, MEDIUM: 62, HIGH: 15, CRITICAL: 3)
 │                         │                │          │              │                                      │               │ devices                                                      │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-27456                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ curl                    │ CVE-2025-13034 │          │              │ 8.14.1-2+deb13u2                     │               │ When using `CURLOPT_PINNEDPUBLICKEY` option with libcurl or  │
-│                         │                │          │              │                                      │               │ `--pinnedp ...                                               │
+│ curl                    │ CVE-2025-13034 │          │              │ 8.14.1-2+deb13u2                     │               │ curl: Public key pinning bypass via QUIC and GnuTLS allows   │
+│                         │                │          │              │                                      │               │ server impersonation...                                      │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-13034                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2025-14524 │          │              │                                      │               │ curl: Information disclosure via cross-protocol redirect     │
+│                         │                │          │              │                                      │               │ with OAuth2 bearer token                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-14524                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2025-14819 │          │              │                                      │               │ curl: libcurl: Improper certificate validation due to cached │
+│                         │                │          │              │                                      │               │ TLS settings reuse                                           │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-14819                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-1965  │          │              │                                      │               │ curl: curl: Authentication bypass due to incorrect           │
 │                         │                │          │              │                                      │               │ connection reuse with Negotiate authentication...            │
@@ -94,9 +102,17 @@ Total: 80 (UNKNOWN: 0, LOW: 0, MEDIUM: 62, HIGH: 15, CRITICAL: 3)
 │                         │                │          │              │                                      │               │ execution                                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2024-36600                   │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libcurl4t64             │ CVE-2025-13034 │ MEDIUM   │              │ 8.14.1-2+deb13u2                     │               │ When using `CURLOPT_PINNEDPUBLICKEY` option with libcurl or  │
-│                         │                │          │              │                                      │               │ `--pinnedp ...                                               │
+│ libcurl4t64             │ CVE-2025-13034 │ MEDIUM   │              │ 8.14.1-2+deb13u2                     │               │ curl: Public key pinning bypass via QUIC and GnuTLS allows   │
+│                         │                │          │              │                                      │               │ server impersonation...                                      │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-13034                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2025-14524 │          │              │                                      │               │ curl: Information disclosure via cross-protocol redirect     │
+│                         │                │          │              │                                      │               │ with OAuth2 bearer token                                     │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-14524                   │
+│                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2025-14819 │          │              │                                      │               │ curl: libcurl: Improper certificate validation due to cached │
+│                         │                │          │              │                                      │               │ TLS settings reuse                                           │
+│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-14819                   │
 │                         ├────────────────┤          │              │                                      ├───────────────┼──────────────────────────────────────────────────────────────┤
 │                         │ CVE-2026-1965  │          │              │                                      │               │ curl: curl: Authentication bypass due to incorrect           │
 │                         │                │          │              │                                      │               │ connection reuse with Negotiate authentication...            │
@@ -269,11 +285,7 @@ Total: 80 (UNKNOWN: 0, LOW: 0, MEDIUM: 62, HIGH: 15, CRITICAL: 3)
 │                         │                │          │              │                                      │               │                                                              │
 │                         │                │          │              │                                      │               │                                                              │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libtiff6                │ CVE-2026-4775  │ HIGH     │              │ 4.7.0-3+deb13u1                      │               │ libtiff: libtiff: Arbitrary code execution or denial of      │
-│                         │                │          │              │                                      │               │ service via signed integer...                                │
-│                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-4775                    │
-├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libtinfo6               │ CVE-2025-69720 │          │              │ 6.5+20250216-2                       │               │ ncurses: ncurses: Buffer overflow vulnerability may lead to  │
+│ libtinfo6               │ CVE-2025-69720 │ HIGH     │              │ 6.5+20250216-2                       │               │ ncurses: ncurses: Buffer overflow vulnerability may lead to  │
 │                         │                │          │              │                                      │               │ arbitrary code execution.                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-69720                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
@@ -325,16 +337,16 @@ Python (python-pkg)
 ===================
 Total: 2 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 1, CRITICAL: 0)
 
-┌─────────────────────────┬────────────────┬──────────┬──────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
-│         Library         │ Vulnerability  │ Severity │  Status  │ Installed Version │ Fixed Version │                            Title                             │
-├─────────────────────────┼────────────────┼──────────┼──────────┼───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ ecdsa (METADATA)        │ CVE-2024-23342 │ HIGH     │ affected │ 0.19.2            │               │ python-ecdsa: vulnerable to the Minerva attack               │
-│                         │                │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2024-23342                   │
-├─────────────────────────┼────────────────┼──────────┼──────────┼───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ transformers (METADATA) │ CVE-2026-1839  │ MEDIUM   │ fixed    │ 4.57.6            │ 5.0.0rc3      │ HuggingFace Transformers allows for arbitrary code execution │
-│                         │                │          │          │                   │               │ in the `Trainer` class                                       │
-│                         │                │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2026-1839                    │
-└─────────────────────────┴────────────────┴──────────┴──────────┴───────────────────┴───────────────┴──────────────────────────────────────────────────────────────┘
+┌─────────────────────────┬────────────────┬──────────┬──────────┬───────────────────┬───────────────┬────────────────────────────────────────────────────────┐
+│         Library         │ Vulnerability  │ Severity │  Status  │ Installed Version │ Fixed Version │                         Title                          │
+├─────────────────────────┼────────────────┼──────────┼──────────┼───────────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ ecdsa (METADATA)        │ CVE-2024-23342 │ HIGH     │ affected │ 0.19.2            │               │ python-ecdsa: vulnerable to the Minerva attack         │
+│                         │                │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2024-23342             │
+├─────────────────────────┼────────────────┼──────────┼──────────┼───────────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ transformers (METADATA) │ CVE-2026-1839  │ MEDIUM   │ fixed    │ 4.57.6            │ 5.0.0rc3      │ transformers: HuggingFace Transformers: Arbitrary code │
+│                         │                │          │          │                   │               │ execution via malicious checkpoint file                │
+│                         │                │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2026-1839              │
+└─────────────────────────┴────────────────┴──────────┴──────────┴───────────────────┴───────────────┴────────────────────────────────────────────────────────┘
 
 /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/adultswim.cpython-313.pyc (secrets)
 ==================================================================================================================
