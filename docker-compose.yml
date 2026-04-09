@@ -166,19 +166,29 @@ services:
       # Version passed as env var (avoids file bind-mount conflicts in dev mode)
       - APP_VERSION
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # --connect-timeout 2 --max-time 4 makes curl fail FAST (exit 7) when the
+      # backend isn't listening yet, instead of hanging until docker kills it
+      # with exit -1 "Health check exceeded timeout". The timeout-kill exit
+      # path is mis-handled by compose's dependency tracker during start_period
+      # and was causing "dependency failed to start: container is unhealthy"
+      # errors even with start_period=600s. Clean exit 7 is treated correctly
+      # as a "not ready yet" signal while the container is still in start_period.
+      test: ["CMD", "curl", "-sf", "--connect-timeout", "2", "--max-time", "4", "http://localhost:8080/health"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
       # start_period must be long enough to cover the worst-case startup:
       #   - Alembic running 45+ migrations against a populated v0.3.x → 0.4.x
-      #     upgrade DB (can take 60-90s on its own)
+      #     upgrade DB (can take 2-5 min on cold caches and slow disks)
       #   - PyAnnote model warm preload (15-30s)
       #   - OpenSearch neural ML model deploy (10-20s)
-      # 30s was too short and caused compose to declare backend unhealthy
-      # mid-upgrade. 5 min gives plenty of headroom for any realistic upgrade
-      # path while still failing fast on a genuinely broken backend.
-      start_period: 300s
+      #   - Cold sentence-transformers / HF model download on first run
+      # 300s was insufficient on release-test Scenario B (v0.3.3 → 0.4.0 upgrade
+      # with full migration chain); dependent services (celery workers, frontend)
+      # were skipped because compose gave up waiting on backend. 600s gives real
+      # users doing their first in-place upgrade enough headroom while still
+      # failing fast on a genuinely broken backend.
+      start_period: 600s
     depends_on:
       postgres:
         condition: service_healthy

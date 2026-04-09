@@ -261,9 +261,69 @@ case "${1:-help}" in
         fix_model_cache_permissions
         echo -e "${YELLOW}📥 Updating to latest Docker images...${NC}"
         compose_files=$(get_compose_files)
+
+        # Read backend port from .env for direct health polling (below)
+        backend_port=$(grep -E '^BACKEND_PORT=' .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' | head -1)
+        backend_port="${backend_port:-5174}"
+
         docker compose $compose_files down
         docker compose $compose_files pull
+
+        # Two-phase startup to work around compose's dependency resolver, which
+        # gives up on `service_healthy` waits long before our backend's 600s
+        # start_period elapses when upgrading a populated v0.3.x database.
+        # Running the 45-migration Alembic chain + model warm-preload on first
+        # boot can take 60-120 seconds; compose would otherwise report
+        # "dependency failed to start: container opentranscribe-backend is
+        # unhealthy" around the ~45s mark and SIGTERM the backend mid-migration.
+        #
+        # Phase 1: infrastructure + backend only, no dependents
+        echo -e "${BLUE}▶ Starting infrastructure + backend (phase 1/2)...${NC}"
+        docker compose $compose_files up -d postgres redis minio opensearch backend
+
+        # Phase 2: poll the backend /health endpoint DIRECTLY (bypassing
+        # compose's dependency resolver). Wait up to 15 minutes — enough
+        # time for any realistic cold-boot migration path.
+        echo -e "${BLUE}⏳ Waiting for backend to become healthy (up to 15 minutes)...${NC}"
+        waited=0
+        max_wait=900
+        while [ $waited -lt $max_wait ]; do
+            if curl -sf --connect-timeout 2 --max-time 4 \
+                "http://localhost:${backend_port}/health" >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ Backend healthy after ${waited}s${NC}"
+                break
+            fi
+            # Detect hard-fail: if backend container has exited with a non-zero
+            # code, bail out rather than waste the full 15 minutes.
+            state=$(docker inspect opentranscribe-backend \
+                --format '{{.State.Status}}:{{.State.ExitCode}}' 2>/dev/null || echo "unknown:?")
+            case "$state" in
+                exited:0|restarting:*)
+                    # Code 0 exit or restarting = docker restart policy is
+                    # cycling the container; keep polling.
+                    ;;
+                exited:*)
+                    echo -e "${RED}❌ Backend exited with non-zero code: $state${NC}"
+                    echo -e "${YELLOW}Last 40 lines of backend logs:${NC}"
+                    docker logs --tail 40 opentranscribe-backend 2>&1 || true
+                    exit 1
+                    ;;
+            esac
+            sleep 5
+            waited=$((waited + 5))
+        done
+
+        if [ $waited -ge $max_wait ]; then
+            echo -e "${RED}❌ Backend failed to become healthy within ${max_wait}s${NC}"
+            echo -e "${YELLOW}Last 40 lines of backend logs:${NC}"
+            docker logs --tail 40 opentranscribe-backend 2>&1 || true
+            exit 1
+        fi
+
+        # Phase 3: backend is healthy — safe to start everything else
+        echo -e "${BLUE}▶ Starting remaining services (phase 2/2)...${NC}"
         docker compose $compose_files up -d
+
         echo -e "${GREEN}✅ OpenTranscribe containers updated!${NC}"
         echo ""
         echo -e "${YELLOW}💡 Tip: Run './opentranscribe.sh update-full' to also update scripts and config files${NC}"
