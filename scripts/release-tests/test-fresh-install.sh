@@ -31,7 +31,7 @@ TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
 TO_BRANCH="${TO_BRANCH:-master}"
-LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-0.4.0}"
+LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-v0.4.0}"
 
 # Set USE_HUB_IMAGES=true to skip the local build phase and pull the published
 # Docker Hub images instead. Phase 03 will set pull_policy: always and pin the
@@ -324,7 +324,6 @@ phase_03_pin_local_image() {
         fi
         gr_ok "pinned GPU_DEVICE_ID=$TEST_GPU_DEVICE_ID in .env"
     fi
-    gr_ok "image tag pinned to :${LOCAL_IMAGE_TAG}, pull_policy=never, label injected"
 }
 
 phase_04_start_stack() {
