@@ -1,6 +1,6 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-04-08T22:03:19.105423448-04:00",
+  "CreatedAt": "2026-04-09T07:59:10.853377231-04:00",
   "ArtifactName": "davidamacey/opentranscribe-backend:latest",
   "ArtifactType": "container_image",
   "Metadata": {
@@ -24,10 +24,12 @@
       "sha256:cc238f8c0b767485b21ff34898b6d9c6bf63050a09574105f6c52d66fecad8da"
     ],
     "RepoTags": [
-      "davidamacey/opentranscribe-backend:latest"
+      "davidamacey/opentranscribe-backend:latest",
+      "davidamacey/opentranscribe-backend:v0.4.0"
     ],
     "RepoDigests": [
-      "davidamacey/opentranscribe-backend@sha256:638efd738297a7c081c298b5679491f56c22c87a520cb824a858b0fea2bbe8f2"
+      "davidamacey/opentranscribe-backend@sha256:638efd738297a7c081c298b5679491f56c22c87a520cb824a858b0fea2bbe8f2",
+      "davidamacey/opentranscribe-backend@sha256:75def90d08e330075611e895b8e28552caf28918814e32184411682b0e316f43"
     ],
     "ImageConfig": {
       "architecture": "amd64",
@@ -25371,10 +25373,13 @@
           "Name": "pillow",
           "Identifier": {
             "PURL": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "ee46a7936b34f4f4",
+            "UID": "a8d419e1caa312c1",
             "BOMRef": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "12.2.0",
+          "DependsOn": [
+            "libXau@1.0.9-3.el8"
+          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
@@ -25384,13 +25389,10 @@
           "Name": "pillow",
           "Identifier": {
             "PURL": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "a8d419e1caa312c1",
+            "UID": "ee46a7936b34f4f4",
             "BOMRef": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "12.2.0",
-          "DependsOn": [
-            "libXau@1.0.9-3.el8"
-          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
