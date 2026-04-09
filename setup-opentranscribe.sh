@@ -2088,9 +2088,22 @@ prompt_start() {
         cd "$PROJECT_DIR" || return 1
         ./opentranscribe.sh start
         echo ""
-        if [[ -n "$NGINX_SERVER_NAME" ]]; then
-            echo -e "${GREEN}✅ OpenTranscribe is starting up at https://$NGINX_SERVER_NAME${NC}"
+        if [[ -n "$NGINX_SERVER_NAME" && "$SSL_CONFIGURED" == "true" ]]; then
+            echo -e "${GREEN}✅ OpenTranscribe is starting up!${NC}"
             echo -e "${YELLOW}   (allow 30-60 seconds for all services to initialize)${NC}"
+            echo ""
+            echo -e "${YELLOW}🔒 Before opening your browser, complete these two steps:${NC}"
+            echo ""
+            echo -e "   ${BLUE}Step 1 — Trust the SSL certificate:${NC}"
+            echo "   Chrome:  chrome://settings/certificates → Authorities → Import"
+            echo "   Firefox: about:preferences#privacy → View Certificates → Authorities → Import"
+            echo "   File:    $PROJECT_DIR/nginx/ssl/server.crt"
+            echo ""
+            echo -e "   ${BLUE}Step 2 — Add to /etc/hosts (or router DNS):${NC}"
+            echo "   $(hostname -I | awk '{print $1}')  $NGINX_SERVER_NAME"
+            echo "   Command: echo '$(hostname -I | awk '{print $1}')  $NGINX_SERVER_NAME' | sudo tee -a /etc/hosts"
+            echo ""
+            echo -e "   Then visit: ${BLUE}https://$NGINX_SERVER_NAME${NC}"
         else
             echo -e "${GREEN}✅ OpenTranscribe is starting up at http://localhost:${FRONTEND_PORT:-5173}${NC}"
             echo -e "${YELLOW}   (allow 30-60 seconds for all services to initialize)${NC}"
