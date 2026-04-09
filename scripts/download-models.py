@@ -204,9 +204,21 @@ def download_pyannote_models():
     print_header("Downloading PyAnnote Models")
 
     try:
+        import warnings
+        import logging
         import whisperx
         import torch
         import numpy as np
+
+        # Suppress noisy-but-harmless library warnings that confuse users:
+        # - Lightning checkpoint auto-upgrade notice (cosmetic, not an error)
+        # - PyAnnote TF32 reproducibility advisory (we accept the trade-off)
+        # - WhisperX / transformers INFO logs during model load
+        warnings.filterwarnings("ignore", message=".*Lightning automatically upgraded.*")
+        warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
+        logging.getLogger("whisperx").setLevel(logging.WARNING)
+        logging.getLogger("pyannote").setLevel(logging.WARNING)
+        logging.getLogger("lightning").setLevel(logging.ERROR)
 
         hf_token = os.environ.get("HUGGINGFACE_TOKEN")
         if not hf_token:
@@ -328,42 +340,22 @@ def download_pyannote_models():
         )
 
         print_success("  Diarization completed")
-        print_success("  All PyAnnote model weights (.bin files) downloaded")
-
-        # Verify models were downloaded to default torch cache
-        torch_cache = Path.home() / ".cache" / "torch"
-        if torch_cache.exists():
-            model_files = list(torch_cache.rglob("*.bin")) + list(torch_cache.rglob("pytorch_model.bin"))
-            print_info(f"  Verified {len(model_files)} model files in torch cache")
+        print_success("  All PyAnnote model weights downloaded")
 
         # Clean up
         del diarize_model
         del audio
         torch.cuda.empty_cache() if device == "cuda" else None
 
-        # Validate that all expected PyAnnote models were downloaded
-        validation_result = validate_pyannote_download()
-        if not validation_result["all_present"]:
-            print_error("")
-            print_error("=" * 70)
-            print_error("WARNING: Some PyAnnote models may not have downloaded completely")
-            print_error("=" * 70)
-            print_error("")
-            print_error("Expected models:")
-            for model_name, present in validation_result["models"].items():
-                status = "✓ Found" if present else "✗ Missing"
-                print_error(f"  {status}: {model_name}")
-            print_error("")
-            print_error("If you encounter errors during transcription:")
-            print_error("  1. Verify you accepted BOTH gated model agreements")
-            print_error("  2. Run this script again to re-download models")
-            print_error("")
-
+        # Diarization ran without exception — models are present and working.
+        # (PyAnnote 3.x stores weights in ~/.cache/huggingface/hub/, not the
+        #  old ~/.cache/torch/pyannote/ path, so directory-name checks are
+        #  unreliable. A successful pipeline run is the definitive proof.)
         return {
             "pyannote": {
                 "model": "pyannote/speaker-diarization-3.1",
                 "status": "downloaded",
-                "validation": validation_result
+                "validation": {"all_present": True}
             }
         }
 
