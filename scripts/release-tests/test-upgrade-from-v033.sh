@@ -175,6 +175,11 @@ phase_00_preflight() {
     ensure_secrets_file
     gr_preflight
     ensure_clean_test_state
+    # If a previous crashed run left the default bridge network in a stale
+    # state, clear it now so we don't discover it mid-phase-07 when the only
+    # available workaround would be a daemon restart (which real users
+    # cannot perform). See _clean_stale_opentranscribe_network below.
+    _clean_stale_opentranscribe_network
 }
 
 phase_01_build_local_images() {
@@ -250,15 +255,47 @@ phase_03_prepare_v033_compose() {
         gr_ok "GPU overlay copied from $(basename "$(dirname "$src_gpu")")"
     fi
 
-    # Pre-create the model cache directory with UID 1000 ownership so the
-    # non-root container user can write to it. The v0.3.3 compose file uses
-    # ${MODEL_CACHE_DIR:-./models} (relative to the compose file location),
-    # so the actual host path is $stage/models — NOT $TEST_ROOT/models.
-    # Setting MODEL_CACHE_DIR in the .env below pins it explicitly.
-    local model_cache="$stage/models"
+    # Model cache strategy: use a PERSISTENT shared cache across test runs so
+    # we don't re-download ~5GB of PyAnnote/WhisperX/sentence-transformers
+    # models every time. HuggingFace 503s and rate limits have repeatedly
+    # flaked tests; a persistent cache eliminates that entire failure surface.
+    #
+    # The shared cache lives outside any test-root so it survives --cleanup
+    # tear-downs. If a pre-warmed live cache exists at the production path,
+    # we rsync it in on first use (read-only source, no writes to live path).
+    local shared_cache="/mnt/nvm/opentranscribe-test-runs/.shared-model-cache"
+    local model_cache="$shared_cache"
     mkdir -p "$model_cache/huggingface" "$model_cache/torch" \
              "$model_cache/nltk_data" "$model_cache/sentence-transformers" \
-             "$model_cache/opensearch-ml"
+             "$model_cache/opensearch-ml" "$model_cache/pyannote"
+
+    # One-time seed from live production cache if we haven't already. Check
+    # for the sentinel file ".seeded-from-live" to avoid re-copying on every
+    # run. Uses rsync --link-dest for hardlinks so the copy is cheap (no
+    # actual data duplication) if source and dest are on the same filesystem.
+    if [[ ! -f "$model_cache/.seeded-from-live" ]]; then
+        local live_cache="/mnt/nvm/repos/transcribe-app/models"
+        if [[ -d "$live_cache/huggingface" ]]; then
+            gr_log "seeding shared model cache from live cache (one-time)"
+            # Copy only the subdirs that HF/PyAnnote/Whisper actually need.
+            # Skip opensearch-ml (container-specific) and onnx (0.4.0-only).
+            for sub in huggingface torch nltk_data sentence-transformers pyannote; do
+                if [[ -d "$live_cache/$sub" ]]; then
+                    rsync -a --link-dest="$live_cache/$sub/" \
+                        "$live_cache/$sub/" "$model_cache/$sub/" 2>/dev/null || \
+                        cp -rL "$live_cache/$sub/." "$model_cache/$sub/" 2>/dev/null || true
+                fi
+            done
+            touch "$model_cache/.seeded-from-live"
+            gr_ok "shared model cache seeded from live cache"
+        else
+            gr_warn "no live model cache to seed from; models will download from HF on first boot"
+            touch "$model_cache/.seeded-from-live"  # mark as attempted
+        fi
+    else
+        gr_ok "reusing persistent shared model cache at $shared_cache"
+    fi
+
     docker run --rm -v "$model_cache:/models" busybox:latest \
         sh -c "chown -R 1000:1000 /models && chmod -R 755 /models" >/dev/null 2>&1 \
         || gr_warn "could not chown model cache (may need sudo)"
@@ -437,31 +474,74 @@ phase_07_swap_to_new() {
         cp "$REPO_ROOT/docker-compose.gpu.yml" "$stage_after/docker-compose.gpu.yml"
     fi
 
-    cp "$stage_before/.env" "$stage_after/.env"
+    # Stage the actual user-facing upgrade script so phase 08 can invoke
+    # './opentranscribe.sh update' — exercising the real code path users run
+    # when upgrading in place, not a hand-rolled compose sequence.
+    cp "$REPO_ROOT/opentranscribe.sh" "$stage_after/opentranscribe.sh"
+    chmod +x "$stage_after/opentranscribe.sh"
 
-    # Stop the BEFORE stack — IMPORTANT: no -v, no --remove-orphans
-    pushd "$stage_before" >/dev/null
-    local before_args=(-f docker-compose.yml -f docker-compose.prod.yml)
-    [[ -f docker-compose.gpu.yml && "$TEST_USE_GPU" == "true" ]] && before_args+=(-f docker-compose.gpu.yml)
-    gr_log "stopping ${FROM_VERSION} stack (preserving volumes)"
-    docker compose "${before_args[@]}" down
-    popd >/dev/null
+    # Reuse the SAME .env so credentials and ports are preserved across the
+    # upgrade (mirrors what a real user sees on disk).
+    cp "$stage_before/.env" "$stage_after/.env"
+}
+
+# Defensive cleanup for the stale-network-endpoint daemon bug. If a previous
+# unclean shutdown (backend SIGKILL'd by a too-short healthcheck, crashed
+# docker engine, etc.) left the 'opentranscribe_default' bridge in a state
+# where the endpoint DB disagrees with the container list, 'compose down'
+# fails with "has active endpoints" and a daemon restart becomes the only
+# escape. Real users cannot restart dockerd, so we must prevent the bug from
+# reaching phase 08 at all — detect empty-but-stuck networks up front and
+# clear them before invoking the upgrade command.
+_clean_stale_opentranscribe_network() {
+    local net=opentranscribe_default
+    docker network inspect "$net" >/dev/null 2>&1 || return 0
+    local attached
+    attached=$(docker network inspect "$net" --format '{{len .Containers}}' 2>/dev/null || echo 0)
+    if [[ "$attached" != "0" ]]; then
+        return 0  # network is in use — not stale
+    fi
+    gr_log "removing stale empty '$net' network before upgrade"
+    if docker network rm "$net" >/dev/null 2>&1; then
+        gr_ok "stale network cleared"
+        return 0
+    fi
+    # "has active endpoints" on an empty network means the daemon's endpoint
+    # DB is out of sync. Try to force-disconnect any phantom endpoints via
+    # the raw API and retry. This is the non-destructive workaround that
+    # avoids a 'systemctl restart docker'.
+    gr_warn "network rm refused; attempting endpoint force-disconnect"
+    local phantom_ids
+    phantom_ids=$(docker network inspect "$net" --format '{{range $k,$v := .Containers}}{{$k}} {{end}}' 2>/dev/null)
+    for cid in $phantom_ids; do
+        docker network disconnect -f "$net" "$cid" >/dev/null 2>&1 || true
+    done
+    docker network rm "$net" >/dev/null 2>&1 || \
+        gr_warn "could not remove stale network — upgrade may fail; run 'docker network prune'"
 }
 
 phase_08_start_new() {
     local stage_after="$TEST_ROOT/after"
+
+    # Clear any stale daemon network state BEFORE invoking 'update' so that
+    # the user-facing upgrade command runs against a clean host — same as a
+    # real user's environment would be.
+    _clean_stale_opentranscribe_network
+
+    # Invoke the actual './opentranscribe.sh update' command. This is what
+    # real users run to upgrade in place. It does 'compose down && compose
+    # pull && compose up -d' under the hood, but going through the script
+    # means we validate the code path users actually exercise — not a
+    # hand-rolled sequence that could silently drift from the real behavior.
     pushd "$stage_after" >/dev/null
-    local compose_args=(-f docker-compose.yml -f docker-compose.prod.yml)
-    if [[ "$TEST_USE_GPU" == "true" && -f docker-compose.gpu.yml ]]; then
-        compose_args+=(-f docker-compose.gpu.yml)
-    fi
-    gr_log "starting ${LOCAL_IMAGE_TAG} stack"
-    docker compose "${compose_args[@]}" up -d
+    gr_log "running './opentranscribe.sh update' (real user upgrade path)"
+    ./opentranscribe.sh update || gr_die "opentranscribe.sh update failed"
     popd >/dev/null
 
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
     export API_BASE
-    # Migrations may take a few minutes — give them a generous window
+    # Migrations may take several minutes on a populated DB — the healthcheck
+    # start_period in docker-compose.yml is 600s and we mirror that budget.
     ac_wait_for_health 900
 
     # Tail backend logs for "Alembic upgrade complete" or similar marker
@@ -572,6 +652,53 @@ PY
         -H "Authorization: Bearer ${API_TOKEN:-}" \
         "$API_BASE/auth/mfa/status" || echo 000)
     as_assert "MFA endpoint present (was 404 in $FROM_VERSION)" '[[ "$code" != "404" && "$code" != "000" ]]'
+
+    # Neural search / OpenSearch ML model check. This is the same strict
+    # assertion Scenario A uses — it confirms the ML model is actually
+    # DEPLOYED post-upgrade, not that hybrid search silently fell back to
+    # BM25. The v0.3.x heap-too-small regression we fixed must not be able
+    # to ship undetected via the upgrade path.
+    #
+    # Neural search registration + deployment runs as an ASYNC background
+    # task after backend startup, so we poll for up to 3 minutes rather than
+    # checking once immediately. This matches realistic user expectations:
+    # "backend is up, wait a moment, then neural search is live".
+    local ml_deployed=0
+    local ml_wait=0
+    while [ "$ml_wait" -lt 180 ]; do
+        ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
+            'http://localhost:9200/_plugins/_ml/models/_search' \
+            -H 'Content-Type: application/json' \
+            -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
+            2>/dev/null \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
+            2>/dev/null || echo 0)
+        [ "$ml_deployed" -ge 1 ] && break
+        sleep 10
+        ml_wait=$((ml_wait + 10))
+    done
+    as_assert_ge "OpenSearch ML model deployed post-upgrade (neural search active)" "$ml_deployed" 1
+
+    # Hybrid search smoke — confirm the seeded transcript is still queryable
+    # via the semantic path after the migration + reindex. After a v0.3.x →
+    # 0.4.x upgrade, the existing transcripts need to be re-indexed with
+    # neural embeddings (background task that runs after the ML model
+    # deploys). This can take several minutes for the embedding task to pick
+    # up pre-existing segments and compute vectors for them — poll up to 10
+    # minutes.
+    local hits=0
+    local hit_wait=0
+    while [ "$hit_wait" -lt 600 ]; do
+        hits=$(ac_search "the" 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
+' 2>/dev/null || echo 0)
+        [ "$hits" -ge 1 ] && break
+        sleep 10
+        hit_wait=$((hit_wait + 10))
+    done
+    as_assert_ge "hybrid search returns hits post-upgrade" "$hits" 1
 
     as_summary | tee -a "$TEST_REPORT_FILE"
     {
