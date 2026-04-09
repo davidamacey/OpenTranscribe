@@ -2052,11 +2052,55 @@ display_summary() {
         echo "   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
         echo ""
     fi
+
+    # SSL certificate reminder — shown whenever HTTPS is configured so users
+    # don't wonder why their browser shows a security warning on first visit.
+    if [[ -n "$NGINX_SERVER_NAME" && "$SSL_CONFIGURED" == "true" ]]; then
+        echo -e "${YELLOW}🔒 SSL Certificate — Browser Trust Required${NC}"
+        echo "   Before your first visit, trust the self-signed certificate:"
+        echo ""
+        echo "   Chrome/Chromium:  chrome://settings/certificates → Authorities → Import"
+        echo "   Firefox:          about:preferences#privacy → Certificates → View → Authorities → Import"
+        echo ""
+        echo "   Certificate file: $PROJECT_DIR/nginx/ssl/server.crt"
+        echo ""
+        echo "   Or add to /etc/hosts / router DNS:"
+        echo "   $(hostname -I | awk '{print $1}')  $NGINX_SERVER_NAME"
+        echo ""
+    fi
 }
 
 #######################
 # MAIN EXECUTION
 #######################
+
+prompt_start() {
+    # Skip in unattended mode
+    [[ -n "${OPENTRANSCRIBE_UNATTENDED:-}" ]] && return 0
+
+    echo ""
+    local answer
+    read -r -p "Start OpenTranscribe now? (Y/n): " answer </dev/tty
+    answer="${answer:-Y}"
+    if [[ "$answer" =~ ^[Yy] ]]; then
+        echo ""
+        echo -e "${BLUE}Starting OpenTranscribe...${NC}"
+        cd "$PROJECT_DIR" || return 1
+        ./opentranscribe.sh start
+        echo ""
+        if [[ -n "$NGINX_SERVER_NAME" ]]; then
+            echo -e "${GREEN}✅ OpenTranscribe is starting up at https://$NGINX_SERVER_NAME${NC}"
+            echo -e "${YELLOW}   (allow 30-60 seconds for all services to initialize)${NC}"
+        else
+            echo -e "${GREEN}✅ OpenTranscribe is starting up at http://localhost:${FRONTEND_PORT:-5173}${NC}"
+            echo -e "${YELLOW}   (allow 30-60 seconds for all services to initialize)${NC}"
+        fi
+    else
+        echo ""
+        echo "When you're ready, start with:"
+        echo -e "   ${BLUE}cd $PROJECT_DIR && ./opentranscribe.sh start${NC}"
+    fi
+}
 
 main() {
     # Run setup steps
@@ -2072,6 +2116,7 @@ main() {
     validate_setup
     pull_docker_images
     display_summary
+    prompt_start
 }
 
 # Execute main function
