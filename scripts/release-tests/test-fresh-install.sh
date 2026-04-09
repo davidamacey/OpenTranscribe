@@ -288,11 +288,19 @@ phase_03_pin_local_image() {
     [[ "$model_cache_dir" != /* ]] && model_cache_dir="$target/${model_cache_dir#./}"
     mkdir -p "$model_cache_dir"/{huggingface,torch,nltk_data,sentence-transformers,opensearch-ml}
 
-    # Seed from shared model cache to avoid re-downloading ~2.5 GB from
-    # HuggingFace on every run. The shared cache is populated by the first
-    # successful test run (Scenario B) and lives outside every scenario root.
+    # In hub mode (USE_HUB_IMAGES=true) we intentionally skip the shared cache
+    # so models download from HuggingFace exactly as a fresh user would experience.
+    # Set SEED_MODEL_CACHE=true to opt into the fast path even in hub mode.
     local shared_cache="/mnt/nvm/opentranscribe-test-runs/.shared-model-cache"
-    if [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
+    if [[ "$USE_HUB_IMAGES" == "true" && "${SEED_MODEL_CACHE:-false}" != "true" ]]; then
+        # Verify the model directory is truly empty so models download fresh.
+        # TEST_ROOT is timestamped so this directory should not exist yet.
+        if [[ -d "$model_cache_dir/huggingface/hub" ]]; then
+            gr_die "model cache at $model_cache_dir/huggingface/hub already exists — " \
+                   "this would skip model downloads. Delete it or use a fresh TEST_ROOT."
+        fi
+        gr_log "hub mode: model cache is empty — models will download from HuggingFace on first start (fresh-user path)"
+    elif [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
         gr_log "seeding model cache from shared cache (rsync --link-dest) …"
         rsync -a --link-dest="$shared_cache/" "$shared_cache/" "$model_cache_dir/" 2>/dev/null || \
             gr_warn "rsync seed failed — models will download from HuggingFace on first start"
