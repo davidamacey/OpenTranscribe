@@ -33,6 +33,12 @@ TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 TO_BRANCH="${TO_BRANCH:-master}"
 LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-0.4.0}"
 
+# Set USE_HUB_IMAGES=true to skip the local build phase and pull the published
+# Docker Hub images instead. Phase 03 will set pull_policy: always and pin the
+# image tag to :${LOCAL_IMAGE_TAG} from Hub (not local cache). Use this for
+# the final post-push smoke test.
+USE_HUB_IMAGES="${USE_HUB_IMAGES:-false}"
+
 # GPU policy: pin to GPU 1 (RTX 3080 Ti, free) — leaves GPU 0 (A6000) and
 # GPU 2 (A6000, busy with LLM) untouched. Override with TEST_USE_GPU=false.
 TEST_USE_GPU="${TEST_USE_GPU:-true}"
@@ -85,6 +91,7 @@ Env:
   TEST_ROOT              default /mnt/nvm/opentranscribe-test-runs/<name>-<ts>
   TO_BRANCH              default master  (branch the one-liner pulls files from)
   LOCAL_IMAGE_TAG        default 0.4.0   (locally built tag the test pins)
+  USE_HUB_IMAGES         default false   (true = skip local build, pull from Docker Hub)
   TEST_USE_GPU           default true
   TEST_GPU_DEVICE_ID     default 1       (RTX 3080 Ti, leaves A6000 free)
 EOF
@@ -179,6 +186,11 @@ phase_00_preflight() {
 }
 
 phase_01_build_local_images() {
+    if [[ "$USE_HUB_IMAGES" == "true" ]]; then
+        gr_log "USE_HUB_IMAGES=true — skipping local build; images will be pulled from Docker Hub in phase 03"
+        gr_ok "phase skipped (hub mode)"
+        return 0
+    fi
     # Intentionally tag ONLY :${LOCAL_IMAGE_TAG}, never :latest.
     if docker image inspect "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" >/dev/null 2>&1; then
         gr_ok "backend image davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG} already present"
@@ -232,13 +244,34 @@ phase_03_pin_local_image() {
 
     cp "$target/docker-compose.prod.yml" "$target/docker-compose.prod.yml.bak"
 
-    cp_force_pull_policy "$target/docker-compose.prod.yml" never
-    cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
-    cp_pin_image_tag "$target/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
-    cp_pin_image_tag "$target/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
-    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
-        cp_pin_image_tag "$target/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
-    done
+    if [[ "$USE_HUB_IMAGES" == "true" ]]; then
+        # Hub mode: remove any cached local image first so Docker is forced to
+        # actually pull from the registry. Pin to the explicit release tag so we
+        # know exactly which Hub image ran. pull_policy: always ensures a fresh pull.
+        gr_log "hub mode: removing cached local images to force Hub pull"
+        docker image rm -f \
+            "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" \
+            "davidamacey/opentranscribe-frontend:${LOCAL_IMAGE_TAG}" \
+            "davidamacey/opentranscribe-backend:latest" \
+            "davidamacey/opentranscribe-frontend:latest" 2>/dev/null || true
+        cp_force_pull_policy "$target/docker-compose.prod.yml" always
+        cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
+        cp_pin_image_tag "$target/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
+        cp_pin_image_tag "$target/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
+        for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+            cp_pin_image_tag "$target/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
+        done
+        gr_ok "pull_policy=always, image tag pinned to Hub :${LOCAL_IMAGE_TAG}"
+    else
+        cp_force_pull_policy "$target/docker-compose.prod.yml" never
+        cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
+        cp_pin_image_tag "$target/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
+        cp_pin_image_tag "$target/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
+        for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+            cp_pin_image_tag "$target/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
+        done
+        gr_ok "image tag pinned to :${LOCAL_IMAGE_TAG}, pull_policy=never, label injected"
+    fi
 
     # Also label the base file's services for cleanup symmetry
     cp "$target/docker-compose.yml" "$target/docker-compose.yml.bak"
@@ -254,6 +287,20 @@ phase_03_pin_local_image() {
     [[ -z "$model_cache_dir" || "$model_cache_dir" == "./models" ]] && model_cache_dir="$target/models"
     [[ "$model_cache_dir" != /* ]] && model_cache_dir="$target/${model_cache_dir#./}"
     mkdir -p "$model_cache_dir"/{huggingface,torch,nltk_data,sentence-transformers,opensearch-ml}
+
+    # Seed from shared model cache to avoid re-downloading ~2.5 GB from
+    # HuggingFace on every run. The shared cache is populated by the first
+    # successful test run (Scenario B) and lives outside every scenario root.
+    local shared_cache="/mnt/nvm/opentranscribe-test-runs/.shared-model-cache"
+    if [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
+        gr_log "seeding model cache from shared cache (rsync --link-dest) …"
+        rsync -a --link-dest="$shared_cache/" "$shared_cache/" "$model_cache_dir/" 2>/dev/null || \
+            gr_warn "rsync seed failed — models will download from HuggingFace on first start"
+        gr_ok "model cache seeded from $shared_cache (hard-linked, no disk copy)"
+    else
+        gr_warn "shared model cache not found at $shared_cache — first start will download models"
+    fi
+
     docker run --rm -v "$model_cache_dir:/m" busybox sh -c \
         "chown -R 1000:1000 /m && chmod -R u+w /m" >/dev/null 2>&1 || \
         gr_warn "could not chown $model_cache_dir to 1000:1000 (model downloads may fail)"
@@ -304,7 +351,7 @@ phase_06_api_smoke() {
         echo "- Project: $TEST_PROJECT_NAME"
         echo "- Test root: $TEST_ROOT"
         echo "- Branch: $TO_BRANCH"
-        echo "- Image tag: $LOCAL_IMAGE_TAG"
+        echo "- Image tag: $LOCAL_IMAGE_TAG ($([ "$USE_HUB_IMAGES" == "true" ] && echo "Docker Hub" || echo "local build"))"
         echo "- Started: $(date -Iseconds)"
         echo ""
         echo "| Status | Assertion | Detail |"
