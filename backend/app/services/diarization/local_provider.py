@@ -99,7 +99,7 @@ class LocalDiarizationProvider(DiarizationProvider):
             segments=segments,
             num_speakers=unique_speakers,
             provider_name="local",
-            model_name="pyannote/speaker-diarization-3.1",
+            model_name="pyannote/speaker-diarization-community-1",
         )
         # Attach native objects as metadata for downstream pipeline compatibility
         # (e.g. assign_speakers(), embedding extraction)

@@ -1159,7 +1159,7 @@ def _process_transcription_result(
     step_start = time.perf_counter()
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
     diarization_disabled = result.get("diarization_disabled", False)
-    diarization_model = None if diarization_disabled else "pyannote/speaker-diarization-3.1"
+    diarization_model = None if diarization_disabled else "pyannote/speaker-diarization-community-1"
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 
@@ -2022,7 +2022,7 @@ def _process_and_save_critical(
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
     whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
     diarization_disabled = result.get("diarization_disabled", False)
-    diarization_model = None if diarization_disabled else "pyannote/speaker-diarization-3.1"
+    diarization_model = None if diarization_disabled else "pyannote/speaker-diarization-community-1"
     try:
         from app.services.embedding_mode_service import EmbeddingModeService
 

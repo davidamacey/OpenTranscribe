@@ -89,7 +89,7 @@ Required environment variables for AI processing:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `WHISPER_MODEL` | Whisper model to use (`large-v3-turbo`, `large-v3`, `large-v2`) | `large-v3-turbo` |
-| `DIARIZATION_MODEL` | PyAnnote diarization model | `pyannote/speaker-diarization-3.1` |
+| `DIARIZATION_MODEL` | PyAnnote diarization model | `pyannote/speaker-diarization-community-1` |
 | `BATCH_SIZE` | Batch size for processing (reduce if low on GPU memory) | `16` |
 | `COMPUTE_TYPE` | Computation precision (`float16` or `int8`) | `float16` |
 | `MIN_SPEAKERS` | Minimum number of speakers to detect (optional) | `1` |
@@ -116,7 +116,7 @@ You must obtain a HuggingFace API token to use the speaker diarization functiona
 
 You also need to accept the user agreement for the following models:
 - [Segmentation](https://huggingface.co/pyannote/segmentation)
-- [Speaker-Diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+- [Speaker-Diarization-Community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) (no agreement required)
 
 #### Troubleshooting AI Processing
 - **High GPU Memory Usage**: Try reducing `BATCH_SIZE` or changing `COMPUTE_TYPE` to `int8`

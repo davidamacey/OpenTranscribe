@@ -367,6 +367,8 @@ setup_project_directory() {
     # Create and enter project directory
     mkdir -p "$PROJECT_DIR"
     cd "$PROJECT_DIR"
+    # Resolve to absolute path so later cd calls work regardless of cwd changes
+    PROJECT_DIR="$(pwd)"
     echo "✓ Created project directory: $PROJECT_DIR"
 }
 

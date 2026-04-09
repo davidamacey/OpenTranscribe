@@ -113,10 +113,9 @@ def validate_gated_model_access():
         if not hf_token:
             return False, "No HuggingFace token provided"
 
-        # List of REQUIRED gated models
+        # List of REQUIRED gated models (community-1 is not gated)
         gated_models = [
             "pyannote/segmentation-3.0",
-            "pyannote/speaker-diarization-3.1"
         ]
 
         api = HfApi()
@@ -175,7 +174,7 @@ def validate_pyannote_download():
     # Expected PyAnnote model directories
     expected_models = {
         "segmentation-3.0": "models--pyannote--segmentation-3.0",
-        "speaker-diarization-3.1": "models--pyannote--speaker-diarization-3.1",
+        "speaker-diarization-community-1": "models--pyannote--speaker-diarization-community-1",
         "wespeaker-voxceleb": "models--pyannote--wespeaker-voxceleb-resnet34-LM"
     }
 
@@ -257,7 +256,7 @@ def download_pyannote_models():
             print_error("   → Click it to accept the terms")
             print_error("")
             print_error("Step 2: Visit the Speaker Diarization Model page")
-            print_error("   URL: https://huggingface.co/pyannote/speaker-diarization-3.1")
+            print_error("   URL: https://huggingface.co/pyannote/speaker-diarization-community-1")
             print_error("   → Look for the 'Agree and access repository' button")
             print_error("   → Click it to accept the terms")
             print_error("")
@@ -353,7 +352,7 @@ def download_pyannote_models():
         #  unreliable. A successful pipeline run is the definitive proof.)
         return {
             "pyannote": {
-                "model": "pyannote/speaker-diarization-3.1",
+                "model": "pyannote/speaker-diarization-community-1",
                 "status": "downloaded",
                 "validation": {"all_present": True}
             }
@@ -382,8 +381,8 @@ def download_pyannote_models():
             print_error("     → Click 'Agree and access repository'")
             print_error("")
             print_error("  2. Speaker Diarization Model:")
-            print_error("     https://huggingface.co/pyannote/speaker-diarization-3.1")
-            print_error("     → Click 'Agree and access repository'")
+            print_error("     https://huggingface.co/pyannote/speaker-diarization-community-1")
+            print_error("     → Click 'Agree and access repository' (if prompted)")
             print_error("")
             print_error("After accepting BOTH agreements:")
             print_error("  • Wait 1-2 minutes for permissions to propagate")
@@ -814,7 +813,7 @@ def create_manifest(download_results):
         "cache": get_cache_info(),
         "environment": {
             "whisper_model": os.environ.get("WHISPER_MODEL", "large-v3-turbo"),
-            "diarization_model": os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1"),
+            "diarization_model": os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-community-1"),
             "use_gpu": os.environ.get("USE_GPU", "true"),
             "compute_type": os.environ.get("COMPUTE_TYPE", "float16")
         }
