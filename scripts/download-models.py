@@ -309,10 +309,17 @@ def download_pyannote_models():
         print_info("Step 3/3: Running speaker diarization (downloads PyAnnote models)...")
         print_info("  This downloads: segmentation-3.0, embedding, wespeaker-voxceleb...")
 
-        diarize_model = whisperx.diarize.DiarizationPipeline(
-            use_auth_token=hf_token,
-            device=device
-        )
+        try:
+            diarize_model = whisperx.diarize.DiarizationPipeline(
+                use_auth_token=hf_token,
+                device=device
+            )
+        except TypeError:
+            # pyannote-audio 3.3+ renamed use_auth_token → token
+            diarize_model = whisperx.diarize.DiarizationPipeline(
+                token=hf_token,
+                device=device
+            )
 
         diarize_segments = diarize_model(
             audio,
