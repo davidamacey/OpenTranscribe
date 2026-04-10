@@ -188,17 +188,21 @@ OpenTranscribe supports multiple authentication methods. Use these commands to d
 Build and push production Docker images to Docker Hub:
 
 ```bash
-# Build and push both services
-./scripts/docker-build-push.sh
+# Build and push both services (multi-arch: amd64 + arm64 via remote Mac Studio builder)
+# ALWAYS use USE_REMOTE_BUILDER=true — without it ARM64 uses QEMU and takes 2-3 hours
+USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh
 
 # Build specific service only
-./scripts/docker-build-push.sh backend
-./scripts/docker-build-push.sh frontend
+USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh backend
+USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh frontend
+
+# Quick iteration (skip security scan — use when testing changes back-to-back)
+USE_REMOTE_BUILDER=true SKIP_SECURITY_SCAN=true ./scripts/docker-build-push.sh backend
 
 # Auto-detect changes and build only what changed
-./scripts/docker-build-push.sh auto
+USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh auto
 
-# Build for single platform (faster testing)
+# Build for single platform (faster testing, no remote builder needed)
 PLATFORMS=linux/amd64 ./scripts/docker-build-push.sh backend
 ```
 

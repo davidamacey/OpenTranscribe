@@ -230,6 +230,21 @@ The following environment variables are deprecated and silently ignored. You may
 # TRANSCRIPTION_ENGINE=whisperx (single unified engine, setting ignored)
 ```
 
+### Contributors
+
+Special thanks to the community members whose code contributions and issue reports shaped this release:
+
+**Code Contributors:**
+- [@vfilon](https://github.com/vfilon) (Vitali Filon) — Implemented the entire LDAP/Active Directory authentication feature (PR #117): initial auth engine, username attribute support, auth_type handling, password change restrictions for non-local users, conditional settings UI, documentation, and migration detection logic (9 commits)
+- [@imorrish](https://github.com/imorrish) (Ian Morrish) — Submitted PR #117, contributed the Postgres password reset guide to the troubleshooting docs (PR #1)
+
+**Issue Reports Implemented:**
+- [@imorrish](https://github.com/imorrish) — #129 scrollable speaker dropdown, #138 filename in AI summary template, #145 collection/tag selection at upload, #146 per-collection default AI prompt
+- [@it-service-gemag](https://github.com/it-service-gemag) — #151 disable diarization per upload, #152 disable AI summary per upload, #153 per-transcription Whisper model selection
+- [@Politiezone-MIDOW](https://github.com/Politiezone-MIDOW) — #134 file retention and auto-deletion system
+- [@coltrall](https://github.com/coltrall) — #137 Docker daemon detection in installation script
+- [@SQLServerIO](https://github.com/SQLServerIO) (Wes Brown) — #109 pagination for large transcripts (file detail page hang with thousands of segments)
+
 ---
 
 ## [0.3.3] - 2025-01-13
