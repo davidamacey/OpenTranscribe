@@ -1,7 +1,7 @@
 
 davidamacey/opentranscribe-docs:latest (alpine 3.21.3)
 ======================================================
-Total: 59 (UNKNOWN: 0, LOW: 0, MEDIUM: 38, HIGH: 17, CRITICAL: 4)
+Total: 63 (UNKNOWN: 0, LOW: 0, MEDIUM: 40, HIGH: 19, CRITICAL: 4)
 
 ┌───────────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
 │    Library    │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │                            Title                             │
@@ -44,8 +44,12 @@ Total: 59 (UNKNOWN: 0, LOW: 0, MEDIUM: 38, HIGH: 17, CRITICAL: 4)
 │               │ CVE-2025-69421 │          │        │                   │               │ openssl: OpenSSL: Denial of Service via malformed PKCS#12    │
 │               │                │          │        │                   │               │ file processing                                              │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2025-69421                   │
-│               ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
-│               │ CVE-2025-15468 │ MEDIUM   │        │                   │               │ openssl: OpenSSL: Denial of Service via NULL pointer         │
+│               ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-28390 │          │        │                   │ 3.3.7-r0      │ openssl: OpenSSL: Denial of Service due to NULL pointer      │
+│               │                │          │        │                   │               │ dereference in CMS...                                        │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-28390                   │
+│               ├────────────────┼──────────┤        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│               │ CVE-2025-15468 │ MEDIUM   │        │                   │ 3.3.6-r0      │ openssl: OpenSSL: Denial of Service via NULL pointer         │
 │               │                │          │        │                   │               │ dereference in QUIC protocol...                              │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2025-15468                   │
 │               ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
@@ -78,6 +82,10 @@ Total: 59 (UNKNOWN: 0, LOW: 0, MEDIUM: 38, HIGH: 17, CRITICAL: 4)
 │               │ CVE-2026-22796 │          │        │                   │               │ openssl: OpenSSL: Denial of Service via type confusion in    │
 │               │                │          │        │                   │               │ PKCS#7 signature verification...                             │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-22796                   │
+│               ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-31790 │          │        │                   │ 3.3.7-r0      │ openssl: openssl: Information Disclosure from Uninitialized  │
+│               │                │          │        │                   │               │ Memory via Invalid RSA Public Key...                         │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-31790                   │
 ├───────────────┼────────────────┤          │        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libcurl       │ CVE-2025-10148 │          │        │ 8.12.1-r1         │ 8.14.1-r2     │ curl: predictable WebSocket mask                             │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2025-10148                   │
@@ -162,8 +170,12 @@ Total: 59 (UNKNOWN: 0, LOW: 0, MEDIUM: 38, HIGH: 17, CRITICAL: 4)
 │               │ CVE-2025-69421 │          │        │                   │               │ openssl: OpenSSL: Denial of Service via malformed PKCS#12    │
 │               │                │          │        │                   │               │ file processing                                              │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2025-69421                   │
-│               ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
-│               │ CVE-2025-15468 │ MEDIUM   │        │                   │               │ openssl: OpenSSL: Denial of Service via NULL pointer         │
+│               ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-28390 │          │        │                   │ 3.3.7-r0      │ openssl: OpenSSL: Denial of Service due to NULL pointer      │
+│               │                │          │        │                   │               │ dereference in CMS...                                        │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-28390                   │
+│               ├────────────────┼──────────┤        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│               │ CVE-2025-15468 │ MEDIUM   │        │                   │ 3.3.6-r0      │ openssl: OpenSSL: Denial of Service via NULL pointer         │
 │               │                │          │        │                   │               │ dereference in QUIC protocol...                              │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2025-15468                   │
 │               ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
@@ -196,6 +208,10 @@ Total: 59 (UNKNOWN: 0, LOW: 0, MEDIUM: 38, HIGH: 17, CRITICAL: 4)
 │               │ CVE-2026-22796 │          │        │                   │               │ openssl: OpenSSL: Denial of Service via type confusion in    │
 │               │                │          │        │                   │               │ PKCS#7 signature verification...                             │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-22796                   │
+│               ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-31790 │          │        │                   │ 3.3.7-r0      │ openssl: openssl: Information Disclosure from Uninitialized  │
+│               │                │          │        │                   │               │ Memory via Invalid RSA Public Key...                         │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-31790                   │
 ├───────────────┼────────────────┼──────────┤        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libxml2       │ CVE-2025-49794 │ CRITICAL │        │ 2.13.4-r5         │ 2.13.9-r0     │ libxml: Heap use after free (UAF) leads to Denial of service │
 │               │                │          │        │                   │               │ (DoS)...                                                     │

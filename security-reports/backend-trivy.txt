@@ -276,16 +276,16 @@ Total: 83 (UNKNOWN: 0, LOW: 0, MEDIUM: 66, HIGH: 14, CRITICAL: 3)
 │ libtasn1-6              │ CVE-2025-13151 │          │              │ 4.20.0-2                             │               │ libtasn1: libtasn1: Denial of Service via stack-based buffer │
 │                         │                │          │              │                                      │               │ overflow in asn1_expend_octet_string                         │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-13151                   │
-├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libtheoradec1           │ CVE-2026-5673  │          │              │ 1.2.0~alpha1+dfsg-6                  │               │ libtheora: libtheora: Denial of Service or Information       │
+├─────────────────────────┼────────────────┤          ├──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libtheoradec1           │ CVE-2026-5673  │          │ fix_deferred │ 1.2.0~alpha1+dfsg-6                  │               │ libtheora: libtheora: Denial of Service or Information       │
 │                         │                │          │              │                                      │               │ Disclosure via malformed AVI file...                         │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2026-5673                    │
 ├─────────────────────────┤                │          │              │                                      ├───────────────┤                                                              │
 │ libtheoraenc1           │                │          │              │                                      │               │                                                              │
 │                         │                │          │              │                                      │               │                                                              │
 │                         │                │          │              │                                      │               │                                                              │
-├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libtinfo6               │ CVE-2025-69720 │ HIGH     │              │ 6.5+20250216-2                       │               │ ncurses: ncurses: Buffer overflow vulnerability may lead to  │
+├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libtinfo6               │ CVE-2025-69720 │ HIGH     │ affected     │ 6.5+20250216-2                       │               │ ncurses: ncurses: Buffer overflow vulnerability may lead to  │
 │                         │                │          │              │                                      │               │ arbitrary code execution.                                    │
 │                         │                │          │              │                                      │               │ https://avd.aquasec.com/nvd/cve-2025-69720                   │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤

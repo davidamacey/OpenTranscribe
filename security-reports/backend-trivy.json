@@ -1,15 +1,15 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-04-09T08:11:58.226705844-04:00",
+  "CreatedAt": "2026-04-11T17:45:38.687464963-04:00",
   "ArtifactName": "davidamacey/opentranscribe-backend:latest",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 8878272512,
+    "Size": 8878112768,
     "OS": {
       "Family": "debian",
       "Name": "13.4"
     },
-    "ImageID": "sha256:ed5c35ebd760dbe8f4a1d551a0a028572569cfee8c60fe2bd1674f892c5e8f31",
+    "ImageID": "sha256:6a1abd10aecffc1f00b84ef1da878af73feb33c93b55aa8cefe4972a34e78af7",
     "DiffIDs": [
       "sha256:60e70dddd9ea3b1c77c62fe78be1d9f485706b6fe6052c3d88612bd8f56acd67",
       "sha256:e9180f5f4905177873f4ec96c39a56b287c07ea97fb33514bd0b1a9a24eef644",
@@ -19,22 +19,19 @@
       "sha256:4a89a05633663f046ed83ee322402ca297d79dc853fd079058ab569c13a46738",
       "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
       "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae",
-      "sha256:e9e26bcfee7c006c7c0244da5a07add82904faf46590c8fd67b87321e3d60c52",
+      "sha256:29868e720f444da57e5b64744062dc4b08a530393564e3db89ed860394da8a33",
       "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
-      "sha256:cc238f8c0b767485b21ff34898b6d9c6bf63050a09574105f6c52d66fecad8da"
+      "sha256:a50e82a19291586590aedd190451db6d59d4fe6c4b4a0ef7e19fdc045e4081cd"
     ],
     "RepoTags": [
-      "davidamacey/opentranscribe-backend:latest",
-      "davidamacey/opentranscribe-backend:v0.4.0"
+      "davidamacey/opentranscribe-backend:latest"
     ],
     "RepoDigests": [
-      "davidamacey/opentranscribe-backend@sha256:638efd738297a7c081c298b5679491f56c22c87a520cb824a858b0fea2bbe8f2",
-      "davidamacey/opentranscribe-backend@sha256:75def90d08e330075611e895b8e28552caf28918814e32184411682b0e316f43",
-      "davidamacey/opentranscribe-backend@sha256:d34f8af7591c964bf837ec58303ca3106db72c3d8fc9785b09e93f2943091d35"
+      "davidamacey/opentranscribe-backend@sha256:04f85108351f63fa004aadaf651534b0b89dcafe23cf8cc0b9c900e76258c58a"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2026-04-09T01:33:44.57902509Z",
+      "created": "2026-04-11T21:28:21.655022541Z",
       "history": [
         {
           "created": "2026-04-06T00:00:00Z",
@@ -113,46 +110,46 @@
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-09T01:33:41Z",
+          "created": "2026-04-11T21:28:18Z",
           "created_by": "COPY /deno /usr/local/bin/deno # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-09T01:33:43Z",
+          "created": "2026-04-11T21:28:20Z",
           "created_by": "RUN /bin/sh -c chmod +x /usr/local/bin/deno # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-09T01:33:43Z",
+          "created": "2026-04-11T21:28:20Z",
           "created_by": "ENV PATH=/home/appuser/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONWARNINGS=ignore::UserWarning:pyannote.audio.core.io LD_LIBRARY_PATH=/home/appuser/.local/lib/python3.13/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cuda_runtime/lib HF_HOME=/home/appuser/.cache/huggingface TORCH_HOME=/home/appuser/.cache/torch NLTK_DATA=/home/appuser/.cache/nltk_data SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/sentence-transformers",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-09T01:33:44Z",
+          "created": "2026-04-11T21:28:21Z",
           "created_by": "COPY --chown=appuser:appuser . . # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-09T01:33:44Z",
+          "created": "2026-04-11T21:28:21Z",
           "created_by": "USER appuser",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-09T01:33:44Z",
+          "created": "2026-04-11T21:28:21Z",
           "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-09T01:33:44Z",
+          "created": "2026-04-11T21:28:21Z",
           "created_by": "HEALTHCHECK \u0026{[\"CMD-SHELL\" \"curl -f http://localhost:8080/health || exit 1\"] \"30s\" \"10s\" \"40s\" \"0s\" '\\x03'}",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-09T01:33:44Z",
+          "created": "2026-04-11T21:28:21Z",
           "created_by": "CMD [\"uvicorn\" \"app.main:app\" \"--host\" \"0.0.0.0\" \"--port\" \"8080\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -170,9 +167,9 @@
           "sha256:4a89a05633663f046ed83ee322402ca297d79dc853fd079058ab569c13a46738",
           "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
           "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae",
-          "sha256:e9e26bcfee7c006c7c0244da5a07add82904faf46590c8fd67b87321e3d60c52",
+          "sha256:29868e720f444da57e5b64744062dc4b08a530393564e3db89ed860394da8a33",
           "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
-          "sha256:cc238f8c0b767485b21ff34898b6d9c6bf63050a09574105f6c52d66fecad8da"
+          "sha256:a50e82a19291586590aedd190451db6d59d4fe6c4b4a0ef7e19fdc045e4081cd"
         ]
       },
       "config": {
@@ -259,16 +256,16 @@
         "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
       },
       {
-        "Size": 124303360,
-        "DiffID": "sha256:e9e26bcfee7c006c7c0244da5a07add82904faf46590c8fd67b87321e3d60c52"
+        "Size": 124106752,
+        "DiffID": "sha256:29868e720f444da57e5b64744062dc4b08a530393564e3db89ed860394da8a33"
       },
       {
         "Size": 1024,
         "DiffID": "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
       },
       {
-        "Size": 10179072,
-        "DiffID": "sha256:cc238f8c0b767485b21ff34898b6d9c6bf63050a09574105f6c52d66fecad8da"
+        "Size": 10215936,
+        "DiffID": "sha256:a50e82a19291586590aedd190451db6d59d4fe6c4b4a0ef7e19fdc045e4081cd"
       }
     ]
   },
@@ -20050,6 +20047,7 @@
           ],
           "VendorSeverity": {
             "azure": 2,
+            "photon": 2,
             "redhat": 2
           },
           "CVSS": {
@@ -20185,6 +20183,7 @@
           ],
           "VendorSeverity": {
             "azure": 2,
+            "photon": 2,
             "redhat": 2
           },
           "CVSS": {
@@ -21712,6 +21711,7 @@
           "VendorSeverity": {
             "azure": 3,
             "cbl-mariner": 3,
+            "oracle-oval": 3,
             "photon": 3,
             "redhat": 3
           },
@@ -21726,6 +21726,8 @@
             "https://access.redhat.com/security/cve/CVE-2026-27135",
             "https://github.com/nghttp2/nghttp2/commit/5c7df8fa815ac1004d9ecb9d1f7595c4d37f46e1",
             "https://github.com/nghttp2/nghttp2/security/advisories/GHSA-6933-cjhr-5qg6",
+            "https://linux.oracle.com/cve/CVE-2026-27135.html",
+            "https://linux.oracle.com/errata/ELSA-2026-7350.html",
             "https://nvd.nist.gov/vuln/detail/CVE-2026-27135",
             "https://www.cve.org/CVERecord?id=CVE-2026-27135"
           ],
@@ -22506,7 +22508,7 @@
             "UID": "126b0226592b9ebf"
           },
           "InstalledVersion": "1.2.0~alpha1+dfsg-6",
-          "Status": "affected",
+          "Status": "fix_deferred",
           "Layer": {
             "DiffID": "sha256:ada816edceb20bdfed4f037d33bf6a9909ad378a48d85b050e99078857be097d"
           },
@@ -22523,7 +22525,8 @@
             "CWE-125"
           ],
           "VendorSeverity": {
-            "redhat": 2
+            "redhat": 2,
+            "ubuntu": 2
           },
           "CVSS": {
             "redhat": {
@@ -22550,7 +22553,7 @@
             "UID": "5d3e0ec26dbde717"
           },
           "InstalledVersion": "1.2.0~alpha1+dfsg-6",
-          "Status": "affected",
+          "Status": "fix_deferred",
           "Layer": {
             "DiffID": "sha256:ada816edceb20bdfed4f037d33bf6a9909ad378a48d85b050e99078857be097d"
           },
@@ -22567,7 +22570,8 @@
             "CWE-125"
           ],
           "VendorSeverity": {
-            "redhat": 2
+            "redhat": 2,
+            "ubuntu": 2
           },
           "CVSS": {
             "redhat": {
@@ -22838,12 +22842,13 @@
           "References": [
             "https://access.redhat.com/security/cve/CVE-2026-0990",
             "https://bugzilla.redhat.com/show_bug.cgi?id=2429959",
+            "https://gitlab.gnome.org/GNOME/libxml2/-/issues/1018",
             "https://nvd.nist.gov/vuln/detail/CVE-2026-0990",
             "https://ubuntu.com/security/notices/USN-7974-1",
             "https://www.cve.org/CVERecord?id=CVE-2026-0990"
           ],
           "PublishedDate": "2026-01-15T15:15:52.503Z",
-          "LastModifiedDate": "2026-01-16T15:55:33.063Z"
+          "LastModifiedDate": "2026-04-09T18:16:43.713Z"
         },
         {
           "VulnerabilityID": "CVE-2026-27456",

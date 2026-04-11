@@ -1,6 +1,6 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-04-08T21:51:51.155457734-04:00",
+  "CreatedAt": "2026-04-11T17:35:49.060727651-04:00",
   "ArtifactName": "davidamacey/opentranscribe-docs:latest",
   "ArtifactType": "container_image",
   "Metadata": {
@@ -9,7 +9,7 @@
       "Family": "alpine",
       "Name": "3.21.3"
     },
-    "ImageID": "sha256:d6f0cd1e42bc592bf5d4ec6a5d1c82645a93762db114aa2104dc721fcfe1ea3c",
+    "ImageID": "sha256:859c691c743902b9502976a4b3af378ebafcc3282acceb3e3da2ecb93fc00df1",
     "DiffIDs": [
       "sha256:08000c18d16dadf9553d747a58cf44023423a9ab010aab96cf263d2216b8b350",
       "sha256:d71eae0084c1aa823dd8fb2ecf8604d5c0f4911226c042bb1f8297e819f4b192",
@@ -19,19 +19,18 @@
       "sha256:811a4dbbf4a5309e4390cf655c12db92e1a4304fb9d9731f83e7b02e95a617c6",
       "sha256:947e805a4ac71f68e6703550c0b36c2aa2e554c4fa670ca2da6a25c6d7dccb66",
       "sha256:0d853d50b128aa460b47e7121849463a14b18d4fd976caf5014744aae24d28aa",
-      "sha256:910fdd5dd6ce9aa557df4c76cf9ed39a73d37bdf13f011dc73fda4aa45f51e9a",
-      "sha256:19bb92d2d8045bf689191e9c437f6d537b0b497367a4b529b7e5745bc8713563"
+      "sha256:0f8da6e5f2ab769e53c1b9125bf4e52392839d54ffd3fef30623cea33c7d47e5",
+      "sha256:3265b45c766f8747551590c52c93589ab256449ad9b545de9205788d025c76b6"
     ],
     "RepoTags": [
-      "davidamacey/opentranscribe-docs:0.4.0",
       "davidamacey/opentranscribe-docs:latest"
     ],
     "RepoDigests": [
-      "davidamacey/opentranscribe-docs@sha256:273e82db39763edd66f393d013a29479d848f995408fe68d31e71a1c561785b5"
+      "davidamacey/opentranscribe-docs@sha256:0afe29e5dc7801f8a0bdb406df32ba4452866f8b5b69e334e4ac768fd94695fb"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2026-03-23T02:59:16.067933733-04:00",
+      "created": "2026-04-09T01:47:21.951450097Z",
       "history": [
         {
           "created": "2025-02-14T03:28:36Z",
@@ -140,18 +139,18 @@
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-03-23T06:59:14Z",
+          "created": "2026-04-09T01:47:21Z",
           "created_by": "COPY /app/build /usr/share/nginx/html # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-03-23T06:59:16Z",
+          "created": "2026-04-09T01:47:21Z",
           "created_by": "COPY nginx.conf /etc/nginx/conf.d/default.conf # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-03-23T06:59:16Z",
-          "created_by": "EXPOSE map[8080/tcp:{}]",
+          "created": "2026-04-09T01:47:21Z",
+          "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         }
@@ -168,8 +167,8 @@
           "sha256:811a4dbbf4a5309e4390cf655c12db92e1a4304fb9d9731f83e7b02e95a617c6",
           "sha256:947e805a4ac71f68e6703550c0b36c2aa2e554c4fa670ca2da6a25c6d7dccb66",
           "sha256:0d853d50b128aa460b47e7121849463a14b18d4fd976caf5014744aae24d28aa",
-          "sha256:910fdd5dd6ce9aa557df4c76cf9ed39a73d37bdf13f011dc73fda4aa45f51e9a",
-          "sha256:19bb92d2d8045bf689191e9c437f6d537b0b497367a4b529b7e5745bc8713563"
+          "sha256:0f8da6e5f2ab769e53c1b9125bf4e52392839d54ffd3fef30623cea33c7d47e5",
+          "sha256:3265b45c766f8747551590c52c93589ab256449ad9b545de9205788d025c76b6"
         ]
       },
       "config": {
@@ -235,11 +234,11 @@
       },
       {
         "Size": 28670464,
-        "DiffID": "sha256:910fdd5dd6ce9aa557df4c76cf9ed39a73d37bdf13f011dc73fda4aa45f51e9a"
+        "DiffID": "sha256:0f8da6e5f2ab769e53c1b9125bf4e52392839d54ffd3fef30623cea33c7d47e5"
       },
       {
         "Size": 4096,
-        "DiffID": "sha256:19bb92d2d8045bf689191e9c437f6d537b0b497367a4b529b7e5745bc8713563"
+        "DiffID": "sha256:3265b45c766f8747551590c52c93589ab256449ad9b545de9205788d025c76b6"
       }
     ]
   },
@@ -3941,7 +3940,7 @@
           ],
           "VendorSeverity": {
             "alma": 2,
-            "amazon": 1,
+            "amazon": 2,
             "oracle-oval": 2,
             "photon": 3,
             "redhat": 2,
@@ -4272,6 +4271,60 @@
           ],
           "PublishedDate": "2026-01-27T16:16:34.437Z",
           "LastModifiedDate": "2026-02-28T04:16:17.457Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-28390",
+          "PkgID": "libcrypto3@3.3.3-r0",
+          "PkgName": "libcrypto3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libcrypto3@3.3.3-r0?arch=x86_64\u0026distro=3.21.3",
+            "UID": "294b317acd0e3d86"
+          },
+          "InstalledVersion": "3.3.3-r0",
+          "FixedVersion": "3.3.7-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:08000c18d16dadf9553d747a58cf44023423a9ab010aab96cf263d2216b8b350"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-28390",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: OpenSSL: Denial of Service due to NULL pointer dereference in CMS EnvelopedData processing",
+          "Description": "Issue summary: During processing of a crafted CMS EnvelopedData message\nwith KeyTransportRecipientInfo a NULL pointer dereference can happen.\n\nImpact summary: Applications that process attacker-controlled CMS data may\ncrash before authentication or cryptographic operations occur resulting in\nDenial of Service.\n\nWhen a CMS EnvelopedData message that uses KeyTransportRecipientInfo with\nRSA-OAEP encryption is processed, the optional parameters field of\nRSA-OAEP SourceFunc algorithm identifier is examined without checking\nfor its presence. This results in a NULL pointer dereference if the field\nis missing.\n\nApplications and services that call CMS_decrypt() on untrusted input\n(e.g., S/MIME processing or CMS-based protocols) are vulnerable.\n\nThe FIPS modules in 3.6, 3.5, 3.4, 3.3 and 3.0 are not affected by this\nissue, as the affected code is outside the OpenSSL FIPS module boundary.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-476"
+          ],
+          "VendorSeverity": {
+            "photon": 3,
+            "redhat": 2,
+            "ubuntu": 1
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-28390",
+            "https://github.com/openssl/openssl/commit/01194a8f1941115cd0383bfa91c736dd3993c8bc",
+            "https://github.com/openssl/openssl/commit/2e39b7a6993be445fddb9fbce316fa756e0397b6",
+            "https://github.com/openssl/openssl/commit/af2a5fecd3e71a29e7568f9c1453dec5cebbaff4",
+            "https://github.com/openssl/openssl/commit/ea7b4ea4f9f853521ba34830cbcadc970d2e0788",
+            "https://github.com/openssl/openssl/commit/fd2f1a6cf53b9ceeca723a001aa4b825d7c7ee75",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-28390",
+            "https://openssl-library.org/news/secadv/20260407.txt",
+            "https://ubuntu.com/security/notices/USN-8155-1",
+            "https://ubuntu.com/security/notices/USN-8155-2",
+            "https://www.cve.org/CVERecord?id=CVE-2026-28390",
+            "https://www.openwall.com/lists/oss-security/2026/04/07/11"
+          ],
+          "PublishedDate": "2026-04-07T22:16:21.19Z",
+          "LastModifiedDate": "2026-04-10T21:16:23.67Z"
         },
         {
           "VulnerabilityID": "CVE-2025-15468",
@@ -5091,6 +5144,59 @@
           "LastModifiedDate": "2026-02-02T18:40:27.467Z"
         },
         {
+          "VulnerabilityID": "CVE-2026-31790",
+          "PkgID": "libcrypto3@3.3.3-r0",
+          "PkgName": "libcrypto3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libcrypto3@3.3.3-r0?arch=x86_64\u0026distro=3.21.3",
+            "UID": "294b317acd0e3d86"
+          },
+          "InstalledVersion": "3.3.3-r0",
+          "FixedVersion": "3.3.7-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:08000c18d16dadf9553d747a58cf44023423a9ab010aab96cf263d2216b8b350"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-31790",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: openssl: Information Disclosure from Uninitialized Memory via Invalid RSA Public Key",
+          "Description": "Issue summary: Applications using RSASVE key encapsulation to establish\na secret encryption key can send contents of an uninitialized memory buffer to\na malicious peer.\n\nImpact summary: The uninitialized buffer might contain sensitive data from the\nprevious execution of the application process which leads to sensitive data\nleakage to an attacker.\n\nRSA_public_encrypt() returns the number of bytes written on success and -1\non error. The affected code tests only whether the return value is non-zero.\nAs a result, if RSA encryption fails, encapsulation can still return success to\nthe caller, set the output lengths, and leave the caller to use the contents of\nthe ciphertext buffer as if a valid KEM ciphertext had been produced.\n\nIf applications use EVP_PKEY_encapsulate() with RSA/RSASVE on an\nattacker-supplied invalid RSA public key without first validating that key,\nthen this may cause stale or uninitialized contents of the caller-provided\nciphertext buffer to be disclosed to the attacker in place of the KEM\nciphertext.\n\nAs a workaround calling EVP_PKEY_public_check() or\nEVP_PKEY_public_check_quick() before EVP_PKEY_encapsulate() will mitigate\nthe issue.\n\nThe FIPS modules in 3.6, 3.5, 3.4, 3.3, 3.1 and 3.0 are affected by this issue.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-754"
+          ],
+          "VendorSeverity": {
+            "photon": 3,
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+              "V3Score": 5.9
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-31790",
+            "https://github.com/openssl/openssl/commit/001e01db3e996e13ffc72386fe79d03a6683b5ac",
+            "https://github.com/openssl/openssl/commit/abd8b2eec7e3f3fda60ecfb68498b246b52af482",
+            "https://github.com/openssl/openssl/commit/b922e24e5b23ffb9cb9e14cadff23d91e9f7e406",
+            "https://github.com/openssl/openssl/commit/d5f8e71cd0a54e961d0c3b174348f8308486f790",
+            "https://github.com/openssl/openssl/commit/eed200f58cd8645ed77e46b7e9f764e284df379e",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-31790",
+            "https://openssl-library.org/news/secadv/20260407.txt",
+            "https://ubuntu.com/security/notices/USN-8155-1",
+            "https://www.cve.org/CVERecord?id=CVE-2026-31790",
+            "https://www.openwall.com/lists/oss-security/2026/04/07/11"
+          ],
+          "PublishedDate": "2026-04-07T22:16:21.77Z",
+          "LastModifiedDate": "2026-04-08T21:27:00.663Z"
+        },
+        {
           "VulnerabilityID": "CVE-2025-10148",
           "PkgID": "libcurl@8.12.1-r1",
           "PkgName": "libcurl",
@@ -5482,7 +5588,7 @@
           ],
           "VendorSeverity": {
             "alma": 2,
-            "amazon": 1,
+            "amazon": 2,
             "oracle-oval": 2,
             "photon": 3,
             "redhat": 2,
@@ -5831,7 +5937,7 @@
           ],
           "VendorSeverity": {
             "alma": 3,
-            "amazon": 2,
+            "amazon": 3,
             "azure": 3,
             "cbl-mariner": 3,
             "oracle-oval": 3,
@@ -6377,7 +6483,7 @@
             "CWE-125"
           ],
           "VendorSeverity": {
-            "amazon": 2,
+            "amazon": 3,
             "azure": 2,
             "cbl-mariner": 2,
             "photon": 2,
@@ -6754,6 +6860,60 @@
           ],
           "PublishedDate": "2026-01-27T16:16:34.437Z",
           "LastModifiedDate": "2026-02-28T04:16:17.457Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-28390",
+          "PkgID": "libssl3@3.3.3-r0",
+          "PkgName": "libssl3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libssl3@3.3.3-r0?arch=x86_64\u0026distro=3.21.3",
+            "UID": "17c776a2b6f6060c"
+          },
+          "InstalledVersion": "3.3.3-r0",
+          "FixedVersion": "3.3.7-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:08000c18d16dadf9553d747a58cf44023423a9ab010aab96cf263d2216b8b350"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-28390",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: OpenSSL: Denial of Service due to NULL pointer dereference in CMS EnvelopedData processing",
+          "Description": "Issue summary: During processing of a crafted CMS EnvelopedData message\nwith KeyTransportRecipientInfo a NULL pointer dereference can happen.\n\nImpact summary: Applications that process attacker-controlled CMS data may\ncrash before authentication or cryptographic operations occur resulting in\nDenial of Service.\n\nWhen a CMS EnvelopedData message that uses KeyTransportRecipientInfo with\nRSA-OAEP encryption is processed, the optional parameters field of\nRSA-OAEP SourceFunc algorithm identifier is examined without checking\nfor its presence. This results in a NULL pointer dereference if the field\nis missing.\n\nApplications and services that call CMS_decrypt() on untrusted input\n(e.g., S/MIME processing or CMS-based protocols) are vulnerable.\n\nThe FIPS modules in 3.6, 3.5, 3.4, 3.3 and 3.0 are not affected by this\nissue, as the affected code is outside the OpenSSL FIPS module boundary.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-476"
+          ],
+          "VendorSeverity": {
+            "photon": 3,
+            "redhat": 2,
+            "ubuntu": 1
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-28390",
+            "https://github.com/openssl/openssl/commit/01194a8f1941115cd0383bfa91c736dd3993c8bc",
+            "https://github.com/openssl/openssl/commit/2e39b7a6993be445fddb9fbce316fa756e0397b6",
+            "https://github.com/openssl/openssl/commit/af2a5fecd3e71a29e7568f9c1453dec5cebbaff4",
+            "https://github.com/openssl/openssl/commit/ea7b4ea4f9f853521ba34830cbcadc970d2e0788",
+            "https://github.com/openssl/openssl/commit/fd2f1a6cf53b9ceeca723a001aa4b825d7c7ee75",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-28390",
+            "https://openssl-library.org/news/secadv/20260407.txt",
+            "https://ubuntu.com/security/notices/USN-8155-1",
+            "https://ubuntu.com/security/notices/USN-8155-2",
+            "https://www.cve.org/CVERecord?id=CVE-2026-28390",
+            "https://www.openwall.com/lists/oss-security/2026/04/07/11"
+          ],
+          "PublishedDate": "2026-04-07T22:16:21.19Z",
+          "LastModifiedDate": "2026-04-10T21:16:23.67Z"
         },
         {
           "VulnerabilityID": "CVE-2025-15468",
@@ -7571,6 +7731,59 @@
           ],
           "PublishedDate": "2026-01-27T16:16:35.543Z",
           "LastModifiedDate": "2026-02-02T18:40:27.467Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-31790",
+          "PkgID": "libssl3@3.3.3-r0",
+          "PkgName": "libssl3",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libssl3@3.3.3-r0?arch=x86_64\u0026distro=3.21.3",
+            "UID": "17c776a2b6f6060c"
+          },
+          "InstalledVersion": "3.3.3-r0",
+          "FixedVersion": "3.3.7-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:08000c18d16dadf9553d747a58cf44023423a9ab010aab96cf263d2216b8b350"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-31790",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "openssl: openssl: Information Disclosure from Uninitialized Memory via Invalid RSA Public Key",
+          "Description": "Issue summary: Applications using RSASVE key encapsulation to establish\na secret encryption key can send contents of an uninitialized memory buffer to\na malicious peer.\n\nImpact summary: The uninitialized buffer might contain sensitive data from the\nprevious execution of the application process which leads to sensitive data\nleakage to an attacker.\n\nRSA_public_encrypt() returns the number of bytes written on success and -1\non error. The affected code tests only whether the return value is non-zero.\nAs a result, if RSA encryption fails, encapsulation can still return success to\nthe caller, set the output lengths, and leave the caller to use the contents of\nthe ciphertext buffer as if a valid KEM ciphertext had been produced.\n\nIf applications use EVP_PKEY_encapsulate() with RSA/RSASVE on an\nattacker-supplied invalid RSA public key without first validating that key,\nthen this may cause stale or uninitialized contents of the caller-provided\nciphertext buffer to be disclosed to the attacker in place of the KEM\nciphertext.\n\nAs a workaround calling EVP_PKEY_public_check() or\nEVP_PKEY_public_check_quick() before EVP_PKEY_encapsulate() will mitigate\nthe issue.\n\nThe FIPS modules in 3.6, 3.5, 3.4, 3.3, 3.1 and 3.0 are affected by this issue.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-754"
+          ],
+          "VendorSeverity": {
+            "photon": 3,
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+              "V3Score": 5.9
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-31790",
+            "https://github.com/openssl/openssl/commit/001e01db3e996e13ffc72386fe79d03a6683b5ac",
+            "https://github.com/openssl/openssl/commit/abd8b2eec7e3f3fda60ecfb68498b246b52af482",
+            "https://github.com/openssl/openssl/commit/b922e24e5b23ffb9cb9e14cadff23d91e9f7e406",
+            "https://github.com/openssl/openssl/commit/d5f8e71cd0a54e961d0c3b174348f8308486f790",
+            "https://github.com/openssl/openssl/commit/eed200f58cd8645ed77e46b7e9f764e284df379e",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-31790",
+            "https://openssl-library.org/news/secadv/20260407.txt",
+            "https://ubuntu.com/security/notices/USN-8155-1",
+            "https://www.cve.org/CVERecord?id=CVE-2026-31790",
+            "https://www.openwall.com/lists/oss-security/2026/04/07/11"
+          ],
+          "PublishedDate": "2026-04-07T22:16:21.77Z",
+          "LastModifiedDate": "2026-04-08T21:27:00.663Z"
         },
         {
           "VulnerabilityID": "CVE-2025-49794",

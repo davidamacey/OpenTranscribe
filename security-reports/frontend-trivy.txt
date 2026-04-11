@@ -1,0 +1,28 @@
+
+davidamacey/opentranscribe-frontend:latest (alpine 3.23.3)
+==========================================================
+Total: 5 (UNKNOWN: 0, LOW: 0, MEDIUM: 3, HIGH: 2, CRITICAL: 0)
+
+┌────────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
+│  Library   │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │                            Title                             │
+├────────────┼────────────────┼──────────┼────────┼───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libcrypto3 │ CVE-2026-28390 │ HIGH     │ fixed  │ 3.5.5-r0          │ 3.5.6-r0      │ openssl: OpenSSL: Denial of Service due to NULL pointer      │
+│            │                │          │        │                   │               │ dereference in CMS...                                        │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-28390                   │
+│            ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-31790 │ MEDIUM   │        │                   │               │ openssl: openssl: Information Disclosure from Uninitialized  │
+│            │                │          │        │                   │               │ Memory via Invalid RSA Public Key...                         │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-31790                   │
+├────────────┼────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│ libssl3    │ CVE-2026-28390 │ HIGH     │        │                   │               │ openssl: OpenSSL: Denial of Service due to NULL pointer      │
+│            │                │          │        │                   │               │ dereference in CMS...                                        │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-28390                   │
+│            ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-31790 │ MEDIUM   │        │                   │               │ openssl: openssl: Information Disclosure from Uninitialized  │
+│            │                │          │        │                   │               │ Memory via Invalid RSA Public Key...                         │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-31790                   │
+├────────────┼────────────────┤          │        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libuuid    │ CVE-2026-27456 │          │        │ 2.41.2-r0         │ 2.41.4-r0     │ util-linux: TOCTOU in the mount program when setting up loop │
+│            │                │          │        │                   │               │ devices                                                      │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-27456                   │
+└────────────┴────────────────┴──────────┴────────┴───────────────────┴───────────────┴──────────────────────────────────────────────────────────────┘
