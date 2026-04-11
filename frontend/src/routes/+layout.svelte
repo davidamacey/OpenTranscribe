@@ -30,66 +30,99 @@
   let bannerEnabled = false;
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
 
+  /**
+   * Handle bfcache (back-forward cache) restoration.
+   *
+   * When a user logs out and then clicks the back button, browsers may restore
+   * the previous page from an in-memory snapshot (bfcache) — bypassing all our
+   * store clearing, route guards, and auth checks because the DOM is served
+   * from the cached snapshot. This can leak User A's data to User B on shared
+   * devices, or briefly flash protected content to logged-out users.
+   *
+   * The `pageshow` event's `persisted` flag is true when the page was restored
+   * from bfcache. When that happens, we force a fresh navigation to re-run the
+   * auth check pipeline (initAuth → goto).
+   */
+  function handlePageShow(event: PageTransitionEvent) {
+    if (!event.persisted) return;
+    // Page was restored from bfcache — force a hard reload of the current URL
+    // so the layout's auth guard re-evaluates with fresh state. Using
+    // window.location.reload() bypasses the SPA router entirely, guaranteeing
+    // that stale stores/DOM are discarded.
+    window.location.reload();
+  }
+
   // Initialize auth state when the component mounts
-  onMount(async () => {
+  onMount(() => {
+    window.addEventListener('pageshow', handlePageShow);
+
     // Register service worker for PWA support
     registerServiceWorker();
 
     // Initialize theme
     document.documentElement.setAttribute('data-theme', get(theme));
 
-    // Initialize locale/i18n
-    await locale.initialize();
+    // Async initialization — use IIFE so we can still return a sync cleanup
+    (async () => {
+      // Initialize locale/i18n
+      await locale.initialize();
 
-    // Initialize network connectivity monitoring
-    networkStore.initialize();
+      // Initialize network connectivity monitoring
+      networkStore.initialize();
 
-    // Fetch auth methods to get banner settings
-    try {
-      const authMethods = await getAuthMethods();
-      if (authMethods.login_banner_enabled) {
-        bannerEnabled = true;
-        bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || 'UNCLASSIFIED';
-      }
-    } catch (error) {
-      console.warn('[Layout] Failed to fetch auth methods for banner:', error);
-    }
-
-    try {
-      await initAuth();
-
-      const isAuth = get(isAuthenticated);
-      const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
-      const currentPath = $page.url.pathname;
-      const isPublicPath = publicPaths.includes(currentPath);
-
-      if (!isAuth && !isPublicPath) {
-        goto("/login", { replaceState: true });
-      } else if (isAuth && isPublicPath) {
-        goto("/", { replaceState: true });
+      // Fetch auth methods to get banner settings
+      try {
+        const authMethods = await getAuthMethods();
+        if (authMethods.login_banner_enabled) {
+          bannerEnabled = true;
+          bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || 'UNCLASSIFIED';
+        }
+      } catch (error) {
+        console.warn('[Layout] Failed to fetch auth methods for banner:', error);
       }
 
-      // Initialize LLM status store after authentication is ready
-      if (isAuth) {
-        try {
-          await llmStatusStore.initialize();
-        } catch (error) {
-          console.warn('[Layout] Failed to initialize LLM status store:', error);
+      try {
+        await initAuth();
+
+        const isAuth = get(isAuthenticated);
+        const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
+        const currentPath = $page.url.pathname;
+        const isPublicPath = publicPaths.includes(currentPath);
+
+        if (!isAuth && !isPublicPath) {
+          goto("/login", { replaceState: true });
+        } else if (isAuth && isPublicPath) {
+          goto("/", { replaceState: true });
+        }
+
+        // Initialize LLM status store after authentication is ready
+        if (isAuth) {
+          try {
+            await llmStatusStore.initialize();
+          } catch (error) {
+            console.warn('[Layout] Failed to initialize LLM status store:', error);
+          }
+        }
+      } catch (error) {
+        console.error('Layout: onMount - Error during initAuth or subsequent logic:', error);
+        const currentPath = $page.url.pathname;
+        if (currentPath !== "/login" && currentPath !== "/register") {
+          goto("/login", { replaceState: true });
         }
       }
+    })();
 
-    } catch (error) {
-      console.error('Layout: onMount - Error during initAuth or subsequent logic:', error);
-      const currentPath = $page.url.pathname;
-      if (currentPath !== "/login" && currentPath !== "/register") {
-        goto("/login", { replaceState: true });
-      }
-    }
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow);
+    };
   });
 
 </script>
 
 {#if $authReady}
+  {@const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password']}
+  {@const isPublicPath = publicPaths.includes($page.url.pathname)}
+
   <!-- Classification Banner (FedRAMP AC-8) - shows on all pages when enabled -->
   {#if bannerEnabled && $isAuthenticated}
     <ClassificationBanner
@@ -107,28 +140,34 @@
       <SettingsModal />
     {/if}
 
-    {#if $isAuthenticated}
-      {@const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password']}
-      {#if publicPaths.includes($page.url.pathname)}
-        <!-- Authenticated but still on login/register page — show loading while navigating away -->
-        <div class="loading-app">
-          <div class="loading-brand">
-            <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />
-            <div class="loading-bar"><div class="loading-bar-fill"></div></div>
-          </div>
-        </div>
-      {:else}
-        <AppContent>
-          <slot />
-        </AppContent>
-      {/if}
-    {:else}
+    {#if $isAuthenticated && !isPublicPath}
+      <!-- Authenticated user on a protected route — render the app -->
+      <AppContent>
+        <slot />
+      </AppContent>
+    {:else if !$isAuthenticated && isPublicPath}
+      <!-- Unauthenticated user on a public page (login/register/forgot-password) — render it -->
       <main class="content no-navbar">
         <slot />
       </main>
+    {:else}
+      <!--
+        Route mismatch — either:
+        - Authenticated user on a public page (will redirect to /) OR
+        - Unauthenticated user on a protected page (will redirect to /login)
+        Show loading screen while the redirect is in flight to prevent
+        Flash of Authenticated Content (FOAC) / protected content leakage.
+      -->
+      <div class="loading-app">
+        <div class="loading-brand">
+          <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />
+          <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+        </div>
+      </div>
     {/if}
   </div>
 {:else}
+  <!-- Initial auth verification still in progress — block all rendering -->
   <div class="loading-app">
     <div class="loading-brand">
       <img src="/icons/icon-192x192.png" alt="OpenTranscribe" class="loading-logo" width="64" height="64" />

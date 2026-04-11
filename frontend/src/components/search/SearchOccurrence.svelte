@@ -1,14 +1,10 @@
 <script lang="ts">
   import type { SearchOccurrence } from '$stores/search';
   import { t } from '$stores/locale';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
 
   export let occurrence: SearchOccurrence;
   export let fileUuid: string;
-
-  function sanitizeHighlight(html: string): string {
-    // Strip all HTML tags except <mark> and </mark>, then remove attributes from mark tags
-    return html.replace(/<(?!\/?mark[\s>])[^>]*>/g, '').replace(/<mark\s[^>]*>/g, '<mark>');
-  }
 
   function formatTimestamp(seconds: number): string {
     const h = Math.floor(seconds / 3600);
@@ -26,7 +22,7 @@
     {#if occurrence.speaker}
       <span class="speaker">
         {#if occurrence.speaker_highlighted}
-          {@html sanitizeHighlight(occurrence.speaker_highlighted)}
+          {@html sanitizeHighlightHtml(occurrence.speaker_highlighted)}
         {:else}
           {occurrence.speaker}
         {/if}
@@ -42,7 +38,7 @@
   </div>
   {#if occurrence.snippet}
     <div class="snippet" class:context-only={occurrence.match_type === 'title' || occurrence.match_type === 'speaker'} class:semantic-snippet={occurrence.highlight_type === 'semantic'}>
-      {@html sanitizeHighlight(occurrence.snippet)}
+      {@html sanitizeHighlightHtml(occurrence.snippet)}
     </div>
   {/if}
 </div>

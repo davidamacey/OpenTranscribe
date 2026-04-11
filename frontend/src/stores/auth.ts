@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
-import axiosInstance from '../lib/axios';
+import axiosInstance, { abortAllRequests } from '../lib/axios';
+import { clearUserState } from '$lib/session/clearUserState';
 
 // Certificate information for PKI authentication
 export interface CertificateInfo {
@@ -184,6 +185,10 @@ export async function login(
       return { success: false, message: 'Invalid login response from server' };
     }
 
+    // Clear ALL stale user state from any previous session before the new
+    // user sees the app. See lib/session/clearUserState.ts for the full list.
+    await clearUserState();
+
     // Token is now in httpOnly cookie — mark as authenticated in memory
     authStore.setToken('cookie');
 
@@ -276,18 +281,24 @@ export async function register(email: string, fullName: string, password: string
 
 // Logout function
 export async function logout() {
-  // Notify backend to revoke tokens and clear cookies
+  // Notify backend to revoke tokens and clear cookies.
+  // This request uses its own session-abort-immune path so the logout call
+  // itself is never cancelled by abortAllRequests() below.
   try {
     await axiosInstance.post('/auth/logout');
   } catch {
     // Ignore errors — we're logging out anyway
   }
 
-  // Clear presigned URL cache on logout (security: prevents cached URLs from being used after logout)
-  // We import this lazily to avoid circular dependencies
-  import('$lib/api/mediaUrl').then(({ clearMediaUrlCache }) => {
-    clearMediaUrlCache();
-  });
+  // Cancel ALL in-flight requests. This closes the race window where a
+  // response could arrive after clearUserState() and repopulate a store with
+  // stale data from the previous session.
+  abortAllRequests('User logged out');
+
+  // Clear ALL user-specific state (stores, caches, localStorage keys, websocket
+  // notifications, in-flight uploads, etc.). This is the single source of truth
+  // for session cleanup — see lib/session/clearUserState.ts.
+  await clearUserState();
 
   authStore.reset();
 }
@@ -323,16 +334,32 @@ export async function loginWithKeycloak(): Promise<{
     const response = await axiosInstance.get('/auth/keycloak/login');
     const { authorization_url } = response.data;
 
-    if (authorization_url) {
-      // Redirect to Keycloak login page
-      window.location.href = authorization_url;
-      return { success: true };
+    if (!authorization_url) {
+      return {
+        success: false,
+        message: 'Failed to get Keycloak authorization URL',
+      };
     }
 
-    return {
-      success: false,
-      message: 'Failed to get Keycloak authorization URL',
-    };
+    // Defense-in-depth: validate the authorization URL before redirecting.
+    // Even though this comes from our own backend, a misconfiguration or
+    // upstream compromise should not turn into an open redirect or
+    // javascript:/data: URL injection.
+    let parsed: URL;
+    try {
+      parsed = new URL(authorization_url);
+    } catch {
+      console.error('Keycloak login: invalid authorization_url format');
+      return { success: false, message: 'Invalid authorization URL' };
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      console.error('Keycloak login: non-http(s) protocol rejected', parsed.protocol);
+      return { success: false, message: 'Invalid authorization URL protocol' };
+    }
+
+    // Redirect to Keycloak login page
+    window.location.href = parsed.toString();
+    return { success: true };
   } catch (error: any) {
     console.error('Keycloak login error:', error);
     return {
@@ -353,6 +380,9 @@ export async function handleKeycloakCallback(
     });
 
     if (response.status === 200 && response.data.access_token) {
+      // Clear ALL stale user state from any previous session
+      await clearUserState();
+
       // Token is now in httpOnly cookie
       authStore.setToken('cookie');
 
@@ -384,6 +414,9 @@ export async function loginWithPKI(): Promise<{
     const response = await axiosInstance.post('/auth/pki/authenticate');
 
     if (response.status === 200 && response.data.access_token) {
+      // Clear ALL stale user state from any previous session
+      await clearUserState();
+
       // Token is now in httpOnly cookie
       authStore.setToken('cookie');
 
@@ -425,6 +458,9 @@ export async function verifyMFA(
     });
 
     if (response.status === 200 && response.data.access_token) {
+      // Clear ALL stale user state from any previous session
+      await clearUserState();
+
       // Token is now in httpOnly cookie
       authStore.setToken('cookie');
 

@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { get } from 'svelte/store';
 
   import { fade, scale } from 'svelte/transition';
   import { websocketStore } from '$stores/websocket';
   import { toastStore } from '$stores/toast';
   import { uploadsStore } from '$stores/uploads';
+  import { isAuthenticated } from '$stores/auth';
+  import CardGridSkeleton from '$components/ui/CardGridSkeleton.svelte';
   import { galleryStore, galleryState, hasMoreFiles, isLoadingMore, galleryTotalCount, galleryViewMode } from '$stores/gallery';
   import { t } from '$stores/locale';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
@@ -1109,6 +1112,14 @@
   }
 
   onMount(() => {
+    // DEFENSE-IN-DEPTH: refuse to render/fetch if unauthenticated.
+    // The layout is the primary guard and should prevent this component
+    // from mounting at all, but if it somehow does, block all API calls
+    // and WebSocket subscriptions to avoid data leaks.
+    if (!get(isAuthenticated)) {
+      return;
+    }
+
     // Update document title
     document.title = $t('gallery.pageTitle');
 
@@ -1393,9 +1404,7 @@
       </div>
 
       {#if loading}
-        <div class="loading-state">
-          <p>{$t('gallery.loadingFiles')}</p>
-        </div>
+        <CardGridSkeleton variant="media" count={12} />
       {:else if error}
         <div class="error-state">
           <p>{$t('gallery.connectionError')}</p>
@@ -1482,14 +1491,18 @@
 
 <!-- Upload Modal -->
 {#if showUploadModal}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- The modal backdrop that closes on click -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <!--
+    Upload modal backdrop.
+    Backdrop click is intentionally NOT bound to close - the user has in-progress
+    upload state (file, tags, collections, speaker settings, etc.) and a stray
+    click outside should not destroy their work. Only the X button and Escape
+    key close the modal explicitly.
+  -->
   <div
     class="modal-backdrop"
     role="presentation"
     transition:fade={{ duration: 400 }}
-    on:click|self={toggleUploadModal}
     on:wheel|preventDefault|self
     on:touchmove|preventDefault|self
     on:keydown={(e) => e.key === 'Escape' && toggleUploadModal()}
@@ -1746,7 +1759,6 @@
     padding-top: 0; /* Gallery header provides top spacing */
   }
 
-  .loading-state,
   .error-state {
     display: flex;
     flex-direction: column;
@@ -1809,7 +1821,7 @@
     border-radius: 12px;
     max-width: 90%;
     max-height: 90vh;
-    width: 600px;
+    width: 720px;
     display: flex;
     flex-direction: column;
     overflow: hidden;

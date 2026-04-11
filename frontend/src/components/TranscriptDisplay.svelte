@@ -10,6 +10,7 @@
   import { downloadStore } from '$stores/downloads';
   import { toastStore } from '$stores/toast';
   import { highlightTextWithMatches, type SearchMatch } from '$lib/utils/searchHighlight';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
@@ -681,13 +682,13 @@
                         </div>
                         {/if}
                         <div class="segment-text">
-                          {@html highlightTextWithMatches(
+                          {@html sanitizeHighlightHtml(highlightTextWithMatches(
                             segment.text,
                             searchQuery,
                             getOriginalSegmentIndex(segment),
                             searchMatches,
                             currentMatchIndex
-                          )}
+                          ))}
                         </div>
                       </button>
                       <button
@@ -762,13 +763,13 @@
                     </div>
                     {/if}
                     <div class="segment-text">
-                      {@html highlightTextWithMatches(
+                      {@html sanitizeHighlightHtml(highlightTextWithMatches(
                         segment.text,
                         searchQuery,
                         getOriginalSegmentIndex(segment),
                         searchMatches,
                         currentMatchIndex
-                      )}
+                      ))}
                       {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
                         <span class="low-confidence-dot" title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}>●</span>
                       {/if}

@@ -2,6 +2,7 @@
   import type { SummaryData } from '$lib/types/summary';
   import TopicsList from './TopicsList.svelte';
   import { t } from '$stores/locale';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
 
   export let summary: SummaryData;
   export let searchQuery: string = '';
@@ -252,14 +253,14 @@
     <section class="bluf-section">
       <h3 class="section-title">{$t('summary.executiveSummary')}</h3>
       <div class="bluf-content">
-        {@html highlightedContent?.bluf || escapeHtml(summary.bluf || '')}
+        {@html sanitizeHighlightHtml(highlightedContent?.bluf || escapeHtml(summary.bluf || ''))}
       </div>
     </section>
 
     <section class="brief-summary-section">
       <h3 class="section-title">{$t('summary.briefSummary')}</h3>
       <div class="brief-summary-content">
-        {@html highlightedContent?.briefSummary || escapeHtml(summary.brief_summary || '')}
+        {@html sanitizeHighlightHtml(highlightedContent?.briefSummary || escapeHtml(summary.brief_summary || ''))}
       </div>
     </section>
 
@@ -276,7 +277,7 @@
           {#each (highlightedContent?.keyDecisions || summary.key_decisions) as decision}
             <div class="key-decision-item">
               <div class="decision-bullet">✓</div>
-              <div class="decision-text">{@html highlightedContent ? decision : escapeHtml(extractText(decision))}</div>
+              <div class="decision-text">{@html sanitizeHighlightHtml(highlightedContent ? (decision as string) : escapeHtml(extractText(decision)))}</div>
             </div>
           {/each}
         </div>
@@ -290,7 +291,7 @@
           {#each (highlightedContent?.followUpItems || summary.follow_up_items) as item}
             <div class="follow-up-item">
               <div class="follow-up-bullet">→</div>
-              <div class="follow-up-text">{@html highlightedContent ? item : escapeHtml(extractText(item))}</div>
+              <div class="follow-up-text">{@html sanitizeHighlightHtml(highlightedContent ? (item as string) : escapeHtml(extractText(item)))}</div>
             </div>
           {/each}
         </div>
@@ -299,7 +300,7 @@
   {:else}
     <!-- Flexible Custom Format Display -->
     <div class="custom-summary">
-      {@html customHighlightedContent}
+      {@html sanitizeHighlightHtml(customHighlightedContent)}
     </div>
   {/if}
 

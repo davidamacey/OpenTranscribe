@@ -117,7 +117,28 @@
 </script>
 
 <BaseModal isOpen={true} title={$t('sharing.shareCollection')} onClose={handleClose} maxWidth="540px" zIndex={1300}>
-        <p class="collection-name">{collectionName}</p>
+        <div class="share-header">
+          <p class="collection-name">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            {collectionName}
+          </p>
+          <p class="share-intro">{$t('sharing.shareIntro')}</p>
+        </div>
+
+        <!-- Permission levels reference card -->
+        <div class="permission-guide">
+          <div class="permission-guide-title">{$t('sharing.permissionLevels')}</div>
+          <div class="permission-guide-row">
+            <span class="permission-badge viewer">{$t('sharing.permissionViewer')}</span>
+            <span class="permission-desc">{$t('sharing.permissionViewerDesc')}</span>
+          </div>
+          <div class="permission-guide-row">
+            <span class="permission-badge editor">{$t('sharing.permissionEditor')}</span>
+            <span class="permission-desc">{$t('sharing.permissionEditorDesc')}</span>
+          </div>
+        </div>
 
         <!-- Search for users/groups to share with -->
         <div class="search-section">
@@ -193,15 +214,24 @@
         {/if}
 
         <!-- Divider -->
-        {#if shares.length > 0}
-          <div class="divider"></div>
-        {/if}
+        <div class="divider"></div>
 
         <!-- Existing shares -->
         {#if loading}
           <div class="loading-shares">
             <Spinner size="small" />
             {$t('sharing.loadingShares')}
+          </div>
+        {:else if shares.length === 0}
+          <div class="empty-shares">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <line x1="19" y1="8" x2="19" y2="14"></line>
+              <line x1="22" y1="11" x2="16" y2="11"></line>
+            </svg>
+            <p class="empty-title">{$t('sharing.notSharedYet')}</p>
+            <p class="empty-desc">{$t('sharing.notSharedYetDesc')}</p>
           </div>
         {:else}
           <CurrentSharesList
@@ -213,15 +243,133 @@
 </BaseModal>
 
 <style>
+  .share-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
   .collection-name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin: 0;
+    padding: 0.5rem 0.75rem;
     font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 600;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+  }
+
+  .collection-name svg {
+    flex-shrink: 0;
+    color: var(--primary-color, #3b82f6);
+  }
+
+  .share-intro {
+    margin: 0;
+    font-size: 0.8125rem;
     color: var(--text-secondary);
-    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  /* Permission guide */
+  .permission-guide {
+    margin-bottom: 1rem;
+    padding: 0.625rem 0.75rem;
+    background: rgba(59, 130, 246, 0.05);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 6px;
+  }
+
+  :global(.dark) .permission-guide {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+
+  .permission-guide-title {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-secondary);
+    margin-bottom: 0.375rem;
+  }
+
+  .permission-guide-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .permission-badge {
+    flex-shrink: 0;
+    display: inline-block;
+    min-width: 52px;
+    text-align: center;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .permission-badge.viewer {
+    background: rgba(100, 116, 139, 0.12);
+    color: var(--text-secondary);
+    border: 1px solid rgba(100, 116, 139, 0.25);
+  }
+
+  .permission-badge.editor {
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--primary-color, #3b82f6);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+  }
+
+  .permission-desc {
+    color: var(--text-secondary);
   }
 
   .search-section {
     margin-bottom: 0.25rem;
+  }
+
+  /* Empty state for no existing shares */
+  .empty-shares {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem 1rem;
+    text-align: center;
+    color: var(--text-secondary);
+  }
+
+  .empty-shares svg {
+    color: var(--text-tertiary, #94a3b8);
+    margin-bottom: 0.5rem;
+  }
+
+  .empty-title {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .empty-desc {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    max-width: 320px;
   }
 
   .pending-section h4 {

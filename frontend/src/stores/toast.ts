@@ -10,7 +10,7 @@ export interface ToastMessage {
 let toastCounter = 0;
 
 function createToastStore() {
-  const { subscribe, update } = writable<ToastMessage[]>([]);
+  const { subscribe, update, set } = writable<ToastMessage[]>([]);
 
   return {
     subscribe,
@@ -31,6 +31,14 @@ function createToastStore() {
 
     dismiss(id: string) {
       update((toasts) => toasts.filter((t) => t.id !== id));
+    },
+
+    /**
+     * Clear all toasts. Called on login/logout to prevent stale toasts
+     * from a previous user's session from leaking into the next session.
+     */
+    clear() {
+      set([]);
     },
 
     success(message: string, duration?: number) {

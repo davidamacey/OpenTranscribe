@@ -104,6 +104,9 @@
   $: topSpacerHeight = visibleStart * ROW_HEIGHT;
   $: bottomSpacerHeight = Math.max(0, (items.length - visibleEnd) * ROW_HEIGHT);
 
+  // Track which row is currently navigating (double-click guard + visual feedback)
+  let navigatingTo: string | null = null;
+
   function handleRowClick(file: MediaFile, e: MouseEvent) {
     if (isSelecting) {
       e.preventDefault();
@@ -117,8 +120,14 @@
       galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
     } else {
       e.preventDefault();
+      if (navigatingTo) return;
+      navigatingTo = file.uuid;
       goto(`/files/${file.uuid}`);
     }
+  }
+
+  function handleRowMouseDown(file: MediaFile) {
+    if (!isSelecting) prefetchFileDetails(file.uuid);
   }
 
   function handleCheckboxChange(fileId: string, e: Event) {
@@ -167,11 +176,12 @@
     {#each visibleItems as file, i (file.uuid)}
       {@const globalIndex = visibleStart + i}
       <div
-        class="file-list-row {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''}"
+        class="file-list-row {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''} {navigatingTo === file.uuid ? 'navigating' : ''}"
         class:even={globalIndex % 2 === 0}
         style="height: {ROW_HEIGHT}px;"
         role="row"
         aria-rowindex={globalIndex + 1}
+        aria-busy={navigatingTo === file.uuid}
       >
         {#if isSelecting}
           <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -195,6 +205,7 @@
           href={isSelecting ? '#' : `/files/${file.uuid}`}
           class="file-list-link"
           on:click={(e) => handleRowClick(file, e)}
+          on:mousedown={() => handleRowMouseDown(file)}
           on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid)}
           on:mouseleave={cancelPrefetch}
         >
@@ -325,10 +336,30 @@
   }
 
   .file-list-row {
+    position: relative;
     border-bottom: 1px solid var(--border-color);
     background: var(--surface-color);
     transition: background-color 0.15s ease;
     overflow: hidden;
+  }
+
+  /* Press feedback while the detail page is loading.
+     Destination page shows a skeleton — no spinner needed on the source row. */
+  .file-list-row.navigating {
+    pointer-events: none;
+  }
+
+  .file-list-row.navigating .file-list-link {
+    opacity: 0.72;
+    transition: opacity 0.12s ease;
+  }
+
+  .file-list-row.navigating {
+    background: rgba(59, 130, 246, 0.05);
+  }
+
+  :global(.dark) .file-list-row.navigating {
+    background: rgba(59, 130, 246, 0.1);
   }
 
   .file-list-row.selecting-mode {

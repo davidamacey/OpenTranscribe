@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import Spinner from '../ui/Spinner.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import type { SearchOccurrence } from '$stores/search';
 
   export let isOpen: boolean = false;
@@ -845,7 +846,7 @@
                       {formatTimestamp(segment.startTime)}-{formatTimestamp(segment.endTime)}
                     </div>
                   </div>
-                  <div class="segment-text">{@html segment.highlightedText}</div>
+                  <div class="segment-text">{@html sanitizeHighlightHtml(segment.highlightedText)}</div>
                 </div>
               {/each}
 

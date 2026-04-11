@@ -102,7 +102,10 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       assetsDir: 'assets',
       emptyOutDir: true,
-      sourcemap: true,
+      // Sourcemaps ONLY in dev/preview — shipping them to production exposes
+      // the entire source tree (variable names, API endpoints, error messages,
+      // business logic) to any visitor via DevTools or automated crawlers.
+      sourcemap: mode !== 'production',
       rollupOptions: {
         output: {
           manualChunks: undefined,

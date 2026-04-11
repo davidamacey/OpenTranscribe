@@ -155,6 +155,16 @@ function createUploadStore() {
       }));
     },
 
+    /**
+     * Full reset — cancels all uploads, clears persisted queue, and
+     * resets the store. Called on logout to prevent User A's upload
+     * state from leaking into User B's session.
+     */
+    reset() {
+      uploadService.reset();
+      set({ uploads: [], isExpanded: false, hasNewActivity: false });
+    },
+
     // Cleanup
     destroy() {
       if (eventListenerCleanup) {

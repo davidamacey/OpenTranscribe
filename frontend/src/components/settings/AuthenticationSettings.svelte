@@ -55,7 +55,6 @@
       for (const [category, configArray] of Object.entries(allConfigs)) {
         configs[category] = transformConfigArray(configArray as any[]);
       }
-      console.log('Loaded configs:', configs);
     } catch (error) {
       console.error('Failed to load auth config:', error);
       toastStore.error($t('settings.authentication.loadError'));

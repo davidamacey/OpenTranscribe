@@ -14,7 +14,7 @@
   import PlyrMiniPlayer from '$components/PlyrMiniPlayer.svelte';
   import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import { prefetchNextSearchPage } from '$lib/prefetch';
-  import Spinner from '../../components/ui/Spinner.svelte';
+  import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
 
   let searchInput = '';
   let previewMediaUrl = '';
@@ -629,10 +629,7 @@
       <!-- Results -->
       <main class="results">
         {#if $searchStore.isLoading}
-          <div class="state-container">
-            <Spinner size="large" />
-            <p class="state-text">{$t('search.searching') || 'Searching...'}</p>
-          </div>
+          <CardGridSkeleton variant="search" count={6} minCardWidth={520} />
         {:else if $searchStore.error}
           <div class="state-container error">
             <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

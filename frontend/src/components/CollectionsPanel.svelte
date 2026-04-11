@@ -80,12 +80,26 @@
     }
   }
 
+  // System default prompt (Universal Content Analyzer) — used as the
+  // default selection when creating new collections. Users can override.
+  let systemDefaultPromptId: string | null = null;
+
   // Fetch available prompts for dropdown
   async function fetchPrompts() {
     loadingPrompts = true;
     try {
       const response = await axiosInstance.get('/prompts');
       availablePrompts = response.data.prompts || [];
+      // Find the system default (Universal Content Analyzer) — used as
+      // the pre-selected default when creating new collections.
+      const systemDefault = availablePrompts.find((p: any) => p.is_system_default);
+      if (systemDefault) {
+        systemDefaultPromptId = systemDefault.uuid;
+        // Apply to the Create form if it hasn't been touched yet
+        if (newCollectionPromptId === null) {
+          newCollectionPromptId = systemDefault.uuid;
+        }
+      }
     } catch (err: any) {
       console.error('Error fetching prompts:', err);
       // Non-critical: prompts dropdown will just be empty
@@ -134,10 +148,11 @@
 
       collections = [...collections, { ...response.data, media_count: 0 }];
 
-      // Reset form for potential next collection
+      // Reset form for potential next collection. Keep the system default prompt
+      // pre-selected so users don't have to re-select it every time.
       newCollectionName = '';
       newCollectionDescription = '';
-      newCollectionPromptId = null;
+      newCollectionPromptId = systemDefaultPromptId;
 
       // If in add mode and media is selected, add to new collection
       if (viewMode === 'add' && selectedMediaIds.length > 0) {
@@ -484,12 +499,15 @@
 
   <!-- Create Collection Modal -->
   {#if showCreateModal}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <!--
+      Backdrop click is intentionally NOT bound to close.
+      Users have in-progress form state; stray clicks shouldn't destroy it.
+      Close via X button or Escape only.
+    -->
     <div
       class="modal-backdrop"
       role="presentation"
-      on:click={() => showCreateModal = false}
       on:wheel|preventDefault|self
       on:touchmove|preventDefault|self
       on:keydown={(e) => e.key === 'Escape' && (() => showCreateModal = false)()}
@@ -503,13 +521,14 @@
         class="modal-container"
         role="dialog"
         aria-modal="true"
+        aria-labelledby="create-collection-title"
         on:click|stopPropagation
         on:keydown|stopPropagation
         transition:slide
       >
         <div class="modal-content">
           <div class="modal-header">
-            <h2>{$t('collectionsPanel.createNewCollection')}</h2>
+            <h2 id="create-collection-title">{$t('collectionsPanel.createNewCollection')}</h2>
             <button
               class="modal-close-button"
               on:click={() => showCreateModal = false}
@@ -525,6 +544,8 @@
           </div>
 
           <form on:submit|preventDefault={createCollection} class="config-form">
+            <p class="modal-intro">{$t('collectionsPanel.createIntro')}</p>
+
             <div class="form-group">
               <label for="collection-name">{$t('collectionsPanel.name')}</label>
               <input
@@ -533,9 +554,11 @@
                 bind:value={newCollectionName}
                 class="form-control"
                 placeholder={$t('collectionsPanel.namePlaceholder')}
+                maxlength="100"
                 required
                 disabled={creating}
               />
+              <span class="form-hint">{$t('collectionsPanel.nameHint')}</span>
             </div>
 
             <div class="form-group">
@@ -546,8 +569,10 @@
                 class="form-control"
                 placeholder={$t('collectionsPanel.descriptionPlaceholder')}
                 rows="3"
+                maxlength="500"
                 disabled={creating}
               ></textarea>
+              <span class="form-hint">{$t('collectionsPanel.descriptionHint')}</span>
             </div>
 
             <div class="form-group">
@@ -603,12 +628,10 @@
 
   <!-- Edit Collection Modal -->
   {#if showEditModal && collectionToEdit}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
       class="modal-backdrop"
       role="presentation"
-      on:click={() => showEditModal = false}
       on:wheel|preventDefault|self
       on:touchmove|preventDefault|self
       on:keydown={(e) => e.key === 'Escape' && (() => showEditModal = false)()}
@@ -622,13 +645,14 @@
         class="modal-container"
         role="dialog"
         aria-modal="true"
+        aria-labelledby="edit-collection-title"
         on:click|stopPropagation
         on:keydown|stopPropagation
         transition:slide
       >
         <div class="modal-content">
           <div class="modal-header">
-            <h2>{$t('collectionsPanel.editCollectionTitle')}</h2>
+            <h2 id="edit-collection-title">{$t('collectionsPanel.editCollectionTitle')}</h2>
             <button
               class="modal-close-button"
               on:click={() => showEditModal = false}
@@ -644,6 +668,8 @@
           </div>
 
           <form on:submit|preventDefault={updateCollection} class="config-form">
+            <p class="modal-intro">{$t('collectionsPanel.editIntro')}</p>
+
             <div class="form-group">
               <label for="edit-collection-name">{$t('collectionsPanel.name')}</label>
               <input
@@ -652,9 +678,11 @@
                 bind:value={editCollectionName}
                 class="form-control"
                 placeholder={$t('collectionsPanel.collectionName')}
+                maxlength="100"
                 required
                 disabled={updating}
               />
+              <span class="form-hint">{$t('collectionsPanel.nameHint')}</span>
             </div>
 
             <div class="form-group">
@@ -665,8 +693,10 @@
                 class="form-control"
                 placeholder={$t('collectionsPanel.descriptionPlaceholder')}
                 rows="3"
+                maxlength="500"
                 disabled={updating}
               ></textarea>
+              <span class="form-hint">{$t('collectionsPanel.descriptionHint')}</span>
             </div>
 
             <div class="form-group">
@@ -747,10 +777,11 @@
 
 <style>
   .collections-panel {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 20px;
+    /* No background/border — the parent modal-container provides the surface.
+       Previously this created a nested "card-in-card" look with a gray inside white. */
+    background: transparent;
+    border: none;
+    padding: 0;
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -1194,6 +1225,24 @@
 
   .config-form {
     padding: 1.5rem;
+  }
+
+  .modal-intro {
+    margin: 0 0 1.25rem 0;
+    padding: 0.75rem 0.875rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    background: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-left: 3px solid var(--primary-color, #3b82f6);
+    border-radius: 6px;
+  }
+
+  :global(.dark) .modal-intro {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.2);
+    border-left-color: var(--primary-color, #3b82f6);
   }
 
   .form-group {

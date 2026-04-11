@@ -27,6 +27,7 @@
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import Spinner from '../../../components/ui/Spinner.svelte';
+  import FileDetailSkeleton from '../../../components/FileDetailSkeleton.svelte';
 
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -567,7 +568,6 @@
       urlRefresher = createUrlRefresher(
         fileId,
         (newUrl) => {
-          console.log('Video URL refreshed for continued playback');
           videoUrl = newUrl;
         },
         300 // 5 minute expiration
@@ -2358,10 +2358,9 @@
 
 <div class="file-detail-page">
   {#if isLoading}
-    <div class="loading-container">
-      <Spinner size="large" />
-      <p>{$t('fileDetail.loading')}</p>
-    </div>
+    <!-- Skeleton loader mirroring the final layout — perceived as ~20% faster
+         than a spinner because users see structure + anticipated content -->
+    <FileDetailSkeleton />
   {:else if pageErrorMessage}
     <div class="error-container">
       <p class="error-message">{pageErrorMessage}</p>
@@ -2784,7 +2783,6 @@
     color: var(--text-color);
   }
 
-  .loading-container,
   .error-container,
   .no-file-container {
     display: flex;

@@ -14,7 +14,7 @@ export interface DownloadState {
 }
 
 function createDownloadStore() {
-  const { subscribe, update } = writable<Record<string, DownloadState>>({});
+  const { subscribe, set, update } = writable<Record<string, DownloadState>>({});
 
   return {
     subscribe,
@@ -161,6 +161,14 @@ function createDownloadStore() {
         return downloads;
       });
       return result;
+    },
+
+    /**
+     * Full reset — clears all download state. Called on logout to prevent
+     * User A's download list from leaking into User B's session.
+     */
+    reset() {
+      set({});
     },
   };
 }

@@ -3,6 +3,7 @@
   import type { SearchHit, SearchOccurrence as SearchOccurrenceType } from '$stores/search';
   import { t } from '$stores/locale';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import SearchOccurrence from './SearchOccurrence.svelte';
 
   export let hit: SearchHit;
@@ -70,10 +71,6 @@
       && activePreview.startTime === occurrence.start_time);
   }
 
-  function sanitizeHighlight(html: string): string {
-    // Strip all HTML tags except <mark> and </mark>, then remove attributes from mark tags
-    return html.replace(/<(?!\/?mark[\s>])[^>]*>/g, '').replace(/<mark\s[^>]*>/g, '<mark>');
-  }
 </script>
 
 <article class="result-card">
@@ -97,7 +94,7 @@
           </svg>
         {/if}
         {#if hit.title_highlighted}
-          {@html sanitizeHighlight(hit.title_highlighted)}
+          {@html sanitizeHighlightHtml(hit.title_highlighted)}
         {:else}
           {hit.title}
         {/if}

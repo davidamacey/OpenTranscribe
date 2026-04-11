@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { MajorTopic } from '$lib/types/summary';
   import { t } from '$stores/locale';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
 
   export let topics: MajorTopic[];
   // searchQuery prop removed - not used internally
@@ -22,19 +23,19 @@
       <div class="topic-item">
         <h4 class="topic-heading">
           <span class="importance-indicator importance-{topic.importance || 'medium'}">{getImportanceIndicator(topic.importance || 'medium')}</span>
-          {@html topic.topic}
+          {@html sanitizeHighlightHtml(topic.topic)}
         </h4>
 
         {#if topic.participants && topic.participants.length > 0}
           <div class="topic-meta">
-            <em>{$t('topics.keyParticipants')} {@html topic.participants.join(', ')}</em>
+            <em>{$t('topics.keyParticipants')} {@html sanitizeHighlightHtml(topic.participants.join(', '))}</em>
           </div>
         {/if}
 
         {#if topic.key_points && topic.key_points.length > 0}
           <ul class="topic-points">
             {#each topic.key_points as point}
-              <li>{@html point}</li>
+              <li>{@html sanitizeHighlightHtml(point)}</li>
             {/each}
           </ul>
         {/if}

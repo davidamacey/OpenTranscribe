@@ -597,6 +597,32 @@ class UploadService {
     this.persistUploads();
   }
 
+  /**
+   * Full reset — cancels all in-flight uploads, clears the queue, and
+   * wipes persisted state. Called on logout to prevent User A's uploads
+   * from leaking into User B's session.
+   */
+  reset() {
+    // Cancel any in-flight uploads
+    for (const [id, upload] of this.uploads.entries()) {
+      if (upload.cancelToken) {
+        try {
+          upload.cancelToken.cancel('User logged out');
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    this.uploads.clear();
+    this.processingQueue = [];
+    this.activeUploads.clear();
+    try {
+      localStorage.removeItem('upload_queue');
+    } catch {
+      /* ignore */
+    }
+  }
+
   // Getters
   getUpload(uploadId: string): UploadItem | undefined {
     return this.uploads.get(uploadId);

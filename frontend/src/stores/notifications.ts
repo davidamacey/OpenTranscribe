@@ -88,3 +88,10 @@ export async function getNotifications(): Promise<Notification[]> {
 export function removeNotification(id: string): void {
   notifications.update((items) => items.filter((item) => item.id !== id));
 }
+
+// Clear all notifications (called on logout to prevent stale notifications
+// from leaking to the next user's session)
+export function clearAllNotifications(): void {
+  notifications.set([]);
+  showNotificationsPanel.set(false);
+}

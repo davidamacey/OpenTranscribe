@@ -71,6 +71,8 @@
           class="cluster-avatar"
           src={cluster.promoted_to_profile_avatar_url}
           alt=""
+          loading="lazy"
+          decoding="async"
         />
       {/if}
       {#if editingLabel}

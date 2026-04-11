@@ -35,9 +35,11 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "@types/dompurify": "^3.0.5",
     "axios": "^1.13.6",
     "date-fns": "^4.1.0",
     "devalue": "^5.6.3",
+    "dompurify": "^3.3.3",
     "i18next": "^25.8.14",
     "i18next-browser-languagedetector": "^8.2.1",
     "imohash": "^1.0.3",

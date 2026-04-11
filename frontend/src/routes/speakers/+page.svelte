@@ -11,6 +11,8 @@
   import { browser } from '$app/environment';
   import Spinner from '../../components/ui/Spinner.svelte';
   import EmptyState from '../../components/ui/EmptyState.svelte';
+  import CardGridSkeleton from '$components/ui/CardGridSkeleton.svelte';
+  import ListRowSkeleton from '$components/ui/ListRowSkeleton.svelte';
 
   // Dynamic import: Plyr is browser-only (breaks SSR on page refresh)
   let PlyrMiniPlayer: typeof import('$components/PlyrMiniPlayer.svelte').default | null = null;
@@ -867,7 +869,7 @@
       {/if}
 
       {#if loadingClusters}
-        <div class="loading">{$t('speakers.loadingClusters')}</div>
+        <ListRowSkeleton count={6} />
       {:else if clusters.length === 0}
         <EmptyState title={$t('speakers.clusters.emptyTitle')} description={$t('speakers.clusters.emptyDesc')} padding="60px 20px">
           <svelte:fragment slot="icon">
@@ -1027,7 +1029,7 @@
   {#if activeTab === 'profiles'}
     <div class="tab-content">
       {#if loadingProfiles}
-        <div class="loading">{$t('speakers.loadingProfiles')}</div>
+        <CardGridSkeleton variant="profile" count={8} />
       {:else if profiles.length === 0}
         <EmptyState title={$t('speakers.profiles.emptyTitle')} description={$t('speakers.profiles.emptyDesc')} padding="60px 20px">
           <svelte:fragment slot="icon">
@@ -1047,7 +1049,13 @@
                   {#if avatarUploading.has(profile.uuid)}
                     <div class="avatar-spinner"><Spinner size="small" /></div>
                   {:else if profile.avatar_url}
-                    <img class="profile-avatar" src={profile.avatar_url} alt={profile.name} />
+                    <img
+                      class="profile-avatar"
+                      src={profile.avatar_url}
+                      alt={profile.name || 'Speaker avatar'}
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <div class="avatar-overlay">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                     </div>
@@ -1132,7 +1140,7 @@
         {$t('speakers.keyboard.hint')}
       </div>
       {#if loadingInbox}
-        <div class="loading">{$t('speakers.loadingInbox')}</div>
+        <ListRowSkeleton count={5} size="compact" />
       {:else if inboxItems.length === 0}
         <EmptyState title={$t('speakers.inbox.emptyTitle')} description={profiles.length > 0 ? $t('speakers.inbox.emptyAllVerified') : $t('speakers.inbox.emptyNoProfiles')} padding="60px 20px">
           <svelte:fragment slot="icon">
@@ -1498,12 +1506,6 @@
     display: block;
     margin-top: 4px;
     font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  .loading {
-    text-align: center;
-    padding: 40px;
     color: var(--text-secondary);
   }
 

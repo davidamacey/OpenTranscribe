@@ -145,6 +145,10 @@
   $: topSpacerHeight = visibleStartRow * ROW_HEIGHT;
   $: bottomSpacerHeight = Math.max(0, (totalRows - visibleEndRow) * ROW_HEIGHT);
 
+  // Track which file is currently navigating to prevent double-clicks and
+  // provide immediate visual feedback while the route change is in flight.
+  let navigatingTo: string | null = null;
+
   function handleCardClick(file: MediaFile, e: MouseEvent) {
     if (isSelecting) {
       e.preventDefault();
@@ -158,8 +162,17 @@
       galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
     } else {
       e.preventDefault();
+      // Guard against double-clicks — ignore if already navigating
+      if (navigatingTo) return;
+      navigatingTo = file.uuid;
       goto(`/files/${file.uuid}`);
     }
+  }
+
+  // Kick off prefetch on mousedown (slightly earlier than click) to get a
+  // head start on loading detail data.
+  function handleCardMouseDown(file: MediaFile) {
+    if (!isSelecting) prefetchFileDetails(file.uuid);
   }
 
   function handleCheckboxChange(fileId: string, e: Event) {
@@ -199,7 +212,7 @@
       {#each visibleItems as file, i (file.uuid)}
         {@const globalIndex = visibleStartIndex + i}
         <div
-          class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''}"
+          class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''} {navigatingTo === file.uuid ? 'navigating' : ''}"
           role="gridcell"
           aria-rowindex={Math.floor(globalIndex / columnsPerRow) + 1}
         >
@@ -224,8 +237,10 @@
             href={isSelecting ? '#' : `/files/${file.uuid}`}
             class="file-card-link"
             on:click={(e) => handleCardClick(file, e)}
+            on:mousedown={() => handleCardMouseDown(file)}
             on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid)}
             on:mouseleave={cancelPrefetch}
+            aria-busy={navigatingTo === file.uuid}
           >
             <!-- Thumbnail area — edge-to-edge -->
             <div class="thumbnail-container">
@@ -365,6 +380,19 @@
     transform: scale(0.95);
     transition: all 0.25s ease-out;
     pointer-events: none;
+  }
+
+  /* Press feedback while the detail page is loading.
+     Apple HIG: use a brief active-state, not a spinner on the source item.
+     The destination page shows a skeleton that actually represents progress. */
+  .file-card.navigating {
+    pointer-events: none;
+  }
+
+  .file-card.navigating .file-card-link {
+    opacity: 0.72;
+    transform: scale(0.985);
+    transition: opacity 0.12s ease, transform 0.12s ease;
   }
 
   @keyframes newFileGlow {

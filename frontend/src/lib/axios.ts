@@ -19,6 +19,45 @@ export const axiosInstance = axios.create({
 
 export default axiosInstance;
 
+/**
+ * Session-scoped AbortController.
+ *
+ * Every request that passes through axiosInstance gets this signal attached
+ * (unless the caller provides their own signal). On logout, `abortAllRequests()`
+ * triggers the signal, cancelling all in-flight requests and preventing their
+ * responses from updating stores with stale data from the previous session.
+ *
+ * After abort, a fresh controller is created so the next session starts clean.
+ */
+let sessionAbortController = new AbortController();
+
+/**
+ * Cancel all in-flight axios requests and reset the session signal.
+ * Called from `auth.ts` logout() to close the race window where a response
+ * could resolve after `clearUserState()` and repopulate a store.
+ */
+export function abortAllRequests(reason: string = 'Session ended'): void {
+  sessionAbortController.abort(reason);
+  // Reset for the next session — subsequent requests get a fresh signal
+  sessionAbortController = new AbortController();
+}
+
+/**
+ * Type guard: distinguishes a user-cancelled request (from abortAllRequests)
+ * from a real error. Use this in catch blocks to suppress error toasts when
+ * a request was cancelled due to logout/navigation.
+ */
+export function isRequestCancelled(error: unknown): boolean {
+  if (axios.isCancel(error)) return true;
+  if (error && typeof error === 'object') {
+    const err = error as { code?: string; name?: string; message?: string };
+    if (err.code === 'ERR_CANCELED') return true;
+    if (err.name === 'CanceledError') return true;
+    if (err.name === 'AbortError') return true;
+  }
+  return false;
+}
+
 // Helper to read the csrf_token cookie (non-httpOnly, readable by JS)
 // Exported for use by code that bypasses axiosInstance (e.g. raw fetch)
 export function getCsrfToken(): string | undefined {
@@ -28,7 +67,7 @@ export function getCsrfToken(): string | undefined {
     ?.split('=')[1];
 }
 
-// Request interceptor to add CSRF token on mutating requests
+// Request interceptor: CSRF token + session abort signal
 axiosInstance.interceptors.request.use(
   (config) => {
     // Add CSRF token for mutating requests (double-submit pattern)
@@ -39,6 +78,21 @@ axiosInstance.interceptors.request.use(
         config.headers['X-CSRF-Token'] = csrfToken;
       }
     }
+
+    // Attach the session abort signal so logout can cancel this request.
+    // Skip if the caller already provided their own signal (e.g. prefetch
+    // utilities that manage their own cancellation lifecycle) or if the
+    // request is an auth endpoint that should never be cancelled by logout
+    // (the logout endpoint itself must complete).
+    const url = config.url || '';
+    const isAuthEndpoint =
+      url.includes('/auth/logout') ||
+      url.includes('/auth/token/refresh') ||
+      url.includes('/auth/login');
+    if (!config.signal && !isAuthEndpoint) {
+      config.signal = sessionAbortController.signal;
+    }
+
     return config;
   },
   (error) => {
@@ -63,6 +117,12 @@ function processQueue(error: unknown | null) {
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // Suppress cancelled-request errors — they're expected on logout/navigation
+    // and should not trigger 401 refresh or error logging.
+    if (isRequestCancelled(error)) {
+      return Promise.reject(error);
+    }
+
     const originalRequest = error.config;
 
     // Auto-refresh: if we get a 401 and haven't already retried this request

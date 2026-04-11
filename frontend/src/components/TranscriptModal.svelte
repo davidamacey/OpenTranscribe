@@ -7,6 +7,7 @@
   import { translateSpeakerLabel } from '$lib/i18n';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
 
   export let fileId: number;
   export let fileName: string = '';
@@ -394,7 +395,7 @@
                   {#if diarizationDisabled}
                     {#each segment.overlapSegments as overlapSeg}
                       <div class="transcript-segment monologue" data-seg-index={segment.rawStartIndex}>
-                        <div class="segment-text">{@html highlightSearchTerms(overlapSeg.text, searchQuery, currentMatchIndex)}</div>
+                        <div class="segment-text">{@html sanitizeHighlightHtml(highlightSearchTerms(overlapSeg.text, searchQuery, currentMatchIndex))}</div>
                       </div>
                     {/each}
                   {:else}
@@ -420,7 +421,7 @@
                             >{translateSpeakerLabel(overlapSeg.speakerName)}</div>
                             <div class="segment-time">{formatSimpleTimestamp(overlapSeg.startTime ?? 0)}-{formatSimpleTimestamp(overlapSeg.endTime ?? 0)}</div>
                           </div>
-                          <div class="segment-text">{@html highlightSearchTerms(overlapSeg.text, searchQuery, currentMatchIndex)}</div>
+                          <div class="segment-text">{@html sanitizeHighlightHtml(highlightSearchTerms(overlapSeg.text, searchQuery, currentMatchIndex))}</div>
                         </div>
                       {/each}
                     </div>
@@ -437,7 +438,7 @@
                         <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
                       </div>
                     {/if}
-                    <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
+                    <div class="segment-text">{@html sanitizeHighlightHtml(highlightSearchTerms(segment.text, searchQuery, currentMatchIndex))}</div>
                   </div>
                 {/if}
               {/each}
