@@ -126,6 +126,45 @@ Major release combining enterprise-grade authentication, native transcription pi
 - **Keycloak Federated Logout** - Session termination propagates to Keycloak OIDC end-session endpoint (#125)
 - **Super Admin PKI + Local Password Fallback** - PKI-authenticated super admins can retain local password as fallback (#127)
 
+#### Upload Modal Redesign
+- **6-Step Stepper Flow** - Replaced the accordion-inside-modal upload UX with a linear stepper: Media → Tags → Collections → Speakers → Options → Submit. Conditional Extract step appears automatically for large video files
+- **Unified Across All Upload Sources** - File, URL, and recording uploads now share steps 2-6, so URL downloads and recordings gain full access to tags/collections/speaker settings (previously file-only)
+- **Remember Previous Values** - Upload modal pre-fills tags, collections, speaker settings, whisper model, and skip-summary from the last upload. One-click "Review with defaults" shortcut lets power users jump straight to submit
+- **Clickable Stepper Navigation** - Users can click any previously-visited step to go back and edit. Dot + label is a single clickable button per step (Fitts's Law / Apple HIG 44×44pt touch-target compliance)
+- **Decomposed Monolith** - The 4,603-line `FileUploader.svelte` split into a 1,294-line coordinator plus 9 focused components under `frontend/src/components/upload/` (each under ~470 lines). New `upload-shared.css` provides a unified chip/dropdown pattern reused across tags and collections
+- **Conditional Extraction Step** - Large video files (>100MB by default) trigger an inline Extract step with radio-button choice (Extract Audio Only vs Upload Full Video). Extraction runs on final Submit, not at selection time, so users can still change their mind while stepping through tags/collections
+- **Backdrop-Click No Longer Closes** - Modal only closes via X button or Escape key, preventing data loss from stray clicks on in-progress upload state
+
+#### Skeleton Loaders on Major Pages
+- **Structural Loading States** - Replaced generic `<Spinner size="large">` on home gallery, search results, file detail page, and speaker clusters/profiles/inbox with skeleton components that mirror the final layout. Perceived load time ~20% faster per Nielsen Norman research
+- **Reusable Skeleton Components** - New `FileDetailSkeleton.svelte` (full 2-column layout with header/video/transcript), `ui/CardGridSkeleton.svelte` (parametric with media/profile/search variants), and `ui/ListRowSkeleton.svelte` (avatar + title + actions rows)
+- **Gallery Click Feedback** - Clicking a file card now dims + scales it instantly (opacity 0.72, scale 0.985) with `pointer-events: none` to prevent double-clicks. Prefetch kicks off on `mousedown` ~50-100ms before the click handler runs
+
+#### Collection & Share Modal Polish
+- **Help Text and Empty States** - Create/Edit Collection modals gained intro banners explaining what collections are, field hints with `maxlength` indicators, and proper `aria-labelledby` wiring
+- **Universal Content Analyzer Default** - New collections auto-select the system-default prompt (via `is_system_default` lookup), matching the behavior users typically want without requiring manual selection
+- **Share Modal Intro and Permission Guide** - Share Collection modal now includes an introductory explanation, a collection name banner with folder icon, and a visible permission-level reference card showing Viewer/Editor labels inline with descriptions (previously only in tooltips). Empty state added for collections with no existing shares
+- **Manage Collections Visual Fix** - Fixed nested-card glitch where the inner `.collections-panel` had its own surface background inside the outer modal container, producing a visible "card in a card" look
+
+### Security
+
+#### Frontend Session Hardening
+- **Flash of Authenticated Content (FOAC) fix** - `+layout.svelte` now gates all protected content behind `authReady && isAuthenticated && !isPublicPath`, showing a loading screen in route-mismatch states while async redirects are in flight. Previously, unauthenticated users hitting `/` briefly saw the gallery slot render before the redirect fired, leaking ~1-2 frames of protected UI and triggering `/files` API calls
+- **Centralized User State Cleanup** - New `frontend/src/lib/session/clearUserState.ts` is the single source of truth for session teardown. Clears 17+ subsystems on every login/logout transition: toast, websocket, uploads, gallery filters, search results, sharing, LLM status, settings modal, transcript, groups, downloads, notifications, recording (with media track cleanup), thumbnail cache, media URL cache, speaker colors, plus user-scoped localStorage keys. Preferences (theme, locale, view mode, recording settings) are explicitly preserved. Replaces ad-hoc cleanup previously scattered across `auth.ts`
+- **Session-Scoped Request Cancellation** - Session-scoped `AbortController` in `lib/axios.ts` attached to every request via interceptor (except `/auth/login`, `/auth/logout`, `/auth/token/refresh` which must always complete). `logout()` now calls `abortAllRequests()` before `clearUserState()`, closing the race window where a late API response could repopulate a cleared store with stale data from the previous session. New `isRequestCancelled()` helper exported for catch blocks to suppress error toasts on cancelled requests
+- **bfcache Invalidation on Back Button** - `+layout.svelte` now listens for `pageshow` events with `event.persisted === true` and forces `window.location.reload()` to discard the restored DOM/JS snapshot. Prevents users from hitting the back button after logout and seeing the previously-protected page restored from memory on shared devices
+- **Toast Cross-Session Leak Fixed** - `toastStore.clear()` is called from every login success path (local, Keycloak callback, PKI, MFA) and from `logout()` via `clearUserState()`. Previously, notifications from User A's session could persist into User B's login screen or the next user's session
+- **Keycloak Redirect URL Validation** - `loginWithKeycloak()` now parses and validates the `authorization_url` returned by `/auth/keycloak/login` (requires `http:` or `https:` protocol) before calling `window.location.href`. Prevents open-redirect or `javascript:`/`data:` URL injection if upstream config drifts
+
+#### XSS Hardening
+- **DOMPurify-Backed HTML Sanitization** - New `lib/utils/sanitizeHtml.ts` provides `sanitizeHighlightHtml()` (whitelist allows `mark`, `span`, `br`, `ul`, `li`, `em`, `strong`, `div`, `p` with `class` and `data-match-index` attributes) and `sanitizeToPlainText()`. Added `dompurify` and `@types/dompurify` as dependencies
+- **Defense-in-Depth Across 8 Render Sites** - Wrapped every `{@html}` directive that renders API-sourced or LLM-generated content with `sanitizeHighlightHtml()`: TopicsList, TranscriptDisplay, TranscriptModal, SearchTranscriptModal, SearchOccurrence, SearchResultCard, SummaryDisplay
+- **Bypassable Regex Sanitizer Replaced** - `SearchOccurrence.svelte` and `SearchResultCard.svelte` previously used `html.replace(/<(?!\/?mark[\s>])[^>]*>/g, '')` which was bypassable via `</mark><script>alert(1)</script><mark>` payloads (the regex only matched opening tags). Now uses DOMPurify with a strict tag whitelist
+
+#### Build & Configuration Hardening
+- **Production Source Maps Disabled** - `vite.config.ts` now uses `sourcemap: mode !== 'production'`, ensuring `.js.map` files are only generated for dev/preview builds. Previously, production builds shipped source maps exposing variable names, API endpoint URIs, error messages, and full business logic to any visitor via DevTools or automated crawlers
+- **Defense-in-Depth Home Page Guard** - `routes/+page.svelte` `onMount` now early-returns if `!get(isAuthenticated)`, preventing `fetchFiles()` and WebSocket subscriptions from running if the component is somehow mounted unauthenticated (belt-and-suspenders beyond the layout-level route guard)
+
 ### Changed
 
 - **Default Whisper Model** - Changed from `large-v2` to `large-v3-turbo` for significantly faster transcription with maintained accuracy
@@ -171,6 +210,13 @@ Major release combining enterprise-grade authentication, native transcription pi
 - Admin bypass and shared editor access across all API endpoints
 - Alembic migration chain linearized after branch merges
 - LDAP user bcrypt crash when verifying non-local passwords
+- **WebSocket notification queue leak** - `clearAll()` now called on logout; previously persisted in localStorage across sessions, exposing User A's notification history to User B on shared devices
+- **Upload queue persistence leak** - `localStorage['upload_queue']` is now cleared on logout via new `uploadsStore.reset()`; previously leaked file UUIDs, metadata, and processing status across sessions
+- **Dropdown clipping in upload modal** - Removed nested `overflow-y: auto` on the stepper body that was clipping tag and collection dropdowns. Primary modal container now handles all scrolling with `z-index: 200` on the dropdown list
+- **Double-card visual in Manage Collections** - `.collections-panel` previously had its own `surface-color` background + border inside the outer modal container, producing a visible "card in a card" look. Root set to `background: transparent` when rendered inside the modal
+- **Debug console.logs removed** - `AuthenticationSettings.svelte` no longer logs full auth config on every load; `files/[id]/+page.svelte` no longer logs every 5 minutes on video URL refresh
+- **Dead code removed** - Deleted unused `routes/Tasks.svelte.old` (868 lines) and the unused `AudioExtractionModal.svelte` (replaced by inline stepper step)
+- **Avatar lazy-loading** - Profile and cluster avatars on the Speakers page now use `loading="lazy"` and `decoding="async"`, preventing synchronous load-block on page init
 
 ### Upgrade Notes
 
@@ -183,6 +229,8 @@ docker compose pull
 # Restart services (automatically runs migrations)
 docker compose up -d
 ```
+
+After upgrading, users should **hard-reload the frontend** (Ctrl+Shift+R / Cmd+Shift+R) to pick up the new service worker and clear any stale cached assets. The service worker will automatically cache the new build on next visit.
 
 The system will automatically detect the authentication configuration mode and function correctly. To use new authentication features:
 
