@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Overview
 
-Major release combining enterprise-grade authentication, native transcription pipeline, neural search, GPU optimizations, cloud ASR providers, comprehensive speaker intelligence, Progressive Web App support, and dozens of features built from processing 1,400+ real-world recordings over two months of development (167 commits). This release significantly improves security, performance, search capabilities, and mobile usability.
+Major release combining enterprise-grade authentication, native transcription pipeline, neural search, GPU optimizations, cloud ASR providers, comprehensive speaker intelligence, Progressive Web App support, a frontend security hardening sprint, and dozens of features built from processing 1,400+ real-world recordings over two months of development (281 commits). This release significantly improves security, performance, search capabilities, and mobile usability.
 
 ### Added
 
