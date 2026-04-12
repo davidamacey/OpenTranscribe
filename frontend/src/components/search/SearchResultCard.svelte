@@ -440,13 +440,13 @@
   }
 
   .source-speaker {
-    background: var(--color-purple-bg, #f3e8ff);
-    color: var(--color-purple-text, #6b21a8);
+    background: rgba(16, 185, 129, 0.1);
+    color: #059669;
   }
 
   :global(.dark) .source-speaker {
-    background: rgba(168, 85, 247, 0.15);
-    color: #c084fc;
+    background: rgba(16, 185, 129, 0.12);
+    color: #34d399;
   }
 
   .semantic-badge {

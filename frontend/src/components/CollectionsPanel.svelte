@@ -1053,14 +1053,14 @@
   }
 
   .badge.shared-permission {
-    background: rgba(139, 92, 246, 0.1);
-    color: #8b5cf6;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--primary-color, #3b82f6);
     text-transform: capitalize;
   }
 
   :global([data-theme='dark']) .badge.shared-permission {
-    background: rgba(139, 92, 246, 0.2);
-    color: #a78bfa;
+    background: rgba(59, 130, 246, 0.15);
+    color: #93c5fd;
   }
 
   .share-button {

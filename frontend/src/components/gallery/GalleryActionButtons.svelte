@@ -351,67 +351,57 @@
     transform: rotate(180deg);
   }
 
-  /* Button color variants */
-  .upload-btn {
-    background-color: #3b82f6;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
+  /*
+   * Button color system — 2-color toolbar (Apple HIG / Material Design):
+   *   PRIMARY (blue)    — one main action per view (Upload, Select All, Process)
+   *   SECONDARY (surface/border) — all other toolbar actions
+   *   DANGER (red)      — destructive actions only (Delete)
+   *   CANCEL (gray)     — dismiss / exit mode
+   *
+   * Purple, green, and amber were previously used but created a rainbow toolbar
+   * that looked arbitrary. Semantic colors should only appear when the meaning
+   * is clear (red = destructive, amber = warning, green = success confirmation).
+   */
 
-  .upload-btn:hover:not(:disabled) {
-    background-color: #2563eb;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .collections-btn {
-    background-color: #8b5cf6;
-    box-shadow: 0 2px 4px rgba(139, 92, 246, 0.2);
-  }
-
-  .collections-btn:hover:not(:disabled) {
-    background-color: #7c3aed;
-    box-shadow: 0 4px 8px rgba(139, 92, 246, 0.25);
-  }
-
-  .select-btn {
-    background-color: #059669;
-    box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
-  }
-
-  .select-btn:hover:not(:disabled) {
-    background-color: #047857;
-    box-shadow: 0 4px 8px rgba(5, 150, 105, 0.25);
-  }
-
-  .select-all-btn {
-    background-color: #3b82f6;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .select-all-btn:hover:not(:disabled) {
-    background-color: #2563eb;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
+  /* Primary actions — solid blue */
+  .upload-btn,
+  .select-all-btn,
   .process-btn {
-    background-color: #d97706;
-    box-shadow: 0 2px 4px rgba(217, 119, 6, 0.2);
+    background-color: var(--primary-color, #3b82f6);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
+  .upload-btn:hover:not(:disabled),
+  .select-all-btn:hover:not(:disabled),
   .process-btn:hover:not(:disabled) {
-    background-color: #b45309;
-    box-shadow: 0 4px 8px rgba(217, 119, 6, 0.25);
+    background-color: var(--primary-hover, #2563eb);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
+  /* Secondary actions — surface with border (not colored) */
+  .collections-btn,
+  .select-btn,
   .organize-btn {
-    background-color: #8b5cf6;
-    box-shadow: 0 2px 4px rgba(139, 92, 246, 0.2);
+    background-color: var(--surface-color);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   }
 
+  .collections-btn:hover:not(:disabled),
+  .select-btn:hover:not(:disabled),
   .organize-btn:hover:not(:disabled) {
-    background-color: #7c3aed;
-    box-shadow: 0 4px 8px rgba(139, 92, 246, 0.25);
+    background-color: var(--button-hover, #f1f5f9);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 
+  :global(.dark) .collections-btn:hover:not(:disabled),
+  :global(.dark) .select-btn:hover:not(:disabled),
+  :global(.dark) .organize-btn:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  /* Danger — red, destructive only */
   .delete-btn {
     background-color: #dc2626;
     box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
@@ -422,6 +412,7 @@
     box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25);
   }
 
+  /* Cancel — neutral gray */
   .cancel-btn {
     background-color: #6b7280;
     box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);

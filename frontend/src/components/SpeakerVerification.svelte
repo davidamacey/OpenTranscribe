@@ -768,9 +768,9 @@
   }
 
   .source-badge.llm-analysis {
-    background: linear-gradient(135deg, color-mix(in srgb, #7c3aed 18%, var(--surface-color)), color-mix(in srgb, #6d28d9 12%, var(--surface-color)));
-    color: #7c3aed;
-    border: 1.5px solid color-mix(in srgb, #7c3aed 35%, transparent);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--primary-color, #3b82f6) 18%, var(--surface-color)), color-mix(in srgb, var(--primary-hover, #2563eb) 12%, var(--surface-color)));
+    color: var(--primary-color, #3b82f6);
+    border: 1.5px solid color-mix(in srgb, var(--primary-color, #3b82f6) 35%, transparent);
     font-weight: 600;
   }
 

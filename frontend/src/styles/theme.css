@@ -38,6 +38,11 @@
   --link-hover: #1d4ed8;
   --link-visited: #4f46e5; /* Royal blue for visited links */
 
+  /* AI feature accent — used for AI-suggested tags, collections, and other
+     machine-generated recommendations. Maps to primary blue (not purple)
+     so the palette stays cohesive. */
+  --ai-accent-color: var(--primary-color);
+
   /* Aliases for settings components */
   --color-primary: var(--primary-color);
   --color-primary-dark: var(--primary-dark);
@@ -75,9 +80,9 @@
 [data-theme='dark'] {
   --primary-color: #60a5fa; /* Lighter blue for dark mode */
   --primary-color-rgb: 96, 165, 250; /* RGB values for primary color in dark mode */
-  --primary-hover: #93c5fd;
+  --primary-hover: #3b82f6; /* Darker on hover — same blue as light-mode base. Apple HIG: hover always darkens. */
   --primary-light: #1e3a8a; /* Deeper blue for button backgrounds in dark mode */
-  --primary-dark: #93c5fd; /* Lighter blue for button text in dark mode */
+  --primary-dark: #93c5fd; /* Lighter blue for button text in dark mode (contrast on dark surfaces) */
   --surface-color: #1e293b;
   --background-color: #0f172a;
   --text-color: #f8fafc;
@@ -102,8 +107,8 @@
   --table-row-hover: #334155;
   --modal-backdrop: rgba(0, 0, 0, 0.7);
   --link-color: #60a5fa; /* Brighter blue for links in dark mode */
-  --link-hover: #93c5fd;
-  --link-visited: #818cf8; /* Light indigo instead of purple */
+  --link-hover: #3b82f6; /* Darken on hover — consistent direction with light mode */
+  --link-visited: #818cf8; /* Light indigo for visited links */
 
   /* Aliases for settings components - dark mode */
   --color-primary: var(--primary-color);

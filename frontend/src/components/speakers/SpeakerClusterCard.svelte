@@ -396,18 +396,18 @@
     box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
   }
 
-  /* Split — purple outline → solid purple */
+  /* Split — blue outline → solid blue (matches primary action palette) */
   .action-btn.split {
-    color: #8b5cf6;
-    border-color: #8b5cf6;
+    color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color, #3b82f6);
   }
 
   .action-btn.split:hover {
-    background: #7c3aed;
-    border-color: #7c3aed;
+    background: var(--primary-hover, #2563eb);
+    border-color: var(--primary-hover, #2563eb);
     color: white;
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(124, 58, 237, 0.3);
+    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
   }
 
   /* Promote — blue outline → solid blue */

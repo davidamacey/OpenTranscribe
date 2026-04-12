@@ -520,18 +520,18 @@
   }
 
   .ai-collection {
-    background-color: rgba(168, 85, 247, 0.1);
-    border: 1px solid rgba(168, 85, 247, 0.3);
+    background-color: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.25);
   }
 
   .ai-icon {
-    color: var(--ai-accent-color, #a855f7);
+    color: var(--ai-accent-color, var(--primary-color, #3b82f6));
     display: flex;
     align-items: center;
   }
 
   :global([data-theme='dark']) .ai-collection {
-    background-color: rgba(168, 85, 247, 0.15);
-    border-color: rgba(168, 85, 247, 0.4);
+    background-color: rgba(96, 165, 250, 0.12);
+    border-color: rgba(96, 165, 250, 0.3);
   }
 </style>
