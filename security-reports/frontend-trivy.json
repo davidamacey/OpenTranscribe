@@ -1,15 +1,15 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-04-11T17:35:57.077092811-04:00",
+  "CreatedAt": "2026-04-12T17:27:15.315020276-04:00",
   "ArtifactName": "davidamacey/opentranscribe-frontend:latest",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 138993664,
+    "Size": 138995712,
     "OS": {
       "Family": "alpine",
       "Name": "3.23.3"
     },
-    "ImageID": "sha256:93ea3edc24010dc4832e0feceddbd78c6b0cc6ab13f28ffe70cc6dc9ce17fd06",
+    "ImageID": "sha256:75f61f9836cbfb91546f21cd6b7c9e6943832a53c5c88d29eb01460173949e34",
     "DiffIDs": [
       "sha256:989e799e634906e94dc9a5ee2ee26fc92ad260522990f26e707861a5f52bf64e",
       "sha256:6e27cbd26acbdb7f06b136c2d7ff7d6bb0e19d9bfbb66aa59226a3afc0bc7c56",
@@ -20,19 +20,19 @@
       "sha256:9f6dabb2aee2b2fd98bb9015a35e4d999e07a87c27a38971ac24bfd0fa6b77e2",
       "sha256:3d4a088932cfb8b5a21cfa3b539a4bac3f5e090d5924c46f289571a633ea20ec",
       "sha256:760bc9fc40bcacda97a0901aa9721f1d5cb74a11e4a16997a490d44e6925b7ae",
-      "sha256:089947cdddbd0c18c7b0e8c0128ab842e7779eec5553d226da6b63877835b47b",
-      "sha256:c72776e7946c64e567d975211b04d1980b3705061796fcb9efc35216433a27b8",
-      "sha256:371231035dbc67f05d6aa03ad68bb97676d5bbcc820f4fb08daa599410d3d8a6"
+      "sha256:85baf7c2b789ac00853eccb58a6eae069bcb1c60f2aec7c35156e84dd20c24df",
+      "sha256:510b039d05149d00ea7b023d2ab1d82bfb2939ab4720d1a709941c907801dfce",
+      "sha256:872f87a7ec82e4d906d3c193baee1678911487d95bd40508ea8f86139b9ee7ae"
     ],
     "RepoTags": [
       "davidamacey/opentranscribe-frontend:latest"
     ],
     "RepoDigests": [
-      "davidamacey/opentranscribe-frontend@sha256:586b81b65511f80bc837b00b273a4fa8c524c27d56b2fb2187dfa5dbde106abf"
+      "davidamacey/opentranscribe-frontend@sha256:ff37fad3b45bb7fa9b96d4ddb8ba7203ded42c3cbc810e629850b295117d3900"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2026-04-11T21:29:42.857259616Z",
+      "created": "2026-04-12T21:21:31.644323294Z",
       "history": [
         {
           "created": "2026-01-28T01:18:04Z",
@@ -158,40 +158,40 @@
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-11T21:29:36Z",
+          "created": "2026-04-12T21:21:24Z",
           "created_by": "COPY /app/dist /usr/share/nginx/html # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-11T21:29:37Z",
+          "created": "2026-04-12T21:21:25Z",
           "created_by": "COPY nginx.conf /etc/nginx/conf.d/default.conf # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-11T21:29:42Z",
+          "created": "2026-04-12T21:21:31Z",
           "created_by": "RUN /bin/sh -c chown -R nginx:nginx /usr/share/nginx/html \u0026\u0026     chown -R nginx:nginx /var/cache/nginx \u0026\u0026     mkdir -p /var/log/nginx \u0026\u0026     chown -R nginx:nginx /var/log/nginx \u0026\u0026     touch /var/run/nginx.pid \u0026\u0026     chown nginx:nginx /var/run/nginx.pid # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-11T21:29:42Z",
+          "created": "2026-04-12T21:21:31Z",
           "created_by": "USER nginx",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-11T21:29:42Z",
+          "created": "2026-04-12T21:21:31Z",
           "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-11T21:29:42Z",
+          "created": "2026-04-12T21:21:31Z",
           "created_by": "HEALTHCHECK \u0026{[\"CMD-SHELL\" \"wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1\"] \"30s\" \"3s\" \"5s\" \"0s\" '\\x03'}",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-11T21:29:42Z",
+          "created": "2026-04-12T21:21:31Z",
           "created_by": "CMD [\"nginx\" \"-g\" \"daemon off;\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -210,9 +210,9 @@
           "sha256:9f6dabb2aee2b2fd98bb9015a35e4d999e07a87c27a38971ac24bfd0fa6b77e2",
           "sha256:3d4a088932cfb8b5a21cfa3b539a4bac3f5e090d5924c46f289571a633ea20ec",
           "sha256:760bc9fc40bcacda97a0901aa9721f1d5cb74a11e4a16997a490d44e6925b7ae",
-          "sha256:089947cdddbd0c18c7b0e8c0128ab842e7779eec5553d226da6b63877835b47b",
-          "sha256:c72776e7946c64e567d975211b04d1980b3705061796fcb9efc35216433a27b8",
-          "sha256:371231035dbc67f05d6aa03ad68bb97676d5bbcc820f4fb08daa599410d3d8a6"
+          "sha256:85baf7c2b789ac00853eccb58a6eae069bcb1c60f2aec7c35156e84dd20c24df",
+          "sha256:510b039d05149d00ea7b023d2ab1d82bfb2939ab4720d1a709941c907801dfce",
+          "sha256:872f87a7ec82e4d906d3c193baee1678911487d95bd40508ea8f86139b9ee7ae"
         ]
       },
       "config": {
@@ -301,16 +301,16 @@
         "DiffID": "sha256:760bc9fc40bcacda97a0901aa9721f1d5cb74a11e4a16997a490d44e6925b7ae"
       },
       {
-        "Size": 37357056,
-        "DiffID": "sha256:089947cdddbd0c18c7b0e8c0128ab842e7779eec5553d226da6b63877835b47b"
+        "Size": 37358080,
+        "DiffID": "sha256:85baf7c2b789ac00853eccb58a6eae069bcb1c60f2aec7c35156e84dd20c24df"
       },
       {
         "Size": 10752,
-        "DiffID": "sha256:c72776e7946c64e567d975211b04d1980b3705061796fcb9efc35216433a27b8"
+        "DiffID": "sha256:510b039d05149d00ea7b023d2ab1d82bfb2939ab4720d1a709941c907801dfce"
       },
       {
-        "Size": 37362688,
-        "DiffID": "sha256:371231035dbc67f05d6aa03ad68bb97676d5bbcc820f4fb08daa599410d3d8a6"
+        "Size": 37363712,
+        "DiffID": "sha256:872f87a7ec82e4d906d3c193baee1678911487d95bd40508ea8f86139b9ee7ae"
       }
     ]
   },
