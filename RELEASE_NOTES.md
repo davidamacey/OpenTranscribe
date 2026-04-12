@@ -130,6 +130,7 @@ A dedicated audit sprint shipped in this release. Full details below under "Secu
 - **Stepper reprocess UI** — Step-by-step reprocessing with stage picker
 - **Gallery action consolidation** — Action buttons moved to header with dropdown groups (#139)
 - **Multi-select with auto-filter and title normalization**
+- **Unified color system** — Gallery toolbar replaced a 7-color rainbow (blue, purple, green, amber, red, gray, purple) with a consistent 2-color system per Apple HIG: primary blue for main actions, surface/gray for secondary actions, red for destructive only. All purple removed from buttons and badges across 9 components. New `--ai-accent-color` CSS variable replaces hardcoded purple. Dark mode hover direction fixed (was lightening instead of darkening)
 
 ## 📱 Progressive Web App & Mobile
 
@@ -268,6 +269,7 @@ Existing word-level timestamps are preserved — no reprocessing needed.
 - Debug console.logs removed from production code
 - Dead code removed (`Tasks.svelte.old`, unused `AudioExtractionModal.svelte`)
 - Avatar lazy-loading on Speakers page
+- Dark mode hover direction — `--primary-hover` was lighter than `--primary-color`, making buttons appear to deactivate on hover. Fixed to darken consistently across both themes
 
 ## 👥 Contributors
 

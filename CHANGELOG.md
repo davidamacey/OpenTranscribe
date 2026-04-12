@@ -146,6 +146,12 @@ Major release combining enterprise-grade authentication, native transcription pi
 - **Share Modal Intro and Permission Guide** - Share Collection modal now includes an introductory explanation, a collection name banner with folder icon, and a visible permission-level reference card showing Viewer/Editor labels inline with descriptions (previously only in tooltips). Empty state added for collections with no existing shares
 - **Manage Collections Visual Fix** - Fixed nested-card glitch where the inner `.collections-panel` had its own surface background inside the outer modal container, producing a visible "card in a card" look
 
+#### Unified Color System
+- **2-Color Toolbar** - Gallery toolbar replaced a 7-color rainbow (blue, purple, green, amber, red, gray, purple) with a consistent 2-color system per Apple HIG: primary blue for the main action (Upload, Process), surface/gray for all secondary actions (Collections, Select, Organize), red for destructive only (Delete)
+- **Purple Removed from UI** - All purple button and badge colors (`#8b5cf6`, `#7c3aed`, `#a855f7`) replaced across 9 components: gallery toolbar, speaker cluster Split button, shared-permission badge, AI suggestion indicators, AI tag/collection chips, LLM analysis badge, and search source-speaker badge. Speaker diarization palette and FedRAMP CUI classification banner retain purple as intentional domain-specific colors
+- **AI Accent Color Variable** - New `--ai-accent-color: var(--primary-color)` in `theme.css` replaces scattered purple `#a855f7` fallbacks. AI-suggested tags, collections, and LLM analysis indicators now inherit the primary blue through the CSS cascade
+- **Dark Mode Hover Direction Fixed** - `--primary-hover` changed from `#93c5fd` (lighter) to `#3b82f6` (darker). Hover should always darken per Apple HIG — the old lighter hover made buttons appear to deactivate on interaction. Same fix applied to `--link-hover`
+
 ### Security
 
 #### Frontend Session Hardening
@@ -217,6 +223,7 @@ Major release combining enterprise-grade authentication, native transcription pi
 - **Debug console.logs removed** - `AuthenticationSettings.svelte` no longer logs full auth config on every load; `files/[id]/+page.svelte` no longer logs every 5 minutes on video URL refresh
 - **Dead code removed** - Deleted unused `routes/Tasks.svelte.old` (868 lines) and the unused `AudioExtractionModal.svelte` (replaced by inline stepper step)
 - **Avatar lazy-loading** - Profile and cluster avatars on the Speakers page now use `loading="lazy"` and `decoding="async"`, preventing synchronous load-block on page init
+- **Dark mode hover direction** - `--primary-hover` was lighter than `--primary-color` in dark mode (`#93c5fd` vs `#60a5fa`), making buttons appear to deactivate on hover. Fixed to `#3b82f6` (darker) for consistent interaction feedback across both themes
 
 ### Upgrade Notes
 
