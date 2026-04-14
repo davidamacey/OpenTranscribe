@@ -277,19 +277,48 @@ def _get_user_groups(cfg: LdapConfig, user_entry) -> list[str]:
 
 
 def _is_member_of_groups(user_groups: list[str], required_groups: list[str]) -> bool:
-    """Check if user is a member of any of the required groups."""
+    """Check if user is a member of any of the required groups.
+
+    Case-insensitive exact match. Both sides are stripped of whitespace.
+    Configure groups using the exact DN string returned by your LDAP server.
+    """
     if not required_groups:
         return True
-    user_groups_lower = [g.lower().strip() for g in user_groups]
-    required_groups_lower = [g.lower().strip() for g in required_groups]
-    return any(rg in user_groups_lower for rg in required_groups_lower)
+    user_groups_lower = {g.lower().strip() for g in user_groups}
+    return any(rg.lower().strip() in user_groups_lower for rg in required_groups)
+
+
+def _parse_group_list(value: str) -> list[str]:
+    """Parse a semicolon-delimited list of LDAP group DNs.
+
+    LDAP/AD distinguished names contain commas as component separators
+    (e.g. ``CN=Whisper_Users,CN=Users,DC=example,DC=com``), so commas cannot
+    be used to delimit multiple groups. Semicolons are the standard delimiter here.
+
+    Rules:
+    - Multiple groups are separated by ``;``
+    - Each group value should be the exact DN string your LDAP server returns
+    - Whitespace around each entry is stripped
+
+    Examples::
+
+        # Single group (full DN)
+        LDAP_USER_GROUPS=CN=Whisper_Users,CN=Users,DC=example,DC=com
+
+        # Multiple groups
+        LDAP_USER_GROUPS=CN=Whisper_Users,CN=Users,DC=example,DC=com;CN=OtherGroup,DC=example,DC=com
+    """
+    value = value.strip()
+    if not value:
+        return []
+    return [g.strip() for g in value.split(";") if g.strip()]
 
 
 def _get_required_user_groups(cfg: LdapConfig) -> list[str]:
     """Parse user_groups setting into a list of required group DNs."""
     if not cfg.user_groups:
         return []
-    return [g.strip() for g in cfg.user_groups.split(",") if g.strip()]
+    return _parse_group_list(cfg.user_groups)
 
 
 def _search_recursive_group_membership(
@@ -435,7 +464,7 @@ def _is_ldap_admin(
 
     # Check admin_groups
     if cfg.admin_groups:
-        admin_groups = [g.strip() for g in cfg.admin_groups.split(",") if g.strip()]
+        admin_groups = _parse_group_list(cfg.admin_groups)
 
         if _is_member_of_groups(user_groups, admin_groups):
             logger.debug(f"User {username} is admin via LDAP admin_groups (direct)")
