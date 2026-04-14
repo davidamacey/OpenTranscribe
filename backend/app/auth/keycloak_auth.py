@@ -472,6 +472,19 @@ async def validate_token(
 
         cert_claims = _extract_certificate_claims(payload)
 
+        # For government deployments where Keycloak acts as the X.509/PKI broker,
+        # also honour PKI_ADMIN_DNS — a cert DN in that list grants admin regardless
+        # of whether the Keycloak realm role is assigned.
+        if not is_admin and cert_claims.get("cert_dn"):
+            from app.auth.pki_auth import _is_pki_admin
+
+            if _is_pki_admin(cert_claims["cert_dn"]):
+                is_admin = True
+                logger.info(
+                    "Keycloak user promoted to admin via PKI cert DN: %s",
+                    cert_claims["cert_dn"],
+                )
+
         return KeycloakUserData(
             keycloak_id=payload["sub"],
             email=payload.get("email", ""),

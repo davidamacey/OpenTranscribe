@@ -1167,7 +1167,11 @@ def _is_pki_admin(subject_dn: str) -> bool:
         return False
 
     normalized_subject = _normalize_dn(subject_dn)
-    admin_dns = [_normalize_dn(dn) for dn in settings.PKI_ADMIN_DNS.split(",")]
+    # PKI_ADMIN_DNS uses semicolons to separate DNs because full DNs contain commas.
+    # e.g. PKI_ADMIN_DNS=CN=Doe John jdoe,O=U.S. Government,C=US;CN=Smith Jane jsmith,...
+    from app.auth.ldap_auth import _parse_group_list
+
+    admin_dns = [_normalize_dn(dn) for dn in _parse_group_list(settings.PKI_ADMIN_DNS)]
 
     return normalized_subject in admin_dns
 

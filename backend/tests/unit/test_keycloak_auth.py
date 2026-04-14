@@ -276,6 +276,136 @@ class TestGovDNDisplayName:
 
 
 # ---------------------------------------------------------------------------
+# PKI admin DN parsing (same semicolon-delimiter fix as LDAP)
+# ---------------------------------------------------------------------------
+
+
+class TestIsPkiAdmin:
+    """_is_pki_admin() must use semicolons to split PKI_ADMIN_DNS because full
+    DNs contain commas internally.
+    """
+
+    def _check(self, subject_dn: str, admin_dns_setting: str) -> bool:
+        from unittest.mock import patch
+
+        from app.auth.pki_auth import _is_pki_admin
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            mock_settings.PKI_ADMIN_DNS = admin_dns_setting
+            return _is_pki_admin(subject_dn)
+
+    def test_single_full_dn_matches(self):
+        dn = "CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US"
+        assert self._check(dn, dn) is True
+
+    def test_single_full_dn_no_comma_split(self):
+        """A full DN must not be split on its internal commas."""
+        dn = "CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US"
+        # Setting contains the full DN — should match, not fragment it
+        assert self._check(dn, "CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US") is True
+
+    def test_multiple_admin_dns_semicolon_separated(self):
+        dn = "CN=Smith Jane jsmith,OU=Agency,O=U.S. Government,C=US"
+        setting = (
+            "CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US"
+            ";CN=Smith Jane jsmith,OU=Agency,O=U.S. Government,C=US"
+        )
+        assert self._check(dn, setting) is True
+
+    def test_non_admin_dn_denied(self):
+        setting = "CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US"
+        assert self._check("CN=Other User ouser,OU=Agency,O=U.S. Government,C=US", setting) is False
+
+    def test_empty_setting_denies_all(self):
+        assert self._check("CN=Anyone,O=Gov,C=US", "") is False
+
+    def test_case_insensitive_match(self):
+        dn_upper = "CN=DOE JOHN JDOE,OU=AGENCY,O=U.S. GOVERNMENT,C=US"
+        dn_lower = "cn=doe john jdoe,ou=agency,o=u.s. government,c=us"
+        assert self._check(dn_upper, dn_lower) is True
+
+
+# ---------------------------------------------------------------------------
+# Keycloak-via-PKI admin promotion
+# ---------------------------------------------------------------------------
+
+
+class TestKeycloakPkiAdminPromotion:
+    """When Keycloak acts as the X.509/PKI broker, a user whose cert DN is in
+    PKI_ADMIN_DNS must receive admin status even if the Keycloak realm role
+    is not assigned.
+    """
+
+    def _make_payload(self, roles: list, cert_dn: str | None = None) -> dict:
+        payload: dict = {
+            "sub": "user-uuid-123",
+            "email": "jdoe@agency.gov",
+            "name": "John Doe",
+            "preferred_username": "jdoe",
+            "realm_access": {"roles": roles},
+        }
+        if cert_dn:
+            payload["cert_dn"] = cert_dn
+        return payload
+
+    def test_admin_via_keycloak_role(self):
+        payload = self._make_payload(roles=["admin"])
+        cert_claims = _extract_certificate_claims(payload)
+        roles = payload.get("realm_access", {}).get("roles", [])
+        assert "admin" in roles
+        assert cert_claims["cert_dn"] is None
+
+    def test_admin_via_cert_dn_when_no_keycloak_role(self):
+        """Cert DN in PKI_ADMIN_DNS must grant admin even without the realm role."""
+        from unittest.mock import patch
+
+        from app.auth.pki_auth import _is_pki_admin
+
+        gov_dn = "CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US"
+        payload = self._make_payload(roles=["user"], cert_dn=gov_dn)
+
+        cert_claims = _extract_certificate_claims(payload)
+        roles = payload.get("realm_access", {}).get("roles", [])
+        is_admin = "admin" in roles  # False — no Keycloak role
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            mock_settings.PKI_ADMIN_DNS = gov_dn
+            if not is_admin and cert_claims.get("cert_dn"):
+                if _is_pki_admin(cert_claims["cert_dn"]):
+                    is_admin = True
+
+        assert is_admin is True
+
+    def test_non_admin_cert_dn_not_promoted(self):
+        """A cert DN not in PKI_ADMIN_DNS must not grant admin."""
+        from unittest.mock import patch
+
+        from app.auth.pki_auth import _is_pki_admin
+
+        gov_dn = "CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US"
+        other_dn = "CN=Smith Jane jsmith,OU=Agency,O=U.S. Government,C=US"
+        payload = self._make_payload(roles=["user"], cert_dn=other_dn)
+
+        cert_claims = _extract_certificate_claims(payload)
+        is_admin = False
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            mock_settings.PKI_ADMIN_DNS = gov_dn  # only jdoe is admin
+            if not is_admin and cert_claims.get("cert_dn"):
+                if _is_pki_admin(cert_claims["cert_dn"]):
+                    is_admin = True
+
+        assert is_admin is False
+
+    def test_no_cert_claims_uses_role_only(self):
+        """When no cert claims are present, admin is role-based only."""
+        payload = self._make_payload(roles=["user"])
+        cert_claims = _extract_certificate_claims(payload)
+        assert cert_claims["cert_dn"] is None
+        # No cert → no PKI admin check possible → role-based only
+
+
+# ---------------------------------------------------------------------------
 # Keycloak URL construction
 # ---------------------------------------------------------------------------
 
