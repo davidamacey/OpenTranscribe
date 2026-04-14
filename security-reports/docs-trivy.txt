@@ -1,7 +1,7 @@
 
 davidamacey/opentranscribe-docs:latest (alpine 3.21.3)
 ======================================================
-Total: 63 (UNKNOWN: 0, LOW: 0, MEDIUM: 40, HIGH: 19, CRITICAL: 4)
+Total: 68 (UNKNOWN: 0, LOW: 0, MEDIUM: 45, HIGH: 19, CRITICAL: 4)
 
 ┌───────────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
 │    Library    │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │                            Title                             │
@@ -83,7 +83,15 @@ Total: 63 (UNKNOWN: 0, LOW: 0, MEDIUM: 40, HIGH: 19, CRITICAL: 4)
 │               │                │          │        │                   │               │ PKCS#7 signature verification...                             │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-22796                   │
 │               ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
-│               │ CVE-2026-31790 │          │        │                   │ 3.3.7-r0      │ openssl: openssl: Information Disclosure from Uninitialized  │
+│               │ CVE-2026-28388 │          │        │                   │ 3.3.7-r0      │ openssl: OpenSSL: Denial of Service due to NULL pointer      │
+│               │                │          │        │                   │               │ dereference in delta...                                      │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-28388                   │
+│               ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-28389 │          │        │                   │               │ openssl: OpenSSL: Denial of Service vulnerability in CMS     │
+│               │                │          │        │                   │               │ processing                                                   │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-28389                   │
+│               ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-31790 │          │        │                   │               │ openssl: openssl: Information Disclosure from Uninitialized  │
 │               │                │          │        │                   │               │ Memory via Invalid RSA Public Key...                         │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-31790                   │
 ├───────────────┼────────────────┤          │        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
@@ -158,6 +166,10 @@ Total: 63 (UNKNOWN: 0, LOW: 0, MEDIUM: 40, HIGH: 19, CRITICAL: 4)
 │               ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
 │               │ CVE-2025-64506 │          │        │                   │               │ libpng: LIBPNG heap buffer over-read                         │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2025-64506                   │
+│               ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-34757 │          │        │                   │ 1.6.57-r0     │ libpng: libpng: Information disclosure and data corruption   │
+│               │                │          │        │                   │               │ via use-after-free vulnerability                             │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-34757                   │
 ├───────────────┼────────────────┼──────────┤        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
 │ libssl3       │ CVE-2025-15467 │ CRITICAL │        │ 3.3.3-r0          │ 3.3.6-r0      │ openssl: OpenSSL: Remote code execution or Denial of Service │
 │               │                │          │        │                   │               │ via oversized Initialization...                              │
@@ -209,7 +221,15 @@ Total: 63 (UNKNOWN: 0, LOW: 0, MEDIUM: 40, HIGH: 19, CRITICAL: 4)
 │               │                │          │        │                   │               │ PKCS#7 signature verification...                             │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-22796                   │
 │               ├────────────────┤          │        │                   ├───────────────┼──────────────────────────────────────────────────────────────┤
-│               │ CVE-2026-31790 │          │        │                   │ 3.3.7-r0      │ openssl: openssl: Information Disclosure from Uninitialized  │
+│               │ CVE-2026-28388 │          │        │                   │ 3.3.7-r0      │ openssl: OpenSSL: Denial of Service due to NULL pointer      │
+│               │                │          │        │                   │               │ dereference in delta...                                      │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-28388                   │
+│               ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-28389 │          │        │                   │               │ openssl: OpenSSL: Denial of Service vulnerability in CMS     │
+│               │                │          │        │                   │               │ processing                                                   │
+│               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-28389                   │
+│               ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│               │ CVE-2026-31790 │          │        │                   │               │ openssl: openssl: Information Disclosure from Uninitialized  │
 │               │                │          │        │                   │               │ Memory via Invalid RSA Public Key...                         │
 │               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-31790                   │
 ├───────────────┼────────────────┼──────────┤        ├───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤

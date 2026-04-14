@@ -1,17 +1,17 @@
 NAME           INSTALLED   FIXED IN    TYPE  VULNERABILITY   SEVERITY  EPSS           RISK   
 tiff           4.7.0-r0                apk   CVE-2023-6277   Medium    3.8% (88th)    2.2    
+libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-49796  Critical  1.8% (82nd)    1.6    
 libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-6021   High      2.1% (84th)    1.6    
 libcrypto3     3.3.3-r0    3.3.6-r0    apk   CVE-2025-15467  High      0.7% (72nd)    0.6    
 libssl3        3.3.3-r0    3.3.6-r0    apk   CVE-2025-15467  High      0.7% (72nd)    0.6    
 tiff           4.7.0-r0                apk   CVE-2023-52356  High      0.7% (72nd)    0.6    
-libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-49796  Critical  0.5% (65th)    0.4    
+libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-49795  High      0.6% (68th)    0.4    
+libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-49794  Critical  0.4% (63rd)    0.4    
 curl           8.12.1-r1   8.14.1-r0   apk   CVE-2025-5399   High      0.5% (65th)    0.4    
 libcurl        8.12.1-r1   8.14.1-r0   apk   CVE-2025-5399   High      0.5% (65th)    0.4    
 libcrypto3     3.3.3-r0    3.3.6-r0    apk   CVE-2025-69420  High      0.3% (53rd)    0.2    
 libssl3        3.3.3-r0    3.3.6-r0    apk   CVE-2025-69420  High      0.3% (53rd)    0.2    
 libxml2        2.13.4-r5   2.13.4-r6   apk   CVE-2025-32414  High      0.2% (39th)    0.1    
-libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-49795  High      0.2% (36th)    0.1    
-libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-49794  Critical  0.1% (31st)    0.1    
 libpng         1.6.47-r0   1.6.53-r0   apk   CVE-2025-66293  High      0.1% (30th)    < 0.1  
 libpng         1.6.47-r0   1.6.53-r0   apk   CVE-2025-64720  High      0.1% (27th)    < 0.1  
 libpng         1.6.47-r0   1.6.53-r0   apk   CVE-2025-65018  High      < 0.1% (26th)  < 0.1  
@@ -30,11 +30,12 @@ libssl3        3.3.3-r0    3.3.7-r0    apk   CVE-2026-28389  High      < 0.1% (1
 libssl3        3.3.3-r0    3.3.7-r0    apk   CVE-2026-28390  High      < 0.1% (15th)  < 0.1  
 libcrypto3     3.3.3-r0    3.3.6-r0    apk   CVE-2025-66199  Medium    < 0.1% (20th)  < 0.1  
 libssl3        3.3.3-r0    3.3.6-r0    apk   CVE-2025-66199  Medium    < 0.1% (20th)  < 0.1  
+curl           8.12.1-r1               apk   CVE-2026-1965   Medium    < 0.1% (19th)  < 0.1  
 curl           8.12.1-r1   8.14.1-r2   apk   CVE-2025-9086   High      < 0.1% (14th)  < 0.1  
 libcurl        8.12.1-r1   8.14.1-r2   apk   CVE-2025-9086   High      < 0.1% (14th)  < 0.1  
+libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-6170   Low       0.1% (30th)    < 0.1  
 nginx          1.27.5-r1               apk   CVE-2026-27651  High      < 0.1% (12th)  < 0.1  
 libpng         1.6.47-r0   1.6.56-r0   apk   CVE-2026-33416  High      < 0.1% (12th)  < 0.1  
-curl           8.12.1-r1               apk   CVE-2026-1965   Medium    < 0.1% (16th)  < 0.1  
 nginx          1.27.5-r1               apk   CVE-2026-27654  High      < 0.1% (9th)   < 0.1  
 libcrypto3     3.3.3-r0    3.3.6-r0    apk   CVE-2025-69421  High      < 0.1% (10th)  < 0.1  
 libssl3        3.3.3-r0    3.3.6-r0    apk   CVE-2025-69421  High      < 0.1% (10th)  < 0.1  
@@ -83,14 +84,13 @@ musl           1.2.5-r9    1.2.5-r11   apk   CVE-2026-40200  High      < 0.1% (2
 musl-utils     1.2.5-r9    1.2.5-r11   apk   CVE-2026-40200  High      < 0.1% (2nd)   < 0.1  
 nginx          1.27.5-r1               apk   CVE-2026-32647  High      < 0.1% (2nd)   < 0.1  
 nginx          1.27.5-r1               apk   CVE-2026-28753  Low       < 0.1% (6th)   < 0.1  
-libxml2        2.13.4-r5   2.13.9-r0   apk   CVE-2025-6170   Low       < 0.1% (10th)  < 0.1  
 curl           8.12.1-r1               apk   CVE-2025-10966  Medium    < 0.1% (5th)   < 0.1  
-tiff           4.7.0-r0                apk   CVE-2024-13978  Low       < 0.1% (11th)  < 0.1  
-tiff           4.7.0-r0    4.7.1-r0    apk   CVE-2025-8961   Low       < 0.1% (11th)  < 0.1  
 curl           8.12.1-r1               apk   CVE-2026-3784   Medium    < 0.1% (3rd)   < 0.1  
+tiff           4.7.0-r0                apk   CVE-2024-13978  Low       < 0.1% (11th)  < 0.1  
+tiff           4.7.0-r0    4.7.1-r0    apk   CVE-2025-8961   Low       < 0.1% (10th)  < 0.1  
+curl           8.12.1-r1               apk   CVE-2026-3783   Medium    < 0.1% (4th)   < 0.1  
 libcrypto3     3.3.3-r0    3.3.7-r0    apk   CVE-2026-28387  Unknown   < 0.1% (4th)   < 0.1  
 libssl3        3.3.3-r0    3.3.7-r0    apk   CVE-2026-28387  Unknown   < 0.1% (4th)   < 0.1  
-curl           8.12.1-r1               apk   CVE-2026-3783   Medium    < 0.1% (3rd)   < 0.1  
 tiff           4.7.0-r0                apk   CVE-2023-6228   Medium    < 0.1% (3rd)   < 0.1  
 nginx          1.27.5-r1               apk   CVE-2026-27784  Medium    < 0.1% (1st)   < 0.1  
 nginx          1.27.5-r1               apk   CVE-2026-28755  Medium    < 0.1% (2nd)   < 0.1  
