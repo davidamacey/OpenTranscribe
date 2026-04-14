@@ -264,6 +264,96 @@ Check backend logs for authentication details:
 ./opentr.sh logs backend
 ```
 
+## Government / FedRAMP: Keycloak as X.509 PKI Broker
+
+For government deployments (DoD, federal agencies) Keycloak can act as the
+X.509/PKI broker — it validates CAC/PIV certificates via mTLS at the edge and
+injects certificate metadata into the OIDC token as claims. OpenTranscribe
+consumes those claims to populate the user record and enforce PKI-based admin
+access.
+
+### How it works
+
+```
+Browser/CAC Reader → Keycloak (mTLS) → OIDC token with cert claims → OpenTranscribe
+```
+
+1. The user authenticates to Keycloak using their CAC/PIV certificate
+2. Keycloak's X.509 authenticator validates the certificate chain
+3. Cert metadata is injected into the OIDC access token as claims
+4. OpenTranscribe extracts those claims and stores them on the user record
+5. Admin status is granted if the cert DN is in `PKI_ADMIN_DNS` **or** the
+   Keycloak realm role matches `KEYCLOAK_ADMIN_ROLE`
+
+### Keycloak X.509 Authenticator Setup
+
+1. In the Keycloak admin console, go to **Authentication → Flows**
+2. Copy the **browser** flow and name it (e.g. `browser-x509`)
+3. Add the **X509/Validate Username Form** execution to the form
+4. Set it to **ALTERNATIVE** (allows fallback to password for non-PKI users)
+5. Configure the execution:
+   - **User Identity Source**: Subject's Common Name
+   - **Canonical DN representation enabled**: off (pass DN as-is)
+   - **Certificate revocation checking**: OCSP or CRL per your PKI policy
+6. Bind the flow to your realm under **Authentication → Bindings → Browser Flow**
+
+### Certificate claim names
+
+Keycloak injects cert metadata using either the short names or the `x509_cert_*`
+prefix — OpenTranscribe handles both automatically:
+
+| Short name | x509_cert_* alias | Stored on user |
+|---|---|---|
+| `cert_dn` | `x509_cert_dn` | `pki_subject_dn` |
+| `cert_serial` | `x509_cert_serial` | `pki_serial_number` |
+| `cert_issuer` | `x509_cert_issuer` | `pki_issuer_dn` |
+| `cert_org` | `x509_cert_org` | `pki_organization` |
+| `cert_ou` | `x509_cert_ou` | `pki_organizational_unit` |
+| `cert_valid_from` | `x509_cert_not_before` | `pki_not_before` |
+| `cert_valid_until` | `x509_cert_not_after` | `pki_not_after` |
+| `cert_fingerprint` | `x509_cert_sha256_fingerprint` | `pki_fingerprint_sha256` |
+
+Add a **Protocol Mapper** to your client to include these claims in the access token.
+
+### Government DN format
+
+Government certificates use a space-separated CN: `CN=LastName FirstName emailusername`
+
+Example: `CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US`
+
+OpenTranscribe parses this format automatically — the display name will be
+rendered as `John Doe` and the email username token (`jdoe`) is used for
+account lookup only.
+
+### PKI-based admin access
+
+Users whose certificate DN appears in `PKI_ADMIN_DNS` receive admin access
+regardless of their Keycloak realm role. This allows government system owners
+to control admin access via PKI policy rather than requiring manual Keycloak
+role assignments.
+
+**Important:** Use semicolons to separate multiple DNs — commas are part of DN
+syntax and cannot be used as a list separator:
+
+```env
+# Single admin DN
+PKI_ADMIN_DNS=CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US
+
+# Multiple admin DNs — semicolon separated
+PKI_ADMIN_DNS=CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US;CN=Smith Jane jsmith,OU=Agency,O=U.S. Government,C=US
+```
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `PKI_ADMIN_DNS` | Semicolon-separated list of cert DNs that grant admin access |
+| `KEYCLOAK_ADMIN_ROLE` | Keycloak realm role that grants admin (default: `admin`) |
+| `KEYCLOAK_VERIFY_ISSUER` | Validate token issuer against realm URL (default: `true`) |
+| `KEYCLOAK_VERIFY_AUDIENCE` | Validate token audience against client ID (default: `false`) |
+
+---
+
 ## Architecture
 
 ```
