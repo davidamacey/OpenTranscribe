@@ -6,6 +6,8 @@ sidebar_position: 4
 
 OpenTranscribe provides powerful hybrid search combining full-text and semantic search with advanced filtering.
 
+![Search transcripts page with advanced filters sidebar](/img/screenshots/search/search-empty.png)
+
 ## Search Types
 
 ### Full-Text Search
@@ -43,6 +45,8 @@ Filter transcriptions by:
 - **File Type**: Audio vs video
 
 ## Gallery Views
+
+![Gallery overview with filter sidebar showing tags, collections, and speakers](/img/screenshots/gallery/gallery-overview.png)
 
 The main file gallery supports multiple display modes:
 
@@ -89,6 +93,8 @@ For maximum precision, combine text queries with filters:
 ### Search Result Highlighting
 
 When search results are returned, matching text is highlighted with `<em>` tags in the result snippets. This makes it easy to see exactly where your search terms appear within each transcript. Result snippets show up to 150 characters of surrounding context for each match.
+
+![Search results with highlighted matching transcript segments](/img/screenshots/search/search-results.png)
 
 ## Transcript Comments
 

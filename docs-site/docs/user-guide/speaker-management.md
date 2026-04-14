@@ -101,6 +101,8 @@ The dedicated **Speakers** page (accessible from the sidebar) provides a central
 - **Outlier analysis** -- identify segments that don't match the cluster well
 - Trigger manual re-clustering when needed
 
+![Speaker management clusters view with identified speakers across all files](/img/screenshots/speakers/speaker-management-clusters.png)
+
 ### Gender Classification
 
 OpenTranscribe can automatically detect speaker gender attributes:
@@ -129,6 +131,8 @@ View comprehensive speaker statistics:
 1. Click speaker name in transcript
 2. Edit name
 3. Changes apply to all segments
+
+![Speaker editor showing identified speakers with voice match confidence](/img/screenshots/speakers/speaker-editor-panel.png)
 
 ### Jump-to-Timestamp in Speaker Editor
 

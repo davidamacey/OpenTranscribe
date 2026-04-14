@@ -85,6 +85,8 @@ Bottom Line Up Front format includes:
 - Future discussions
 - Next steps
 
+![BLUF-format AI summary with executive overview, topics, and action items](/img/screenshots/ai-features/ai-summary.png)
+
 ### Custom Prompts
 
 Create custom summarization prompts for specific use cases:
@@ -206,6 +208,8 @@ ANTHROPIC_API_KEY=sk-ant-xxxxx
 ## Configuration
 
 ### Provider Settings
+
+![LLM provider configuration in settings](/img/screenshots/settings/settings-llm-config.png)
 
 Edit `.env`:
 

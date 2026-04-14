@@ -47,6 +47,8 @@ For best transcription quality:
 3. **Select your file** from your computer
 4. Watch the upload progress in the **floating upload manager**
 
+![Drag and drop upload interface](/img/screenshots/upload/upload-file-drop.png)
+
 ### Via URL (YouTube)
 
 OpenTranscribe can download and process YouTube videos:
@@ -55,6 +57,8 @@ OpenTranscribe can download and process YouTube videos:
 2. **Paste the YouTube URL** (supports playlists too!)
 3. Click "**Download and Process**"
 4. The video will be downloaded and queued for transcription
+
+![URL import - paste YouTube or video URL](/img/screenshots/upload/upload-url.png)
 
 ### Via Recording
 
@@ -67,6 +71,8 @@ Record audio directly in your browser:
 5. **Pause/Resume** as needed
 6. **Click "Stop"** when finished
 7. The recording is **automatically uploaded** and processed
+
+![Upload settings - configure tags, speakers, and model](/img/screenshots/upload/upload-settings-step.png)
 
 ## Step 3: Monitor Processing
 
@@ -112,6 +118,8 @@ flowchart LR
 - **File Library** (processing badge on file cards)
 - **Flower Dashboard** (http://localhost:5555/flower)
 
+![Notifications panel showing transcription progress](/img/screenshots/workflow/notifications-multiple.png)
+
 **Processing Time Estimates:**
 
 | Duration | GPU (RTX 3080) | CPU (8-core) |
@@ -130,6 +138,8 @@ With GPU acceleration and the `large-v3-turbo` model (default), OpenTranscribe p
 Once processing completes, click on the file to view the transcript.
 
 ### Transcript Features
+
+![File detail page with video player and synchronized transcript](/img/screenshots/transcript/file-detail-video.png)
 
 **Interactive Transcript:**
 - **Click any word** to jump to that moment in the audio
@@ -160,6 +170,8 @@ OpenTranscribe automatically detects speakers but labels them generically. You c
 3. **Type the actual name** (e.g., "John Smith")
 4. **Press Enter** or click outside to save
 5. The name **updates throughout the transcript** instantly
+
+![Speaker editor with identified speakers and voice match suggestions](/img/screenshots/speakers/speaker-editor-panel.png)
 
 ### Create Speaker Profiles
 
@@ -207,6 +219,8 @@ The default BLUF summary includes:
 - **Follow-up Items** - Things to revisit or research
 - **Speaker Analysis** - Who spoke most, key contributions
 
+![AI-generated BLUF summary with executive overview and action items](/img/screenshots/ai-features/ai-summary.png)
+
 ## Step 7: Explore Advanced Features
 
 ### Search Your Transcript
@@ -243,6 +257,8 @@ Finds related concepts like "financial constraints", "cost overruns", etc.
 1. Click the **"Export"** dropdown on the transcript page
 2. Choose your **format**
 3. The file downloads immediately
+
+![Export format options dropdown](/img/screenshots/transcript/export-options.png)
 
 See [Uploading Files - Export Options](../user-guide/uploading-files.md#export-options) for full details on each format.
 

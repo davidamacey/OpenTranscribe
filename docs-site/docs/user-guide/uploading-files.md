@@ -40,6 +40,8 @@ flowchart LR
 3. Optionally organize into collections and tags (see below)
 4. Auto-queue processing
 
+![Drag and drop upload zone](/img/screenshots/upload/upload-file-drop.png)
+
 ### File Browser
 1. Click "Upload" button
 2. Select file(s)
@@ -50,6 +52,8 @@ flowchart LR
 1. Paste video URL from supported platforms
 2. Supported: YouTube, Dailymotion, Twitter/X, TikTok, Vimeo, and 1800+ more
 3. Auto-downloads in web-compatible format and processes
+
+![URL import with YouTube and platform support](/img/screenshots/upload/upload-url.png)
 
 **Best supported platforms:**
 - YouTube (including playlists)

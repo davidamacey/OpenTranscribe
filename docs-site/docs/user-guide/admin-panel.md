@@ -34,6 +34,8 @@ The **System Statistics** section provides a real-time dashboard of your OpenTra
 - **System Resources** -- CPU usage (per-core and aggregate), memory usage, disk usage
 - **GPU** -- GPU name, VRAM usage (used/total/free), GPU utilization percentage, and temperature
 
+![System statistics dashboard showing users, files, tasks, and GPU metrics](/img/screenshots/settings/settings-system-stats.png)
+
 ### GPU Monitoring
 
 GPU statistics are collected from the Celery worker via Redis. The backend queries `nvidia-smi` on the worker and caches the results. If Redis has no cached stats, the backend attempts a direct `nvidia-smi` query or dispatches an on-demand collection task to the CPU queue.
@@ -206,6 +208,8 @@ Displays a card grid showing each OpenSearch index with:
 - Document count breakdown (speakers, profiles, clusters, metadata, chunks)
 - Total document count
 - PostgreSQL reference counts (active files, completed files, speakers)
+
+![Data integrity panel showing OpenSearch index health](/img/screenshots/settings/settings-data-integrity.png)
 
 ### Integrity Check
 
