@@ -1,11 +1,11 @@
 opentranscribe:
   name: OpenTranscribe Team
   title: OpenTranscribe Development Team
-  url: https://github.com/davidamacey/OpenTranscribe
+  url: https://github.com/attevon-llc/OpenTranscribe
   image_url: /img/logo.png
 
 davidamacey:
   name: David Macey
-  title: Project Maintainer
+  title: Founder, Attevon LLC
   url: https://github.com/davidamacey
   image_url: https://github.com/davidamacey.png
