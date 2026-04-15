@@ -5,6 +5,30 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-04-14
+
+### Overview
+
+Patch release fixing LDAP group filtering for Active Directory Distinguished Names (issue #188) and adding Keycloak-as-PKI-broker compliance for government/FedRAMP deployments.
+
+### Fixed
+
+- **LDAP group DN parsing** ([#188](https://github.com/davidamacey/OpenTranscribe/issues/188)): Group lists containing full Active Directory DNs (e.g. `CN=Whisper_Users,CN=Users,DC=domain,DC=local`) were silently broken because the code split on commas — which are structural delimiters inside DNs. Group lists now use **semicolons** as the multi-group separator. A single full DN with no semicolons is treated as one group correctly. Existing simple group names (no `=` characters) continue to work unchanged.
+- **PKI admin DN parsing**: `PKI_ADMIN_DNS` suffered the same comma-split bug. Fixed to use semicolon-delimited parsing via the same shared helper.
+- **Government cert display name**: Government X.509 certificates carry space-separated CNs in the form `LastName FirstName emailusername`. `extract_display_name_from_gov_dn()` now parses this 3-token format and renders it as `First Last`.
+
+### Added
+
+- **Keycloak-as-PKI-broker support**: When Keycloak acts as the X.509/PKI broker (government CAC/PIV deployments), cert claims injected into the OIDC token are now extracted and stored on the user record. Both short claim names (`cert_dn`, `cert_serial`) and Keycloak's `x509_cert_*` aliases are handled automatically.
+- **PKI admin promotion via Keycloak**: Users authenticating through Keycloak with a cert DN listed in `PKI_ADMIN_DNS` are promoted to admin even if they lack the Keycloak realm role — matching the standalone PKI auth behaviour.
+- **Documentation**: New "Government / FedRAMP: Keycloak as X.509 PKI Broker" section in `docs/KEYCLOAK_SETUP.md` covering authenticator setup, cert claim mapping table, DN format, and `PKI_ADMIN_DNS` configuration.
+
+### Upgrade Notes
+
+- **LDAP group list format change** — If you previously used comma-separated group names that happened to work (e.g. `GroupA,GroupB` where neither name contained `=`), update to semicolons: `GroupA;GroupB`. Full AD DNs **must** use semicolons: `CN=Group1,DC=domain,DC=local;CN=Group2,DC=domain,DC=local`.
+- `PKI_ADMIN_DNS` also switches to semicolon delimiters if you have multiple DNs.
+- No database migrations required.
+
 ## [0.4.0] - 2026-03-22
 
 ### Overview
