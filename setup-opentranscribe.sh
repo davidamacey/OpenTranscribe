@@ -2118,10 +2118,21 @@ prompt_start() {
 }
 
 main() {
+    # Auto-enable unattended mode when /dev/tty is unavailable (CI, Docker without -it, etc.)
+    # The interactive read prompts all use </dev/tty; without it they would produce an
+    # obscure error rather than a helpful message.
+    if [[ ! -e /dev/tty ]] && ! is_unattended; then
+        echo -e "${YELLOW}⚠️  No terminal device (/dev/tty) detected — enabling unattended mode.${NC}"
+        echo "   Pre-set environment variables to customise defaults (see script header)."
+        echo "   Example: OPENTRANSCRIBE_UNATTENDED=1 HUGGINGFACE_TOKEN=hf_xxx bash setup-opentranscribe.sh"
+        echo ""
+        export OPENTRANSCRIBE_UNATTENDED=1
+    fi
+
     # Run setup steps
     detect_platform
     check_dependencies
-    check_network_connectivity
+    # Note: check_network_connectivity is already called inside check_dependencies()
     configure_docker_runtime
     setup_project_directory
     create_configuration_files
