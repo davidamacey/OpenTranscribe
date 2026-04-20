@@ -234,11 +234,29 @@ class Transcriber:
         return {"segments": segments, "language": info.language}
 
     def unload_model(self) -> None:
-        """Release model memory."""
+        """Release model memory.
+
+        Explicitly releases torch allocator pool and runs GC so the
+        Whisper→diarization handoff leaves as little VRAM resident as
+        possible. See docs/diarization-vram-profile/whole-stack.md (A.6b).
+        """
+        import gc
+
         if self._pipeline is not None:
             del self._pipeline
             self._pipeline = None
         if self._model is not None:
+            # CTranslate2 does not expose an unload API on faster-whisper's
+            # WhisperModel wrapper, so rely on __del__ + allocator cleanup below.
             del self._model
             self._model = None
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+        except Exception as e:
+            logger.debug(f"cuda cleanup skipped: {e}")
         logger.info("Transcriber model unloaded")
