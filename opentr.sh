@@ -57,8 +57,11 @@ show_help() {
   echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
   echo "  restart-frontend    - Restart frontend without affecting backend services"
   echo "  restart-all         - Restart all services without resetting database"
-  echo "  rebuild-backend     - Rebuild and update backend services with code changes"
-  echo "  rebuild-frontend    - Rebuild and update frontend with code changes"
+  echo "  rebuild-backend [--nas]  - Rebuild backend services with code changes"
+  echo "                             (pass --nas on NAS/NVMe deployments; auto-detected"
+  echo "                             from MINIO_NAS_PATH/POSTGRES_DATA_PATH/OPENSEARCH_DATA_PATH"
+  echo "                             env vars). --no-deps protects postgres/minio/opensearch."
+  echo "  rebuild-frontend         - Rebuild frontend with code changes (--no-deps)"
   echo "  shell [service]     - Open a shell in a container"
   echo "  build               - Rebuild all containers without starting"
   echo ""
@@ -205,6 +208,40 @@ add_gpu_overlay() {
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
     echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
   fi
+}
+
+# Append the NAS/NVMe storage overlay to $COMPOSE_FILES if requested explicitly
+# via --nas OR auto-detected from custom storage path env vars. This mirrors
+# the block inside start_app so rebuild-backend/rebuild-frontend can keep
+# NAS-mounted deployments pointing at their real data paths.
+add_nas_overlay() {
+  # Auto-detect when storage path env vars are set (same rule as start).
+  if [ -z "$NAS_FLAG" ] && { [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; }; then
+    NAS_FLAG="--nas"
+    echo "ℹ️  Auto-detected custom storage paths in .env, enabling NAS overlay"
+  fi
+  if [ -z "$NAS_FLAG" ]; then
+    return
+  fi
+  if [ ! -f "docker-compose.nas.yml" ]; then
+    echo "⚠️  --nas specified but docker-compose.nas.yml not found"
+    return
+  fi
+  NAS_PATH="${MINIO_NAS_PATH:-/mnt/nas/opentranscribe-minio}"
+  PG_PATH="${POSTGRES_DATA_PATH:-/mnt/nvm/opentranscribe/pg}"
+  OS_PATH="${OPENSEARCH_DATA_PATH:-/mnt/nvm/opentranscribe/os}"
+  # Sanity-check the NAS mount is reachable. DB/OS paths are NVMe-local and
+  # almost always present; NAS is the one that can silently unmount.
+  if [ ! -d "$NAS_PATH" ]; then
+    echo "❌ NAS path not accessible: $NAS_PATH"
+    echo "   Ensure NAS is mounted and set MINIO_NAS_PATH in .env"
+    exit 1
+  fi
+  COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nas.yml"
+  echo "💾 Adding custom storage overlay (docker-compose.nas.yml)"
+  echo "   MinIO media:  $NAS_PATH"
+  echo "   PostgreSQL:   $PG_PATH"
+  echo "   OpenSearch:   $OS_PATH"
 }
 
 # Function to start the environment
@@ -1108,20 +1145,52 @@ case "$1" in
     echo "🔨 Rebuilding backend services..."
     detect_and_configure_hardware
 
-    # Build compose file list
+    # Parse optional flags so NAS-configured deployments keep their mounts.
+    NAS_FLAG=""
+    shift || true  # drop "rebuild-backend"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --nas)
+          NAS_FLAG="--nas"
+          shift
+          ;;
+        *)
+          echo "⚠️  rebuild-backend: ignoring unknown arg '$1'"
+          shift
+          ;;
+      esac
+    done
+
+    # Build compose file list. --no-deps on the docker compose command below
+    # prevents cascade recreation of postgres/minio/opensearch, but the
+    # overlay order still has to be correct so the backend containers get
+    # the right env (e.g. host URLs) under NAS mode.
     COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml"
 
     # Add GPU overlay if NVIDIA GPU is detected
     add_gpu_overlay
 
+    # Add NAS/NVMe storage overlay (honors --nas or auto-detected env vars).
+    # Without this, rebuilt backend containers would come up bound to default
+    # docker volumes instead of the user's NAS/NVMe paths -- data would
+    # appear missing even though it's still on disk.
+    add_nas_overlay
+
+    # --no-deps keeps postgres/minio/opensearch/redis containers exactly as
+    # they were running. Only rebuild + recreate the services that actually
+    # consume backend code.
     # shellcheck disable=SC2086
-    docker compose $COMPOSE_FILES up -d --build backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat flower
+    docker compose $COMPOSE_FILES up -d --build --no-deps \
+      backend celery-worker celery-download-worker celery-cpu-worker \
+      celery-nlp-worker celery-embedding-worker celery-beat flower
     echo "✅ Backend services rebuilt successfully."
     ;;
 
   rebuild-frontend)
     echo "🔨 Rebuilding frontend service..."
-    docker compose up -d --build frontend
+    # Frontend doesn't use NAS volumes, but keep --no-deps for symmetry
+    # with rebuild-backend so data containers are untouched.
+    docker compose up -d --build --no-deps frontend
     echo "✅ Frontend service rebuilt successfully."
     ;;
 

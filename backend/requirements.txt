@@ -68,6 +68,7 @@ triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 # Fork: https://github.com/davidamacey/pyannote-audio/tree/gpu-optimizations
 # Upstream PR pending: https://github.com/pyannote/pyannote-audio
 # When merged upstream, switch back to: pyannote.audio>=4.x.x
+# Cache-bust tag: 2026-04-20 Phase B budget helper + device-aware footprints (85858462)
 pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@gpu-optimizations
 # Required by pyannote/embedding model checkpoint (pickle dependency)
 omegaconf>=2.3.0
