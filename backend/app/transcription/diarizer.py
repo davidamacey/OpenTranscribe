@@ -8,7 +8,7 @@ import gc
 import logging
 import os
 import time
-from typing import NoReturn
+from typing import ClassVar, NoReturn
 
 import numpy as np
 import pandas as pd
@@ -106,44 +106,17 @@ class SpeakerDiarizer:
         device = torch.device(self.config.device)
         self._pipeline = self._pipeline.to(device)  # type: ignore[attr-defined]
 
-        # Phase C: plumb the VRAM-budget policy into the fork. Settings come
-        # from DIARIZATION_VRAM_BUDGET_MB / DIARIZATION_MIXED_PRECISION in
-        # app.core.config. None budget -> fork queries live free VRAM.
-        self._apply_vram_policy()
-
         # Configure segmentation batch_size based on GPU VRAM or env override.
         # PyAnnote defaults to 32 which causes OOM on GPUs with ≤12GB VRAM.
         self._configure_segmentation_batch_size()
 
-        # Configure embedding batch_size for speaker embedding extraction.
-        # PyAnnote defaults to 1, causing ~850K individual GPU forward passes for
-        # long audio. Batch size 32 reduces kernel launches 32x with identical results.
-        # See docs/GPU_OPTIMIZATION_PATCHES.md for benchmarks and evidence.
+        # Embedding batch_size is pinned at 16 (Phase A finding: throughput
+        # saturates at bs=16 on both CUDA and MPS; larger batches waste VRAM
+        # for no speed gain). See docs/diarization-vram-profile/README.md.
         self._configure_embedding_batch_size()
 
         elapsed = time.perf_counter() - step_start
         logger.info(f"TIMING: diarizer model loaded in {elapsed:.3f}s on {device}")
-
-    def _apply_vram_policy(self) -> None:
-        """Wire Phase C settings into the pyannote fork pipeline.
-
-        Reads DIARIZATION_VRAM_BUDGET_MB and DIARIZATION_MIXED_PRECISION from
-        app.core.config.settings and pushes them onto the loaded fork
-        pipeline. Safe no-op on stock upstream pyannote.
-        """
-        if self._pipeline is None:
-            return
-        try:
-            from app.core.config import settings
-        except Exception:
-            return
-        budget = getattr(settings, "DIARIZATION_VRAM_BUDGET_MB", None)
-        mp_embed = getattr(settings, "DIARIZATION_MIXED_PRECISION", False)
-        if hasattr(self._pipeline, "vram_budget_mb"):
-            self._pipeline.vram_budget_mb = budget
-        if hasattr(self._pipeline, "embedding_mixed_precision"):
-            self._pipeline.embedding_mixed_precision = bool(mp_embed)
-        logger.info(f"Diarization VRAM policy: budget_mb={budget} mixed_precision={mp_embed}")
 
     def _configure_segmentation_batch_size(self) -> None:
         """Set PyAnnote's segmentation batch_size based on GPU VRAM or env override.
@@ -198,44 +171,42 @@ class SpeakerDiarizer:
         else:
             logger.info(f"Diarization segmentation batch_size: {batch_size} (default OK)")
 
+    # Pinned embedding batch size. Phase A (2026-04-20) measured identical
+    # throughput for bs in {16, 32, 64, 128} at fp32: bs=16 takes 103 s on the
+    # 2.2 h reference file; bs=128 takes 100 s. Going above 16 costs 3-7 GB of
+    # VRAM for a <3 % speed gain. Speaker count + DER are invariant across
+    # fp32 batch sizes. Hard-coding 16 means predictable ~1 GB diarization
+    # footprint on every GPU, every run. See docs/diarization-vram-profile/.
+    EMBEDDING_BATCH_SIZE: ClassVar[int] = 16
+
     def _configure_embedding_batch_size(self) -> None:
-        """Set PyAnnote's embedding batch_size for speaker embedding extraction.
+        """Pin the embedding batch size to 16. No VRAM-budget adjustment.
 
-        The optimized PyAnnote fork auto-selects batch size (64-256) based on
-        free GPU VRAM when embedding_batch_size <= 32. We set 32 here as a
-        baseline that triggers the fork's auto-selection. With stock PyAnnote,
-        32 is still a major improvement over the default of 1.
-
-        Env override: DIARIZATION_EMBEDDING_BATCH_SIZE (bypasses auto-selection)
-        Evidence: docs/GPU_OPTIMIZATION_RESULTS.md
+        Environment override `DIARIZATION_EMBEDDING_BATCH_SIZE` is still
+        honored for research / debugging (e.g. the Phase A probe harness),
+        but the supported production setting is the class constant.
         """
         if self._pipeline is None:
             return
 
-        # Allow env override (bypasses auto-selection in optimized fork)
         env_batch = os.getenv("DIARIZATION_EMBEDDING_BATCH_SIZE")
         if env_batch is not None:
             try:
                 batch_size = int(env_batch)
-                self._pipeline.embedding_batch_size = batch_size
-                logger.info(f"Diarization embedding batch_size set to {batch_size} (from env)")
-                return
             except ValueError:
                 logger.warning(
-                    f"Invalid DIARIZATION_EMBEDDING_BATCH_SIZE='{env_batch}', using default 32"
+                    f"Invalid DIARIZATION_EMBEDDING_BATCH_SIZE='{env_batch}'; "
+                    f"falling back to {self.EMBEDDING_BATCH_SIZE}"
                 )
-
-        # Set 32 as baseline. The optimized PyAnnote fork auto-elevates
-        # batch_size to 64-256 based on free VRAM when it sees <= 32.
-        # With stock PyAnnote, 32 is still 32x better than the default of 1.
-        batch_size = 32
-
-        current = getattr(self._pipeline, "embedding_batch_size", 1)
-        if batch_size != current:
-            self._pipeline.embedding_batch_size = batch_size
-            logger.info(f"Diarization embedding batch_size: {current} → {batch_size}")
+                batch_size = self.EMBEDDING_BATCH_SIZE
         else:
-            logger.info(f"Diarization embedding batch_size: {batch_size} (already set)")
+            batch_size = self.EMBEDDING_BATCH_SIZE
+
+        # Force the fork to use the exact value we ask for, bypassing its
+        # auto-scaler (which kicks in for values <= 32 on cuda/mps).
+        os.environ["PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE"] = str(batch_size)
+        self._pipeline.embedding_batch_size = batch_size
+        logger.info(f"Diarization embedding batch_size: {batch_size} (pinned)")
 
     def diarize(self, audio: np.ndarray) -> tuple[pd.DataFrame, dict, dict[str, np.ndarray] | None]:
         """Run speaker diarization on audio.

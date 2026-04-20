@@ -144,27 +144,24 @@ def test_handoff_residue_within_gate(
     )
 
 
-def test_budget_env_var_flows_to_pipeline(
+def test_embedding_batch_is_pinned_at_16(
     ensure_container: None,
     torch_cuda: object,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """DIARIZATION_VRAM_BUDGET_MB env -> settings -> pipeline.vram_budget_mb."""
-    monkeypatch.setenv("DIARIZATION_VRAM_BUDGET_MB", "1500")
-    monkeypatch.setenv("DIARIZATION_MIXED_PRECISION", "false")
+    """Loaded diarizer must pin embedding_batch_size = 16 regardless of VRAM.
 
-    # Reload the settings module so the monkeypatched env is picked up.
-    import importlib
-
-    from app.core import config as config_module
-
-    importlib.reload(config_module)
-    assert config_module.settings.DIARIZATION_VRAM_BUDGET_MB == 1500
-    assert config_module.settings.DIARIZATION_MIXED_PRECISION is False
-
-    # Load a diarizer and confirm the fork pipeline has the budget set.
+    The Phase A finding is that bs=16 saturates throughput; any future code
+    change that auto-scales above 16 or falls below 16 on "tight" GPUs is a
+    regression we want to catch here.
+    """
     from app.transcription.config import TranscriptionConfig
     from app.transcription.diarizer import SpeakerDiarizer
+
+    assert SpeakerDiarizer.EMBEDDING_BATCH_SIZE == 16, (
+        "The Phase A pinned value changed. Before touching it, re-run "
+        "scripts/vram-probe-diarization.py --small-batch-sweep and update "
+        "docs/diarization-vram-profile/README.md."
+    )
 
     cfg = TranscriptionConfig(
         model_name="base",
@@ -176,12 +173,8 @@ def test_budget_env_var_flows_to_pipeline(
     diarizer = SpeakerDiarizer(cfg)
     diarizer.load_model()
     assert diarizer._pipeline is not None
-    # Only asserted when the fork exposes the attribute. Stock upstream
-    # pyannote won't, and the test still passes (policy is a no-op).
-    if hasattr(diarizer._pipeline, "vram_budget_mb"):
-        assert diarizer._pipeline.vram_budget_mb == 1500
-    if hasattr(diarizer._pipeline, "embedding_mixed_precision"):
-        assert diarizer._pipeline.embedding_mixed_precision is False
+    assert diarizer._pipeline.embedding_batch_size == 16
+    assert os.environ.get("PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE") == "16"
     diarizer.unload_model()
 
 

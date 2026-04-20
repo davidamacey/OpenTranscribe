@@ -825,26 +825,20 @@ PyAnnote's speaker diarization uses sklearn's `AgglomerativeClustering`, which h
 
 **Note**: Higher values may impact processing time but will not cause errors.
 
-**VRAM budget (Phase B/C — 2026-04-20 measurements):**
+**Embedding batch size — pinned at 16 (Phase A, 2026-04-20):**
 
-Three new env vars wire into the forked pyannote pipeline to tune the embedding-stage VRAM footprint:
+Speaker-embedding batch is hard-coded to 16 in `backend/app/transcription/diarizer.py` (`SpeakerDiarizer.EMBEDDING_BATCH_SIZE`). The fork's auto-scaler is bypassed via `PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE=16` set at pipeline load.
 
-- `DIARIZATION_VRAM_BUDGET_MB` — explicit budget in MB. When set, the fork's `_budget.recommend_embedding_batch` uses this instead of the live free-VRAM query; useful when Whisper is co-resident.
-- `DIARIZATION_MIXED_PRECISION` — fp16 autocast for embedding. **Default false.** Phase A DER = 27-33 % (collapses speaker count); treat as opt-in "fast but wrong" mode.
-- `DIARIZATION_ONNX_CPU` — offload segmentation to CPU for <4 GB GPUs.
+| Property | Value |
+|---|---|
+| Embedding batch size | **16** (fixed) |
+| Diarization peak VRAM per pipeline | **~1 GB over process baseline** |
+| Wall time @ 2.2 h fp32 | 103 s on RTX A6000 (vs. 100 s at bs=128 — 3 % upside not worth 7 GB) |
+| DER vs. reference across bs ∈ {1..128} fp32 | 0 (speaker count + boundaries invariant) |
 
-Consumer-GPU recipes (Phase A `whole-stack.md` sizing):
+Why fixed rather than budget-aware: Phase A measured identical throughput from bs=16 to bs=128 at fp32, with no accuracy difference. Making the batch size constant simplifies the code, makes VRAM predictable for every deployment, and unlocks **multiple parallel diarization pipelines on a single GPU** — an A6000 can host ≈25 concurrent pipelines at 1 GB each.
 
-| GPU | Whisper model | `DIARIZATION_VRAM_BUDGET_MB` |
-|---|---|---:|
-| 4 GB laptop | `small` | 1200 |
-| 6 GB laptop | `medium` | 1500 |
-| 8 GB+ | `large-v3-turbo` | unset (auto) |
-| 12 GB+ dedicated | any | unset (auto) |
-
-Phase A measured throughput saturates at `embedding_batch_size=16` at fp32. The fork's previous auto-scaler went to bs=64-256 which wasted 3-7 GB for <3 % speed gain; replaced in Phase B. See `docs/diarization-vram-profile/README.md` for raw data.
-
-Run `python -m app.scripts.diarization_diag` inside the backend container to see recommended settings for the local GPU.
+Full raw data: `docs/diarization-vram-profile/README.md`. Run `python -m app.scripts.diarization_diag` to see the local GPU's headroom.
 
 ### Docker Volume Mappings
 The system uses simple volume mappings to cache models to their natural locations:

@@ -418,24 +418,12 @@ class Settings(BaseSettings):
     _NUM_SPEAKERS_STR: Optional[str] = os.getenv("NUM_SPEAKERS")
     NUM_SPEAKERS: Optional[int] = int(_NUM_SPEAKERS_STR) if _NUM_SPEAKERS_STR else None
 
-    # VRAM budget for diarization (Phase B/C, see
-    # docs/diarization-vram-profile/README.md). When set, the fork's
-    # embedding-stage budget helper uses this instead of querying live free
-    # VRAM. Useful when coexisting with Whisper on a small GPU.
-    # Unset -> auto-detect from device free memory.
-    _DIARIZATION_BUDGET_STR: Optional[str] = os.getenv("DIARIZATION_VRAM_BUDGET_MB")
-    DIARIZATION_VRAM_BUDGET_MB: Optional[int] = (
-        int(_DIARIZATION_BUDGET_STR) if _DIARIZATION_BUDGET_STR else None
-    )
-    # fp16 autocast for the embedding stage. OFF by default: Phase A DER
-    # measured 27-33 % on the test corpus, which collapses speaker counts.
-    # Only enable if throughput > accuracy is acceptable for your use case.
-    DIARIZATION_MIXED_PRECISION: bool = (
-        os.getenv("DIARIZATION_MIXED_PRECISION", "false").lower() == "true"
-    )
-    # Offload the segmentation model to CPU via ONNX Runtime. Useful on
-    # very tight VRAM setups (<4 GB). Embedding stage still runs on GPU.
-    DIARIZATION_ONNX_CPU: bool = os.getenv("DIARIZATION_ONNX_CPU", "false").lower() == "true"
+    # Diarization embedding batch size is pinned at 16 in
+    # backend/app/transcription/diarizer.py. See
+    # docs/diarization-vram-profile/README.md for the Phase A measurements
+    # that justify the fixed ceiling (identical throughput from bs=16 to
+    # bs=128; 3-7 GB VRAM savings at bs=16). No env var is offered for
+    # production because the measured-optimal value is a constant.
 
     # LLM Configuration - Users configure through web UI, stored in database
     # These are system fallbacks for quick access when no user settings exist
