@@ -129,12 +129,44 @@ Identical to CUDA behaviour — no MPS-specific divergence.
 | forced bs=64 | 4 | 42.6 s | matches Phase A CUDA reference for this file |
 | Phase B auto (bs=16) | 4 | 41.7 s | output identical |
 
-**Memory delta caveat:** MPS does **not** expose `torch.mps.max_memory_allocated()`; only `driver_allocated_memory()` (instantaneous). The reduction in *peak* allocation (which is the headline win on CUDA — 5.7 GB → 2.1 GB at fp32) cannot be measured directly on MPS with the current torch API. Indirect argument for the same win holding on MPS:
+**Direct MPS measurement landed (2026-04-20).** A sampled `torch.mps.driver_allocated_memory()` probe at 100 ms cadence (`scripts/vram-probe-diarization-mps.py`) filled the gap left by MPS's missing `max_memory_allocated` API. Raw JSONs in `raw/mps/`.
 
-1. The WeSpeaker weights and per-item activation shapes are identical on CUDA and MPS; the allocator just lives in unified memory.
-2. On CUDA, the dominant term is `bs × per_item_bytes` for the transformer activations, which shows up in the same units on MPS.
-3. The recommended cap (`recommended_max_memory` - `allocated`) is what the fork's MPS branch already used; moving from bs=64 to bs=16 shrinks the cap demand by the same ratio.
+### MPS small-batch sweep (fp32, 0.5 h clip, M2 Max, torch 2.8.0 mps backend)
 
-For a direct peak-memory-on-MPS measurement, add a 100 ms sampling probe that polls `driver_allocated_memory` in a thread during inference (mirror of the CUDA NVML sampler). Tracked as a follow-up in Phase A.7 item 4 (user-facing diag CLI enhancement).
+| `bs` | Wall (s) | Peak MB | Δ over baseline | Speakers | Segments |
+|---:|---:|---:|---:|:---:|---:|
+| 1 | 65.4 | 1 865 | 1 865 | 4 | 693 |
+| 4 | 45.7 | 1 922 | 1 918 | 4 | 693 |
+| 8 | **43.5** | 1 866 | 1 862 | 4 | 693 |
+| 16 | **42.0** | 1 890 | 1 886 | 4 | 693 |
+| 32 | 43.1 | 3 914 | 3 910 | 4 | 693 |
+| 64 | 42.5 | 4 978 | 4 974 | 4 | 693 |
 
-The Mac's prior uncommitted MPS work is parked as `stash@{0}` (`phase-B-mps-test-stash`) on the fork and intentionally not reapplied.
+`recommended_max_memory` on this Mac: 21 845 MB (M2 Max unified).
+
+**Two findings that required a fork code change:**
+
+1. **Throughput saturation happens earlier on MPS** (around bs=8) than on CUDA (bs=16). bs=8 and bs=16 are within 1.5 s on MPS vs. a larger CUDA gap at the same batch sizes. The `_BATCH_CEILING=16` policy is still correct (it's the safe throughput-optimal ceiling on both devices) but the "tight/optimal" tier becomes more forgiving on MPS.
+
+2. **MPS allocator pre-reserves ~1.9 GB at any bs ≤ 16**, while CUDA's allocator grows gradually (640 MB at bs ≤ 8, 950 MB at bs=16). A single device-agnostic footprint table would size budgets correctly on CUDA and OOM on MPS when the caller's free memory is between 1.2 and 2.0 GB. The fork now carries per-device tables.
+
+**Fork update** (`_budget.py`, commit `85858462`):
+
+```
+_DIARIZATION_FOOTPRINT_MB_BY_DEVICE = {
+    "cuda": {4: 640,  8: 640,  16: 954,  32: 1946},
+    "mps":  {4: 1900, 8: 1900, 16: 1900, 32: 3914},
+}
+```
+
+`recommend_embedding_batch` routes through `_footprint_table(device)` which strips `cuda:0`-style indices, is case-insensitive, and falls back to the CUDA table for unknown devices (`xpu`, `rocm`, etc.). 33/33 unit tests pass on both Linux CUDA and darwin-arm64 MPS.
+
+### Accuracy cross-check
+
+On MPS the pipeline produced **4 speakers / 693 segments** at every batch size. Compare to the Phase A.3 CUDA reference (4 speakers / 703 segments): 10-segment delta is ~1.4 %, well inside tier T1. No DER computation performed on MPS yet (the reference RTTMs were generated on CUDA); future work: run the DER sweep directly on MPS and confirm the ~0 DER invariance holds cross-device.
+
+### Throughput comparison — A6000 vs M2 Max
+
+At bs=16 fp32 on the 0.5 h clip: **A6000 23 s**, **M2 Max 42 s** — MPS reaches ~55 % of A6000 throughput for diarization alone. Combined with Apple Silicon's 21.8 GB unified memory, this makes an M2 Max a reasonable target for single-file workloads where privacy beats speed.
+
+The Mac's prior uncommitted MPS work is parked as `stash@{0}` (`phase-B-mps-test-stash`) on the fork and intentionally not reapplied; those changes predate the measured-policy work and would conflict with the device-aware footprint tables.
