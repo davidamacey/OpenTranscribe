@@ -105,3 +105,36 @@ Phase A policy conclusion (confirmed end-to-end): **bs=16 fp32 for all deploymen
 - **Phase C:** surface `DIARIZATION_VRAM_BUDGET_MB`, `DIARIZATION_MIXED_PRECISION`, `DIARIZATION_ONNX_CPU` in `backend/app/core/config.py`. Drop the diag's `CUDA_CONTEXT_MB` to a per-driver table once we have numbers from other GPU classes.
 - **Cross-validation:** one representative config on physical RTX 3080 Ti (GPU 1) vs. capped-A6000 to confirm simulation fidelity within 5 % (plan A.7 item 3).
 - **Whisper large-v3-turbo whole-stack probe:** add to `--sweep` models list; need turbo numbers for the default deployment path.
+
+## MPS (Apple Silicon) cross-platform validation — 2026-04-20
+
+**Host:** Mac Studio, M2 Max (superstudio@192.168.30.26). torch `mps.is_available() == True`, `recommended_max_memory = 21 845 MB`.
+
+**Unit tests:** all 28 `test_budget.py` assertions pass on `darwin-arm64`. `_budget.py` is pure-Python + stdlib so the ladder math is host-independent.
+
+**Budget recommendations on MPS:**
+
+| `free_mb` passed to `recommend_embedding_batch(device='mps')` | Returned |
+|---:|---|
+| 8 000 | `batch_size=16, status='optimal'` |
+| 1 000 | `batch_size=8, status='tight'` |
+| 500 | `batch_size=4, status='insufficient'` |
+
+Identical to CUDA behaviour — no MPS-specific divergence.
+
+**Integration smoke:** fresh-pipeline runs on the 0.5 h clip, forced bs=64 (old auto-scaler) vs. Phase B auto-selected bs=16:
+
+| Config | Speakers | Wall time | Notes |
+|---|:---:|---:|---|
+| forced bs=64 | 4 | 42.6 s | matches Phase A CUDA reference for this file |
+| Phase B auto (bs=16) | 4 | 41.7 s | output identical |
+
+**Memory delta caveat:** MPS does **not** expose `torch.mps.max_memory_allocated()`; only `driver_allocated_memory()` (instantaneous). The reduction in *peak* allocation (which is the headline win on CUDA — 5.7 GB → 2.1 GB at fp32) cannot be measured directly on MPS with the current torch API. Indirect argument for the same win holding on MPS:
+
+1. The WeSpeaker weights and per-item activation shapes are identical on CUDA and MPS; the allocator just lives in unified memory.
+2. On CUDA, the dominant term is `bs × per_item_bytes` for the transformer activations, which shows up in the same units on MPS.
+3. The recommended cap (`recommended_max_memory` - `allocated`) is what the fork's MPS branch already used; moving from bs=64 to bs=16 shrinks the cap demand by the same ratio.
+
+For a direct peak-memory-on-MPS measurement, add a 100 ms sampling probe that polls `driver_allocated_memory` in a thread during inference (mirror of the CUDA NVML sampler). Tracked as a follow-up in Phase A.7 item 4 (user-facing diag CLI enhancement).
+
+The Mac's prior uncommitted MPS work is parked as `stash@{0}` (`phase-B-mps-test-stash`) on the fork and intentionally not reapplied.
