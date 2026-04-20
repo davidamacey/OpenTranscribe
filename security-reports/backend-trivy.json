@@ -1,15 +1,15 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-04-12T17:36:40.194609802-04:00",
+  "CreatedAt": "2026-04-14T22:14:27.388671747-04:00",
   "ArtifactName": "davidamacey/opentranscribe-backend:latest",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 8878141440,
+    "Size": 8878201856,
     "OS": {
       "Family": "debian",
       "Name": "13.4"
     },
-    "ImageID": "sha256:f338ddbb1ff92700647e0367db402b1816956e861dd0e2a7c3b329a6056e1174",
+    "ImageID": "sha256:31881aa0d4affdb77afdee6649029c0955dbcce44e89e8b0153f0de45e3b4e81",
     "DiffIDs": [
       "sha256:60e70dddd9ea3b1c77c62fe78be1d9f485706b6fe6052c3d88612bd8f56acd67",
       "sha256:e9180f5f4905177873f4ec96c39a56b287c07ea97fb33514bd0b1a9a24eef644",
@@ -21,17 +21,17 @@
       "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae",
       "sha256:29868e720f444da57e5b64744062dc4b08a530393564e3db89ed860394da8a33",
       "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
-      "sha256:8b24fdf12bb3a6942625d61c4d670e39f571a206010a6cb8a796213e97c99591"
+      "sha256:31f25fca2fc09493da8d52b89c675c3aa36f2ddf80e941d8637b372f31c5b626"
     ],
     "RepoTags": [
       "davidamacey/opentranscribe-backend:latest"
     ],
     "RepoDigests": [
-      "davidamacey/opentranscribe-backend@sha256:bde5f96c9be54c25e82cb6e0e9ba17d6d826d99935bccadabe85b2e80410e0f1"
+      "davidamacey/opentranscribe-backend@sha256:b995bfcf135c24d363cd62075eca683dc3822e4b9e625d62a228edf598663ed6"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2026-04-12T21:20:34.520041401Z",
+      "created": "2026-04-15T01:57:02.7922883Z",
       "history": [
         {
           "created": "2026-04-06T00:00:00Z",
@@ -126,30 +126,30 @@
           "empty_layer": true
         },
         {
-          "created": "2026-04-12T21:20:34Z",
+          "created": "2026-04-15T01:57:02Z",
           "created_by": "COPY --chown=appuser:appuser . . # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-12T21:20:34Z",
+          "created": "2026-04-15T01:57:02Z",
           "created_by": "USER appuser",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-12T21:20:34Z",
+          "created": "2026-04-15T01:57:02Z",
           "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-12T21:20:34Z",
+          "created": "2026-04-15T01:57:02Z",
           "created_by": "HEALTHCHECK \u0026{[\"CMD-SHELL\" \"curl -f http://localhost:8080/health || exit 1\"] \"30s\" \"10s\" \"40s\" \"0s\" '\\x03'}",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-04-12T21:20:34Z",
+          "created": "2026-04-15T01:57:02Z",
           "created_by": "CMD [\"uvicorn\" \"app.main:app\" \"--host\" \"0.0.0.0\" \"--port\" \"8080\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -169,7 +169,7 @@
           "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae",
           "sha256:29868e720f444da57e5b64744062dc4b08a530393564e3db89ed860394da8a33",
           "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
-          "sha256:8b24fdf12bb3a6942625d61c4d670e39f571a206010a6cb8a796213e97c99591"
+          "sha256:31f25fca2fc09493da8d52b89c675c3aa36f2ddf80e941d8637b372f31c5b626"
         ]
       },
       "config": {
@@ -264,8 +264,8 @@
         "DiffID": "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
       },
       {
-        "Size": 10244608,
-        "DiffID": "sha256:8b24fdf12bb3a6942625d61c4d670e39f571a206010a6cb8a796213e97c99591"
+        "Size": 10305024,
+        "DiffID": "sha256:31f25fca2fc09493da8d52b89c675c3aa36f2ddf80e941d8637b372f31c5b626"
       }
     ]
   },
@@ -20248,6 +20248,55 @@
           "LastModifiedDate": "2026-04-07T18:40:02.177Z"
         },
         {
+          "VulnerabilityID": "CVE-2026-4878",
+          "PkgID": "libcap2@1:2.75-10+b8",
+          "PkgName": "libcap2",
+          "PkgIdentifier": {
+            "PURL": "pkg:deb/debian/libcap2@2.75-10%2Bb8?arch=amd64\u0026distro=debian-13.4\u0026epoch=1",
+            "UID": "d2c376501f6396f0"
+          },
+          "InstalledVersion": "1:2.75-10+b8",
+          "Status": "affected",
+          "Layer": {
+            "DiffID": "sha256:60e70dddd9ea3b1c77c62fe78be1d9f485706b6fe6052c3d88612bd8f56acd67"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-4878",
+          "DataSource": {
+            "ID": "debian",
+            "Name": "Debian Security Tracker",
+            "URL": "https://salsa.debian.org/security-tracker-team/security-tracker"
+          },
+          "Title": "libcap: libcap: Privilege escalation via TOCTOU race condition in cap_set_file()",
+          "Description": "A flaw was found in libcap. A local unprivileged user can exploit a Time-of-check-to-time-of-use (TOCTOU) race condition in the `cap_set_file()` function. This allows an attacker with write access to a parent directory to redirect file capability updates to an attacker-controlled file. By doing so, capabilities can be injected into or stripped from unintended executables, leading to privilege escalation.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-367"
+          ],
+          "VendorSeverity": {
+            "redhat": 3
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:L/AC:H/PR:L/UI:R/S:U/C:H/I:H/A:H",
+              "V3Score": 6.7
+            }
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2026/04/07/14",
+            "http://www.openwall.com/lists/oss-security/2026/04/07/4",
+            "http://www.openwall.com/lists/oss-security/2026/04/08/9",
+            "http://www.openwall.com/lists/oss-security/2026/04/09/5",
+            "http://www.openwall.com/lists/oss-security/2026/04/09/6",
+            "https://access.redhat.com/security/cve/CVE-2026-4878",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2447554",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2451615",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-4878",
+            "https://www.cve.org/CVERecord?id=CVE-2026-4878"
+          ],
+          "PublishedDate": "2026-04-09T16:16:31.987Z",
+          "LastModifiedDate": "2026-04-13T15:02:47.353Z"
+        },
+        {
           "VulnerabilityID": "CVE-2024-36600",
           "PkgID": "libcdio19t64@2.2.0-4",
           "PkgName": "libcdio19t64",
@@ -20751,7 +20800,7 @@
             "https://bugzilla.redhat.com/show_bug.cgi?id=2395108",
             "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2025-59375",
             "https://errata.almalinux.org/9/ALSA-2025-22175.html",
-            "https://errata.rockylinux.org/RLSA-2025:21776",
+            "https://errata.rockylinux.org/RLSA-2025:22175",
             "https://github.com/libexpat/libexpat/blob/676a4c531ec768732fac215da9730b5f50fbd2bf/expat/Changes#L45-L74",
             "https://github.com/libexpat/libexpat/blob/R_2_7_2/expat/Changes",
             "https://github.com/libexpat/libexpat/issues/1018",
@@ -21004,6 +21053,7 @@
             "CWE-122"
           ],
           "VendorSeverity": {
+            "amazon": 3,
             "redhat": 3,
             "ubuntu": 2
           },
@@ -21017,12 +21067,13 @@
             "https://access.redhat.com/security/cve/CVE-2026-5201",
             "https://bugzilla.redhat.com/show_bug.cgi?id=2453291",
             "https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/304",
+            "https://lists.debian.org/debian-lts-announce/2026/04/msg00010.html",
             "https://nvd.nist.gov/vuln/detail/CVE-2026-5201",
             "https://ubuntu.com/security/notices/USN-8156-1",
             "https://www.cve.org/CVERecord?id=CVE-2026-5201"
           ],
           "PublishedDate": "2026-03-31T09:16:23.44Z",
-          "LastModifiedDate": "2026-04-01T14:24:02.583Z"
+          "LastModifiedDate": "2026-04-14T12:16:21.743Z"
         },
         {
           "VulnerabilityID": "CVE-2026-5201",
@@ -21054,6 +21105,7 @@
             "CWE-122"
           ],
           "VendorSeverity": {
+            "amazon": 3,
             "redhat": 3,
             "ubuntu": 2
           },
@@ -21067,12 +21119,13 @@
             "https://access.redhat.com/security/cve/CVE-2026-5201",
             "https://bugzilla.redhat.com/show_bug.cgi?id=2453291",
             "https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/304",
+            "https://lists.debian.org/debian-lts-announce/2026/04/msg00010.html",
             "https://nvd.nist.gov/vuln/detail/CVE-2026-5201",
             "https://ubuntu.com/security/notices/USN-8156-1",
             "https://www.cve.org/CVERecord?id=CVE-2026-5201"
           ],
           "PublishedDate": "2026-03-31T09:16:23.44Z",
-          "LastModifiedDate": "2026-04-01T14:24:02.583Z"
+          "LastModifiedDate": "2026-04-14T12:16:21.743Z"
         },
         {
           "VulnerabilityID": "CVE-2026-1484",
@@ -21231,6 +21284,7 @@
           "Layer": {
             "DiffID": "sha256:ada816edceb20bdfed4f037d33bf6a9909ad378a48d85b050e99078857be097d"
           },
+          "SeveritySource": "nvd",
           "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-1837",
           "DataSource": {
             "ID": "debian",
@@ -21241,14 +21295,20 @@
           "Description": "A specially-crafted file can cause libjxl's decoder to write pixel data to uninitialized unallocated memory. Soon after that data from another uninitialized unallocated region is copied to pixel data.\n\nThis can be done by requesting color transformation of grayscale images to another grayscale color space. Buffers allocated for 1-float-per-pixel are used as if they are allocated for 3-float-per-pixel. That happens only if LCMS2 is used as CMS engine. There is another CMS engine available (selected by build flags).",
           "Severity": "HIGH",
           "CweIDs": [
-            "CWE-805"
+            "CWE-805",
+            "CWE-770"
           ],
           "VendorSeverity": {
             "amazon": 3,
+            "nvd": 3,
             "redhat": 3,
             "ubuntu": 2
           },
           "CVSS": {
+            "nvd": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            },
             "redhat": {
               "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
               "V3Score": 8.8
@@ -21262,7 +21322,7 @@
             "https://www.cve.org/CVERecord?id=CVE-2026-1837"
           ],
           "PublishedDate": "2026-02-11T16:16:04.697Z",
-          "LastModifiedDate": "2026-02-11T20:16:07.71Z"
+          "LastModifiedDate": "2026-04-14T00:51:40.663Z"
         },
         {
           "VulnerabilityID": "CVE-2026-27456",
@@ -21515,7 +21575,8 @@
             "CWE-385"
           ],
           "VendorSeverity": {
-            "redhat": 2
+            "redhat": 2,
+            "ubuntu": 2
           },
           "CVSS": {
             "redhat": {
@@ -21717,6 +21778,7 @@
             "CWE-617"
           ],
           "VendorSeverity": {
+            "amazon": 3,
             "azure": 3,
             "cbl-mariner": 3,
             "oracle-oval": 3,
@@ -21735,7 +21797,7 @@
             "https://github.com/nghttp2/nghttp2/commit/5c7df8fa815ac1004d9ecb9d1f7595c4d37f46e1",
             "https://github.com/nghttp2/nghttp2/security/advisories/GHSA-6933-cjhr-5qg6",
             "https://linux.oracle.com/cve/CVE-2026-27135.html",
-            "https://linux.oracle.com/errata/ELSA-2026-7350.html",
+            "https://linux.oracle.com/errata/ELSA-2026-7675.html",
             "https://nvd.nist.gov/vuln/detail/CVE-2026-27135",
             "https://www.cve.org/CVERecord?id=CVE-2026-27135"
           ],
@@ -21881,6 +21943,53 @@
           "LastModifiedDate": "2026-03-09T19:15:59.937Z"
         },
         {
+          "VulnerabilityID": "CVE-2026-34757",
+          "PkgID": "libpng16-16t64@1.6.48-1+deb13u4",
+          "PkgName": "libpng16-16t64",
+          "PkgIdentifier": {
+            "PURL": "pkg:deb/debian/libpng16-16t64@1.6.48-1%2Bdeb13u4?arch=amd64\u0026distro=debian-13.4",
+            "UID": "1d7259c16d02fefa"
+          },
+          "InstalledVersion": "1.6.48-1+deb13u4",
+          "Status": "affected",
+          "Layer": {
+            "DiffID": "sha256:ada816edceb20bdfed4f037d33bf6a9909ad378a48d85b050e99078857be097d"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-34757",
+          "DataSource": {
+            "ID": "debian",
+            "Name": "Debian Security Tracker",
+            "URL": "https://salsa.debian.org/security-tracker-team/security-tracker"
+          },
+          "Title": "libpng: libpng: Information disclosure and data corruption via use-after-free vulnerability",
+          "Description": "LIBPNG is a reference library for use in applications that read, create, and manipulate PNG (Portable Network Graphics) raster image files. From 1.0.9 to before 1.6.57, passing a pointer obtained from png_get_PLTE, png_get_tRNS, or png_get_hIST back into the corresponding setter on the same png_struct/png_info pair causes the setter to read from freed memory and copy its contents into the replacement buffer. The setter frees the internal buffer before copying from the caller-supplied pointer, which now dangles. The freed region may contain stale data (producing silently corrupted chunk metadata) or data from subsequent heap allocations (leaking unrelated heap contents into the chunk struct). This vulnerability is fixed in 1.6.57.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-416"
+          ],
+          "VendorSeverity": {
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N",
+              "V3Score": 4.4
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-34757",
+            "https://github.com/pnggroup/libpng/commit/398cbe3df03f4e11bb031e07f416dfdde3684e8a",
+            "https://github.com/pnggroup/libpng/commit/55d20aaa322c9274491cda82c5cd4f99b48c6bcc",
+            "https://github.com/pnggroup/libpng/issues/836",
+            "https://github.com/pnggroup/libpng/issues/837",
+            "https://github.com/pnggroup/libpng/security/advisories/GHSA-6fr7-g8h7-v645",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-34757",
+            "https://www.cve.org/CVERecord?id=CVE-2026-34757"
+          ],
+          "PublishedDate": "2026-04-09T15:16:11.003Z",
+          "LastModifiedDate": "2026-04-13T15:02:47.353Z"
+        },
+        {
           "VulnerabilityID": "CVE-2025-22921",
           "PkgID": "libpostproc58@7:7.1.3-0+deb13u1",
           "PkgName": "libpostproc58",
@@ -22013,60 +22122,6 @@
           ],
           "PublishedDate": "2024-10-27T22:15:03.66Z",
           "LastModifiedDate": "2024-10-31T00:58:54.497Z"
-        },
-        {
-          "VulnerabilityID": "CVE-2026-0968",
-          "PkgID": "libssh-4@0.11.2-1+deb13u1",
-          "PkgName": "libssh-4",
-          "PkgIdentifier": {
-            "PURL": "pkg:deb/debian/libssh-4@0.11.2-1%2Bdeb13u1?arch=amd64\u0026distro=debian-13.4",
-            "UID": "73fbd677abda59a0"
-          },
-          "InstalledVersion": "0.11.2-1+deb13u1",
-          "Status": "affected",
-          "Layer": {
-            "DiffID": "sha256:ada816edceb20bdfed4f037d33bf6a9909ad378a48d85b050e99078857be097d"
-          },
-          "SeveritySource": "nvd",
-          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-0968",
-          "DataSource": {
-            "ID": "debian",
-            "Name": "Debian Security Tracker",
-            "URL": "https://salsa.debian.org/security-tracker-team/security-tracker"
-          },
-          "Title": "libssh: libssh: Denial of Service due to malformed SFTP message",
-          "Description": "A flaw was found in libssh in which a malicious SFTP (SSH File Transfer Protocol) server can exploit this by sending a malformed 'longname' field within an `SSH_FXP_NAME` message during a file listing operation. This missing null check can lead to reading beyond allocated memory on the heap. This can cause unexpected behavior or lead to a denial of service (DoS) due to application crashes.",
-          "Severity": "CRITICAL",
-          "CweIDs": [
-            "CWE-476"
-          ],
-          "VendorSeverity": {
-            "nvd": 4,
-            "redhat": 1,
-            "ubuntu": 2
-          },
-          "CVSS": {
-            "nvd": {
-              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-              "V3Score": 9.8
-            },
-            "redhat": {
-              "V3Vector": "CVSS:3.0/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:L",
-              "V3Score": 3.1
-            }
-          },
-          "References": [
-            "https://access.redhat.com/security/cve/CVE-2026-0968",
-            "https://bugzilla.redhat.com/show_bug.cgi?id=2436982",
-            "https://nvd.nist.gov/vuln/detail/CVE-2026-0968",
-            "https://ubuntu.com/security/notices/USN-8051-1",
-            "https://ubuntu.com/security/notices/USN-8051-2",
-            "https://www.cve.org/CVERecord?id=CVE-2026-0968",
-            "https://www.libssh.org/2026/02/10/libssh-0-12-0-and-0-11-4-security-releases/",
-            "https://www.libssh.org/security/advisories/CVE-2026-0968.txt"
-          ],
-          "PublishedDate": "2026-03-26T21:17:01.15Z",
-          "LastModifiedDate": "2026-04-03T20:06:16.037Z"
         },
         {
           "VulnerabilityID": "CVE-2026-3731",
@@ -22380,6 +22435,7 @@
           ],
           "VendorSeverity": {
             "azure": 2,
+            "photon": 3,
             "redhat": 2,
             "ubuntu": 2
           },
@@ -22409,6 +22465,92 @@
           ],
           "PublishedDate": "2026-03-23T22:16:26.267Z",
           "LastModifiedDate": "2026-03-24T15:53:48.067Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-40225",
+          "PkgID": "libsystemd0@257.9-1~deb13u1",
+          "PkgName": "libsystemd0",
+          "PkgIdentifier": {
+            "PURL": "pkg:deb/debian/libsystemd0@257.9-1~deb13u1?arch=amd64\u0026distro=debian-13.4",
+            "UID": "9ca6d4b1f8d36498"
+          },
+          "InstalledVersion": "257.9-1~deb13u1",
+          "Status": "affected",
+          "Layer": {
+            "DiffID": "sha256:60e70dddd9ea3b1c77c62fe78be1d9f485706b6fe6052c3d88612bd8f56acd67"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-40225",
+          "DataSource": {
+            "ID": "debian",
+            "Name": "Debian Security Tracker",
+            "URL": "https://salsa.debian.org/security-tracker-team/security-tracker"
+          },
+          "Title": "systemd: udev in systemd: Privilege escalation via malicious hardware devices and unsanitized kernel output",
+          "Description": "In udev in systemd before 260, local root execution can occur via malicious hardware devices and unsanitized kernel output.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-669"
+          ],
+          "VendorSeverity": {
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:P/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 6.4
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-40225",
+            "https://github.com/systemd/systemd/security/advisories/GHSA-vpfq-8p5f-jcqx",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-40225",
+            "https://www.cve.org/CVERecord?id=CVE-2026-40225"
+          ],
+          "PublishedDate": "2026-04-10T16:16:33.287Z",
+          "LastModifiedDate": "2026-04-13T15:02:06.187Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-40226",
+          "PkgID": "libsystemd0@257.9-1~deb13u1",
+          "PkgName": "libsystemd0",
+          "PkgIdentifier": {
+            "PURL": "pkg:deb/debian/libsystemd0@257.9-1~deb13u1?arch=amd64\u0026distro=debian-13.4",
+            "UID": "9ca6d4b1f8d36498"
+          },
+          "InstalledVersion": "257.9-1~deb13u1",
+          "Status": "affected",
+          "Layer": {
+            "DiffID": "sha256:60e70dddd9ea3b1c77c62fe78be1d9f485706b6fe6052c3d88612bd8f56acd67"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-40226",
+          "DataSource": {
+            "ID": "debian",
+            "Name": "Debian Security Tracker",
+            "URL": "https://salsa.debian.org/security-tracker-team/security-tracker"
+          },
+          "Title": "systemd: systemd nspawn: Escape-to-host action via crafted config file",
+          "Description": "In nspawn in systemd 233 through 259 before 260, an escape-to-host action can occur via a crafted optional config file.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-348"
+          ],
+          "VendorSeverity": {
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:L/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 6.4
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-40226",
+            "https://github.com/systemd/systemd/security/advisories/GHSA-9mj4-rrc3-gjcx",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-40226",
+            "https://www.cve.org/CVERecord?id=CVE-2026-40226"
+          ],
+          "PublishedDate": "2026-04-10T16:16:33.447Z",
+          "LastModifiedDate": "2026-04-13T15:02:06.187Z"
         },
         {
           "VulnerabilityID": "CVE-2026-4105",
@@ -22688,6 +22830,7 @@
           ],
           "VendorSeverity": {
             "azure": 2,
+            "photon": 3,
             "redhat": 2,
             "ubuntu": 2
           },
@@ -22717,6 +22860,92 @@
           ],
           "PublishedDate": "2026-03-23T22:16:26.267Z",
           "LastModifiedDate": "2026-03-24T15:53:48.067Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-40225",
+          "PkgID": "libudev1@257.9-1~deb13u1",
+          "PkgName": "libudev1",
+          "PkgIdentifier": {
+            "PURL": "pkg:deb/debian/libudev1@257.9-1~deb13u1?arch=amd64\u0026distro=debian-13.4",
+            "UID": "3a8447fbea27b0de"
+          },
+          "InstalledVersion": "257.9-1~deb13u1",
+          "Status": "affected",
+          "Layer": {
+            "DiffID": "sha256:60e70dddd9ea3b1c77c62fe78be1d9f485706b6fe6052c3d88612bd8f56acd67"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-40225",
+          "DataSource": {
+            "ID": "debian",
+            "Name": "Debian Security Tracker",
+            "URL": "https://salsa.debian.org/security-tracker-team/security-tracker"
+          },
+          "Title": "systemd: udev in systemd: Privilege escalation via malicious hardware devices and unsanitized kernel output",
+          "Description": "In udev in systemd before 260, local root execution can occur via malicious hardware devices and unsanitized kernel output.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-669"
+          ],
+          "VendorSeverity": {
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:P/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 6.4
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-40225",
+            "https://github.com/systemd/systemd/security/advisories/GHSA-vpfq-8p5f-jcqx",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-40225",
+            "https://www.cve.org/CVERecord?id=CVE-2026-40225"
+          ],
+          "PublishedDate": "2026-04-10T16:16:33.287Z",
+          "LastModifiedDate": "2026-04-13T15:02:06.187Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-40226",
+          "PkgID": "libudev1@257.9-1~deb13u1",
+          "PkgName": "libudev1",
+          "PkgIdentifier": {
+            "PURL": "pkg:deb/debian/libudev1@257.9-1~deb13u1?arch=amd64\u0026distro=debian-13.4",
+            "UID": "3a8447fbea27b0de"
+          },
+          "InstalledVersion": "257.9-1~deb13u1",
+          "Status": "affected",
+          "Layer": {
+            "DiffID": "sha256:60e70dddd9ea3b1c77c62fe78be1d9f485706b6fe6052c3d88612bd8f56acd67"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-40226",
+          "DataSource": {
+            "ID": "debian",
+            "Name": "Debian Security Tracker",
+            "URL": "https://salsa.debian.org/security-tracker-team/security-tracker"
+          },
+          "Title": "systemd: systemd nspawn: Escape-to-host action via crafted config file",
+          "Description": "In nspawn in systemd 233 through 259 before 260, an escape-to-host action can occur via a crafted optional config file.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-348"
+          ],
+          "VendorSeverity": {
+            "redhat": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:L/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 6.4
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-40226",
+            "https://github.com/systemd/systemd/security/advisories/GHSA-9mj4-rrc3-gjcx",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-40226",
+            "https://www.cve.org/CVERecord?id=CVE-2026-40226"
+          ],
+          "PublishedDate": "2026-04-10T16:16:33.447Z",
+          "LastModifiedDate": "2026-04-13T15:02:06.187Z"
         },
         {
           "VulnerabilityID": "CVE-2026-4105",
@@ -25390,13 +25619,10 @@
           "Name": "pillow",
           "Identifier": {
             "PURL": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "a8d419e1caa312c1",
+            "UID": "ee46a7936b34f4f4",
             "BOMRef": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "12.2.0",
-          "DependsOn": [
-            "libXau@1.0.9-3.el8"
-          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
@@ -25406,10 +25632,13 @@
           "Name": "pillow",
           "Identifier": {
             "PURL": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "ee46a7936b34f4f4",
+            "UID": "a8d419e1caa312c1",
             "BOMRef": "pkg:pypi/pillow@12.2.0?file_name=pillow-12.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "12.2.0",
+          "DependsOn": [
+            "libXau@1.0.9-3.el8"
+          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
@@ -26080,10 +26309,13 @@
           "Name": "scikit_learn",
           "Identifier": {
             "PURL": "pkg:pypi/scikit-learn@1.8.0?file_name=scikit_learn-1.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "8a76e3ee358c655e",
+            "UID": "6865485085542ca9",
             "BOMRef": "pkg:pypi/scikit_learn@1.8.0?file_name=scikit_learn-1.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "1.8.0",
+          "DependsOn": [
+            "libgomp@8.5.0-28.el8_10.alma.1"
+          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }
@@ -26093,13 +26325,10 @@
           "Name": "scikit_learn",
           "Identifier": {
             "PURL": "pkg:pypi/scikit-learn@1.8.0?file_name=scikit_learn-1.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "6865485085542ca9",
+            "UID": "8a76e3ee358c655e",
             "BOMRef": "pkg:pypi/scikit_learn@1.8.0?file_name=scikit_learn-1.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "1.8.0",
-          "DependsOn": [
-            "libgomp@8.5.0-28.el8_10.alma.1"
-          ],
           "Layer": {
             "DiffID": "sha256:cf4bf6e3c5c098aaf7fb3726fa8b29fd6f9312d6fb79709790f05a3a381441ae"
           }

@@ -1,7 +1,7 @@
 
 davidamacey/opentranscribe-backend:latest (debian 13.4)
 =======================================================
-Total: 83 (UNKNOWN: 0, LOW: 0, MEDIUM: 66, HIGH: 14, CRITICAL: 3)
+Total: 88 (UNKNOWN: 0, LOW: 0, MEDIUM: 72, HIGH: 14, CRITICAL: 2)
 
 ┌─────────────────────────┬────────────────┬──────────┬──────────────┬──────────────────────────────────────┬────────────────────────┬──────────────────────────────────────────────────────────────┐
 │         Library         │ Vulnerability  │ Severity │    Status    │          Installed Version           │     Fixed Version      │                            Title                             │
@@ -97,6 +97,10 @@ Total: 83 (UNKNOWN: 0, LOW: 0, MEDIUM: 66, HIGH: 14, CRITICAL: 3)
 │                         │ CVE-2026-4438  │          │              │                                      │                        │ glibc: glibc: Invalid DNS hostname returned via              │
 │                         │                │          │              │                                      │                        │ gethostbyaddr functions                                      │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-4438                    │
+├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ libcap2                 │ CVE-2026-4878  │          │              │ 1:2.75-10+b8                         │                        │ libcap: libcap: Privilege escalation via TOCTOU race         │
+│                         │                │          │              │                                      │                        │ condition in cap_set_file()                                  │
+│                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-4878                    │
 ├─────────────────────────┼────────────────┼──────────┤              ├──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
 │ libcdio19t64            │ CVE-2024-36600 │ HIGH     │              │ 2.2.0-4                              │                        │ libcdio: crafted iso image file leads to arbitrary code      │
 │                         │                │          │              │                                      │                        │ execution                                                    │
@@ -226,8 +230,12 @@ Total: 83 (UNKNOWN: 0, LOW: 0, MEDIUM: 66, HIGH: 14, CRITICAL: 3)
 │                         │ CVE-2023-39329 │          │              │                                      │                        │ openjpeg: Resource exhaustion will occur in the              │
 │                         │                │          │              │                                      │                        │ opj_t1_decode_cblks function in the tcd.c...                 │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2023-39329                   │
-├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ libpostproc58           │ CVE-2025-22921 │          │              │ 7:7.1.3-0+deb13u1                    │                        │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+├─────────────────────────┼────────────────┤          ├──────────────┼──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ libpng16-16t64          │ CVE-2026-34757 │          │ affected     │ 1.6.48-1+deb13u4                     │                        │ libpng: libpng: Information disclosure and data corruption   │
+│                         │                │          │              │                                      │                        │ via use-after-free vulnerability                             │
+│                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-34757                   │
+├─────────────────────────┼────────────────┤          ├──────────────┼──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ libpostproc58           │ CVE-2025-22921 │          │ fix_deferred │ 7:7.1.3-0+deb13u1                    │                        │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
 │                         │                │          │              │                                      │                        │ contain a seg ...                                            │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
 ├─────────────────────────┼────────────────┤          ├──────────────┼──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
@@ -238,11 +246,7 @@ Total: 83 (UNKNOWN: 0, LOW: 0, MEDIUM: 66, HIGH: 14, CRITICAL: 3)
 │ libsndfile1             │ CVE-2024-50613 │          │ fix_deferred │ 1.2.2-2+deb13u1                      │                        │ libsndfile: Reachable assertion in mpeg_l3_encoder_close     │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2024-50613                   │
 ├─────────────────────────┼────────────────┼──────────┼──────────────┼──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
-│ libssh-4                │ CVE-2026-0968  │ CRITICAL │ affected     │ 0.11.2-1+deb13u1                     │                        │ libssh: libssh: Denial of Service due to malformed SFTP      │
-│                         │                │          │              │                                      │                        │ message                                                      │
-│                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-0968                    │
-│                         ├────────────────┼──────────┤              │                                      ├────────────────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-3731  │ HIGH     │              │                                      │                        │ libssh: libssh: Denial of Service via out-of-bounds read in  │
+│ libssh-4                │ CVE-2026-3731  │ HIGH     │ affected     │ 0.11.2-1+deb13u1                     │                        │ libssh: libssh: Denial of Service via out-of-bounds read in  │
 │                         │                │          │              │                                      │                        │ SFTP extension name...                                       │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-3731                    │
 │                         ├────────────────┼──────────┤              │                                      ├────────────────────────┼──────────────────────────────────────────────────────────────┤
@@ -269,7 +273,15 @@ Total: 83 (UNKNOWN: 0, LOW: 0, MEDIUM: 66, HIGH: 14, CRITICAL: 3)
 │                         │                │          │              │                                      │                        │ Service via spurious IPC...                                  │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-29111                   │
 │                         ├────────────────┼──────────┤              │                                      ├────────────────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-4105  │ MEDIUM   │              │                                      │                        │ systemd: systemd: Privilege escalation via improper access   │
+│                         │ CVE-2026-40225 │ MEDIUM   │              │                                      │                        │ systemd: udev in systemd: Privilege escalation via malicious │
+│                         │                │          │              │                                      │                        │ hardware devices and unsanitized...                          │
+│                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-40225                   │
+│                         ├────────────────┤          │              │                                      ├────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-40226 │          │              │                                      │                        │ systemd: systemd nspawn: Escape-to-host action via crafted   │
+│                         │                │          │              │                                      │                        │ config file                                                  │
+│                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-40226                   │
+│                         ├────────────────┤          │              │                                      ├────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-4105  │          │              │                                      │                        │ systemd: systemd: Privilege escalation via improper access   │
 │                         │                │          │              │                                      │                        │ control in RegisterMachine D-Bus method...                   │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-4105                    │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
@@ -293,7 +305,15 @@ Total: 83 (UNKNOWN: 0, LOW: 0, MEDIUM: 66, HIGH: 14, CRITICAL: 3)
 │                         │                │          │              │                                      │                        │ Service via spurious IPC...                                  │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-29111                   │
 │                         ├────────────────┼──────────┤              │                                      ├────────────────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2026-4105  │ MEDIUM   │              │                                      │                        │ systemd: systemd: Privilege escalation via improper access   │
+│                         │ CVE-2026-40225 │ MEDIUM   │              │                                      │                        │ systemd: udev in systemd: Privilege escalation via malicious │
+│                         │                │          │              │                                      │                        │ hardware devices and unsanitized...                          │
+│                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-40225                   │
+│                         ├────────────────┤          │              │                                      ├────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-40226 │          │              │                                      │                        │ systemd: systemd nspawn: Escape-to-host action via crafted   │
+│                         │                │          │              │                                      │                        │ config file                                                  │
+│                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-40226                   │
+│                         ├────────────────┤          │              │                                      ├────────────────────────┼──────────────────────────────────────────────────────────────┤
+│                         │ CVE-2026-4105  │          │              │                                      │                        │ systemd: systemd: Privilege escalation via improper access   │
 │                         │                │          │              │                                      │                        │ control in RegisterMachine D-Bus method...                   │
 │                         │                │          │              │                                      │                        │ https://avd.aquasec.com/nvd/cve-2026-4105                    │
 ├─────────────────────────┼────────────────┤          │              ├──────────────────────────────────────┼────────────────────────┼──────────────────────────────────────────────────────────────┤
