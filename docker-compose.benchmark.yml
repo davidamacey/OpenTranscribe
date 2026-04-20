@@ -1,0 +1,40 @@
+services:
+  diarization-probe:
+    image: opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    env_file: .env
+    environment:
+      - OPENTRANSCRIBE_IN_CONTAINER=1
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0}
+    volumes:
+      # Source code (same as dev celery-worker) — gives access to app.* modules
+      - ./backend:/app
+      # Scripts, audio fixtures, docs output — scoped to benchmarking paths only
+      - ./scripts:/app/scripts:ro
+      - ./benchmark:/app/benchmark:ro
+      - ./docs:/app/docs
+      # Bind-mount the local pyannote-audio fork over site-packages so Phase A
+      # characterization patches (e.g. PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE) apply
+      # without rebuilding the image.
+      - /mnt/nvm/repos/pyannote-audio-fork/src/pyannote/audio:/home/appuser/.local/lib/python3.13/site-packages/pyannote/audio:ro
+      # Model cache — same mounts as the production worker so no re-downloads
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ['${DIARIZATION_PROBE_GPU:-0}']
+    working_dir: /app
+    # Override the production entrypoint so this is a one-shot tool
+    entrypoint: []
+    command: ["python", "scripts/vram-probe-diarization.py", "--help"]
+    # No restart — this is a benchmark service, not a long-running worker
+    restart: "no"

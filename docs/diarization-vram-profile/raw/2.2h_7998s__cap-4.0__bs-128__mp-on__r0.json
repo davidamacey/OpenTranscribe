@@ -1,0 +1,3169 @@
+{
+  "timestamp": "2026-04-20T04:54:17.889202+00:00",
+  "file": "2.2h_7998s.wav",
+  "file_duration_s": 8005.31,
+  "cap_gb": 4.0,
+  "embedding_batch_size_setting": 128,
+  "effective_batch_size_observed": null,
+  "mixed_precision": "on",
+  "repeat_index": 0,
+  "wall_time_s": 70.138,
+  "model_load_time_s": 0.901,
+  "diarize_time_s": 68.707,
+  "num_speakers_detected": 2,
+  "num_segments": 2020,
+  "num_chunks": null,
+  "num_items": null,
+  "device_peak_mb": 4825.5,
+  "torch_peak_allocated_mb": 40.1,
+  "torch_peak_reserved_mb": 50.0,
+  "gpu_name": "NVIDIA RTX A6000",
+  "gpu_total_mb": 49140,
+  "stage_peaks": [
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.4362814229998548,
+      "torch_allocated_mb": 40.11328125,
+      "torch_reserved_mb": 50.0,
+      "torch_max_allocated_mb": 40.11328125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.4666916269998183,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.59521484375
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.491493988000002,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.50877327399985,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.5262989560001188,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.5462736740000764,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.5710310469999058,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.596042032999776,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.6140564120000818,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.6320838329997969,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.6607887019999907,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.6919217669997124,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.7247797410000203,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.7572012919999906,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.7786616499997763,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.8059214229997451,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.8344990679997863,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.8552689439998176,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.8773820389997127,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.8981575990001147,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.919040324999969,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.9379618349998964,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.9652514859999428,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 1.9945152209998014,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.024690651000128,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.0434207049997895,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.063252777999878,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.0821594169997297,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.101193675000104,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.1202927639997142,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.141417831000126,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.162200515999757,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.1826358859998436,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.202324069000042,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.223326473999805,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.2454706680000527,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.267302981999819,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.287016221999693,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.3054093810001177,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.3236606030000075,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.341856624999764,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.360202848999961,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.3785013500000787,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.397156323999752,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.4154909700000644,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.4337469980000606,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.4522590080000555,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.471849388999999,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.4902955600000496,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.508995756999866,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.5277903219998734,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.5465835649997643,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.5653772979999303,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.5841791319999174,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.603182380999897,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.6220416529999966,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.6410332800001015,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.6600412610000603,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.6802897689999554,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.6990157149998595,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.7178134359996875,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.73664077300009,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.755471737999869,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.7746050699997795,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.793686416000128,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.812854041999799,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.831802472999698,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.8508506809998835,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.8715119620001133,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.889746753000054,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.9071944349998375,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.9256206459999703,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.943264285999703,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.961042930000076,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.978435144999821,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 2.9955398419997437,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.01266079800007,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.030594263999774,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.0496124619999136,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.068417013999806,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.085724843999742,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.1029213520000667,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.1203122789997906,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.137393819999943,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.154321584999707,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.1715698600000906,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.1891755249998823,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.2062383590000536,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.2230115659999683,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.241916607999883,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.2590615109998,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.2762182000001303,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.2933145829997557,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.310375756999747,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.3299271649998445,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.3471474069997385,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.3641245089997938,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.381108610999945,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.3984375730001375,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.4156943949997185,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.4358624819997203,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.4534886850001385,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.470943038999849,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.488163701999838,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.5056892839998,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.522924829999738,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.540557262999755,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.5579927779999707,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.5768599039997753,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.5953918999998677,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.6139943419998417,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.631036232000042,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.6480011899998317,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.6650581720000446,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.6825068590001138,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.701758506999795,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.7186918719999085,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.7359874909998325,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.753450464999787,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.770643822999773,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.7878096710001046,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.8065247569998064,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.8261705649997566,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.8467697529999896,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.8654271330001393,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.884385279000071,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.902983091999886,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.921561304000079,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.940174559999832,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.958483716000046,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.97659170299994,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 3.9959037670000725,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.014307182999801,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.032553831999849,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.051533635999931,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.070334172999992,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.088872958000138,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.10724576199982,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.125764686999901,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.144117116999951,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.162520380999922,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.180751495000095,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.200235680999867,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.218585594999695,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.236853532999703,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.255022886000006,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.273249225999734,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.291526759000135,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.30973787999983,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.328123685999799,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.346281891999752,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.364528980999694,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.3840175959999215,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.40233179300003,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.420793855999818,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.43930492499976,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.4574537559997225,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.47501475099989,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.492174862999946,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.50942443599979,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.5265808449998985,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.543563617000018,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.56071577900002,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.5790236909997475,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.596416605999821,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.6140731860000415,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.6321785939999245,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.649879251000129,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.667626417000065,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.684872401000121,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.702076344000034,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.719393620000119,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.73645070099974,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.754496535999806,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.771666961999927,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.788799462000043,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.805913719999808,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.822899418999896,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.839980749999995,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.857844467999712,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.875106208000034,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.892500029000075,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.909817775999727,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.927278770999692,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.9454167869998855,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.962455827999747,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.97945923799989,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 4.9963284569998905,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.013138509999862,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.030064077000134,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.047216462000051,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.064373716999853,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.0814901949997875,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.098636094000085,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.1168584819997704,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.134000057999856,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.151113428999906,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.168299583000135,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.191593865999948,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.212370532000023,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.230793705999986,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.251852141999734,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.270227717000125,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.288414755999838,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.306729713000095,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.32640434599989,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.344864041999699,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.363340367000092,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.381882170999688,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.400375795999935,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.419023787999777,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.4377488189998076,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.456555466999816,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.475630304999868,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.494619660999888,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.515039072000036,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.533900981999977,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.552672748000077,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.5715636689997154,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.590432151999721,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.609211903999949,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.628045737999855,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.646889498999826,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.665779612999813,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.685028509999938,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.704291051999917,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.724950454000009,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.74408935800011,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.763063737999801,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.782112468999912,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.800988442999824,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.819662888000039,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.838189353999951,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.85560451099991,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.873130099999798,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.890336855999976,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.90857667399996,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.9256581219997315,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.942663623000044,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.959748451999985,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.976797911999711,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 5.994334831999822,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.011596531000123,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.028973896000025,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.04629250500011,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.06340371799979,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.087394925999888,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.105501726000057,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.12273067499973,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.139734484999735,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 284.6923828125
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.159202773999823,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 261.85009765625
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.175352470999769,
+      "torch_allocated_mb": 40.2919921875,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 114.98291015625
+    },
+    {
+      "stage": "segmentation",
+      "t_rel_s": 6.181912787999863,
+      "torch_allocated_mb": 40.11328125,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 40.2919921875
+    },
+    {
+      "stage": "vram_cleanup_post_segmentation",
+      "t_rel_s": 6.182344623000063,
+      "torch_allocated_mb": 40.11328125,
+      "torch_reserved_mb": 586.0,
+      "torch_max_allocated_mb": 40.11328125
+    },
+    {
+      "stage": "speaker_counting",
+      "t_rel_s": 6.816222187999756,
+      "torch_allocated_mb": 40.11328125,
+      "torch_reserved_mb": 50.0,
+      "torch_max_allocated_mb": 40.11328125
+    },
+    {
+      "stage": "binarization",
+      "t_rel_s": 6.816770834999716,
+      "torch_allocated_mb": 40.11328125,
+      "torch_reserved_mb": 50.0,
+      "torch_max_allocated_mb": 40.11328125
+    },
+    {
+      "stage": "embedding_inference_start",
+      "t_rel_s": 8.028662058000009,
+      "torch_allocated_mb": 52.87646484375,
+      "torch_reserved_mb": 76.0,
+      "torch_max_allocated_mb": 54.1396484375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 8.03032522400008,
+      "torch_allocated_mb": 52.87646484375,
+      "torch_reserved_mb": 76.0,
+      "torch_max_allocated_mb": 52.87646484375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 8.385623954000039,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 2598.0,
+      "torch_max_allocated_mb": 3369.17333984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 8.67350680699974,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 8.962047891000111,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 9.25270307999972,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 9.545436894999966,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 9.838175056999717,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 10.130619501999718,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 10.423164045999783,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 10.716423105000104,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 11.01018758600003,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 11.304084729999886,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 11.596125409999786,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 11.888324946000012,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 12.180758910999884,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 12.473812933999852,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 12.766234835999967,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 13.059420065999802,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 13.3536453910001,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 13.645643803999974,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 13.940774606000105,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 14.243675018999966,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 14.542110585000046,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 14.844332747999943,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 15.141941954999766,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 15.4398613379999,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 15.737361993999912,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 16.035517157999948,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 16.33455704500011,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 16.63103395899998,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 16.94161770499977,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 17.245148483999856,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 17.538448247999895,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 17.83312834599974,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 18.127420490000077,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 18.4213897489999,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 18.716275521999705,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 19.010481201999937,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 19.304561853999985,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 19.599632588000077,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 19.89612867599999,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 20.19151467599977,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 20.489389430999836,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 20.783464031999756,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 21.077996013999837,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 21.37353816599989,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 21.668299216999912,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 21.964163307000035,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 22.25978545499993,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 22.555343551000078,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 22.851810328999818,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 23.14822349399992,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 23.447000580999884,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 23.750970201999735,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 24.04596589699986,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 24.35188983299986,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 24.650669463999748,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 24.947368365999864,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 25.243302586000027,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 25.539504615999704,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 25.834516473999884,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 26.131492665999758,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 26.429543527000078,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 26.727540402999693,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 27.026352137999766,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 27.3246314779999,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 27.62424437799973,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 27.92301142999986,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 28.228425674999926,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 28.534917854000014,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 28.840456713000094,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 29.14554557299971,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 29.4473114489997,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 29.747201958999995,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 30.04482026100004,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 30.34353933600005,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 30.64104041199971,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 30.93903562100013,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 31.237317100999917,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 31.534728993000044,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 31.83270023799969,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 32.13435407899988,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 32.431783664999784,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 32.72917689099995,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 33.02544981899973,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 33.32207628900005,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 33.61827518099972,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 33.914907803000006,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 34.21336632099974,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 34.512704287999895,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 34.81148921399972,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 35.11067994799987,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 35.40962997999986,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 35.709069078000084,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 36.00799579199975,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 36.309402300999864,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 36.60580608300006,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 36.901731993999874,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 37.1984147889998,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 37.49704103299973,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 37.79171564599983,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 38.09168640300004,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 38.39121020099992,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 38.69118371200011,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 38.99058605399978,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 39.290368558999944,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 39.59001213300007,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 39.8897489420001,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 40.191339398999844,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 40.49074196099991,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 40.78988423999999,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 41.08942058599996,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 41.387729447999845,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 41.68524798599992,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 41.98119771899974,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 42.27747613299971,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 42.57543132899991,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 42.874248180999984,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 43.175004458999865,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 43.474968741999874,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 43.77424627699975,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 44.07421603600005,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 44.37572950799995,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 44.67619753700001,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 44.976271675000135,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 45.27569131900009,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 45.57598758599988,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 45.88380420800013,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 46.18371822600011,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 46.48169307199987,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 46.78294606899999,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 47.081413155000064,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 47.38156489999983,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 47.68094944099994,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 47.97909366499971,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 48.28029864900009,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 48.57963521800002,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 48.879788438000105,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 49.176631818999795,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 49.476807263999945,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 49.776336395999806,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 50.075665443999696,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 50.375047274999815,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 50.67422204700006,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 50.97555191299989,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 51.275832025,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 51.57662625800003,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 51.8758709509998,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 52.17466086500008,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 52.47453788199982,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 52.774427379999906,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 53.075277430999904,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 53.37617267299993,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 53.6941839279998,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 53.99455032700007,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 54.29423288099997,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 54.59213861099988,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 54.88908229699973,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 55.18700043199988,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 55.482438456999716,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 55.77897641899972,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 56.07532221099973,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 56.37419584700001,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 56.671554100999856,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 56.96936780999977,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 57.26749148399995,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 57.56739666700014,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 57.86631044199976,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 58.16481048700007,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 58.46505026299974,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 58.76529685200012,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 59.066122467999776,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 59.36793027299973,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 59.667788285999904,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 59.96848862299976,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 60.268911269,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 60.56896479599982,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 60.86926771099979,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 61.16988660200013,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 61.47093485300002,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 61.77093136199983,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 62.0717969719999,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 62.37327403299969,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 62.672804584000005,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 62.971348919999855,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 63.27009254599989,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 63.5699257440001,
+      "torch_allocated_mb": 131.3515625,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3368.98583984375
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 63.85453223000013,
+      "torch_allocated_mb": 86.63232421875,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 3324.2666015625
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 63.94503283999984,
+      "torch_allocated_mb": 86.5966796875,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 1711.716796875
+    },
+    {
+      "stage": "embeddings",
+      "t_rel_s": 64.28290870799992,
+      "torch_allocated_mb": 40.11328125,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 86.5966796875
+    },
+    {
+      "stage": "vram_cleanup_post_embedding",
+      "t_rel_s": 64.28507393600012,
+      "torch_allocated_mb": 40.11328125,
+      "torch_reserved_mb": 3846.0,
+      "torch_max_allocated_mb": 40.11328125
+    },
+    {
+      "stage": "clustering_start",
+      "t_rel_s": 64.31576175600003,
+      "torch_allocated_mb": 40.11328125,
+      "torch_reserved_mb": 50.0,
+      "torch_max_allocated_mb": 40.11328125
+    }
+  ],
+  "nvml_samples_count": 679,
+  "error": null
+}
