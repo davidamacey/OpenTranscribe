@@ -825,6 +825,27 @@ PyAnnote's speaker diarization uses sklearn's `AgglomerativeClustering`, which h
 
 **Note**: Higher values may impact processing time but will not cause errors.
 
+**VRAM budget (Phase B/C — 2026-04-20 measurements):**
+
+Three new env vars wire into the forked pyannote pipeline to tune the embedding-stage VRAM footprint:
+
+- `DIARIZATION_VRAM_BUDGET_MB` — explicit budget in MB. When set, the fork's `_budget.recommend_embedding_batch` uses this instead of the live free-VRAM query; useful when Whisper is co-resident.
+- `DIARIZATION_MIXED_PRECISION` — fp16 autocast for embedding. **Default false.** Phase A DER = 27-33 % (collapses speaker count); treat as opt-in "fast but wrong" mode.
+- `DIARIZATION_ONNX_CPU` — offload segmentation to CPU for <4 GB GPUs.
+
+Consumer-GPU recipes (Phase A `whole-stack.md` sizing):
+
+| GPU | Whisper model | `DIARIZATION_VRAM_BUDGET_MB` |
+|---|---|---:|
+| 4 GB laptop | `small` | 1200 |
+| 6 GB laptop | `medium` | 1500 |
+| 8 GB+ | `large-v3-turbo` | unset (auto) |
+| 12 GB+ dedicated | any | unset (auto) |
+
+Phase A measured throughput saturates at `embedding_batch_size=16` at fp32. The fork's previous auto-scaler went to bs=64-256 which wasted 3-7 GB for <3 % speed gain; replaced in Phase B. See `docs/diarization-vram-profile/README.md` for raw data.
+
+Run `python -m app.scripts.diarization_diag` inside the backend container to see recommended settings for the local GPU.
+
 ### Docker Volume Mappings
 The system uses simple volume mappings to cache models to their natural locations:
 ```yaml

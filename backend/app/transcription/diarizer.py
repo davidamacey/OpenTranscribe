@@ -106,6 +106,11 @@ class SpeakerDiarizer:
         device = torch.device(self.config.device)
         self._pipeline = self._pipeline.to(device)  # type: ignore[attr-defined]
 
+        # Phase C: plumb the VRAM-budget policy into the fork. Settings come
+        # from DIARIZATION_VRAM_BUDGET_MB / DIARIZATION_MIXED_PRECISION in
+        # app.core.config. None budget -> fork queries live free VRAM.
+        self._apply_vram_policy()
+
         # Configure segmentation batch_size based on GPU VRAM or env override.
         # PyAnnote defaults to 32 which causes OOM on GPUs with ≤12GB VRAM.
         self._configure_segmentation_batch_size()
@@ -118,6 +123,27 @@ class SpeakerDiarizer:
 
         elapsed = time.perf_counter() - step_start
         logger.info(f"TIMING: diarizer model loaded in {elapsed:.3f}s on {device}")
+
+    def _apply_vram_policy(self) -> None:
+        """Wire Phase C settings into the pyannote fork pipeline.
+
+        Reads DIARIZATION_VRAM_BUDGET_MB and DIARIZATION_MIXED_PRECISION from
+        app.core.config.settings and pushes them onto the loaded fork
+        pipeline. Safe no-op on stock upstream pyannote.
+        """
+        if self._pipeline is None:
+            return
+        try:
+            from app.core.config import settings
+        except Exception:
+            return
+        budget = getattr(settings, "DIARIZATION_VRAM_BUDGET_MB", None)
+        mp_embed = getattr(settings, "DIARIZATION_MIXED_PRECISION", False)
+        if hasattr(self._pipeline, "vram_budget_mb"):
+            self._pipeline.vram_budget_mb = budget
+        if hasattr(self._pipeline, "embedding_mixed_precision"):
+            self._pipeline.embedding_mixed_precision = bool(mp_embed)
+        logger.info(f"Diarization VRAM policy: budget_mb={budget} mixed_precision={mp_embed}")
 
     def _configure_segmentation_batch_size(self) -> None:
         """Set PyAnnote's segmentation batch_size based on GPU VRAM or env override.
