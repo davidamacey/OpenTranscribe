@@ -254,8 +254,22 @@ def load_pipeline(
     onnx_cpu: bool = False,
     model_id: str = DEFAULT_MODEL,
     optimized_src: Path | None = None,
+    torch_compile: bool = False,
+    segmentation_step: float | None = None,
 ):
-    """Load a PyAnnote pipeline for the given variant."""
+    """Load a PyAnnote pipeline for the given variant.
+
+    Parameters
+    ----------
+    torch_compile : bool
+        If True, wrap the segmentation and embedding models in torch.compile()
+        after pipeline construction. Measures the Phase 2.1 visibility fix
+        impact without touching the pipeline's __init__ default.
+    segmentation_step : float | None
+        If not None, override the pipeline's segmentation sliding-window step
+        (default is typically 0.1 = 90% overlap). Higher values (0.2-0.3) make
+        segmentation run on fewer chunks at a DER cost — measured in Phase 4.
+    """
     import torch
 
     if variant in ('optimized', 'optimized_cpu'):
@@ -284,6 +298,38 @@ def load_pipeline(
             token=HF_TOKEN or None,
         )
     pipeline.to(torch.device(device_str))
+
+    # Phase 4: sliding-window step override. pyannote's Inference object
+    # stores the step on the underlying segmentation inference; the
+    # SlidingWindow is rebuilt per-call so this is the simplest hook.
+    if segmentation_step is not None and hasattr(pipeline, '_segmentation'):
+        inner = pipeline._segmentation
+        if hasattr(inner, 'step'):
+            old_step = inner.step
+            inner.step = float(segmentation_step)
+            print(f'  segmentation_step: {old_step} -> {inner.step}')
+
+    # Phase 2.1 follow-up: post-construction torch.compile. Bypasses the
+    # pipeline's __init__ kwarg (which defaults False and isn't exposed by
+    # Pipeline.from_pretrained) by compiling the resident models directly.
+    if torch_compile and device_str != 'cpu':
+        try:
+            if hasattr(pipeline, '_segmentation') and hasattr(pipeline._segmentation, 'model'):
+                pipeline._segmentation.model = torch.compile(
+                    pipeline._segmentation.model, fullgraph=False
+                )
+            klustering = getattr(pipeline, 'klustering', None)
+            if (
+                hasattr(pipeline, '_embedding')
+                and hasattr(pipeline._embedding, 'model_')
+                and klustering != 'OracleClustering'
+            ):
+                pipeline._embedding.model_ = torch.compile(
+                    pipeline._embedding.model_, mode='reduce-overhead'
+                )
+            print('  torch.compile enabled (segmentation + embedding)')
+        except Exception as e:
+            print(f'  torch.compile failed: {e}')
 
     # Embedding batch size is now pinned to 16 by the fork. Override only if the
     # user explicitly set PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE (the fork respects it).
@@ -697,6 +743,8 @@ def run_benchmark(
     profiler: bool = False,
     model_id: str = DEFAULT_MODEL,
     optimized_src: Path | None = None,
+    torch_compile: bool = False,
+    segmentation_step: float | None = None,
 ) -> dict:
     """Run benchmark suite. If `runs > 1`, per-file statistical aggregates emitted."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -724,6 +772,8 @@ def run_benchmark(
             onnx_cpu=onnx_cpu,
             model_id=model_id,
             optimized_src=optimized_src,
+            torch_compile=torch_compile,
+            segmentation_step=segmentation_step,
         )
 
         per_file_results: list[dict] = []
@@ -1114,6 +1164,26 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        '--torch-compile',
+        action='store_true',
+        help=(
+            'After loading the pipeline, wrap the segmentation and embedding '
+            'models in torch.compile() (Phase 2.1 follow-up). First run pays a '
+            'JIT warmup cost; subsequent runs should be ~5-15%% faster if '
+            'Dynamo does not hit a graph break.'
+        ),
+    )
+    parser.add_argument(
+        '--segmentation-step',
+        type=float,
+        default=None,
+        help=(
+            'Override the segmentation sliding-window step (default ~0.1 = '
+            '90%% overlap). Higher values make segmentation N× faster at a '
+            'DER cost — Phase 4 measures this trade-off.'
+        ),
+    )
+    parser.add_argument(
         '--both',
         action='store_true',
         help='Run stock then optimized back-to-back and compare',
@@ -1198,6 +1268,8 @@ def main() -> None:
         profiler=args.profiler,
         model_id=args.model,
         optimized_src=optimized_src,
+        torch_compile=args.torch_compile,
+        segmentation_step=args.segmentation_step,
     )
 
 
