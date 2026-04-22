@@ -262,7 +262,7 @@ Pre-conversion is **production-ready**: models are deterministic, cached, and ze
 ## Related Files
 
 - `scripts/preconvert-onnx-models.py` — Pre-conversion script
-- `reference_repos/pyannote-audio-optimized/src/pyannote/audio/pipelines/speaker_diarization.py` — Updated `_setup_onnx_cpu()` (loads cached only)
+- `/mnt/nvm/repos/pyannote-audio-fork/src/pyannote/audio/pipelines/speaker_diarization.py` — Updated `_setup_onnx_cpu()` (loads cached only)
 - `scripts/benchmark-pyannote-direct.py` — Benchmark script (uses cached models)
 - `docs/GPU_OPTIMIZATION_RESULTS.md` — Full optimization results
 

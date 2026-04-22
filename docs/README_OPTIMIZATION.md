@@ -47,7 +47,7 @@ ls -lh models/onnx/
 ### 2. Use GPU Optimization
 ```bash
 # Install optimized fork
-pip install -e reference_repos/pyannote-audio-optimized
+pip install -e /mnt/nvm/repos/pyannote-audio-fork
 
 # Test benchmark
 python scripts/benchmark-pyannote-direct.py --variant optimized --gpu-index 0
@@ -244,7 +244,7 @@ Results merge when both complete
 ## 📦 Files
 
 ### Code (Optimized Fork)
-- `reference_repos/pyannote-audio-optimized/` — complete optimized fork
+- `/mnt/nvm/repos/pyannote-audio-fork/` — complete optimized fork
   - `src/pyannote/audio/pipelines/speaker_diarization.py` — all GPU optimizations
   - `src/pyannote/audio/core/inference.py` — pinned memory for segmentation
 
@@ -316,7 +316,7 @@ Results merge when both complete
 **A**: No, speaker counts match exactly (±1 due to VBx). Segment counts within ±1.8% (normal clustering variation). Timing is identical.
 
 ### Q: Can I use it with older PyAnnote versions?
-**A**: No, this fork is based on PyAnnote v4. Use `reference_repos/pyannote-audio-optimized/`.
+**A**: No, this fork is based on PyAnnote v4. Use `/mnt/nvm/repos/pyannote-audio-fork/`.
 
 ### Q: What about queue split?
 **A**: Planned Phase 4.6. Enables concurrent GPU (ASR) + CPU (diarization) for ~2x throughput.
@@ -342,7 +342,7 @@ pip install onnx onnxruntime
 python scripts/preconvert-onnx-models.py
 
 # 2. Deploy
-pip install -e reference_repos/pyannote-audio-optimized
+pip install -e /mnt/nvm/repos/pyannote-audio-fork
 
 # 3. Verify
 python scripts/benchmark-pyannote-direct.py --variant optimized

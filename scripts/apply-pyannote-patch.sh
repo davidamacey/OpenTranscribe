@@ -22,7 +22,8 @@ INF_FILE="$SITE_PACKAGES/pyannote/audio/core/inference.py"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PATCHES_DIR="$REPO_ROOT/patches/pyannote"
-FORK_DIR="$REPO_ROOT/reference_repos/pyannote-audio-optimized/src/pyannote/audio"
+# Canonical davidamacey/pyannote-audio fork (gpu-optimizations branch)
+FORK_DIR="${PYANNOTE_FORK_DIR:-/mnt/nvm/repos/pyannote-audio-fork/src/pyannote/audio}"
 ORIG_DIR="$REPO_ROOT/reference_repos/pyannote-audio/src/pyannote/audio"
 
 apply_full() {
@@ -155,7 +156,7 @@ show_diff() {
     fi
   done
   echo ""
-  echo "  Full diff: diff -u reference_repos/pyannote-audio/src/ reference_repos/pyannote-audio-optimized/src/"
+  echo "  Full diff: diff -u reference_repos/pyannote-audio/src/ /mnt/nvm/repos/pyannote-audio-fork/src/"
 }
 
 case "${1:-}" in

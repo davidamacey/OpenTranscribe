@@ -92,7 +92,7 @@ python scripts/preconvert-onnx-models.py
 ✅ **VRAM**: 66-68% peak reduction (7-17GB → 5.6GB constant)
 
 ### Implementation Status
-- ✅ All code in optimized fork: `reference_repos/pyannote-audio-optimized/`
+- ✅ All code in optimized fork: `/mnt/nvm/repos/pyannote-audio-fork/`
 - ✅ Drop-in compatible with PyAnnote v4 API
 - ✅ No breaking changes
 - ✅ All pre-commit hooks pass
@@ -101,7 +101,7 @@ python scripts/preconvert-onnx-models.py
 ```bash
 # Use optimized GPU variant in OpenTranscribe
 source backend/venv/bin/activate
-pip install -e reference_repos/pyannote-audio-optimized
+pip install -e /mnt/nvm/repos/pyannote-audio-fork
 
 # Test
 python scripts/benchmark-pyannote-direct.py --variant optimized --gpu-index 0
@@ -177,7 +177,7 @@ User Upload
 ### Phase 1: Use GPU Optimization (Now)
 ```bash
 # Install optimized fork
-pip install -e reference_repos/pyannote-audio-optimized
+pip install -e /mnt/nvm/repos/pyannote-audio-fork
 
 # Update OpenTranscribe to use it
 # Expected improvement: 1.28x faster diarization
@@ -209,7 +209,7 @@ Current CPU ONNX implementation only optimizes segmentation, leaving embeddings 
 - [ ] Check GPU memory reduction in prod: monitor VRAM during diarization
 
 ### Deployment
-- [ ] Install optimized fork: `pip install -e reference_repos/pyannote-audio-optimized`
+- [ ] Install optimized fork: `pip install -e /mnt/nvm/repos/pyannote-audio-fork`
 - [ ] Update OpenTranscribe to use optimized pipeline
 - [ ] Monitor latency + VRAM in production
 - [ ] Document for users: GPU optimization active, expected 1.28x speedup
@@ -240,7 +240,7 @@ PYANNOTE_METRICS_ENABLED=false  # Disable metrics computation (faster)
 ## Files Changed
 
 ### Core Code
-- `reference_repos/pyannote-audio-optimized/` — optimized fork (complete)
+- `/mnt/nvm/repos/pyannote-audio-fork/` — optimized fork (complete)
   - `src/pyannote/audio/pipelines/speaker_diarization.py` — TF32, batching, prefetch, ONNX loading
   - `src/pyannote/audio/core/inference.py` — pinned memory
 

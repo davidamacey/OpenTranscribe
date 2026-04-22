@@ -387,9 +387,9 @@ CPU diarization is **not viable** — PyAnnote requires GPU:
 ## Files Modified
 
 ### Reference Optimized Fork
-- `reference_repos/pyannote-audio-optimized/src/pyannote/audio/pipelines/speaker_diarization.py` — embedding TF32, batching, prefetch
-- `reference_repos/pyannote-audio-optimized/src/pyannote/audio/core/inference.py` — pinned memory for segmentation
-- `reference_repos/pyannote-audio-optimized/src/pyannote/audio/models/embedding/wespeaker/__init__.py` — direct model calls
+- `/mnt/nvm/repos/pyannote-audio-fork/src/pyannote/audio/pipelines/speaker_diarization.py` — embedding TF32, batching, prefetch
+- `/mnt/nvm/repos/pyannote-audio-fork/src/pyannote/audio/core/inference.py` — pinned memory for segmentation
+- `/mnt/nvm/repos/pyannote-audio-fork/src/pyannote/audio/models/embedding/wespeaker/__init__.py` — direct model calls
 
 ### Benchmark Harness
 - `scripts/benchmark-pyannote-direct.py` — runs stock/optimized/optimized_cpu variants
