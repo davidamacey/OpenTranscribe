@@ -14,7 +14,9 @@ services:
       - ./backend:/app
       # Scripts, audio fixtures, docs output — scoped to benchmarking paths only
       - ./scripts:/app/scripts:ro
-      - ./benchmark:/app/benchmark:ro
+      # Audio fixtures read-only; results subdir writable for new report JSONs
+      - ./benchmark/test_audio:/app/benchmark/test_audio:ro
+      - ./benchmark/results:/app/benchmark/results
       - ./docs:/app/docs
       # Bind-mount the local pyannote-audio fork over site-packages so Phase A
       # characterization patches (e.g. PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE) apply
