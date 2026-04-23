@@ -1,8 +1,44 @@
 # Phase 6.3 — TensorRT Engine Plans for Server Deployments (feasibility memo)
 
-**Status**: Feasibility analysis. **Recommended** as a 1-week investigation + commit.
-**Projected impact**: 20-40% on segmentation, 15-25% on embeddings (fp32 only — fp16 is out of scope per quality invariant).
+**Status**: **BLOCKED — transitively on Phase 6.2 (2026-04-23)**. TensorRT EP consumes the ONNX artifact Phase 6.2 was supposed to produce; with 6.2 blocked on `torch.vmap` inside WeSpeaker + InstanceNorm/LSTM issues inside segmentation, 6.3 cannot proceed as memoed.
+**Projected impact (hypothetical, fp32 only)**: 20-40% on segmentation, 15-25% on embeddings.
 **Tier**: Tier 3 — AWS / dedicated-GPU-server deployments, opt-in, not for consumer images.
+
+## Cascading block from Phase 6.2
+
+See `phase-6-2-onnx-export-feasibility.md` for the detailed spike findings. Summary:
+- WeSpeaker `compute_fbank` uses `torch.vmap` which neither TorchScript nor dynamo ONNX exporter can trace through (PyTorch 2.8 — `torch.export` does not support vmap).
+- Segmentation-3.0 does export via TorchScript but breaks parity at `max_abs_diff=5.57e-3`, above our 1e-4 acceptance bar, likely due to InstanceNorm train-mode leak + LSTM shape aliasing.
+- Both models need preparatory refactoring (estimated 5-8 days combined) before ONNX is viable.
+
+## Alternative paths to TensorRT without ONNX
+
+Three routes exist that bypass the ONNX intermediate:
+
+### Route A — `torch_tensorrt` dynamo backend
+Converts PyTorch models to TRT via `torch.export` → TRT graph. **Same blocker**: `torch.export` fails on vmap. Would inherit all of Phase 6.2's spike failures. Quick follow-up spike could confirm.
+
+### Route B — `torch_tensorrt` FX / TorchScript backend
+Uses TorchScript tracing. For WeSpeaker the same vmap failure applies. For segmentation, this is the one route not yet ruled out — `torch_tensorrt` might be more tolerant of the InstanceNorm/LSTM warnings than ORT+TRT-EP. **Estimated 2-3 day spike to validate on segmentation only.** Partial win (segmentation TRT, WeSpeaker stays eager).
+
+### Route C — Hand-rolled TRT from PyTorch state dict
+Use `tensorrt.Builder` directly, re-implement each layer as TRT API calls, load weights from the PyTorch state dict. This is the production path for teams that really care about TRT optimization (e.g., what NVIDIA's SDK authors do internally). **Effort: 2-3 weeks**, gives the maximum optimization ceiling, but doubles our maintenance surface because every pyannote upstream change requires a corresponding TRT re-write.
+
+## Recommendation
+
+**Park Phase 6.3 until Phase 6.2 unblocks.** The alternative routes are either also-blocked (A), partial-wins-with-significant-spike-cost (B), or outsize-effort-vs-payoff (C).
+
+**If TRT becomes urgent for AWS server tier**, Route B is the only rational first step: it's the minimum spike that tells us whether segmentation can go TRT without touching WeSpeaker. If segmentation TRT yields ≥15% stage speedup, we'd ship that alone and leave WeSpeaker on Phase 6.1 `torch.compile`.
+
+## Interaction with the rest of the roadmap
+
+- **Phase 6.1** (`torch.compile` + gcc) — already shipped, independent. Keep.
+- **Phase 6.2** (ONNX) — blocked on WeSpeaker vmap + segmentation parity.
+- **Phase 6.3** (TRT) — blocked on 6.2.
+- **Phase 5.2** (GPU aggregate/reconstruct) — independent of 6.x, ~4.5% E2E projected, next-best concrete win.
+- **Phase 5.4** (`GPU_CONCURRENT_REQUESTS` soak) — independent, 2-4× throughput at the deployment level.
+
+Priority order if throughput becomes urgent: **5.2 → 5.4 → (spike 6.3 Route B) → (refactor WeSpeaker → unblock 6.2)**. The refactor is last because it touches Phase A's FFT optimization and risks DER regression.
 
 ## Context
 
