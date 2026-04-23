@@ -1,8 +1,8 @@
 # Phase 6.1 — `torch.compile` Enablement (feasibility memo)
 
-**Status**: Feasibility analysis. **Recommended** as a 1-day commit.
-**Projected impact**: 5-15% on segmentation + embedding stages on CUDA; 0-3% on MPS.
-**Tier**: Tier 1 — default-on, automatic fallback, consumer-friendly.
+**Status**: **SHIPPED 2026-04-23**. Image change landed; default kept OFF pending broader wins.
+**Measured impact on CUDA A6000, 2.2h, 3-run warm**: segmentation ~6-7% faster (5.52s → 5.11-5.16s), embeddings in noise (75.27s → 75.61-76.15s). **End-to-end unchanged** (~100s). DER 0.0000% (T1). VRAM 844 MB unchanged. First-run compile cost: ~68s (one-time, cached).
+**Tier**: Tier 1 — opt-in via `torch_compile=True` kwarg, available but off by default. Primary value: unblocks Phase 6.2 (ONNX) + 6.3 (TensorRT) tooling which also need the toolchain.
 
 ## Context
 
@@ -95,9 +95,19 @@ Benchmark harness must run 1 warmup + N measurement runs. Phase 1.1's harness al
 
 ## Recommendation
 
-**Ship.** 1-day commit: Dockerfile line + image rebuild + 3-run benchmark on 2.2h/4.7h. Low risk, automatic fallback, consumer-friendly (cache is persistent).
+**Shipped.** gcc+g++ added to `backend/Dockerfile.prod` runtime stage (~150 MB image growth). Warm-run measurement showed segmentation at the low end of the projected band (~6-7%) and embeddings in noise — net E2E is indistinguishable from baseline at measurement precision. **Default is kept OFF**: the `torch_compile` kwarg remains opt-in. The change still earns its keep because Phase 6.2 and 6.3 both require the toolchain for their export/compile pipelines.
 
-If measurement shows <3% gain across both stages, **keep the gcc change anyway** — it unlocks future ONNX/TensorRT export tooling that also needs the toolchain.
+## Actual measurements (2026-04-23, A6000, 2.2h, 3 runs after warmup)
+
+| stage | baseline | with torch.compile | Δ |
+|---|---:|---:|---:|
+| segmentation | 5.52s | 5.11-5.16s | **-6.5 to -7.4%** |
+| embeddings | 75.27s | 75.61-76.15s | +0.4 to +1.2% (noise) |
+| clustering_start | 12.29s | 12.08-12.26s | unchanged |
+| **E2E** | **~100s** | **100.7-101.7s** | **noise** |
+| peak VRAM | 844 MB | 844 MB | 0 |
+| DER | — | 0.0000% T1 ×3 | 0 |
+| first-run compile cost | — | +68s | amortized over cache lifetime |
 
 ## Interaction with Phase 6.2 / 6.3
 

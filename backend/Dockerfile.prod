@@ -57,15 +57,22 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
       org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
       org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
 
-# Install only runtime dependencies (no build tools).
+# Install only runtime dependencies.
 # `apt-get upgrade -y` pulls the latest security patches for system libs
 # (libssl, libexpat, libpng, libgdk-pixbuf, etc.) on every image build, so
 # we pick up Debian security updates without having to bump the base image
 # tag manually. This is important because the base image (python:3.13-slim-
 # trixie) may have been built before the latest security advisories landed.
+#
+# gcc/g++: required by `torch.compile` (Inductor JIT) at runtime to compile
+# generated C++ launcher code for Triton kernels. Without them the first
+# forward pass falls back to eager silently. ~150 MB image growth; acceptable
+# vs. 5-15% segmentation + embedding speedup unlocked by torch.compile.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
+    gcc \
+    g++ \
     libsndfile1 \
     libimage-exiftool-perl \
     libgomp1 \
