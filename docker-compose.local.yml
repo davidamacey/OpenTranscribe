@@ -14,6 +14,9 @@ services:
   celery-cpu-worker:
     pull_policy: never
 
+  celery-cloud-asr-worker:
+    pull_policy: never
+
   celery-nlp-worker:
     pull_policy: never
 
