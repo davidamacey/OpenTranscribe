@@ -71,6 +71,10 @@ triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 onnx>=1.17.0
 onnxruntime-gpu>=1.22.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 onnxruntime>=1.22.0; sys_platform != 'linux' or platform_machine != 'x86_64'
+# TensorRT — required for ORT TensorrtExecutionProvider. Brings libnvinfer.so.10
+# in site-packages/tensorrt_libs. Phase 6.3 uses this for GPU-server deployments
+# (opt-in via ENABLE_TENSORRT=1); defaults stay on CUDA EP / eager PyTorch.
+tensorrt>=10.16.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 
 # PyAnnote v4 - GPU-optimized fork with 1.28x speedup and 66% VRAM reduction
 # Fork: https://github.com/davidamacey/pyannote-audio/tree/gpu-optimizations

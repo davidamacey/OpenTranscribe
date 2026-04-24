@@ -136,6 +136,31 @@ Five memos written in `docs/upstream-patches/`:
 - Integration works (pipeline ran without errors, just slowly).
 - The blocker is entirely in ORT's kernel coverage, not our code.
 
+### Phase 6.3 — TensorRT spike — PARTIAL UNLOCK
+
+**Attempted 2026-04-23**. Added `tensorrt` to requirements.txt (+4.5 GB image growth), extended `LD_LIBRARY_PATH` in `Dockerfile.prod` to find NVIDIA lib packages + `tensorrt_libs`. No base-image change (stayed on `python:3.13-slim-trixie` per user preference).
+
+**Microbench (fixed shapes, A6000)** — TRT EP loaded cleanly:
+
+| Path | Seg ms/batch (32×5s) | Emb ms/batch (16×200) |
+|---|---:|---:|
+| PyTorch eager CUDA | **7.9** | 9.6 |
+| ORT CUDA EP | 31.7 (4× slower) | 9.8 (parity) |
+| **ORT TRT EP** | 19.2 (2.4× slower) | **4.9** (**1.96× FASTER**) |
+
+**Embedding TRT EP is 2× faster than eager PyTorch.** Segmentation TRT EP is still slower than eager (partial op coverage — `Gather_115` int64 warning surfaces some CUDA-fallback ops inside the TRT subgraph).
+
+**E2E pipeline test: FAILED.** Ran 2.2h with `PYANNOTE_USE_ONNX=1 ENABLE_TENSORRT=1`, killed after 20 min (baseline: 100s). Root cause: TRT EP rebuilds engine plans **per unique input shape** (~12s each). The pipeline emits variable batch sizes (last batch of each segmentation scan is the chunk-count remainder). 30+ distinct shapes × 12s = 6+ min of rebuild stalls.
+
+**The fix (documented, not implemented in this spike)**: set `trt_profile_min/opt/max_shapes` provider options so TRT builds one plan covering the whole shape range. See `phase-6-3-spike-results.md`.
+
+**What shipped (reversible, gated)**:
+- `tensorrt` pip dep (activates only when `ENABLE_TENSORRT=1`)
+- `LD_LIBRARY_PATH` extended so TRT EP can `dlopen`
+- Provider selection in `fork:pyannote/audio/onnx/runtime.py` already wires TRT EP
+
+**What's pending**: shape-profile configuration, hybrid "TRT embedding + eager segmentation" mode, VRAM measurement under TRT. Projected E2E win once shape-profile is in: **5-10% on 2.2h** (embedding-only TRT saving ~35-40s).
+
 ### Phase 5.2 — GPU aggregate + reconstruct — NEGATIVE RESULT
 
 **Attempted 2026-04-23**. Shipped `fork:pyannote/audio/gpu_ops.py` with `aggregate_gpu()` + `reconstruct_gpu()` using `torch.Tensor.index_add_` and `scatter_reduce_(reduce='amax')`. Env-var-gated (`PYANNOTE_GPU_AGGREGATE=1`, `PYANNOTE_GPU_RECONSTRUCT=1`), both default OFF. Hooks in `core/inference.py::aggregate` + `pipelines/speaker_diarization.py::reconstruct`, exception-safe fallback to CPU numpy.
