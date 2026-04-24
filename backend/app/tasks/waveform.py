@@ -5,8 +5,10 @@ This module provides a standalone Celery task for generating waveform visualizat
 data that runs on the CPU queue in parallel with GPU transcription tasks.
 """
 
+import contextlib
 import logging
 import os
+import tempfile
 
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
@@ -14,6 +16,7 @@ from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
+from app.services.minio_service import download_temp_audio
 from app.tasks.transcription.waveform_generator import WaveformGenerator
 from app.utils import benchmark_timing
 from app.utils.temp_file_utils import cleanup_temp_file
@@ -35,9 +38,36 @@ def _get_storage_path(file_id: int) -> str | None:
         return str(media_file.storage_path)  # type: ignore[no-any-return]
 
 
+def _download_temp_audio_safe(file_uuid: str) -> str | None:
+    """Download the preprocessed 16 kHz WAV from MinIO temp.
+
+    Returns a local path on success, None on miss — caller falls back to the
+    original media file. The temp WAV is ~10x smaller than typical source
+    video, so preferring it when it exists is a substantial I/O win (Phase
+    2 PR #3 of the timing audit plan — item A1).
+    """
+    fd, temp_file_path = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    try:
+        download_temp_audio(file_uuid, temp_file_path)
+        size_mb = os.path.getsize(temp_file_path) / (1024 * 1024)
+        logger.info(f"Using preprocessed WAV from MinIO temp ({size_mb:.1f}MB)")
+        return temp_file_path
+    except Exception as e:
+        logger.debug(f"Preprocessed WAV not available yet ({e}); using original")
+        with contextlib.suppress(OSError):
+            os.unlink(temp_file_path)
+        return None
+
+
 def _download_to_temp_file(storage_path: str) -> str | None:
-    """Download file from storage to a temporary file. Returns temp file path or None."""
-    logger.info(f"Downloading file from storage: {storage_path}")
+    """Download the ORIGINAL media file from storage to a local temp path.
+
+    Used as a fallback when the preprocessed WAV isn't available in MinIO
+    temp (e.g. early dispatch, postprocess already cleaned up, or backfill
+    tasks for files that never went through the pipeline).
+    """
+    logger.info(f"Downloading original file from storage: {storage_path}")
     _, file_extension = os.path.splitext(storage_path)
 
     try:
@@ -72,7 +102,13 @@ def _cleanup_temp_file(temp_file_path: str | None) -> None:
     default_retry_delay=60,
     priority=CPUPriority.PIPELINE_CRITICAL,
 )
-def generate_waveform_task(self, file_id: int, file_uuid: str, task_id: str | None = None):
+def generate_waveform_task(
+    self,
+    file_id: int,
+    file_uuid: str,
+    task_id: str | None = None,
+    prefer_temp_audio: bool = True,
+):
     """
     Generate waveform visualization data for a media file.
 
@@ -85,6 +121,11 @@ def generate_waveform_task(self, file_id: int, file_uuid: str, task_id: str | No
         task_id: Optional upstream pipeline task_id. When provided, waveform
             start/end benchmark markers land in the same Redis hash as the
             rest of the pipeline so the CSV stages reconcile cleanly.
+        prefer_temp_audio: When True (default) we download the preprocessed
+            16 kHz WAV from ``temp/preprocess/{file_uuid}/`` first — it's
+            ~10x smaller than typical source video. Falls back to the
+            original media file when the temp WAV isn't present (early
+            dispatch, cleanup already ran, or backfill jobs).
 
     Returns:
         dict: Success status and waveform data info
@@ -95,13 +136,16 @@ def generate_waveform_task(self, file_id: int, file_uuid: str, task_id: str | No
     try:
         logger.info(f"Starting waveform generation for file {file_id} ({file_uuid})")
 
-        storage_path = _get_storage_path(file_id)
-        if not storage_path:
-            return {"success": False, "error": "Media file not found or no storage path"}
+        if prefer_temp_audio:
+            temp_file_path = _download_temp_audio_safe(file_uuid)
 
-        temp_file_path = _download_to_temp_file(storage_path)
         if not temp_file_path:
-            return {"success": False, "error": "Download failed"}
+            storage_path = _get_storage_path(file_id)
+            if not storage_path:
+                return {"success": False, "error": "Media file not found or no storage path"}
+            temp_file_path = _download_to_temp_file(storage_path)
+            if not temp_file_path:
+                return {"success": False, "error": "Download failed"}
 
         logger.info(f"Generating waveform visualization for file {file_id}")
         waveform_generator = WaveformGenerator()

@@ -15,7 +15,6 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file
-from app.tasks.waveform import generate_waveform_task
 from app.utils import benchmark_timing
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
@@ -184,15 +183,10 @@ def start_transcription_task(
             whisper_model=whisper_model,
             task_id=task_id,
         )
-        # Launch CPU waveform generation task in parallel; share the task_id
-        # so its start/end markers land in the same benchmark hash.
-        generate_waveform_task.delay(
-            file_id=file_id, file_uuid=file_uuid, task_id=dispatched_task_id
-        )
-        logger.info(
-            f"Started parallel tasks for file {file_id}: "
-            f"pipeline chain (task_id={dispatched_task_id}) and waveform (CPU)"
-        )
+        # Waveform generation is dispatched from the preprocess task once the
+        # 16 kHz WAV is staged in MinIO temp (see Phase 2 PR #3: eliminates
+        # the second full download of the original file).
+        logger.info(f"Dispatched pipeline chain for file {file_id} (task_id={dispatched_task_id})")
         return dispatched_task_id
     else:
         logger.info("Skipping Celery task in test environment")

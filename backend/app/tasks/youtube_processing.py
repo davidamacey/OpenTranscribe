@@ -24,7 +24,6 @@ from app.models.user import User
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import dispatch_transcription_pipeline
-from app.tasks.waveform import generate_waveform_task
 from app.utils.error_classification import RETRIABLE_CATEGORIES
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
@@ -361,15 +360,14 @@ def process_youtube_url_task(
                         f"Failed to send file_updated notification for YouTube completion {file_id}: {e}"
                     )
 
-                # Start transcription and waveform tasks in parallel
+                # Dispatch the 3-stage pipeline. Waveform generation is fired
+                # from within the preprocess stage once the 16 kHz WAV has
+                # been staged in MinIO temp — avoids re-downloading the
+                # original media (Phase 2 PR #3).
                 try:
-                    # Launch 3-stage transcription pipeline chain
                     task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
-                    # Launch CPU waveform generation task in parallel
-                    generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
                     logger.info(
-                        f"Started parallel tasks for MediaFile {file_id}: "
-                        f"pipeline chain (task_id={task_id}) and waveform (CPU)"
+                        f"Dispatched pipeline chain for MediaFile {file_id} (task_id={task_id})"
                     )
                 except Exception as e:
                     logger.error(f"Failed to start tasks for {file_id}: {e}")
