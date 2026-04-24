@@ -56,6 +56,9 @@ class FilePipelineTiming(Base):
     http_request_received_ms = Column(BigInteger, nullable=True)
     http_read_complete_ms = Column(BigInteger, nullable=True)
     http_validation_end_ms = Column(BigInteger, nullable=True)
+    imohash_start_ms = Column(BigInteger, nullable=True)
+    imohash_end_ms = Column(BigInteger, nullable=True)
+    prepare_upload_end_ms = Column(BigInteger, nullable=True)
     minio_put_start_ms = Column(BigInteger, nullable=True)
     minio_put_end_ms = Column(BigInteger, nullable=True)
     thumbnail_start_ms = Column(BigInteger, nullable=True)
@@ -63,6 +66,9 @@ class FilePipelineTiming(Base):
     db_commit_start_ms = Column(BigInteger, nullable=True)
     db_commit_end_ms = Column(BigInteger, nullable=True)
     http_response_end_ms = Column(BigInteger, nullable=True)
+    # URL-ingest path only (yt-dlp download wall-clock).
+    url_download_start_ms = Column(BigInteger, nullable=True)
+    url_download_end_ms = Column(BigInteger, nullable=True)
 
     # --- Stage 6-10: CPU preprocess ---
     dispatch_timestamp_ms = Column(BigInteger, nullable=True, index=True)
@@ -89,6 +95,8 @@ class FilePipelineTiming(Base):
     postprocess_task_prerun_ms = Column(BigInteger, nullable=True)
     postprocess_end_ms = Column(BigInteger, nullable=True)
     completion_notified_ms = Column(BigInteger, nullable=True, index=True)
+    # Terminal error marker — lets SQL filter error-mode rows cleanly.
+    pipeline_error_end_ms = Column(BigInteger, nullable=True)
 
     # --- Stage 17-22: async enrichment (fire-and-forget, end > completion) ---
     search_index_start_ms = Column(BigInteger, nullable=True)

@@ -57,19 +57,52 @@ Markers are grouped by stage. Each entry lists the timestamp key in the Redis ha
 | `client_hash_start` / `client_hash_end` | SHA-256 hash compute in the browser. |
 | `client_put_start` / `client_put_end` | Browser → MinIO or browser → API PUT. |
 
-### Stage 1-5 — API ingress (legacy flow only)
+### Stage 1-5 — API ingress
 
-All set inside `backend/app/api/endpoints/files/upload.py` in `process_file_upload`. Every marker is a no-op on the reprocess flow.
+The exact set of markers depends on which upload flow the client used.
+Every row-level marker is a no-op on the reprocess flow.
+
+**Legacy direct POST** (`backend/app/api/endpoints/files/upload.py::process_file_upload`)
+— the client streams bytes to the API, which then PUTs them to MinIO.
 
 | Marker | When |
 |---|---|
 | `http_request_received` | Just after the handler enters. |
-| `http_read_complete` | After `_read_file_content` buffers the full body. |
-| `http_validation_end` | After magic-byte validation. |
-| `minio_put_start` / `minio_put_end` | Around the single `put_object` call. |
-| `thumbnail_start` / `thumbnail_end` | Around `_generate_video_thumbnail`. Only present for videos. |
-| `db_commit_start` / `db_commit_end` | Around the final `db.commit()` + `db.refresh()`. |
-| `http_response_end` | Just before `return db_file`. |
+| `http_validation_end` | After streaming magic-byte validation on the first chunk. |
+| `http_read_complete` | After the remainder of the body has been buffered. |
+| `imohash_start` / `imohash_end` | Around the backend imohash computation (3×128 KiB ranged sample). |
+| `minio_put_start` / `minio_put_end` | Around the tuned `upload_file_tuned` call (64 MiB multipart parts). |
+| `db_commit_start` / `db_commit_end` | Around the single `db.commit()` that now bundles INSERT + UPDATE. |
+| `http_response_end` | Just before `return db_file`. The thumbnail generation has been deferred to a background task so this marker fires right after the commit. |
+
+**Presigned direct-to-MinIO** (`backend/app/api/endpoints/files/prepare_upload.py`
+and `complete_upload.py`) — the browser PUTs bytes directly to MinIO, the
+API only sees the prepare/complete round-trips.
+
+| Marker | When |
+|---|---|
+| `http_request_received` | Top of `complete_upload` when the browser reports the PUT is done. |
+| `prepare_upload_end` | End of `prepare_upload` — captures the presign+create-row handoff. |
+| `imohash_start` / `imohash_end` | Around the `compute_from_minio` call (three ranged reads against MinIO, no full download). |
+| `db_commit_start` / `db_commit_end` | Around the status-flip commit. |
+| `http_response_end` | Just before the pipeline is dispatched. |
+| Client-side (optional) | `client_hash_start/end`, `client_put_start/end` supplied by the frontend Web Worker + direct PUT. |
+
+**URL ingest** (`backend/app/tasks/youtube_processing.py::process_youtube_url_task`)
+— yt-dlp downloads on the CPU download worker, uploads into MinIO, then
+dispatches the same transcription pipeline.
+
+| Marker | When |
+|---|---|
+| `http_request_received` | Top of the task — captures the submission-to-processing handoff. |
+| `url_download_start` / `url_download_end` | Around the yt-dlp download in `process_media_url_sync`. |
+| `imohash_start` / `imohash_end` | Around the post-download `compute_from_stream` call against the local temp file. |
+| `minio_put_start` / `minio_put_end` | Around the tuned `upload_file_tuned` call (64 MiB multipart parts). |
+| `thumbnail_start` / `thumbnail_end` | Around `_get_thumbnail_with_fallback`. Source-supplied thumbnail (YouTube, Vimeo, …) resolves inline as a single CDN GET; the FFmpeg frame-extraction fallback is deferred to `generate_thumbnail_task`. |
+| `db_commit_start` / `db_commit_end` | Around the metadata commit. |
+| `http_response_end` | Just before `dispatch_transcription_pipeline`. |
+
+All three flows set the `http_flow` context field to `"legacy"`, `"presigned"`, or `"url"` so you can partition the data in SQL without parsing markers.
 
 ### Stage 6-10 — CPU preprocess
 
@@ -125,7 +158,7 @@ Set via `benchmark_timing.set_context(task_id, {...})`:
 - `content_type` — MIME type.
 - `whisper_model`, `asr_provider`, `asr_model` — transcription provider.
 - `gpu_device` — which GPU ran the task.
-- `http_flow` — `legacy` today, `presigned` post Phase-2 PR.
+- `http_flow` — `legacy` (direct API POST), `presigned` (browser PUT), or `url` (yt-dlp ingest).
 - `queue_depth_at_dispatch` — JSON `{cpu: N, gpu: N, ...}` snapshot.
 - `concurrent_files_at_dispatch` — count of in-flight MediaFile rows.
 - `cpu_worker_cold`, `gpu_worker_cold`, `cpu_transcribe_worker_cold` — `"true"` when this task was the first on its worker process.
@@ -254,10 +287,15 @@ Record a baseline run with the pre-change code, then after each PR rerun the sam
 - If a row is missing from `file_pipeline_timing` but the Redis hash exists, check the backend logs for `Failed to persist pipeline timing row`. The usual culprit is a mismatched `file_id` (task ran before the file record was created — never happens in practice, but worth eliminating).
 - If markers are present in Redis but not in the CSV, double-check you're running the latest `scripts/benchmark_e2e.py` — `calculate_stages` was extended alongside the new markers.
 
-## Phase 2 changes that will affect these markers
+## Phase 2 landings (reference)
 
-- **Presigned upload flow** (Phase 2 PR #2): `minio_put_*`, `thumbnail_*`, and the `http_read_*` ingress markers drop out of the API-side hash; `client_hash_*`, `client_put_*`, and new `prepare_upload_*` markers take their place. `http_flow` context field flips from `legacy` to `presigned`.
-- **Shared-memory handoff** (Phase 2 PR #4): `temp_upload_*` and `gpu_audio_load_*` become sub-millisecond (linking into scratch) or vanish entirely.
-- **Parallelization / deferral** (Phase 2 PR #5): `thumbnail_*` moves out of the HTTP path; `search_index_*` / `search_index_chunks_*` merge; `speaker_upsert_*` fires on the local-ASR path too.
+All Phase 2 PRs are now merged. Behaviour changes to be aware of:
 
-When those PRs land, this document stays authoritative — add new markers and deprecate the old ones in-place rather than splitting the reference across files.
+- **Presigned upload flow** (PR #2): `minio_put_*` and the `http_read_*` ingress markers drop out of the API-side hash for the presigned path. `client_hash_*`, `client_put_*`, and `prepare_upload_end` take their place. `http_flow` flips from `legacy` to `presigned`.
+- **URL ingest flow** (PR #9): adds `url_download_*`, and reuses `imohash_*`, `minio_put_*`, `thumbnail_*`, `db_commit_*`. `http_flow` is `url`. `thumbnail_*` wraps the source-thumbnail-or-defer helper — a cheap inline path or an async dispatch, not a long inline FFmpeg run.
+- **Shared-memory handoff** (PR #4): `temp_upload_*` and `gpu_audio_load_*` become sub-millisecond on same-host deployments (atomic rename + hard-link into the scratch volume). They stay larger in multi-host deployments where the MinIO fallback path is taken.
+- **Parallelization / deferral** (PR #5): `thumbnail_*` on the legacy flow is now dispatched asynchronously to `generate_thumbnail_task` — the HTTP handler returns before FFmpeg runs. `search_index_chunks_*` is the primary chunk-indexing marker; `search_index_*` wraps the full-doc index which also runs on the embedding worker now.
+- **Resilience** (PR #8): `pipeline_error_end` fires when `on_pipeline_error` runs; `retry_count` and `per_retry_timings` accumulate per Celery retry so analysis can separate first-try wall-clock from retry-inflated wall-clock.
+- **Parallel preprocess + diarizer overlap** (PR #9): `ffmpeg_start/end` and `metadata_start/end` now overlap on videos (the two subprocesses run on a `ThreadPoolExecutor`). The diarizer model load absorbs into the transcription window when diarization is enabled — this is NOT a separately-marked stage; it shows up as reduced wall-clock between `model_load_transcriber` and the next profiler snapshot.
+
+This document stays authoritative — future changes should update the tables above rather than appending version-specific notes.

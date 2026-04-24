@@ -139,17 +139,23 @@ async def complete_upload(
     except Exception as e:
         logger.debug(f"imohash for {request.file_id} failed (non-fatal): {e}")
 
-    # Update the row to reflect the landed file
+    # Update the row to reflect the landed file. The pending attributes
+    # we just set (file_size, status, summary_status, imohash) stay on the
+    # session-managed instance after commit because we don't need any
+    # server-assigned columns — skipping db.refresh() saves one SELECT
+    # round-trip per presigned upload.
     db_file.file_size = minio_size  # type: ignore[assignment]
     if request.skip_summary:
         db_file.summary_status = "disabled"  # type: ignore[assignment]
     db_file.status = FileStatus.PENDING  # type: ignore[assignment]
-    db.commit()
-    db.refresh(db_file)
-
     whisper_model: str | None = request.whisper_model
-    if not whisper_model and db_file.requested_whisper_model:
-        whisper_model = str(db_file.requested_whisper_model)
+    requested_model_snapshot = (
+        str(db_file.requested_whisper_model) if db_file.requested_whisper_model else None
+    )
+    db.commit()
+
+    if not whisper_model and requested_model_snapshot:
+        whisper_model = requested_model_snapshot
 
     # Dispatch the pipeline with the pre-minted task_id so every downstream
     # marker lands in the same benchmark hash as the client-side markers.
