@@ -45,6 +45,7 @@ from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
 
 from . import cancel_upload
+from . import complete_upload
 from . import prepare_upload
 from .crud import _get_or_compute_analytics
 from .crud import delete_media_file
@@ -125,6 +126,7 @@ def _parse_speaker_params_from_headers(request: Optional[Request]) -> SpeakerPar
 # Include all routers
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
+router.include_router(complete_upload.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
 router.include_router(waveform_router, prefix="", tags=["waveform"])
 router.include_router(url_processing_router, prefix="", tags=["url-processing"])

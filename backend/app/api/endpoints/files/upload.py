@@ -423,6 +423,18 @@ async def process_file_upload(
         # Update file hash
         _update_file_hash(db_file, client_file_hash, file.filename or "unknown")
 
+        # Compute imohash from the in-memory buffer (cheap: 3x 128KiB samples
+        # regardless of file size). Used for server-side dedup + artifact
+        # caching. Best-effort — failures never break uploads.
+        try:
+            from app.services.imohash_service import compute_from_bytes
+
+            benchmark_timing.mark(task_id, "imohash_start")
+            db_file.imohash = compute_from_bytes(bytes(file_content))  # type: ignore[assignment]
+            benchmark_timing.mark(task_id, "imohash_end")
+        except Exception as im_err:
+            logger.debug(f"imohash compute failed (non-fatal): {im_err}")
+
         # Upload to storage
         with benchmark_timing.stage(task_id, "minio_put"):
             upload_file_to_storage(
@@ -467,7 +479,7 @@ async def process_file_upload(
 
         # Read requested model from the prepare step if not explicitly provided
         if not whisper_model and db_file.requested_whisper_model:
-            whisper_model = db_file.requested_whisper_model
+            whisper_model = str(db_file.requested_whisper_model)
 
         # Start background transcription and waveform generation in parallel.
         # Pass our ingress-minted task_id through so the pipeline writes into

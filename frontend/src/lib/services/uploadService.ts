@@ -5,6 +5,7 @@ import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
 import axios, { type AxiosProgressEvent } from 'axios';
 import { generateId } from '$lib/utils/ids';
+import { hashFileSHA256 } from '$lib/services/sha256Hasher';
 
 // Upload item types
 export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
@@ -69,13 +70,10 @@ export interface UploadEvent {
   data?: any;
 }
 
-// Hash calculation for duplicate detection
+// Hash calculation for duplicate detection. Uses a Web Worker so the UI
+// stays responsive on multi-GB files — see $lib/services/sha256Hasher.
 async function calculateFileHash(file: File): Promise<string> {
-  const arrayBuffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
+  return hashFileSHA256(file);
 }
 
 class UploadService {
@@ -327,8 +325,9 @@ class UploadService {
     const cancelToken = axios.CancelToken.source();
     this.updateUpload(uploadId, { cancelToken });
 
-    // Calculate file hash for duplicate detection
-    let fileHash = null;
+    // Calculate file hash for duplicate detection (SHA-256 via Web Worker).
+    let fileHash: string | null = null;
+    const clientHashStartMs = Date.now();
     if (file instanceof File) {
       try {
         this.updateUpload(uploadId, {
@@ -337,12 +336,15 @@ class UploadService {
           estimatedTime: get(t)('upload.calculatingHash'),
         });
         fileHash = await calculateFileHash(file);
-      } catch (err) {
+      } catch {
         // File hash calculation is optional, continue without it
       }
     }
+    const clientHashEndMs = Date.now();
 
-    // Step 1: Prepare the upload
+    // Step 1: Prepare the upload — try presigned direct-to-MinIO first,
+    // fall back to the legacy multipart POST if the server doesn't support
+    // it or anything goes wrong during the direct PUT.
     const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: file.size,
@@ -351,15 +353,21 @@ class UploadService {
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
       upload_batch_id: upload.uploadBatchId || undefined,
+      use_presigned: true,
     });
 
-    const { file_id: fileId, is_duplicate } = prepareResponse.data;
+    const {
+      file_id: fileId,
+      is_duplicate,
+      task_id: taskId,
+      upload_url: uploadUrl,
+      upload_method: uploadMethod,
+    } = prepareResponse.data;
 
     if (is_duplicate) {
       return { uuid: fileId, isDuplicate: true };
     }
 
-    // Step 2: Upload the file
     this.updateUpload(uploadId, {
       status: 'uploading',
       fileId,
@@ -367,17 +375,69 @@ class UploadService {
       estimatedTime: 'Uploading...',
     });
 
+    const progressHandler = (progressEvent: AxiosProgressEvent) => {
+      if (!progressEvent.total) return;
+      const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+      const progress = Math.min(percentCompleted, 99);
+      this.updateUpload(uploadId, { progress });
+      this.emit('progress', uploadId, { progress });
+      const elapsed = Date.now() - (upload.startTime || Date.now());
+      if (elapsed > 0) {
+        const rate = progressEvent.loaded / elapsed;
+        const remaining = (progressEvent.total - progressEvent.loaded) / rate;
+        this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
+      }
+    };
+
+    // --- Presigned flow ---------------------------------------------------
+    if (uploadUrl && uploadMethod === 'PUT' && taskId) {
+      try {
+        const clientPutStartMs = Date.now();
+        await axios.put(uploadUrl, file, {
+          headers: {
+            'Content-Type': file instanceof File ? file.type : 'audio/webm',
+          },
+          timeout: UPLOAD_TIMEOUT_MS,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          cancelToken: cancelToken.token,
+          onUploadProgress: progressHandler,
+        });
+        const clientPutEndMs = Date.now();
+
+        await axiosInstance.post('/files/complete', {
+          file_id: fileId,
+          task_id: taskId,
+          file_hash: fileHash,
+          file_size: file.size,
+          client_hash_start_ms: clientHashStartMs,
+          client_hash_end_ms: clientHashEndMs,
+          client_put_start_ms: clientPutStartMs,
+          client_put_end_ms: clientPutEndMs,
+          min_speakers: upload.minSpeakers ?? null,
+          max_speakers: upload.maxSpeakers ?? null,
+          num_speakers: upload.numSpeakers ?? null,
+        });
+
+        return { uuid: fileId, isDuplicate: false };
+      } catch (err: unknown) {
+        if (axios.isCancel(err)) {
+          throw err;
+        }
+        // Fall through to the legacy flow below.
+      }
+    }
+
+    // --- Legacy flow (multipart POST through the API container) ----------
     const formData = new FormData();
     formData.append('file', file);
 
-    // Build headers with speaker parameters if provided
     const headers: Record<string, string> = {
       'Content-Type': 'multipart/form-data',
       'X-File-ID': fileId,
       'X-File-Hash': fileHash || '',
     };
 
-    // Add speaker diarization parameters to headers if provided
     if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
       headers['X-Min-Speakers'] = upload.minSpeakers.toString();
     }
@@ -394,26 +454,7 @@ class UploadService {
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
       cancelToken: cancelToken.token,
-      onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-        if (progressEvent.total) {
-          // Calculate progress percentage but cap at 99% during upload
-          // Only show 100% when upload is completely finished and processed
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          const progress = Math.min(percentCompleted, 99);
-
-          this.updateUpload(uploadId, { progress });
-          this.emit('progress', uploadId, { progress });
-
-          // Calculate estimated time remaining
-          const elapsed = Date.now() - (upload.startTime || Date.now());
-          if (elapsed > 0) {
-            const rate = progressEvent.loaded / elapsed; // bytes per ms
-            const remaining = (progressEvent.total - progressEvent.loaded) / rate; // ms remaining
-            const estimatedTime = this.formatTimeRemaining(remaining);
-            this.updateUpload(uploadId, { estimatedTime });
-          }
-        }
-      },
+      onUploadProgress: progressHandler,
     });
 
     return { uuid: fileId, isDuplicate: false };

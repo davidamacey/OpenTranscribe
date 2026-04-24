@@ -54,6 +54,10 @@ class MediaFile(Base):
     summary_schema_version = Column(Integer, default=1)  # Track summary schema evolution
     translated_text = Column(Text, nullable=True)  # For non-English transcripts
     file_hash = Column(String, nullable=True, index=True)  # SHA-256 hash for duplicate detection
+    # Constant-time content fingerprint (first/middle/last byte samples + size).
+    # Complements file_hash for server-side dedup + artifact cache keys. Not
+    # collision-resistant; do NOT use for security-sensitive equality checks.
+    imohash = Column(String(64), nullable=True, index=True)
     thumbnail_path = Column(String, nullable=True)  # Path to video thumbnail in storage
 
     # Detailed metadata fields

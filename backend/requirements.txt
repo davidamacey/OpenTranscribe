@@ -16,6 +16,8 @@ redis>=5.0.0
 flower>=2.0.0
 psycopg2-binary>=2.9.7
 minio>=7.2.18
+imohash>=1.0.4  # Fast constant-time file fingerprint (sampled SHA-512) for server-side dedup + artifact caching
+
 opensearch-py>=3.0.0,<4.0.0
 httpx>=0.24.1
 python-dotenv>=1.0.0

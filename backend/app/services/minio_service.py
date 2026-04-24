@@ -425,6 +425,132 @@ def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Presigned PUT helpers (Phase 2 of the timing audit plan)
+#
+# The legacy upload path buffers the entire file in the API container's heap
+# (up to 50 GB) before calling put_object. Presigned PUTs let the browser
+# stream bytes directly to MinIO, removing the API's heap pressure and
+# cutting HTTP-response latency from 19-40 s to ~100 ms for a 200 MB video.
+# See docs/PIPELINE_TIMING.md for the full flow description.
+# ---------------------------------------------------------------------------
+
+
+# 64 MiB is the sweet spot for a 10 GB file: ~160 parts, high throughput,
+# predictable memory on the MinIO server. 5 MB (minio-py default) would
+# require 2000 parts for the same file.
+PRESIGNED_PUT_PART_SIZE = 64 * 1024 * 1024
+
+
+def _rewrite_minio_host(url: str) -> str:
+    """Replace MinIO's internal hostname with the browser-accessible host.
+
+    Mirrors the rewriting logic used by ``get_file_url`` for GET URLs so
+    browsers can follow the presigned URL.
+    """
+    minio_internal = f"http://{settings.MINIO_HOST}:{settings.MINIO_PORT}"
+    if minio_internal not in url:
+        return url
+    public_base = settings.MINIO_PUBLIC_URL.rstrip("/") if settings.MINIO_PUBLIC_URL else "/s3"
+    return url.replace(minio_internal, public_base)
+
+
+def presigned_put_url(
+    object_name: str,
+    expires: int = 4 * 3600,
+    *,
+    rewrite_host: bool = True,
+) -> str:
+    """Generate a presigned PUT URL for direct browser → MinIO upload.
+
+    Args:
+        object_name: Target object path in ``MEDIA_BUCKET_NAME``.
+        expires: URL expiration in seconds. Defaults to 4 hours — enough for
+            very large uploads on slow connections.
+        rewrite_host: If True (the default) the internal MinIO hostname is
+            rewritten to the browser-facing URL via ``_rewrite_minio_host``.
+            Set False for server-to-server callers that can reach MinIO
+            directly.
+
+    Returns:
+        A signed URL the browser can PUT bytes to with no further auth.
+    """
+    ensure_bucket_exists()
+    delta = datetime.timedelta(seconds=max(60, int(expires)))
+    url = str(
+        minio_client.presigned_put_object(
+            bucket_name=settings.MEDIA_BUCKET_NAME,
+            object_name=object_name,
+            expires=delta,
+        )
+    )
+    if rewrite_host:
+        url = _rewrite_minio_host(url)
+    return url
+
+
+def object_exists_and_size(object_name: str) -> int | None:
+    """Return the object's size in bytes, or None if it doesn't exist.
+
+    Used by ``complete_upload`` to verify the browser actually delivered the
+    bytes to MinIO before we dispatch the transcription pipeline.
+    """
+    try:
+        stats = minio_client.stat_object(settings.MEDIA_BUCKET_NAME, object_name)
+        return int(stats.size) if stats.size is not None else None
+    except Exception:
+        return None
+
+
+def range_read(object_name: str, offset: int, length: int) -> bytes:
+    """Read ``length`` bytes starting at ``offset`` from a MinIO object.
+
+    Used by the imohash fingerprinter to sample first/middle/last chunks
+    without downloading the full file.
+    """
+    _logger = logging.getLogger(__name__)
+    response = None
+    try:
+        response = minio_client.get_object(
+            bucket_name=settings.MEDIA_BUCKET_NAME,
+            object_name=object_name,
+            offset=int(offset),
+            length=int(length),
+        )
+        return bytes(response.read())
+    finally:
+        if response is not None:
+            try:
+                response.close()
+                response.release_conn()
+            except Exception as e:
+                _logger.debug(f"range_read close failed for {object_name}: {e}")
+
+
+def upload_file_tuned(
+    file_content: BinaryIO,
+    file_size: int,
+    object_name: str,
+    content_type: str,
+) -> str:
+    """Upload a file to MinIO with tuned multipart part size.
+
+    Identical behavior to ``upload_file`` but passes ``part_size`` for
+    the minio-py multipart path so large uploads use ~64 MiB parts
+    instead of the 5 MB default (12.8× fewer parts → ~2× throughput).
+    """
+    ensure_bucket_exists()
+    minio_client.put_object(
+        bucket_name=settings.MEDIA_BUCKET_NAME,
+        object_name=object_name,
+        data=file_content,
+        length=file_size,
+        content_type=content_type,
+        part_size=PRESIGNED_PUT_PART_SIZE if file_size >= PRESIGNED_PUT_PART_SIZE else 0,
+    )
+    return object_name
+
+
 class MinIOService:
     """
     Class-based wrapper for MinIO operations.
