@@ -82,6 +82,12 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
     downstream_tasks = gpu_result.get("downstream_tasks")
 
     post_start = time.perf_counter()
+    # When we dispatch a GPU-side task that still needs the preprocessed
+    # WAV (cloud ASR → speaker embedding, or cloud ASR → local rediarize)
+    # we MUST NOT clean up the temp audio here — those downstream tasks
+    # will clean it up themselves once they finish. Phase 2 PR #4 relies
+    # on this for the cloud-ASR embedding path to read from scratch.
+    defer_temp_cleanup = False
 
     try:
         diarization_disabled = gpu_result.get("diarization_disabled", False)
@@ -111,6 +117,9 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                     },
                     queue=CeleryQueues.GPU,
                 )
+                # rediarize consumes the temp WAV on the GPU worker; keep
+                # the file around until that task finishes its own cleanup.
+                defer_temp_cleanup = True
                 logger.info(f"Dispatched local rediarization for cloud-transcribed file {file_id}")
             except Exception as e:
                 logger.warning(f"Failed to dispatch rediarization: {e}")
@@ -128,6 +137,9 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                         kwargs={"pipeline_task_id": task_id},
                         queue=CeleryQueues.GPU,
                     )
+                    # Embedding task reads the preprocessed WAV; defer
+                    # cleanup until it finishes (it cleans up itself).
+                    defer_temp_cleanup = True
                     logger.info(
                         f"Dispatched speaker embedding extraction to GPU queue for "
                         f"cloud-transcribed file {file_id}"
@@ -226,7 +238,13 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         }
 
     finally:
-        _cleanup_temp(file_uuid)
+        if defer_temp_cleanup:
+            logger.debug(
+                f"Deferring temp audio cleanup for {file_uuid} "
+                "(downstream GPU task still needs the preprocessed WAV)"
+            )
+        else:
+            _cleanup_temp(file_uuid)
         # Mark end-of-postprocess for inter-stage gap measurement and flush
         # the Redis benchmark hash into the durable file_pipeline_timing row.
         # Both are no-ops when ENABLE_BENCHMARK_TIMING is off.

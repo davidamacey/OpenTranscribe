@@ -19,7 +19,10 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.minio_service import cleanup_temp_audio
 from app.services.minio_service import download_file
+from app.services.minio_service import download_temp_audio
+from app.services.minio_service import temp_audio_exists
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -87,25 +90,40 @@ def _load_segments_as_transcript(file_id: int) -> dict:
     return {"segments": result_segments}
 
 
-def _prepare_audio(storage_path: str, content_type: str, filename: str) -> str:
-    """Download file from MinIO and convert to WAV for diarization.
+def _prepare_audio(
+    storage_path: str,
+    content_type: str,
+    filename: str,
+    file_uuid: str | None = None,
+) -> str:
+    """Get a 16 kHz WAV on local disk for diarization.
 
-    Args:
-        storage_path: MinIO object path.
-        content_type: MIME type of the file.
-        filename: Original filename (for extension detection).
+    Prefers the preprocessed temp WAV staged by the main pipeline (via
+    scratch volume when available, MinIO temp as fallback). When the
+    temp WAV isn't present, falls back to downloading the original from
+    MinIO and re-running the FFmpeg conversion.
 
-    Returns:
-        Path to the prepared WAV audio file in a temp directory.
-        Caller is responsible for cleanup via the returned temp_dir.
+    Caller is responsible for cleanup of the returned temp directory.
     """
     from app.tasks.transcription.audio_processor import get_audio_file_extension
     from app.tasks.transcription.audio_processor import prepare_audio_for_transcription
 
+    temp_dir = tempfile.mkdtemp(prefix="rediarize_")
+
+    if file_uuid and temp_audio_exists(file_uuid):
+        try:
+            audio_file_path = os.path.join(temp_dir, "audio.wav")
+            download_temp_audio(file_uuid, audio_file_path)
+            logger.info("rediarize: reusing preprocessed WAV from temp")
+            return audio_file_path
+        except Exception as temp_err:
+            logger.warning(
+                f"rediarize: temp WAV fetch failed ({temp_err}); falling back to original"
+            )
+
     file_data, _, _ = download_file(storage_path)
     file_ext = get_audio_file_extension(content_type, filename)
 
-    temp_dir = tempfile.mkdtemp(prefix="rediarize_")
     temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
     with open(temp_file_path, "wb") as f:
         f.write(file_data.read())
@@ -222,9 +240,10 @@ def rediarize_task(  # noqa: C901
         transcript = _load_segments_as_transcript(file_id)
         logger.info(f"Loaded {len(transcript['segments'])} existing segments for file {file_id}")
 
-        # Step 2: Download and prepare audio
+        # Step 2: Download and prepare audio (prefers the preprocessed WAV
+        # staged in scratch / MinIO temp — Phase 2 PR #4).
         send_progress_notification(user_id, file_id, 0.15, "Downloading audio")
-        audio_file_path = _prepare_audio(storage_path, content_type, filename)
+        audio_file_path = _prepare_audio(storage_path, content_type, filename, file_uuid=file_uuid)
         temp_dir = os.path.dirname(audio_file_path)
 
         with session_scope() as db:
@@ -413,6 +432,14 @@ def rediarize_task(  # noqa: C901
                 shutil.rmtree(temp_dir)
             except Exception as cleanup_err:
                 logger.warning(f"Failed to clean up temp dir {temp_dir}: {cleanup_err}")
+
+        # We were the deferred consumer of the preprocessed WAV
+        # (cloud-ASR → local rediarize path); clean it up now that we're
+        # done so the scratch/MinIO temp doesn't leak.
+        try:
+            cleanup_temp_audio(file_uuid)
+        except Exception as cleanup_err:
+            logger.debug(f"Temp audio cleanup after rediarize failed: {cleanup_err}")
 
         # Free intermediate CUDA tensors for follow-on tasks
         from app.tasks.migration_pipeline import cleanup_gpu_memory

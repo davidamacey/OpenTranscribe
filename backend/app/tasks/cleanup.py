@@ -179,6 +179,30 @@ def emergency_file_recovery(self, file_uuids: list):
         raise
 
 
+@shared_task(bind=True, name="cleanup.scratch_janitor", priority=UtilityPriority.ROUTINE)
+def scratch_janitor(self, ttl_seconds: int | None = None) -> dict[str, int]:
+    """Purge stale per-file directories from the shared scratch volume.
+
+    A crashed pipeline (OOM, worker restart, SIGKILL) can leave the
+    ``audio.wav`` in scratch even though nothing will ever read it.
+    This janitor sweeps any ``{file_uuid}/`` directory older than the
+    TTL — well past the longest typical pipeline wall-clock — so the
+    volume can't fill up over time.
+
+    Scheduled hourly via ``celery_app.conf.beat_schedule``.
+    """
+    from app.utils.scratch_volume import DEFAULT_TTL_SECONDS
+    from app.utils.scratch_volume import sweep_expired
+
+    ttl = ttl_seconds if ttl_seconds is not None else DEFAULT_TTL_SECONDS
+    removed, errors = sweep_expired(ttl)
+    if removed or errors:
+        logger.info(
+            f"scratch_janitor: removed {removed} stale dir(s), {errors} error(s) (ttl={ttl}s)"
+        )
+    return {"removed": removed, "errors": errors, "ttl_seconds": ttl}
+
+
 @celery_app.task(name="cleanup_expired_files", priority=UtilityPriority.ROUTINE)
 def cleanup_expired_files(force: bool = False):
     """

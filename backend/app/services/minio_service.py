@@ -379,10 +379,34 @@ def delete_file(object_name: str):
 TEMP_PREPROCESS_PREFIX = "temp/preprocess"
 
 
+def _temp_audio_object_name(file_uuid: str) -> str:
+    """MinIO object key for the preprocessed WAV."""
+    return f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+
+
 def upload_temp_audio(file_uuid: str, local_path: str) -> str:
-    """Upload preprocessed audio.wav to MinIO temp storage for cross-worker transfer."""
-    logger = logging.getLogger(__name__)
-    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    """Stage the preprocessed audio.wav for consumption by downstream workers.
+
+    Phase 2 PR #4: when the shared scratch volume is available we move the
+    WAV into ``/scratch/opentranscribe/{file_uuid}/audio.wav`` (one atomic
+    rename, zero network I/O) and skip the MinIO round-trip entirely.
+    Multi-host deployments without the scratch mount fall through to the
+    original MinIO upload path, preserving backward compatibility.
+    """
+    _logger = logging.getLogger(__name__)
+    from app.utils import scratch_volume
+
+    # Scratch-first fast path
+    if scratch_volume.is_scratch_available():
+        file_size = os.path.getsize(local_path)
+        dest = scratch_volume.write_audio(file_uuid, local_path)
+        if dest is not None:
+            _logger.info(f"Staged temp audio ({file_size / (1024 * 1024):.1f}MB) to scratch {dest}")
+            return str(dest)
+        _logger.warning("scratch write failed; falling back to MinIO temp upload")
+
+    # Fallback: MinIO temp bucket (cross-host compatible)
+    object_name = _temp_audio_object_name(file_uuid)
     file_size = os.path.getsize(local_path)
     with open(local_path, "rb") as f:
         minio_client.put_object(
@@ -392,25 +416,54 @@ def upload_temp_audio(file_uuid: str, local_path: str) -> str:
             file_size,
             content_type="audio/wav",
         )
-    logger.info(f"Uploaded temp audio ({file_size / (1024 * 1024):.1f}MB) to {object_name}")
+    _logger.info(f"Uploaded temp audio ({file_size / (1024 * 1024):.1f}MB) to {object_name}")
     return object_name
 
 
 def download_temp_audio(file_uuid: str, local_path: str) -> None:
-    """Download preprocessed audio.wav from MinIO temp storage."""
-    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    """Fetch the preprocessed audio.wav for a downstream worker.
+
+    Tries the shared scratch volume first (same-host hard-link path), then
+    falls back to MinIO temp when the scratch copy isn't present. Raises
+    the underlying MinIO exception when neither source has the file.
+    """
+    from app.utils import scratch_volume
+
+    if scratch_volume.read_audio(file_uuid, local_path):
+        return
+
+    object_name = _temp_audio_object_name(file_uuid)
     minio_client.fget_object(settings.MEDIA_BUCKET_NAME, object_name, local_path)
 
 
+def temp_audio_exists(file_uuid: str) -> bool:
+    """Return True when the preprocessed WAV is reachable from either source."""
+    from app.utils import scratch_volume
+
+    if scratch_volume.scratch_audio_path(file_uuid).exists():
+        return True
+    try:
+        minio_client.stat_object(settings.MEDIA_BUCKET_NAME, _temp_audio_object_name(file_uuid))
+        return True
+    except Exception:
+        return False
+
+
 def cleanup_temp_audio(file_uuid: str) -> None:
-    """Remove preprocessed audio from MinIO temp storage (best-effort)."""
-    logger = logging.getLogger(__name__)
-    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    """Remove preprocessed audio from both scratch and MinIO temp (best-effort)."""
+    _logger = logging.getLogger(__name__)
+    from app.utils import scratch_volume
+
+    # Scratch dir — best effort, shared volume may not be mounted
+    scratch_volume.cleanup(file_uuid)
+
+    # MinIO temp — always try; no-op if nothing there
+    object_name = _temp_audio_object_name(file_uuid)
     try:
         minio_client.remove_object(settings.MEDIA_BUCKET_NAME, object_name)
-        logger.info(f"Cleaned up temp audio: {object_name}")
+        _logger.info(f"Cleaned up temp audio: {object_name}")
     except Exception as e:
-        logger.debug(f"Temp audio cleanup failed (non-fatal): {e}")
+        _logger.debug(f"Temp audio cleanup failed (non-fatal): {e}")
 
 
 def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
