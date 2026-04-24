@@ -530,6 +530,11 @@ start_app() {
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES up -d $BUILD_CMD
 
+  # Fix pipeline_scratch volume permissions (created by compose above) —
+  # the volume is root-owned by default, which breaks the shared-memory
+  # handoff between CPU preprocess and GPU/embedding workers.
+  fix_pipeline_scratch_permissions
+
   # Display container status
   echo "📊 Container status:"
   # shellcheck disable=SC2086
@@ -846,6 +851,9 @@ reset_and_init() {
   echo "🚀 Starting all services..."
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES up -d $BUILD_CMD
+
+  # Fix pipeline_scratch volume permissions (recreated after reset).
+  fix_pipeline_scratch_permissions
 
   # Wait for backend to be ready for database operations
   echo "⏳ Waiting for backend to be ready..."
@@ -1182,7 +1190,12 @@ case "$1" in
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES up -d --build --no-deps \
       backend celery-worker celery-download-worker celery-cpu-worker \
-      celery-nlp-worker celery-embedding-worker celery-beat flower
+      celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+      celery-beat flower
+
+    # Fix pipeline_scratch volume permissions in case it was recreated.
+    fix_pipeline_scratch_permissions
+
     echo "✅ Backend services rebuilt successfully."
     ;;
 
