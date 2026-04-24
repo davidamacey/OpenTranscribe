@@ -8,7 +8,8 @@ import gc
 import logging
 import os
 import time
-from typing import ClassVar, NoReturn
+from typing import ClassVar
+from typing import NoReturn
 
 import numpy as np
 import pandas as pd

@@ -47,9 +47,7 @@ SOAK_DRIFT_LIMIT_MB = 200
 
 
 def _in_container() -> bool:
-    return Path("/.dockerenv").exists() or os.environ.get(
-        "OPENTRANSCRIBE_IN_CONTAINER"
-    ) == "1"
+    return Path("/.dockerenv").exists() or os.environ.get("OPENTRANSCRIBE_IN_CONTAINER") == "1"
 
 
 @pytest.fixture(scope="module")
@@ -67,9 +65,7 @@ def pipeline(ensure_container: None):
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
     token = os.environ.get("HUGGINGFACE_TOKEN")
-    p = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-community-1", token=token
-    )
+    p = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=token)
     if p is None:
         pytest.skip("pyannote pipeline unavailable (token or network)")
     p.to(torch.device("cuda"))
@@ -95,7 +91,7 @@ def _nvml_used_mb() -> float:
 
         mem = _Mem()
         lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
-        return mem.used / (1024**2)
+        return float(mem.used) / (1024**2)
     except Exception:
         return 0.0
 
@@ -200,12 +196,11 @@ def test_coexistence_under_simulated_cap(
     wav = BENCHMARK_ROOT / "0.5h_1899s.wav"
     if not wav.exists():
         pytest.skip(f"audio missing: {wav}")
-    audio = (
-        np.frombuffer(
-            wave.open(str(wav), "rb").readframes(1_000_000_000), dtype=np.int16
-        ).astype(np.float32)
-        / 32768.0
-    )[: 60 * 16000]  # first 60s only — full 32min is unnecessary for cap test
+    with wave.open(str(wav), "rb") as wf:
+        raw_frames = wf.readframes(1_000_000_000)
+    audio = (np.frombuffer(raw_frames, dtype=np.int16).astype(np.float32) / 32768.0)[
+        : 60 * 16000
+    ]  # first 60s only — full 32min is unnecessary for cap test
 
     cfg = TranscriptionConfig(
         model_name="small",

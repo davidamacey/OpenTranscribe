@@ -75,8 +75,7 @@ def main() -> int:
     whisper_fail = [m for m in WHISPER_PEAK_MB if m not in whisper_ok]
 
     parallel = {
-        model: parallel_pipeline_count(usable_mb, peak)
-        for model, peak in WHISPER_PEAK_MB.items()
+        model: parallel_pipeline_count(usable_mb, peak) for model, peak in WHISPER_PEAK_MB.items()
     }
 
     report = {
