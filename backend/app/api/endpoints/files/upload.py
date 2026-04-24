@@ -95,8 +95,15 @@ def create_media_file_record(
             thumbnail_path=None,
         )
 
+        # Flush (not commit) so we get the DB-assigned id + uuid without
+        # persisting the row yet. Callers commit the outer transaction
+        # after they finish their own updates — eliminates one of the
+        # two round-trips the legacy upload flow was paying per file
+        # (Phase 2 PR #7, item E18). prepare_upload's own db.commit()
+        # later on now covers the INSERT and its follow-on mutations in
+        # a single transaction.
         db.add(db_file)
-        db.commit()
+        db.flush()
         db.refresh(db_file)
 
         return db_file
@@ -235,31 +242,39 @@ def _get_or_create_file_record(
 
     logger.info(f"Using existing file record with UUID={existing_file_uuid}")
     db_file_result.status = FileStatus.PENDING  # type: ignore[assignment]
-    db.commit()
+    # Commit deferred to the outer transaction (Phase 2 PR #7, item E18).
+    db.flush()
     return db_file_result  # type: ignore[no-any-return]
 
 
-async def _read_file_content(file: UploadFile) -> tuple[bytearray, int]:
+async def _read_first_chunk(file: UploadFile) -> tuple[bytearray, int]:
+    """Read the first chunk so magic-byte validation can run fail-fast.
+
+    Large uploads (multi-GB videos) with the wrong MIME type should be
+    rejected before we pay to read the remaining bytes. Returns the
+    first chunk's bytes and the number of bytes read.
     """
-    Read file content in chunks.
+    first_chunk = await file.read(UPLOAD_CHUNK_SIZE)
+    buf = bytearray(first_chunk) if first_chunk else bytearray()
+    return buf, len(buf)
 
-    Args:
-        file: Uploaded file
 
-    Returns:
-        Tuple of (file_content, total_size)
+async def _continue_read_after_first_chunk(
+    file: UploadFile, buffered: bytearray
+) -> tuple[bytearray, int]:
+    """Extend ``buffered`` by reading the remaining chunks of the upload.
+
+    Used after ``_read_first_chunk`` passes magic-byte validation — keeps
+    the already-read first chunk and appends the rest in place.
     """
-    file_content = bytearray()
-    total_read = 0
-
+    total_read = len(buffered)
     while True:
         chunk = await file.read(UPLOAD_CHUNK_SIZE)
         if not chunk:
             break
-        file_content.extend(chunk)
+        buffered.extend(chunk)
         total_read += len(chunk)
-
-    return file_content, total_read
+    return buffered, total_read
 
 
 def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename: str) -> None:
@@ -325,6 +340,27 @@ async def process_file_upload(
     validate_file_type(file)
     logger.info(f"Processing file - filename: {file.filename}, content_type: {file.content_type}")
 
+    # Duplicate short-circuit (Phase 2 PR #7, item E20): if the client sent a
+    # file hash and this is a direct legacy POST (no existing_file_uuid),
+    # check for a matching file and 409 out before reading bytes.
+    # prepare_upload already does this check for the presigned flow.
+    if client_file_hash and not existing_file_uuid:
+        from app.utils.file_hash import check_duplicate_by_hash
+
+        duplicate_uuid = await check_duplicate_by_hash(db, client_file_hash, int(current_user.id))
+        if duplicate_uuid:
+            logger.info(
+                f"Duplicate upload rejected for {file.filename} "
+                f"(hash={client_file_hash[:12]}…, duplicate_uuid={duplicate_uuid})"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "A file with this content already exists.",
+                    "duplicate_file_uuid": duplicate_uuid,
+                },
+            )
+
     # Get file size from content-length header if available
     file_size = 0
     with contextlib.suppress(ValueError, TypeError):
@@ -339,21 +375,25 @@ async def process_file_upload(
     )
 
     try:
-        # Read file content in chunks
-        file_content, file_size = await _read_file_content(file)
-        benchmark_timing.mark(task_id, "http_read_complete")
-
-        # Validate magic bytes match declared MIME type (security measure)
+        # Read and validate the first chunk BEFORE committing to the full read
+        # (Phase 2 PR #7, item E19). Streaming magic-byte validation lets us
+        # reject wrong-type uploads after a single chunk instead of buffering
+        # 50 GB of garbage to learn the MIME is wrong.
+        first_chunk, _first_bytes = await _read_first_chunk(file)
         is_valid, validation_result = validate_uploaded_file(
-            bytes(file_content), file.content_type, file.filename
+            bytes(first_chunk[:64]), file.content_type, file.filename
         )
         benchmark_timing.mark(task_id, "http_validation_end")
         if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=validation_result,  # User-friendly message from validator
+                detail=validation_result,
             )
         logger.info(f"File validated: {file.filename} (detected: {validation_result})")
+
+        # Now read the remainder; the first chunk is kept in place.
+        file_content, file_size = await _continue_read_after_first_chunk(file, first_chunk)
+        benchmark_timing.mark(task_id, "http_read_complete")
 
         # Update file hash
         _update_file_hash(db_file, client_file_hash, file.filename or "unknown")
