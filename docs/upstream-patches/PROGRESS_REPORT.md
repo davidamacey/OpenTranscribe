@@ -136,6 +136,22 @@ Five memos written in `docs/upstream-patches/`:
 - Integration works (pipeline ran without errors, just slowly).
 - The blocker is entirely in ORT's kernel coverage, not our code.
 
+### Phase 6.3 follow-up — shape-profile + torch.compile both regressed
+
+**2026-04-23 late session**: tried two paths to make TRT/compile actually work E2E. Both failed on the same class of issue: **variable batch shapes across the pipeline trigger per-shape recompile storms**.
+
+1. **TRT EP shape-profile** (`phase-6-3-shape-profile-attempt.md`): added `trt_profile_min/opt/max_shapes` to `_select_providers()`, constants for both models, plus hybrid mode env vars `PYANNOTE_ONNX_SEG_ENABLED` / `PYANNOTE_ONNX_EMB_ENABLED`. Result: CPU pinned at 17 cores × 100% for >2 minutes while GPU sat at 0%. Killed.
+
+2. **`torch.compile` on embedding.resnet explicitly** (`phase-6-3-torch-compile-attempt.md`): microbench showed 1.49× max-autotune vs eager; real pipeline regressed **35% E2E** (170s mean vs baseline 100s, cv 35%). Every stage slower — including CPU-only scipy stages, suggesting Dynamo guard-check GIL contention. Reverted.
+
+**Stop chasing entries added**: #12 (TRT EP shape-profile for pyannote embedding), #13 (torch.compile default/max-autotune on pyannote embedding resnet).
+
+**Why these fail**: both NVIDIA's TRT and PyTorch's Dynamo specialize graphs on concrete shapes. Pyannote's pipeline emits variable shapes per call (last-batch remainders, varying `num_frames`). Recompile-on-new-shape is ~1-30s per new shape; 30+ unique shapes per scan ≫ the inference savings.
+
+**What remains to unblock GPU compile paths**: pad-to-fixed-shape at the embedding call site (invasive, ~1-2 days; Phase A's `embedding_batch_size=16` pin already fixed batch but num_frames still varies), or `torch.compile(..., dynamic=True)` which should avoid recompiles at cost of fewer optimizations.
+
+**What shipped (safe, reversible)**: shape-profile plumbing in `_select_providers()`, hybrid env var gates, tensorrt pip dep in image, LD_LIBRARY_PATH extension. All gated behind `ENABLE_TENSORRT=1` + `PYANNOTE_USE_ONNX=1`. Default production path unchanged.
+
 ### Phase 6.3 — TensorRT spike — PARTIAL UNLOCK
 
 **Attempted 2026-04-23**. Added `tensorrt` to requirements.txt (+4.5 GB image growth), extended `LD_LIBRARY_PATH` in `Dockerfile.prod` to find NVIDIA lib packages + `tensorrt_libs`. No base-image change (stayed on `python:3.13-slim-trixie` per user preference).
@@ -259,6 +275,8 @@ From lessons-learned across all phases:
 9. **GPU Lance-Williams clustering** — Python merge-loop overhead is worse than scipy's C.
 10. **TensorRT plans baked into Docker images** — per-GPU-arch means one image can't serve multiple GPU types.
 11. **bf16 / fp16 embeddings** — prior DER evidence rejects. Off-limits this round.
+12. **ORT TRT EP with shape-profile on pyannote v4 pipeline** — CPU stayed at 100% × 17 cores for >2 min, GPU at 0%. Variable pipeline shapes trigger rebuilds within the profile range. Only path forward is pad-to-fixed-shape at call site OR direct `trtexec`-compiled plan per GPU arch.
+13. **`torch.compile(mode=default/max-autotune)` explicitly on embedding resnet** — 1.49× microbench win on fixed shapes, **35% regression E2E** (every pipeline stage slower). Same class of issue as #12: Dynamo recompiles on variable shapes. Only path forward is pad-to-fixed-shape or `dynamic=True`.
 
 ---
 
