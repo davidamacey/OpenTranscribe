@@ -64,6 +64,14 @@ huggingface-hub<1.0.0
 # Triton for optimized attention (Linux x86_64 only)
 triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 
+# ONNX Runtime — Phase 6.2. Serves pyannote segmentation + WeSpeaker backbone
+# via ORT sessions when PYANNOTE_USE_ONNX=1. onnxruntime-gpu includes CUDA EP
+# (and TensorrtExecutionProvider when ENABLE_TENSORRT=1 per Phase 6.3).
+# ~350 MB install footprint, CUDA-bundled. onnx needed at export time only.
+onnx>=1.17.0
+onnxruntime-gpu>=1.22.0; sys_platform == 'linux' and platform_machine == 'x86_64'
+onnxruntime>=1.22.0; sys_platform != 'linux' or platform_machine != 'x86_64'
+
 # PyAnnote v4 - GPU-optimized fork with 1.28x speedup and 66% VRAM reduction
 # Fork: https://github.com/davidamacey/pyannote-audio/tree/gpu-optimizations
 # Upstream PR pending: https://github.com/pyannote/pyannote-audio

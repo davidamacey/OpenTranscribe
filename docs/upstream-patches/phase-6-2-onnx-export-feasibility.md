@@ -1,8 +1,14 @@
 # Phase 6.2 — ONNX Export for Consumer Deployments (updated 2026-04-23)
 
-**Status**: **UNBLOCKED**. Export path verified via two spikes. Prior art on HuggingFace + GitHub confirms our approach. Ready for full implementation + test-matrix validation.
-**Projected impact**: 10-20% on segmentation stage, 5-10% on embedding stage. Zero first-run delay (artifacts baked into image).
-**Tier**: Tier 2 — consumer default, portable across NVIDIA/Apple/CPU.
+**Status (2026-04-23 implementation session)**: **PARTIALLY SHIPPED — with major caveat**.
+  Export pipeline + runtime wrapper + fbank batching + unit tests + pipeline
+  integration all land and T1 + T2 pass (27 cases, 0 failures). **But ORT
+  CUDA EP is 5-7× slower than eager PyTorch** on the pyannote segmentation
+  graph because LSTM / If / Sin / Cos have no ORT CUDA kernels — ORT inserts
+  Memcpy nodes, shuttling tensors off-GPU mid-graph. Full measurements and
+  the "things to stop chasing" list are in **`phase-6-2-lessons-learned.md`**.
+**Revised tier positioning**: Tier 2 is **CPU + MPS only**. GPU path now requires Phase 6.3 (TensorRT EP via full CUDA runtime image).
+**Projected impact (revised)**: likely win on CPU (ORT typically 2-3× eager on CPU). Unknown on MPS — needs M2 Max run. **No win on CUDA** without TRT.
 
 ## Updated status — why it is NOT blocked
 

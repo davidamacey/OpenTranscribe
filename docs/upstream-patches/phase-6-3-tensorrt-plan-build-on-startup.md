@@ -1,8 +1,34 @@
 # Phase 6.3 — TensorRT Engine Plans for Server Deployments (updated 2026-04-23)
 
-**Status**: **UNBLOCKED**. Phase 6.2's ONNX-export path is validated; TensorRT EP consumes the same artifacts. 1-week investigation/commit once Phase 6.2 ships.
-**Projected impact (fp32 only)**: 20-40% on segmentation, 15-25% on embeddings — stacked on top of Phase 6.2's ONNX gains.
-**Tier**: Tier 3 — AWS / dedicated-GPU-server deployments, opt-in, not for consumer images.
+**Status (2026-04-23 session)**: **PROMOTED — now the only path to GPU speedup.** Phase 6.2's ORT CUDA EP proved insufficient (5.8× slowdown from LSTM/If/Sin/Cos CPU fallback). TRT EP handles all these ops natively but requires the full CUDA runtime toolkit (`libcublas.so.12`, `libcublasLt.so.12`) which our `python:3.13-slim-trixie` base image does not ship. See `phase-6-2-lessons-learned.md` for measurements.
+**Projected impact**: unchanged — 20-40% on segmentation, 15-25% on embeddings once the base image is reworked.
+**Tier**: Tier 3 stays server-only due to per-GPU-arch plan builds (6-13 min first run). **Consumer GPU deployments still use eager PyTorch until Phase 6.3 ships.**
+
+## New blocker surfaced during Phase 6.2 implementation
+
+`onnxruntime-gpu`'s TensorRT EP dynamic-loader chain:
+
+```
+libonnxruntime_providers_tensorrt.so
+  ↓ dlopen
+libnvinfer.so.10              (supplied by `pip install tensorrt` — ✅ available)
+libonnxruntime_providers_cuda.so
+  ↓ dlopen
+libcublas.so.12               (CUDA toolkit — ❌ absent from python:3.13-slim)
+libcublasLt.so.12             (CUDA toolkit — ❌ absent)
+```
+
+`pip install tensorrt` + `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` is the lightweight fix (~600 MB) but brittle because ORT's loader uses system path semantics, not Python site-packages. Cleanest fix is switching the base image.
+
+## Updated prerequisite list
+
+Phase 6.3 now requires **three** infrastructure changes in order, none of which were obvious before the Phase 6.2 session:
+
+1. **Base-image swap** — replace `python:3.13-slim-trixie` with `nvidia/cuda:12.8.0-cudnn-runtime-ubuntu24.04` (or mirror `Dockerfile.blackwell`'s `nvcr.io/nvidia/pytorch:25.01-py3`). Image grows ~2-5 GB. User installs the same Docker image; no client change.
+2. **TensorRT pip install** — add `tensorrt>=10.16` to `requirements.txt` (~500 MB).
+3. **Plan build + cache infra** — as already specified in this memo.
+
+Only after (1)+(2) can TRT EP even load. The existing `Dockerfile.blackwell` satisfies (1) for Blackwell/DGX-Spark users — a separate `Dockerfile.cuda` may be warranted for non-Blackwell NVIDIA GPUs.
 
 ## Why 6.3 is unblocked
 
