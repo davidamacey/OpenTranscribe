@@ -23,6 +23,13 @@ import os
 import time
 from pathlib import Path
 
+# IMPORTANT: torch must be imported BEFORE onnxruntime on Linux. PyTorch's
+# import adds its bundled CUDA libraries (libcublas.so.12, libcublasLt.so.12,
+# libcudart.so.12, ...) to the dynamic loader's search path. ONNX Runtime's
+# CUDAExecutionProvider + TensorrtExecutionProvider both dlopen those same
+# libraries. Without torch-first, ORT silently falls back to CPU EP.
+import torch  # noqa: E402,F401
+
 import numpy as np
 
 

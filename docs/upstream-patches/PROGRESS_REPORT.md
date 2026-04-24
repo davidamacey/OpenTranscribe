@@ -136,6 +136,40 @@ Five memos written in `docs/upstream-patches/`:
 - Integration works (pipeline ran without errors, just slowly).
 - The blocker is entirely in ORT's kernel coverage, not our code.
 
+### Phase 5.2 — GPU aggregate + reconstruct — NEGATIVE RESULT
+
+**Attempted 2026-04-23**. Shipped `fork:pyannote/audio/gpu_ops.py` with `aggregate_gpu()` + `reconstruct_gpu()` using `torch.Tensor.index_add_` and `scatter_reduce_(reduce='amax')`. Env-var-gated (`PYANNOTE_GPU_AGGREGATE=1`, `PYANNOTE_GPU_RECONSTRUCT=1`), both default OFF. Hooks in `core/inference.py::aggregate` + `pipelines/speaker_diarization.py::reconstruct`, exception-safe fallback to CPU numpy.
+
+- **Correctness: PERFECT** — synthetic parity tests show aggregate max diff 9.5e-7 (fp32 floor), reconstruct max diff 0.0 (bit-exact).
+- **DER: 0.0000% T1** on both 2.2h and 4.7h, all 3 runs each, vs frozen baseline RTTMs.
+- **VRAM: unchanged 844 MB.**
+- **But wall time regressed**: +2-3% on 2.2h, **+~6% on 4.7h** (342s vs ~322s baseline).
+
+**Why the memo's 4.5% projection failed**: aggregate/reconstruct are memory-bandwidth-bound, not compute-bound. The per-chunk working set fits in CPU L2 cache; GPU HBM has higher throughput but more latency per scatter, and each call pays ~5-10 ms PCIe round-trip for H2D/D2H. For this access pattern, CPU wins.
+
+**Decision**: keep `gpu_ops.py` + hooks (zero cost when env vars unset), add Phase 5.2 to the "stop chasing" list. Full analysis in `phase-5-2-implementation-results.md`.
+
+### Phase 6.2 follow-ups from this session
+
+After shipping the core Phase 6.2 plumbing, measured additional EP paths:
+
+| Platform/Path | Seg ms/batch (32×5s) | Emb ms/batch (16×200) | Verdict |
+|---|---:|---:|---|
+| RTX A6000 PyTorch eager (baseline) | 8.2 | 9.6 | **fastest available** |
+| RTX A6000 ORT CUDA EP | 47.5 | 9.8 | seg 5.8× slower (LSTM/If/Sin/Cos fallback); emb parity |
+| Linux x86 CPU PyTorch eager | 239 | 387 | baseline for CPU-only tier |
+| **Linux x86 CPU ORT CPU EP** | **127** | **182** | **1.87× seg / 2.12× emb — CLEAR WIN for CPU-only deployments** |
+| Mac M2 Max PyTorch eager MPS | 36 | 19.6 | fastest on Mac |
+| Mac M2 Max ORT CoreML EP | 163 | 20.9 | seg 4.5× slower; emb parity |
+| Mac M2 Max ORT CPU EP | 187 | 401 | slower still |
+
+**Takeaways**:
+
+- **CPU-only deployments (no GPU at all)** get a clean 1.87-2.12× win from `PYANNOTE_USE_ONNX=1` + ORT CPU EP. This is the shippable Phase 6.2 story for airgapped / cloud-CPU tiers.
+- **Mac deployments** should stay on eager MPS PyTorch. Phase A's MPS-native FFT is the right Mac optimization; CoreML EP doesn't cover the segmentation graph efficiently.
+- **NVIDIA GPU deployments** stay on eager PyTorch until Phase 6.3 TensorRT (CUDA runtime image rework).
+- **Embedding ORT CUDA EP hybrid** — measured at parity with eager. No win, so no hybrid mode is worth the complexity.
+
 ### Phase 6.3 — TensorRT plans — NEW PREREQUISITE SURFACED
 
 - Originally: "unblocked once 6.2 ships."
@@ -191,12 +225,15 @@ From lessons-learned across all phases:
 
 1. **ORT CUDA EP alone for pyannote-v4 segmentation** — 5.8× regression, driven by library-level op gaps in ORT 1.25. Not a config problem.
 2. **`io_binding` alone as a fix** — helps 40% (47.5 → 32.4 ms) but still 4× slower than eager. Intra-graph Memcpy nodes are the real cost.
-3. **Dynamo `torch.onnx.export` on WeSpeaker / segmentation (PyTorch 2.8)** — vmap blocker + control-flow issues. Revisit only in PyTorch 2.11+.
-4. **CPU vectorization of `Inference.aggregate` / `reconstruct`** — numpy scatter primitives disable SIMD. Regressed 35-57%.
-5. **`segmentation_step` > 1.0** — speaker count drops. Quality regression.
-6. **GPU Lance-Williams clustering** — Python merge-loop overhead is worse than scipy's C.
-7. **TensorRT plans baked into Docker images** — per-GPU-arch means one image can't serve multiple GPU types.
-8. **bf16 / fp16 embeddings** — prior DER evidence rejects. Off-limits this round.
+3. **ORT CoreML EP for pyannote-v4 segmentation on M2 Max** — 4.5× regression (163 ms vs 36 ms MPS eager). Embedding is parity. Don't ship.
+4. **ORT embedding hybrid on CUDA** — measured at parity (9.8 vs 9.6 ms). No win, no point in the added complexity.
+5. **GPU scatter-reduce for aggregate / reconstruct (Phase 5.2)** — memory-bandwidth-bound access pattern hits CPU L2 cache; GPU HBM round-trips cost more. Regressed ~6% on 4.7h, ~2-3% on 2.2h. Correctness preserved (T1 DER) but no speed win.
+6. **Dynamo `torch.onnx.export` on WeSpeaker / segmentation (PyTorch 2.8)** — vmap blocker + control-flow issues. Revisit only in PyTorch 2.11+.
+7. **CPU vectorization of `Inference.aggregate` / `reconstruct`** — numpy scatter primitives disable SIMD. Regressed 35-57%.
+8. **`segmentation_step` > 1.0** — speaker count drops. Quality regression.
+9. **GPU Lance-Williams clustering** — Python merge-loop overhead is worse than scipy's C.
+10. **TensorRT plans baked into Docker images** — per-GPU-arch means one image can't serve multiple GPU types.
+11. **bf16 / fp16 embeddings** — prior DER evidence rejects. Off-limits this round.
 
 ---
 
