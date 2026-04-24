@@ -140,7 +140,26 @@ def send_progress_notification(user_id: int, file_id: int, progress: float, mess
 
 
 def send_completion_notification(user_id: int, file_id: int) -> None:
-    """Send transcription completed notification."""
+    """Send transcription completed notification.
+
+    Marks ``completion_notified`` in the benchmark hash immediately before
+    the WebSocket event fires so the user-perceived "done" timestamp is
+    captured accurately. We resolve the active task_id from the MediaFile
+    row rather than threading it through every caller — that's the single
+    source of truth for the task currently driving this file.
+    """
+    # Best-effort benchmark marker (no-op when ENABLE_BENCHMARK_TIMING=false).
+    try:
+        from app.utils import benchmark_timing
+
+        if benchmark_timing.benchmark_enabled():
+            with session_scope() as db:
+                mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+                active_task_id = str(mf.active_task_id) if mf and mf.active_task_id else None
+            benchmark_timing.mark(active_task_id, "completion_notified")
+    except Exception as e:
+        logger.debug(f"completion_notified mark failed for file {file_id}: {e}")
+
     send_notification_with_retry(
         user_id,
         file_id,

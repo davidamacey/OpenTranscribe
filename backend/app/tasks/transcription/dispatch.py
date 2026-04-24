@@ -16,8 +16,6 @@ the next file's audio is already prepared.
 import contextlib
 import json
 import logging
-import os
-import time
 import uuid
 
 from celery import chain
@@ -70,6 +68,7 @@ def dispatch_transcription_pipeline(
     disable_diarization: bool | None = None,
     diarization_source: str | None = None,
     whisper_model: str | None = None,
+    task_id: str | None = None,
 ) -> str:
     """Build and dispatch a 3-stage transcription chain.
 
@@ -88,13 +87,18 @@ def dispatch_transcription_pipeline(
         gpu_queue: Queue for GPU task. None = auto-resolve from user's ASR
             provider ('gpu' for local, 'cloud-asr' for cloud providers).
         whisper_model: Optional per-task Whisper model override (local ASR only).
+        task_id: Optional pre-generated application task_id. When provided
+            (e.g., from the HTTP upload handler) it is reused so HTTP-phase
+            benchmark markers share the ``benchmark:{task_id}`` Redis hash
+            with the pipeline markers. When None, a fresh UUID is generated.
     """
     from .core import transcribe_cpu_task
     from .core import transcribe_gpu_task
     from .postprocess import finalize_transcription
     from .preprocess import preprocess_for_transcription
 
-    task_id = str(uuid.uuid4())
+    if not task_id:
+        task_id = str(uuid.uuid4())
     use_cpu = whisper_model in LIGHTWEIGHT_MODELS
 
     # Create task record and set file to PROCESSING
@@ -145,11 +149,12 @@ def dispatch_transcription_pipeline(
         ),
     )
 
-    # Record dispatch timestamp for inter-stage gap measurement
-    if os.getenv("ENABLE_BENCHMARK_TIMING"):
-        from app.core.redis import get_redis
+    # Record dispatch timestamp + queue depth snapshot for inter-stage gap
+    # measurement. Both are no-ops when ENABLE_BENCHMARK_TIMING is off.
+    from app.utils import benchmark_timing
 
-        get_redis().hset(f"benchmark:{task_id}", "dispatch_timestamp", str(time.time()))
+    benchmark_timing.mark(task_id, "dispatch_timestamp")
+    benchmark_timing.capture_queue_depth(task_id)
 
     # Dispatch with error callback for cleanup
     pipeline.apply_async(

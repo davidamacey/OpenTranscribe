@@ -7,6 +7,7 @@ from typing import Any
 from app.core.celery import celery_app
 from app.core.constants import EmbeddingPriority
 from app.core.constants import UtilityPriority
+from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ def index_transcript_search_task(  # noqa: C901
     file_id: int,
     file_uuid: str,
     user_id: int,
+    pipeline_task_id: str | None = None,
 ) -> dict[str, Any]:
     """Index a transcript in OpenSearch as a tracked Celery task.
 
@@ -56,6 +58,7 @@ def index_transcript_search_task(  # noqa: C901
         update_task_status(db, task_id, "in_progress", progress=0.1)
 
     total_start = time.time()
+    benchmark_timing.mark(pipeline_task_id, "search_index_chunks_start")
 
     try:
         # Load transcript segments from PostgreSQL
@@ -169,10 +172,12 @@ def index_transcript_search_task(  # noqa: C901
             f"Search indexing completed for file {file_uuid}: "
             f"{timing.get('chunk_count', 0)} chunks in {total_ms}ms"
         )
+        benchmark_timing.mark(pipeline_task_id, "search_index_chunks_end")
         return {"status": "success", "file_id": file_id, **timing}
 
     except Exception as exc:
         logger.error(f"Search indexing failed for file {file_uuid}: {exc}")
+        benchmark_timing.mark(pipeline_task_id, "search_index_chunks_end")
 
         # Mark task as failed
         try:

@@ -17,6 +17,7 @@ from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.utils import benchmark_timing
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -67,6 +68,10 @@ def preprocess_for_transcription(
 
     step_start = time.perf_counter()
 
+    # Record task pickup time + cold-start status for queue-wait analysis.
+    benchmark_timing.mark(task_id, "preprocess_task_prerun")
+    benchmark_timing.mark_cold_start(task_id, "cpu")
+
     try:
         # Resolve file from DB
         with session_scope() as db:
@@ -99,6 +104,7 @@ def preprocess_for_transcription(
                     file_id,
                     user_id,
                     content_type,
+                    task_id,
                 )
             else:
                 _preprocess_audio(
@@ -109,12 +115,14 @@ def preprocess_for_transcription(
                     file_id,
                     user_id,
                     content_type,
+                    task_id,
                 )
 
             # Upload preprocessed audio to MinIO temp for GPU worker
             send_progress_notification(user_id, file_id, 0.18, "Staging audio for transcription")
             audio_size_mb = os.path.getsize(temp_audio_path) / (1024 * 1024)
-            audio_temp_path = upload_temp_audio(file_uuid, temp_audio_path)
+            with benchmark_timing.stage(task_id, "temp_upload"):
+                audio_temp_path = upload_temp_audio(file_uuid, temp_audio_path)
 
         # Resolve diarization_source: explicit arg > legacy bool > user DB setting
         if diarization_source is None:
@@ -141,10 +149,7 @@ def preprocess_for_transcription(
         )
 
         # Record preprocess end timestamp for inter-stage gap measurement
-        if os.getenv("ENABLE_BENCHMARK_TIMING"):
-            from app.core.redis import get_redis
-
-            get_redis().hset(f"benchmark:{task_id}", "preprocess_end", str(time.time()))
+        benchmark_timing.mark(task_id, "preprocess_end")
 
         send_progress_notification(user_id, file_id, 0.20, "Audio ready for transcription")
 
@@ -182,6 +187,7 @@ def _preprocess_video(
     file_id: int,
     user_id: int,
     content_type: str,
+    task_id: str,
 ) -> None:
     """Extract audio from video via FFmpeg with presigned URL fallback."""
     from app.services.minio_service import download_file_to_path
@@ -190,17 +196,21 @@ def _preprocess_video(
     send_progress_notification(user_id, file_id, 0.08, "Extracting audio from video")
 
     # Try presigned URL first (FFmpeg reads directly from MinIO, no full download)
-    try:
-        minio_url = get_internal_presigned_url(storage_path, expires=3600)
-        extract_audio_from_video(minio_url, temp_audio_path)
-    except Exception as url_err:
-        logger.warning(f"Presigned URL FFmpeg failed, falling back to download: {url_err}")
-        temp_video_path = os.path.join(temp_dir, f"input{file_ext}")
-        download_file_to_path(storage_path, temp_video_path)
-        extract_audio_from_video(temp_video_path, temp_audio_path)
+    with benchmark_timing.stage(task_id, "ffmpeg"):
+        try:
+            minio_url = get_internal_presigned_url(storage_path, expires=3600)
+            extract_audio_from_video(minio_url, temp_audio_path)
+        except Exception as url_err:
+            logger.warning(f"Presigned URL FFmpeg failed, falling back to download: {url_err}")
+            temp_video_path = os.path.join(temp_dir, f"input{file_ext}")
+            with benchmark_timing.stage(task_id, "media_download"):
+                download_file_to_path(storage_path, temp_video_path)
+            extract_audio_from_video(temp_video_path, temp_audio_path)
 
     # Metadata extraction (best-effort, downloads video if needed)
-    _extract_metadata_best_effort(storage_path, file_ext, temp_dir, file_id, content_type)
+    _extract_metadata_best_effort(
+        storage_path, file_ext, temp_dir, file_id, content_type, task_id=task_id
+    )
 
 
 def _preprocess_audio(
@@ -211,13 +221,15 @@ def _preprocess_audio(
     file_id: int,
     user_id: int,
     content_type: str,
+    task_id: str,
 ) -> None:
     """Download audio file and convert to WAV."""
     from app.services.minio_service import download_file_to_path
 
     send_progress_notification(user_id, file_id, 0.08, "Processing audio file")
     temp_input_path = os.path.join(temp_dir, f"input{file_ext}")
-    download_file_to_path(storage_path, temp_input_path)
+    with benchmark_timing.stage(task_id, "media_download"):
+        download_file_to_path(storage_path, temp_input_path)
 
     # Metadata extraction
     _extract_metadata_best_effort(
@@ -227,10 +239,12 @@ def _preprocess_audio(
         file_id,
         content_type,
         existing_local_path=temp_input_path,
+        task_id=task_id,
     )
 
     # Convert to WAV (modifies temp_audio_path in-place via prepare_audio_for_transcription)
-    result_path = prepare_audio_for_transcription(temp_input_path, content_type, temp_dir)
+    with benchmark_timing.stage(task_id, "ffmpeg"):
+        result_path = prepare_audio_for_transcription(temp_input_path, content_type, temp_dir)
 
     # If prepare returned a different path (e.g., input was already .wav), copy it
     if result_path != temp_audio_path:
@@ -246,25 +260,33 @@ def _extract_metadata_best_effort(
     file_id: int,
     content_type: str,
     existing_local_path: str | None = None,
+    task_id: str | None = None,
 ) -> None:
     """Extract media metadata. Best-effort — failures are logged but don't stop pipeline."""
     from app.services.minio_service import download_file_to_path
 
-    try:
-        local_path = existing_local_path
-        if not local_path or not os.path.exists(local_path):
-            local_path = os.path.join(temp_dir, f"meta_input{file_ext}")
-            download_file_to_path(storage_path, local_path)
+    with benchmark_timing.stage(task_id, "metadata"):
+        try:
+            local_path = existing_local_path
+            if not local_path or not os.path.exists(local_path):
+                local_path = os.path.join(temp_dir, f"meta_input{file_ext}")
+                download_file_to_path(storage_path, local_path)
 
-        metadata = extract_media_metadata(local_path)
-        if metadata:
-            with session_scope() as db:
-                mf = get_refreshed_object(db, MediaFile, file_id)
-                if mf:
-                    update_media_file_metadata(mf, metadata, content_type, local_path)
-                    db.commit()
-    except Exception as e:
-        logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")
+            metadata = extract_media_metadata(local_path)
+            if metadata:
+                with session_scope() as db:
+                    mf = get_refreshed_object(db, MediaFile, file_id)
+                    if mf:
+                        update_media_file_metadata(mf, metadata, content_type, local_path)
+                        # Persist audio duration into benchmark context when known
+                        if metadata.get("duration"):
+                            benchmark_timing.set_context(
+                                task_id,
+                                {"audio_duration_s": float(metadata["duration"])},
+                            )
+                        db.commit()
+        except Exception as e:
+            logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")
 
 
 def _mark_pipeline_error(file_uuid: str, task_id: str, error_msg: str) -> None:

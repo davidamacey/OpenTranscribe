@@ -18,6 +18,7 @@ from app.services.minio_service import download_file
 from app.services.opensearch_service import index_transcript
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.transcription.config import LIGHTWEIGHT_MODELS
+from app.utils import benchmark_timing
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
@@ -2109,11 +2110,13 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
     file_id = preprocess_context["file_id"]
     user_id = preprocess_context["user_id"]
 
-    # Record GPU received timestamp for inter-stage gap measurement
-    if os.getenv("ENABLE_BENCHMARK_TIMING"):
-        from app.core.redis import get_redis
-
-        get_redis().hset(f"benchmark:{task_id}", "gpu_received", str(time.time()))
+    # Record GPU received timestamp + pickup markers for inter-stage gap
+    # measurement. gpu_task_prerun and gpu_received fire at roughly the same
+    # instant; we keep both so the Redis hash schema stays stable across the
+    # legacy `gpu_received` tooling and the new `*_task_prerun` convention.
+    benchmark_timing.mark(task_id, "gpu_received")
+    benchmark_timing.mark(task_id, "gpu_task_prerun")
+    benchmark_timing.mark_cold_start(task_id, "gpu")
 
     ctx = TranscriptionContext(
         task_id=task_id,
@@ -2135,7 +2138,8 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             # Download preprocessed audio from MinIO temp
             step_start = time.perf_counter()
             local_audio_path = os.path.join(temp_dir, "audio.wav")
-            download_temp_audio(file_uuid, local_audio_path)
+            with benchmark_timing.stage(task_id, "gpu_audio_load"):
+                download_temp_audio(file_uuid, local_audio_path)
             logger.info(
                 f"TIMING: audio download from temp completed in "
                 f"{time.perf_counter() - step_start:.3f}s"
@@ -2210,11 +2214,17 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             # Process speakers, save to DB, release GPU
             gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
 
-            # Record GPU end timestamp for inter-stage gap measurement
-            if os.getenv("ENABLE_BENCHMARK_TIMING"):
-                from app.core.redis import get_redis
-
-                get_redis().hset(f"benchmark:{task_id}", "gpu_end", str(time.time()))
+            # Record GPU end timestamp for inter-stage gap measurement.
+            # Persist ASR provider + model context for the timing table.
+            benchmark_timing.mark(task_id, "gpu_end")
+            if isinstance(result, dict):
+                benchmark_timing.set_context(
+                    task_id,
+                    {
+                        "asr_provider": result.get("asr_provider", "local"),
+                        "asr_model": result.get("asr_model"),
+                    },
+                )
 
             return gpu_result
 
@@ -2315,6 +2325,10 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
     file_id = preprocess_context["file_id"]
     user_id = preprocess_context["user_id"]
 
+    benchmark_timing.mark(task_id, "gpu_received")  # re-use key for CPU fast path
+    benchmark_timing.mark(task_id, "gpu_task_prerun")
+    benchmark_timing.mark_cold_start(task_id, "cpu_transcribe")
+
     ctx = TranscriptionContext(
         task_id=task_id,
         file_id=file_id,
@@ -2334,7 +2348,8 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
         with tempfile.TemporaryDirectory() as temp_dir:
             # Download preprocessed audio from MinIO temp
             local_audio_path = os.path.join(temp_dir, "audio.wav")
-            download_temp_audio(file_uuid, local_audio_path)
+            with benchmark_timing.stage(task_id, "gpu_audio_load"):
+                download_temp_audio(file_uuid, local_audio_path)
 
             send_progress_notification(user_id, file_id, 0.25, "Starting fast CPU transcription")
 
@@ -2366,7 +2381,9 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
                 }
 
             # Process speakers, save to DB (same as GPU path)
-            return _process_and_save_critical(ctx, result, preprocess_context)
+            cpu_result = _process_and_save_critical(ctx, result, preprocess_context)
+            benchmark_timing.mark(task_id, "gpu_end")
+            return cpu_result
 
     except Exception as e:
         logger.error(f"CPU transcription failed for file {file_uuid}: {e}")

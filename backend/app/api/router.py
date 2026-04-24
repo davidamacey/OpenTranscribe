@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from . import websockets
 from .endpoints import admin
+from .endpoints import admin_timing
 from .endpoints import asr_settings
 from .endpoints import auth
 from .endpoints import auth_config
@@ -77,6 +78,7 @@ include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
 include_router_with_consistency(
     auth_config.router, prefix="/admin/auth-config", tags=["auth-config"]
 )

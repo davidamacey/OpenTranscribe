@@ -15,6 +15,7 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
 from app.tasks.transcription.waveform_generator import WaveformGenerator
+from app.utils import benchmark_timing
 from app.utils.temp_file_utils import cleanup_temp_file
 from app.utils.temp_file_utils import download_to_temp_file
 
@@ -71,7 +72,7 @@ def _cleanup_temp_file(temp_file_path: str | None) -> None:
     default_retry_delay=60,
     priority=CPUPriority.PIPELINE_CRITICAL,
 )
-def generate_waveform_task(self, file_id: int, file_uuid: str):
+def generate_waveform_task(self, file_id: int, file_uuid: str, task_id: str | None = None):
     """
     Generate waveform visualization data for a media file.
 
@@ -81,11 +82,15 @@ def generate_waveform_task(self, file_id: int, file_uuid: str):
     Args:
         file_id: Database ID of the media file
         file_uuid: UUID of the media file
+        task_id: Optional upstream pipeline task_id. When provided, waveform
+            start/end benchmark markers land in the same Redis hash as the
+            rest of the pipeline so the CSV stages reconcile cleanly.
 
     Returns:
         dict: Success status and waveform data info
     """
     temp_file_path = None
+    benchmark_timing.mark(task_id, "waveform_start")
 
     try:
         logger.info(f"Starting waveform generation for file {file_id} ({file_uuid})")
@@ -119,3 +124,4 @@ def generate_waveform_task(self, file_id: int, file_uuid: str):
 
     finally:
         _cleanup_temp_file(temp_file_path)
+        benchmark_timing.mark(task_id, "waveform_end")

@@ -16,6 +16,7 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ def extract_speaker_embeddings_task(
     self,
     file_uuid: str,
     speaker_mapping: dict[str, int],
+    pipeline_task_id: str | None = None,
 ):
     """
     Extract speaker embeddings asynchronously after transcription completes.
@@ -51,6 +53,7 @@ def extract_speaker_embeddings_task(
     from app.utils.uuid_helpers import get_file_by_uuid
 
     task_id = self.request.id
+    benchmark_timing.mark(pipeline_task_id, "speaker_upsert_start")
 
     with session_scope() as db:
         try:
@@ -183,6 +186,7 @@ def extract_speaker_embeddings_task(
             except Exception as notify_err:
                 logger.warning(f"Failed to send completion notification: {notify_err}")
 
+            benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
             return {
                 "status": "success",
                 "file_id": file_id,
@@ -193,6 +197,7 @@ def extract_speaker_embeddings_task(
             logger.error(f"Error in speaker embedding task for {file_uuid}: {str(e)}")
             logger.error("Full traceback:", exc_info=True)
             update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
+            benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
             return {"status": "error", "message": str(e)}
 
 

@@ -2,6 +2,7 @@ import contextlib
 import io
 import logging
 import os
+import uuid
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -15,6 +16,7 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file
 from app.tasks.waveform import generate_waveform_task
+from app.utils import benchmark_timing
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
@@ -142,7 +144,8 @@ def start_transcription_task(
     user_id: int | None = None,
     db=None,
     disable_diarization: bool | None = None,
-) -> None:
+    task_id: str | None = None,
+) -> str | None:
     """
     Start the background transcription and waveform generation tasks in parallel.
 
@@ -158,28 +161,42 @@ def start_transcription_task(
         whisper_model: Optional Whisper model override for this transcription
         user_id: Unused (kept for backward compatibility)
         db: Unused (kept for backward compatibility)
+        task_id: Optional pre-generated application task_id. When provided,
+            it's threaded through dispatch_transcription_pipeline and
+            generate_waveform_task so HTTP-ingress benchmark markers share
+            the benchmark:{task_id} Redis hash with the pipeline markers.
+
+    Returns:
+        The application-level task_id that was dispatched, or None when
+        running with SKIP_CELERY=true.
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         # Dispatch 3-stage pipeline chain: CPU preprocess → GPU transcribe → CPU postprocess
         # Queue routing is auto-resolved inside dispatch_transcription_pipeline
         from app.tasks.transcription import dispatch_transcription_pipeline
 
-        task_id = dispatch_transcription_pipeline(
+        dispatched_task_id = dispatch_transcription_pipeline(
             file_uuid=file_uuid,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             disable_diarization=disable_diarization,
             whisper_model=whisper_model,
+            task_id=task_id,
         )
-        # Launch CPU waveform generation task in parallel
-        generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
+        # Launch CPU waveform generation task in parallel; share the task_id
+        # so its start/end markers land in the same benchmark hash.
+        generate_waveform_task.delay(
+            file_id=file_id, file_uuid=file_uuid, task_id=dispatched_task_id
+        )
         logger.info(
             f"Started parallel tasks for file {file_id}: "
-            f"pipeline chain (task_id={task_id}) and waveform (CPU)"
+            f"pipeline chain (task_id={dispatched_task_id}) and waveform (CPU)"
         )
+        return dispatched_task_id
     else:
         logger.info("Skipping Celery task in test environment")
+        return None
 
 
 def _get_or_create_file_record(
@@ -360,6 +377,12 @@ async def process_file_upload(
     Raises:
         HTTPException: If there's an error during file processing
     """
+    # Generate the application task_id at ingress so every HTTP-phase marker
+    # lands in the same benchmark:{task_id} Redis hash as the downstream
+    # pipeline stages. Threaded through start_transcription_task.
+    task_id = str(uuid.uuid4())
+    benchmark_timing.mark(task_id, "http_request_received")
+
     logger.info(f"File upload request received from user: {current_user.email}")
 
     # Validate file type first
@@ -383,11 +406,13 @@ async def process_file_upload(
     try:
         # Read file content in chunks
         file_content, file_size = await _read_file_content(file)
+        benchmark_timing.mark(task_id, "http_read_complete")
 
         # Validate magic bytes match declared MIME type (security measure)
         is_valid, validation_result = validate_uploaded_file(
             bytes(file_content), file.content_type, file.filename
         )
+        benchmark_timing.mark(task_id, "http_validation_end")
         if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -399,15 +424,20 @@ async def process_file_upload(
         _update_file_hash(db_file, client_file_hash, file.filename or "unknown")
 
         # Upload to storage
-        upload_file_to_storage(
-            file_content, file_size, storage_path, file.content_type or "application/octet-stream"
-        )
+        with benchmark_timing.stage(task_id, "minio_put"):
+            upload_file_to_storage(
+                file_content,
+                file_size,
+                storage_path,
+                file.content_type or "application/octet-stream",
+            )
 
         # For video files, generate and upload a thumbnail
         if file.content_type and file.content_type.startswith("video/"):
-            thumbnail_path, temp_file_path = await _generate_video_thumbnail(
-                file_content, file.filename or "unknown", current_user, db_file
-            )
+            with benchmark_timing.stage(task_id, "thumbnail"):
+                thumbnail_path, temp_file_path = await _generate_video_thumbnail(
+                    file_content, file.filename or "unknown", current_user, db_file
+                )
             if thumbnail_path:
                 db_file.thumbnail_path = thumbnail_path  # type: ignore[assignment]
             _cleanup_temp_file(temp_file_path)
@@ -420,14 +450,28 @@ async def process_file_upload(
         if skip_summary:
             db_file.summary_status = "disabled"  # type: ignore[assignment]
 
-        db.commit()
-        db.refresh(db_file)
+        with benchmark_timing.stage(task_id, "db_commit"):
+            db.commit()
+            db.refresh(db_file)
+
+        # Capture file context for later reporting (persists until flushed
+        # into file_pipeline_timing by finalize_transcription).
+        benchmark_timing.set_context(
+            task_id,
+            {
+                "file_size_bytes": int(file_size),
+                "content_type": file.content_type or "",
+                "http_flow": "legacy",
+            },
+        )
 
         # Read requested model from the prepare step if not explicitly provided
         if not whisper_model and db_file.requested_whisper_model:
             whisper_model = db_file.requested_whisper_model
 
-        # Start background transcription and waveform generation in parallel
+        # Start background transcription and waveform generation in parallel.
+        # Pass our ingress-minted task_id through so the pipeline writes into
+        # the same benchmark hash we've been populating.
         start_transcription_task(
             int(db_file.id),
             str(db_file.uuid),
@@ -437,8 +481,10 @@ async def process_file_upload(
             whisper_model=whisper_model,
             user_id=int(current_user.id),
             db=db,
+            task_id=task_id,
         )
 
+        benchmark_timing.mark(task_id, "http_response_end")
         logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
         return db_file
 
