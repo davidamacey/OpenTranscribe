@@ -179,6 +179,89 @@ def emergency_file_recovery(self, file_uuids: list):
         raise
 
 
+@shared_task(bind=True, name="cleanup.orphan_upload_sweeper", priority=UtilityPriority.ROUTINE)
+def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
+    """Delete PENDING MediaFile rows abandoned before MinIO finished storing.
+
+    A client disconnect mid-upload (or a prepare_upload call that never
+    got a complete_upload) leaves a PENDING row that will never make
+    progress. This sweeper looks for PENDING rows older than
+    ``max_age_minutes`` and:
+
+    - deletes the matching MinIO object if ``storage_path`` is set (best
+      effort — a missing object is expected if the client never made it
+      to the PUT)
+    - deletes the DB row (cascades remove any Task / timing rows)
+
+    Scheduled every 15 minutes via ``celery_app.conf.beat_schedule``. The
+    30-minute default window is generous enough for normal slow
+    connections while still cleaning up same-day abandonments.
+
+    Args:
+        max_age_minutes: Only sweep rows created more than this many
+            minutes ago. Raise for noisy test environments; lower for
+            tight dedup requirements.
+    """
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+    from app.services.minio_service import delete_file
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max(1, int(max_age_minutes)))
+    deleted_rows = 0
+    deleted_objects = 0
+    errors = 0
+
+    try:
+        with session_scope() as db:
+            stale: list[MediaFile] = (
+                db.query(MediaFile)
+                .filter(
+                    MediaFile.status == FileStatus.PENDING,
+                    MediaFile.upload_time < cutoff,
+                )
+                .all()
+            )
+
+            for media_file in stale:
+                file_id = int(media_file.id)
+                storage_path = media_file.storage_path or ""
+                try:
+                    if storage_path:
+                        try:
+                            delete_file(storage_path)
+                            deleted_objects += 1
+                        except Exception as obj_err:
+                            # Missing object is the common case — client never
+                            # completed the PUT. Log at debug and move on.
+                            logger.debug(
+                                f"orphan_upload_sweeper: {storage_path} not deletable "
+                                f"({obj_err}); proceeding with row deletion"
+                            )
+                    db.delete(media_file)
+                    deleted_rows += 1
+                except Exception as row_err:
+                    errors += 1
+                    logger.warning(f"orphan_upload_sweeper failed on file {file_id}: {row_err}")
+
+            if deleted_rows:
+                db.commit()
+    except Exception as e:
+        logger.error(f"orphan_upload_sweeper error: {e}")
+        errors += 1
+
+    if deleted_rows or deleted_objects or errors:
+        logger.info(
+            f"orphan_upload_sweeper: removed {deleted_rows} row(s), "
+            f"{deleted_objects} object(s), {errors} error(s) "
+            f"(cutoff={cutoff.isoformat()})"
+        )
+    return {
+        "deleted_rows": deleted_rows,
+        "deleted_objects": deleted_objects,
+        "errors": errors,
+    }
+
+
 @shared_task(bind=True, name="cleanup.scratch_janitor", priority=UtilityPriority.ROUTINE)
 def scratch_janitor(self, ttl_seconds: int | None = None) -> dict[str, int]:
     """Purge stale per-file directories from the shared scratch volume.

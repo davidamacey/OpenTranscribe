@@ -235,6 +235,18 @@ def index_transcript_search_task(  # noqa: C901
         except Exception:
             logger.error(f"Failed to update task status for {task_id}")
 
+        # Record this attempt's wall-clock into per_retry_timings so the
+        # analysis layer can tell retry-inflated wall-clock apart from
+        # first-try wall-clock (Phase 2 PR #8, G26).
+        benchmark_timing.record_retry(
+            pipeline_task_id,
+            stage="search_index",
+            attempt=int(self.request.retries) + 1,
+            start=total_start,
+            end=time.time(),
+            error=str(exc),
+        )
+
         # Retry with exponential backoff for transient errors
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc, countdown=30 * (2**self.request.retries)) from exc

@@ -213,6 +213,82 @@ def set_context(task_id: str | None, fields: dict[str, Any]) -> None:
     mark_many(task_id, {k: v for k, v in fields.items() if v is not None})
 
 
+def record_retry(
+    task_id: str | None,
+    *,
+    stage: str,
+    attempt: int,
+    start: float,
+    end: float,
+    error: str | None = None,
+) -> None:
+    """Append one retry attempt's wall-clock onto the task's per_retry_timings list.
+
+    Celery auto-retries (``autoretry_for=...``) and manual ``self.retry(...)``
+    calls inflate the observed duration of a stage in ways that a naïve
+    ``start/end`` marker can't capture. This helper writes one entry per
+    attempt so the analysis layer can separate the first-try wall-clock from
+    the retry-inflated wall-clock.
+
+    Stored shape (JSON list)::
+
+        [
+          {"stage": "preprocess", "attempt": 1, "start_ms": ..., "end_ms": ..., "error": "..."},
+          {"stage": "preprocess", "attempt": 2, "start_ms": ..., "end_ms": ...}
+        ]
+
+    Args:
+        task_id: Application-level task ID. No-op when falsy.
+        stage: Human label for the retried stage (``preprocess``, ``search_index``, etc.).
+        attempt: 1-based attempt number (0 for the initial try if you prefer).
+        start: Attempt start wall-clock (epoch seconds).
+        end: Attempt end wall-clock.
+        error: Optional short error string when the attempt failed.
+    """
+    if not task_id or not _enabled():
+        return
+    try:
+        import json
+
+        from app.core.redis import get_redis
+
+        entry: dict[str, Any] = {
+            "stage": stage,
+            "attempt": int(attempt),
+            "start_ms": int(start * 1000),
+            "end_ms": int(end * 1000),
+        }
+        if error:
+            entry["error"] = str(error)[:240]
+
+        client = get_redis()
+        key = _hash_key(task_id)
+        existing_raw = client.hget(key, "per_retry_timings")
+        try:
+            existing: list[dict[str, Any]] = (
+                json.loads(
+                    existing_raw.decode()
+                    if isinstance(existing_raw, (bytes, bytearray))
+                    else existing_raw
+                )
+                if existing_raw
+                else []
+            )
+            if not isinstance(existing, list):
+                existing = []
+        except (TypeError, ValueError):
+            existing = []
+        existing.append(entry)
+
+        pipe = client.pipeline(transaction=False)
+        pipe.hset(key, "per_retry_timings", json.dumps(existing))
+        pipe.hset(key, "retry_count", str(len(existing)))
+        pipe.expire(key, BENCHMARK_HASH_TTL_SECONDS)
+        pipe.execute()
+    except Exception as e:
+        logger.debug(f"record_retry for {task_id} stage={stage} attempt={attempt} failed: {e}")
+
+
 def fetch_all(task_id: str) -> dict[str, str]:
     """Read every marker for a given task_id. Returns empty dict on miss.
 

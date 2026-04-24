@@ -292,6 +292,7 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
       the file is marked COMPLETED with a warning rather than ERROR
     """
     from app.services.minio_service import cleanup_temp_audio
+    from app.utils import benchmark_timing
     from app.utils.uuid_helpers import get_file_by_uuid
 
     from .notifications import send_error_notification
@@ -302,10 +303,22 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
     with contextlib.suppress(Exception):
         cleanup_temp_audio(file_uuid)
 
+    # Record a terminal marker so the analysis layer can distinguish
+    # error-mode completions from successful ones (Phase 2 PR #8, G27).
+    benchmark_timing.mark(task_id, "pipeline_error_end")
+
+    # Track the captured file id for the error-path timing flush below —
+    # avoids running the flush inside the closed session_scope.
+    flushed_file_id: int | None = None
+    flushed_user_id: int | None = None
+
     # Ensure file is marked as errored
     try:
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
+            if media_file is not None:
+                flushed_file_id = int(media_file.id)
+                flushed_user_id = int(media_file.user_id)
 
             # Check task error to determine failure stage
             from app.models.media import Task
@@ -326,6 +339,7 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
                     f"Postprocess failed but segments already saved for {file_uuid}, "
                     "keeping COMPLETED status"
                 )
+                _flush_error_timing(task_id, flushed_file_id, flushed_user_id)
                 return
 
             if media_file and media_file.status not in (
@@ -353,6 +367,27 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
                     )
     except Exception as e:
         logger.error(f"Error in pipeline error handler: {e}")
+    finally:
+        _flush_error_timing(task_id, flushed_file_id, flushed_user_id)
+
+
+def _flush_error_timing(task_id: str, file_id: int | None, user_id: int | None) -> None:
+    """Persist the Redis timing hash into ``file_pipeline_timing`` on failure.
+
+    Mirrors the success-path flush that finalize_transcription performs, so
+    the error wall-clock stays queryable. Best-effort: instrumentation
+    failures never propagate.
+    """
+    from app.utils import benchmark_timing
+
+    if not benchmark_timing.benchmark_enabled() or file_id is None:
+        return
+    try:
+        from app.services.pipeline_timing_service import record_pipeline_timing
+
+        record_pipeline_timing(task_id=task_id, file_id=file_id, user_id=user_id)
+    except Exception as e:
+        logger.debug(f"Error-path timing flush failed for {task_id}: {e}")
 
 
 def _log_oom_diagnostics(error_msg: str) -> None:
