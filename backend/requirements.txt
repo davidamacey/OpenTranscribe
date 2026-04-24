@@ -71,10 +71,14 @@ triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 onnx>=1.17.0
 onnxruntime-gpu>=1.22.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 onnxruntime>=1.22.0; sys_platform != 'linux' or platform_machine != 'x86_64'
-# TensorRT — required for ORT TensorrtExecutionProvider. Brings libnvinfer.so.10
-# in site-packages/tensorrt_libs. Phase 6.3 uses this for GPU-server deployments
-# (opt-in via ENABLE_TENSORRT=1); defaults stay on CUDA EP / eager PyTorch.
-tensorrt>=10.16.0; sys_platform == 'linux' and platform_machine == 'x86_64'
+# NOTE: `tensorrt` was added during Phase 6.3 spike but removed 2026-04-23.
+# ORT's TensorrtExecutionProvider hit rebuild storms on pyannote's variable
+# input shapes — 2 min CPU saturation, 0% GPU usage, no inference. Microbench
+# showed 2x on embedding ResNet at fixed shapes, but the E2E pipeline emits
+# many shape variations which triggered per-shape engine rebuilds.
+# See docs/upstream-patches/phase-6-3-{spike,shape-profile,torch-compile}-*.md
+# Re-add only with pad-to-fixed-shape at the embedding call site, or when
+# moving to direct TensorRT builder API (not via ORT EP).
 
 # PyAnnote v4 - GPU-optimized fork with 1.28x speedup and 66% VRAM reduction
 # Fork: https://github.com/davidamacey/pyannote-audio/tree/gpu-optimizations

@@ -150,7 +150,9 @@ Five memos written in `docs/upstream-patches/`:
 
 **What remains to unblock GPU compile paths**: pad-to-fixed-shape at the embedding call site (invasive, ~1-2 days; Phase A's `embedding_batch_size=16` pin already fixed batch but num_frames still varies), or `torch.compile(..., dynamic=True)` which should avoid recompiles at cost of fewer optimizations.
 
-**What shipped (safe, reversible)**: shape-profile plumbing in `_select_providers()`, hybrid env var gates, tensorrt pip dep in image, LD_LIBRARY_PATH extension. All gated behind `ENABLE_TENSORRT=1` + `PYANNOTE_USE_ONNX=1`. Default production path unchanged.
+**What shipped (safe, reversible)**: shape-profile plumbing in `_select_providers()`, hybrid env var gates. All gated behind `ENABLE_TENSORRT=1` + `PYANNOTE_USE_ONNX=1`. Default production path unchanged.
+
+**What was rolled back 2026-04-23** (image-size cleanup for the next container-optimization agent): `tensorrt>=10.16.0` removed from `backend/requirements.txt` and the `tensorrt_libs` entry removed from `Dockerfile.prod`'s `LD_LIBRARY_PATH`. Saves ~4.5 GB image growth for a feature that never shipped an E2E win. Re-add only when the shape-profile blocker is solved (pad-to-fixed-shape at the embedding call site, or move to direct TensorRT builder API).
 
 ### Phase 6.3 — TensorRT spike — PARTIAL UNLOCK
 

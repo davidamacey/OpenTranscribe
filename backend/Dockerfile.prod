@@ -75,8 +75,17 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
 #
 # gcc/g++: required by `torch.compile` (Inductor JIT) at runtime to compile
 # generated C++ launcher code for Triton kernels. Without them the first
-# forward pass falls back to eager silently. ~150 MB image growth; acceptable
-# vs. 5-15% segmentation + embedding speedup unlocked by torch.compile.
+# forward pass falls back to eager silently. ~150 MB image growth.
+#
+# Measured Phase 6.1 impact (2026-04-23, A6000, 2.2h, 3 warm runs):
+#   Segmentation stage: 5.52s -> 5.1-5.2s (~6-7% faster)
+#   Embedding stage:    noise
+#   End-to-end:         noise (segmentation is ~5% of pipeline)
+#
+# The `torch_compile=True` kwarg is opt-in (default False). If future container
+# optimization removes this opt-in path, gcc/g++ can be removed too for the
+# image size savings. Kept here because (a) the opt-in is a valid user path
+# and (b) gcc/g++ also unblocks future ONNX/TRT export-time tooling.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
@@ -122,7 +131,7 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONWARNINGS=ignore::UserWarning:pyannote.audio.core.io \
-    LD_LIBRARY_PATH=/home/appuser/.local/lib/python3.13/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cuda_runtime/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cublas/lib:/home/appuser/.local/lib/python3.13/site-packages/tensorrt_libs \
+    LD_LIBRARY_PATH=/home/appuser/.local/lib/python3.13/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cuda_runtime/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cublas/lib \
     HF_HOME=/home/appuser/.cache/huggingface \
     TORCH_HOME=/home/appuser/.cache/torch \
     NLTK_DATA=/home/appuser/.cache/nltk_data \
