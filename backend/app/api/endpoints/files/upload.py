@@ -14,7 +14,7 @@ from app.core.constants import UPLOAD_CHUNK_SIZE
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
-from app.services.minio_service import upload_file
+from app.services.minio_service import upload_file_tuned
 from app.utils import benchmark_timing
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
@@ -122,7 +122,7 @@ def upload_file_to_storage(
         content_type: MIME type of the file
     """
     if os.environ.get("SKIP_S3", "False").lower() != "true":
-        upload_file(
+        upload_file_tuned(
             file_content=io.BytesIO(file_content),
             file_size=file_size,
             object_name=storage_path,

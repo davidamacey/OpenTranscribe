@@ -255,7 +255,7 @@ services:
     env_file: .env
     security_opt:
       - no-new-privileges:true
-    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-3} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
+    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-5} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch

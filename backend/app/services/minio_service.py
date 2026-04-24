@@ -405,7 +405,9 @@ def upload_temp_audio(file_uuid: str, local_path: str) -> str:
             return str(dest)
         _logger.warning("scratch write failed; falling back to MinIO temp upload")
 
-    # Fallback: MinIO temp bucket (cross-host compatible)
+    # Fallback: MinIO temp bucket (cross-host compatible). Use tuned part
+    # size so multi-hundred-MB WAVs transfer in ~64 MiB chunks rather than
+    # the minio-py 5 MB default.
     object_name = _temp_audio_object_name(file_uuid)
     file_size = os.path.getsize(local_path)
     with open(local_path, "rb") as f:
@@ -415,6 +417,7 @@ def upload_temp_audio(file_uuid: str, local_path: str) -> str:
             f,
             file_size,
             content_type="audio/wav",
+            part_size=PRESIGNED_PUT_PART_SIZE if file_size >= PRESIGNED_PUT_PART_SIZE else 0,
         )
     _logger.info(f"Uploaded temp audio ({file_size / (1024 * 1024):.1f}MB) to {object_name}")
     return object_name

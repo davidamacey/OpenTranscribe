@@ -30,6 +30,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file
+from app.services.minio_service import upload_file_tuned
 from app.services.protected_media_providers import PROTECTED_MEDIA_PROVIDERS
 from app.services.protected_media_providers import ProtectedMediaProvider
 from app.utils.thumbnail import generate_and_upload_thumbnail_sync
@@ -1465,11 +1466,13 @@ class MediaDownloadService:
             file_extension = Path(downloaded_file).suffix
             storage_path = f"media/{user.id}/{file_uuid}{file_extension}"
 
-            # Upload to MinIO
+            # Upload to MinIO. Use the tuned uploader so large yt-dlp files
+            # use 64 MiB multipart parts (~12× fewer parts than the minio-py
+            # 5 MB default) — Phase 2 PR #6.
             logger.info(f"Uploading downloaded video to MinIO: {storage_path}")
             with open(downloaded_file, "rb") as f:
                 file_content = io.BytesIO(f.read())
-                upload_file(
+                upload_file_tuned(
                     file_content=file_content,
                     file_size=file_size,
                     object_name=storage_path,

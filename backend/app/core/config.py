@@ -328,6 +328,17 @@ class Settings(BaseSettings):
     # Higher values improve recall for large collections at the cost of memory.
     SEARCH_MAX_OVERFETCH: int = _int_env("SEARCH_MAX_OVERFETCH", 1000)
 
+    # Chunk threshold above which bulk indexing temporarily disables OpenSearch
+    # refresh (sets refresh_interval=-1) for the target index to avoid one
+    # segment-refresh per bulk batch. The interval is restored afterwards so
+    # normal search latency is unaffected. Tuned for 6+ hour transcripts.
+    SEARCH_LARGE_TRANSCRIPT_CHUNKS: int = _int_env("SEARCH_LARGE_TRANSCRIPT_CHUNKS", 500)
+
+    # SQLAlchemy connection pool for the FastAPI backend. Celery workers build
+    # their own engines, so these sizes mainly control API concurrency.
+    DB_POOL_SIZE: int = max(_int_env("DB_POOL_SIZE", 20), 1)
+    DB_MAX_OVERFLOW: int = max(_int_env("DB_MAX_OVERFLOW", 40), 0)
+
     # OpenSearch Neural Search settings (ML Commons-based)
     # When enabled, embeddings are generated server-side by OpenSearch instead of Python
     OPENSEARCH_NEURAL_SEARCH_ENABLED: bool = (

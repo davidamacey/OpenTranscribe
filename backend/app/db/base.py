@@ -18,8 +18,8 @@ engine = create_engine(
     connect_args=connect_args,
     pool_pre_ping=True,  # Verify connections before using them
     pool_recycle=3600,  # Recycle connections after 1 hour
-    pool_size=10,  # Connections to maintain (handles concurrent API requests)
-    max_overflow=20,  # Burst connections beyond pool_size
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
 )
 
 # Create sessionmaker
