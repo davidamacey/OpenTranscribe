@@ -39,6 +39,8 @@ def index_transcript_search_task(  # noqa: C901
     Returns:
         Dict with indexing stats and timing.
     """
+    from sqlalchemy.orm import joinedload
+
     from app.db.session_utils import get_refreshed_object
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
@@ -81,6 +83,57 @@ def index_transcript_search_task(  # noqa: C901
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
                 return {"status": "skipped", "reason": "no_segments"}
 
+        # Phase 2 PR #5: full-document transcript index moved here from
+        # enrich_and_dispatch. Running it on the embedding worker unblocks
+        # the CPU postprocess stage so completion_notified fires sooner.
+        try:
+            from app.services.opensearch_service import index_transcript
+            from app.tasks.transcription.storage import generate_full_transcript
+            from app.tasks.transcription.storage import get_unique_speaker_names
+
+            with session_scope() as db:
+                segments_for_doc = (
+                    db.query(TranscriptSegment)
+                    .options(joinedload(TranscriptSegment.speaker))
+                    .filter(TranscriptSegment.media_file_id == file_id)
+                    .order_by(TranscriptSegment.start_time)
+                    .all()
+                )
+                seg_dicts = [
+                    {
+                        "text": s.text,
+                        "speaker": s.speaker.name if s.speaker else None,
+                    }
+                    for s in segments_for_doc
+                ]
+                mf_for_doc = get_refreshed_object(db, MediaFile, file_id)
+                doc_title = (
+                    (mf_for_doc.title or mf_for_doc.filename) if mf_for_doc else f"File {file_id}"
+                )
+
+            full_transcript = generate_full_transcript(seg_dicts)
+            doc_speaker_names = get_unique_speaker_names(seg_dicts)
+            index_transcript(
+                file_id, file_uuid, user_id, full_transcript, doc_speaker_names, doc_title
+            )
+        except Exception as full_doc_err:
+            logger.warning(f"Full-document transcript indexing failed (non-fatal): {full_doc_err}")
+
+        # Gather chunk-level metadata + access list in a fresh session
+        with session_scope() as db:
+            update_task_status(db, task_id, "in_progress", progress=0.4)
+
+            media_file = get_refreshed_object(db, MediaFile, file_id)
+            if not media_file:
+                raise ValueError(f"Media file {file_id} not found")
+
+            segments = (
+                db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .order_by(TranscriptSegment.start_time)
+                .all()
+            )
+
             # Batch-fetch speakers
             speaker_ids = {seg.speaker_id for seg in segments if seg.speaker_id}
             speakers_map: dict[int, str] = {}
@@ -110,14 +163,14 @@ def index_transcript_search_task(  # noqa: C901
             # Extract metadata
             title = media_file.title or media_file.filename or f"File {file_id}"
             speaker_names = list(
-                set(str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown")
+                {str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown"}
             )
             tag_names = []
             if hasattr(media_file, "tags") and media_file.tags:
                 tag_names = [t.name for t in media_file.tags]
             upload_time = (
                 (media_file.creation_date or media_file.upload_time).isoformat()
-                if media_file and (media_file.creation_date or media_file.upload_time)
+                if media_file.creation_date or media_file.upload_time
                 else None
             )
             language = media_file.language or "en"
@@ -130,10 +183,6 @@ def index_transcript_search_task(  # noqa: C901
 
             # Compute full access list (owner + shared users/groups)
             accessible_user_ids = PermissionService.get_users_with_file_access(db, file_id)
-
-        # Index in OpenSearch
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.4)
 
         indexing_service = TranscriptIndexingService()
         result = indexing_service.index_transcript_chunks(

@@ -19,7 +19,6 @@ from app.utils import benchmark_timing
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
-from app.utils.thumbnail import generate_and_upload_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -281,63 +280,6 @@ def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename
         logger.warning(f"No file hash provided for {filename} - duplicate detection may not work")
 
 
-def _cleanup_temp_file(temp_file_path: str | None) -> None:
-    """
-    Clean up a temporary file if it exists.
-
-    Args:
-        temp_file_path: Path to temporary file
-    """
-    if temp_file_path and os.path.exists(temp_file_path):
-        with contextlib.suppress(Exception):
-            os.unlink(temp_file_path)
-
-
-async def _generate_video_thumbnail(
-    file_content: bytearray,
-    filename: str,
-    current_user: User,
-    db_file: MediaFile,
-) -> tuple[str | None, str | None]:
-    """
-    Generate and upload a thumbnail for video files.
-
-    Args:
-        file_content: Video file content
-        filename: Original filename
-        current_user: Current user
-        db_file: MediaFile database record
-
-    Returns:
-        Tuple of (thumbnail_path, temp_file_path)
-    """
-    import tempfile
-
-    temp_file_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=os.path.splitext(filename)[1]
-        ) as temp_video:
-            temp_video.write(file_content)
-            temp_file_path = temp_video.name
-
-        thumbnail_path = await generate_and_upload_thumbnail(
-            user_id=int(current_user.id),
-            media_file_id=int(db_file.id),
-            video_path=temp_file_path,
-        )
-
-        if thumbnail_path:
-            logger.info(f"Generated thumbnail for video: {filename}, path: {thumbnail_path}")
-        else:
-            logger.warning(f"Failed to generate thumbnail for video: {filename}")
-
-        return thumbnail_path, temp_file_path
-    except Exception as e:
-        logger.warning(f"Error generating thumbnail for {filename}: {e}")
-        return None, temp_file_path
-
-
 async def process_file_upload(
     file: UploadFile,
     db: Session,
@@ -395,7 +337,6 @@ async def process_file_upload(
     storage_path = get_safe_storage_filename(
         file.filename or "unknown", int(current_user.id), int(db_file.id)
     )
-    temp_file_path: str | None = None
 
     try:
         # Read file content in chunks
@@ -438,15 +379,12 @@ async def process_file_upload(
                 file.content_type or "application/octet-stream",
             )
 
-        # For video files, generate and upload a thumbnail
-        if file.content_type and file.content_type.startswith("video/"):
-            with benchmark_timing.stage(task_id, "thumbnail"):
-                thumbnail_path, temp_file_path = await _generate_video_thumbnail(
-                    file_content, file.filename or "unknown", current_user, db_file
-                )
-            if thumbnail_path:
-                db_file.thumbnail_path = thumbnail_path  # type: ignore[assignment]
-            _cleanup_temp_file(temp_file_path)
+        # Thumbnail generation was previously inline here (3-8s FFmpeg on
+        # the buffered video). Now deferred to generate_thumbnail_task,
+        # dispatched after the commit below — keeps the HTTP response
+        # fast (Phase 2 PR #5). thumbnail_path will land on the row when
+        # the task finishes and the frontend refreshes on the
+        # file_updated WebSocket event.
 
         # Update storage path, file size, and thumbnail path in database
         db_file.storage_path = storage_path  # type: ignore[assignment]
@@ -459,6 +397,22 @@ async def process_file_upload(
         with benchmark_timing.stage(task_id, "db_commit"):
             db.commit()
             db.refresh(db_file)
+
+        # Dispatch the background thumbnail generation for video files.
+        if file.content_type and file.content_type.startswith("video/"):
+            try:
+                from app.tasks.thumbnail import generate_thumbnail_task
+
+                generate_thumbnail_task.delay(
+                    file_id=int(db_file.id),
+                    user_id=int(current_user.id),
+                    storage_path=storage_path,
+                )
+                logger.info(f"Dispatched thumbnail generation for video file {db_file.id}")
+            except Exception as thumb_err:
+                logger.warning(
+                    f"Thumbnail dispatch failed for {db_file.id} (non-fatal): {thumb_err}"
+                )
 
         # Capture file context for later reporting (persists until flushed
         # into file_pipeline_timing by finalize_transcription).
@@ -498,13 +452,11 @@ async def process_file_upload(
         # Re-raise HTTP exceptions after cleanup
         db.delete(db_file)
         db.commit()
-        _cleanup_temp_file(temp_file_path)
         raise
     except Exception as e:
         # Clean up on failure
         db.delete(db_file)
         db.commit()
-        _cleanup_temp_file(temp_file_path)
         logger.error(f"Upload failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -20,15 +20,12 @@ from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
-from app.services.opensearch_service import index_transcript
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 from app.utils.websocket_notify import send_ws_event
 
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
-from .storage import generate_full_transcript
-from .storage import get_unique_speaker_names
 
 logger = logging.getLogger(__name__)
 
@@ -426,39 +423,14 @@ def _store_v4_centroids(
 def _index_transcript(
     file_id: int, file_uuid: str, user_id: int, pipeline_task_id: str | None = None
 ) -> None:
-    """Index transcript in OpenSearch (whole-doc + dispatch chunk-level)."""
-    from sqlalchemy.orm import joinedload
+    """Dispatch OpenSearch indexing for the completed transcript.
 
-    from app.db.session_utils import get_refreshed_object
-    from app.models.media import MediaFile
-    from app.models.media import TranscriptSegment
-
-    with benchmark_timing.stage(pipeline_task_id, "search_index"):
-        with session_scope() as db:
-            segments = (
-                db.query(TranscriptSegment)
-                .options(joinedload(TranscriptSegment.speaker))
-                .filter(TranscriptSegment.media_file_id == file_id)
-                .order_by(TranscriptSegment.start_time)
-                .all()
-            )
-            seg_dicts = [
-                {"text": s.text, "speaker": s.speaker.name if s.speaker else None} for s in segments
-            ]
-
-            media_file = get_refreshed_object(db, MediaFile, file_id)
-            file_title = (
-                (media_file.title or media_file.filename) if media_file else f"File {file_id}"
-            )
-
-        full_transcript = generate_full_transcript(seg_dicts)
-        speaker_names = get_unique_speaker_names(seg_dicts)
-
-        index_transcript(file_id, file_uuid, user_id, full_transcript, speaker_names, file_title)
-
-    # Dispatch chunk-level search indexing (itself instrumented via its own
-    # task pre-run markers). Pass task_id through so its inner markers share
-    # our benchmark hash.
+    Phase 2 PR #5: the full-document index used to be built inline on the
+    CPU worker here (adding 200-400 ms to the postprocess critical path).
+    It now runs inside ``index_transcript_search_task`` on the embedding
+    worker together with the chunk-level index, so CPU postprocess can
+    return as soon as speaker matching finishes.
+    """
     try:
         from app.tasks.search_indexing_task import index_transcript_search_task
 
