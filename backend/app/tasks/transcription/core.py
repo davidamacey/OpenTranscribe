@@ -4,6 +4,7 @@ import os
 import tempfile
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -594,18 +595,21 @@ def _store_native_centroids_in_v4_staging(
     Fire-and-forget: failures logged but don't affect main pipeline.
     """
     from app.models.media import Speaker
-    from app.services.opensearch_service import add_speaker_embedding_v4
+    from app.services.opensearch_service import bulk_add_speaker_embeddings_v4
     from app.services.opensearch_service import ensure_v4_index_exists
 
     if not ensure_v4_index_exists():
         logger.warning("v4 staging: Could not create/verify speakers_v4 index, skipping")
         return
 
-    stored_count = 0
     touched_profile_ids: set[int] = set()
     current_file_speaker_uuids: set[str] = set()
+    bulk_payload: list[dict[str, Any]] = []
 
-    # Phase 1: Store per-speaker centroids
+    # Phase 1: assemble per-speaker centroid payload. All entries are then
+    # shipped to OpenSearch in ONE ``_bulk`` request — turns an N-round-trip
+    # loop into a single round-trip (Phase 2 PR #9, item D14). A 10-speaker
+    # meeting saves ~200-500 ms of OpenSearch latency.
     with session_scope() as db:
         # Batch-fetch all speakers for this file (avoids N+1 per-label queries)
         from sqlalchemy.orm import joinedload
@@ -626,37 +630,50 @@ def _store_native_centroids_in_v4_staging(
             if db_id is None:
                 continue
 
-            try:
-                speaker = speaker_by_id.get(db_id)
-                if not speaker:
-                    logger.warning(f"v4 staging: Speaker ID {db_id} not found in DB")
-                    continue
+            speaker = speaker_by_id.get(db_id)
+            if not speaker:
+                logger.warning(f"v4 staging: Speaker ID {db_id} not found in DB")
+                continue
 
-                emb_list = embedding.tolist() if hasattr(embedding, "tolist") else list(embedding)
-                speaker_uuid = str(speaker.uuid)
-                current_file_speaker_uuids.add(speaker_uuid)
+            emb_list = embedding.tolist() if hasattr(embedding, "tolist") else list(embedding)
+            speaker_uuid = str(speaker.uuid)
+            current_file_speaker_uuids.add(speaker_uuid)
 
-                profile_uuid = None
-                if speaker.profile_id and speaker.profile:
-                    profile_uuid = str(speaker.profile.uuid)
-                    touched_profile_ids.add(speaker.profile_id)
+            profile_uuid: str | None = None
+            if speaker.profile_id and speaker.profile:
+                profile_uuid = str(speaker.profile.uuid)
+                touched_profile_ids.add(speaker.profile_id)
 
-                add_speaker_embedding_v4(
-                    speaker_id=int(speaker.id),
-                    speaker_uuid=speaker_uuid,
-                    user_id=ctx.user_id,
-                    name=speaker.display_name or speaker.name,
-                    embedding=emb_list,
-                    profile_id=speaker.profile_id,
-                    profile_uuid=profile_uuid,
-                    media_file_id=ctx.file_id,
-                    segment_count=1,
-                    display_name=speaker.display_name,
+            bulk_payload.append(
+                {
+                    "speaker_id": int(speaker.id),
+                    "speaker_uuid": speaker_uuid,
+                    "user_id": ctx.user_id,
+                    "name": speaker.display_name or speaker.name,
+                    "embedding": emb_list,
+                    "profile_id": speaker.profile_id,
+                    "profile_uuid": profile_uuid,
+                    "media_file_id": ctx.file_id,
+                    "segment_count": 1,
+                    "display_name": speaker.display_name,
+                }
+            )
+
+    stored_count = 0
+    if bulk_payload:
+        try:
+            response = bulk_add_speaker_embeddings_v4(bulk_payload)
+            if response is not None and not response.get("errors"):
+                stored_count = len(bulk_payload)
+            elif response is not None:
+                # Bulk partially succeeded — count items without top-level errors.
+                stored_count = sum(
+                    1
+                    for item in response.get("items", [])
+                    if not item.get("index", {}).get("error")
                 )
-                stored_count += 1
-
-            except Exception as e:
-                logger.warning(f"v4 staging: Error storing speaker {db_id}: {e}")
+        except Exception as e:
+            logger.warning(f"v4 staging: bulk embedding upsert failed: {e}")
 
     # Phase 2: Update consolidated profile embeddings in v4
     profile_update_count = 0

@@ -199,41 +199,85 @@ def _preprocess_video(
     content_type: str,
     task_id: str,
 ) -> None:
-    """Extract audio from video via FFmpeg with presigned URL fallback."""
+    """Extract audio + metadata from a video in parallel, with presigned-URL fallback.
+
+    Phase 2 PR #9 (item D11): FFmpeg audio extraction and ffprobe metadata
+    reads are independent subprocess calls against the same source (presigned
+    MinIO URL or downloaded file). They now run concurrently on a
+    ``ThreadPoolExecutor`` — subprocesses release the GIL, so threading buys
+    real parallelism. Eliminates 1-3 s of serial latency per video on the
+    critical path.
+
+    If the presigned URL path fails (rare — typically only in offline
+    deployments), we fall back to a single local download and then run the
+    same two operations concurrently against the on-disk file.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
     from app.services.minio_service import download_file_to_path
     from app.services.minio_service import get_internal_presigned_url
 
     send_progress_notification(user_id, file_id, 0.08, "Extracting audio from video")
 
-    # Try presigned URL first (FFmpeg reads directly from MinIO, no full download)
-    local_video_path: str | None = None
+    # Resolve the source once. The presigned URL lets FFmpeg + ffprobe read
+    # only the byte ranges they need (no full download); we only fall back
+    # to a local copy if the presigned route actually fails at runtime.
     presigned_url: str | None = None
-    with benchmark_timing.stage(task_id, "ffmpeg"):
-        try:
-            presigned_url = get_internal_presigned_url(storage_path, expires=3600)
-            extract_audio_from_video(presigned_url, temp_audio_path)
-        except Exception as url_err:
-            logger.warning(f"Presigned URL FFmpeg failed, falling back to download: {url_err}")
-            temp_video_path = os.path.join(temp_dir, f"input{file_ext}")
-            with benchmark_timing.stage(task_id, "media_download"):
-                download_file_to_path(storage_path, temp_video_path)
-            extract_audio_from_video(temp_video_path, temp_audio_path)
-            local_video_path = temp_video_path
+    try:
+        presigned_url = get_internal_presigned_url(storage_path, expires=3600)
+    except Exception as url_err:
+        logger.warning(f"Could not mint presigned URL, will fall back: {url_err}")
 
-    # Metadata extraction — reuse whatever we already have. No second download.
-    # Fast path: run ffprobe against the presigned URL (only reads container
-    # headers, ~1 MB). Fallback path: the video is already on disk from the
-    # download above, pass it directly to exiftool.
-    _extract_metadata_best_effort(
-        storage_path,
-        file_ext,
-        temp_dir,
-        file_id,
-        content_type,
-        existing_local_path=local_video_path,
-        presigned_url=presigned_url if local_video_path is None else None,
-        task_id=task_id,
-    )
+    local_video_path: str | None = None
+
+    def _run_ffmpeg_against(source: str) -> None:
+        with benchmark_timing.stage(task_id, "ffmpeg"):
+            extract_audio_from_video(source, temp_audio_path)
+
+    def _run_metadata_against(source_url_or_path: str, is_url: bool) -> None:
+        # Reuses the best-effort metadata helper but hands in the exact
+        # source we want; no second MinIO download happens inside.
+        _extract_metadata_best_effort(
+            storage_path,
+            file_ext,
+            temp_dir,
+            file_id,
+            content_type,
+            existing_local_path=None if is_url else source_url_or_path,
+            presigned_url=source_url_or_path if is_url else None,
+            task_id=task_id,
+        )
+
+    # Fast path: both stages run in parallel against the presigned URL.
+    if presigned_url is not None:
+        try:
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="preproc-video") as pool:
+                ffmpeg_future = pool.submit(_run_ffmpeg_against, presigned_url)
+                metadata_future = pool.submit(_run_metadata_against, presigned_url, True)
+                # Propagate the FFmpeg error (pipeline-fatal); the metadata
+                # extraction is best-effort and already swallows its own
+                # exceptions inside ``_extract_metadata_best_effort``.
+                ffmpeg_future.result()
+                # Wait for metadata so its wall-clock joins the preprocess
+                # window rather than racing into the next stage's markers.
+                metadata_future.result()
+            return
+        except Exception as url_err:
+            logger.warning(
+                f"Parallel presigned-URL preprocess failed, falling back to download: {url_err}"
+            )
+
+    # Fallback path: single download, then parallel local FFmpeg + metadata.
+    temp_video_path = os.path.join(temp_dir, f"input{file_ext}")
+    with benchmark_timing.stage(task_id, "media_download"):
+        download_file_to_path(storage_path, temp_video_path)
+    local_video_path = temp_video_path
+
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="preproc-video") as pool:
+        ffmpeg_future = pool.submit(_run_ffmpeg_against, local_video_path)
+        metadata_future = pool.submit(_run_metadata_against, local_video_path, False)
+        ffmpeg_future.result()
+        metadata_future.result()
 
 
 def _preprocess_audio(

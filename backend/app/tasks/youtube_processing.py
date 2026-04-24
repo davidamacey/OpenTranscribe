@@ -9,6 +9,7 @@ Supports YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other platforms via yt-dlp
 """
 
 import logging
+import uuid as uuid_lib
 from typing import TypedDict
 
 from app.core.celery import celery_app
@@ -24,6 +25,7 @@ from app.models.user import User
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import dispatch_transcription_pipeline
+from app.utils import benchmark_timing
 from app.utils.error_classification import RETRIABLE_CATEGORIES
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
@@ -174,6 +176,20 @@ def process_youtube_url_task(
 
     file_id = None  # Initialize to handle exceptions before file_id is assigned
 
+    # Mint the application task_id at task ingress so every subsequent stage
+    # (download, thumbnail, MinIO put, DB commit, preprocess, GPU, postprocess)
+    # writes into a single benchmark:{task_id} Redis hash. Phase 2 PR #9: URL
+    # ingress parity with the direct-upload path.
+    task_id = str(uuid_lib.uuid4())
+    benchmark_timing.mark(task_id, "http_request_received")
+    benchmark_timing.set_context(
+        task_id,
+        {
+            "http_flow": "url",
+            "asr_provider": "yt-dlp",
+        },
+    )
+
     try:
         logger.info(f"Starting YouTube processing task for URL: {url}, file_uuid: {file_uuid}")
 
@@ -267,11 +283,13 @@ def process_youtube_url_task(
                     video_quality=video_quality,
                     audio_only=audio_only,
                     audio_quality=audio_quality,
+                    benchmark_task_id=task_id,
                 )
 
                 # Update status to pending for transcription
                 updated_media_file.status = FileStatus.PENDING  # type: ignore[assignment]
-                db.commit()
+                with benchmark_timing.stage(task_id, "db_commit"):
+                    db.commit()
 
                 # Apply collections and tags if specified
                 if collection_ids or tag_names:
@@ -360,12 +378,15 @@ def process_youtube_url_task(
                         f"Failed to send file_updated notification for YouTube completion {file_id}: {e}"
                     )
 
-                # Dispatch the 3-stage pipeline. Waveform generation is fired
-                # from within the preprocess stage once the 16 kHz WAV has
-                # been staged in MinIO temp — avoids re-downloading the
-                # original media (Phase 2 PR #3).
+                # Dispatch the 3-stage pipeline, threading our ingress task_id
+                # through so every downstream stage writes into the same
+                # benchmark:{task_id} Redis hash we've been populating.
+                # Waveform generation fires from the preprocess stage once the
+                # 16 kHz WAV is staged in MinIO temp — avoids re-downloading
+                # the original media (Phase 2 PR #3).
                 try:
-                    task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
+                    benchmark_timing.mark(task_id, "http_response_end")
+                    dispatch_transcription_pipeline(file_uuid=file_uuid, task_id=task_id)
                     logger.info(
                         f"Dispatched pipeline chain for MediaFile {file_id} (task_id={task_id})"
                     )

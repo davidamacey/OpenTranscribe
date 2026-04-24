@@ -335,19 +335,37 @@ def _get_thumbnail_with_fallback(
     user_id: int,
     media_file_id: int,
     video_path: str,
+    *,
+    defer_fallback_generation: bool = False,
+    storage_path: str | None = None,
 ) -> str | None:
-    """
-    Get thumbnail from media source or generate from video as fallback.
+    """Get the source-supplied thumbnail (cheap HTTP GET) or defer generation.
+
+    The source thumbnail pull is always attempted inline because it's a
+    single ~60 KB request to the upstream CDN — faster than spinning up
+    a Celery task round-trip. The FFmpeg-frame-extraction fallback (3-8 s
+    of subprocess time) is the expensive path; ``defer_fallback_generation``
+    lets the caller ship it to the thumbnail-generation queue instead of
+    blocking the download worker.
 
     Args:
-        media_service: MediaDownloadService instance
-        media_info: Media metadata
-        user_id: User ID
-        media_file_id: Media file ID
-        video_path: Path to downloaded video
+        media_service: MediaDownloadService instance.
+        media_info: yt-dlp metadata dict (contains ``thumbnail`` URL if any).
+        user_id: Owner user ID.
+        media_file_id: Media file integer ID.
+        video_path: Local path to the downloaded video (used only when the
+            fallback path is taken — either inline or for the async task).
+        defer_fallback_generation: When True, dispatch
+            ``generate_thumbnail_task`` asynchronously instead of running
+            FFmpeg inline. Keeps the URL ingest worker free for the next
+            download (Phase 2 PR #9).
+        storage_path: Required when ``defer_fallback_generation`` is True
+            so the async task knows which MinIO object to decode frames
+            from.
 
     Returns:
-        Thumbnail storage path or None
+        Thumbnail storage path when the source-supplied thumbnail succeeded,
+        or None when the fallback generation was deferred (or both failed).
     """
     try:
         thumbnail_path = media_service._download_media_thumbnail_sync(media_info, user_id)
@@ -358,7 +376,28 @@ def _get_thumbnail_with_fallback(
     except Exception as e:
         logger.error(f"Error downloading media thumbnail: {e}")
 
-    # Fallback to generating thumbnail from video
+    # Fallback path — either defer to Celery or run inline.
+    if defer_fallback_generation and storage_path:
+        try:
+            from app.tasks.thumbnail import generate_thumbnail_task
+
+            generate_thumbnail_task.delay(
+                file_id=media_file_id,
+                user_id=user_id,
+                storage_path=storage_path,
+            )
+            logger.info(
+                f"Dispatched async thumbnail generation for media_file {media_file_id} "
+                f"(fallback for URL ingest; object={storage_path})"
+            )
+            return None
+        except Exception as dispatch_err:
+            logger.warning(
+                f"Async thumbnail dispatch failed for {media_file_id}, "
+                f"falling back to inline generation: {dispatch_err}"
+            )
+
+    # Inline fallback — keeps legacy behavior for callers that opt out.
     try:
         return generate_and_upload_thumbnail_sync(
             user_id=user_id,
@@ -546,6 +585,7 @@ def _update_media_file_with_download_data(
     thumbnail_path: str | None,
     original_filename: str,
     source_url: str,
+    imohash_value: str | None = None,
 ) -> None:
     """
     Update MediaFile record with downloaded media and technical metadata.
@@ -560,6 +600,10 @@ def _update_media_file_with_download_data(
         thumbnail_path: Path to thumbnail
         original_filename: Original filename
         source_url: Original media URL
+        imohash_value: Optional imohash fingerprint computed from the
+            downloaded file. Enables server-side duplicate detection and
+            artifact cache lookups across different source URLs pointing
+            at the same content.
     """
     media_file.filename = media_info.get("title", original_filename)[:255]  # type: ignore[assignment]
     media_file.storage_path = storage_path  # type: ignore[assignment]
@@ -568,6 +612,8 @@ def _update_media_file_with_download_data(
     media_file.duration = technical_metadata.get("duration") or media_info.get("duration")  # type: ignore[assignment]
     media_file.status = FileStatus.PENDING  # type: ignore[assignment]
     media_file.thumbnail_path = thumbnail_path  # type: ignore[assignment]
+    if imohash_value:
+        media_file.imohash = imohash_value  # type: ignore[assignment]
 
     # Media-specific metadata
     media_file.title = media_info.get("title")  # type: ignore[assignment]
@@ -1383,6 +1429,7 @@ class MediaDownloadService:
         video_quality: str = "best",
         audio_only: bool = False,
         audio_quality: str = "best",
+        benchmark_task_id: str | None = None,
     ) -> MediaFile:
         """
         Process a media URL by downloading the video and updating the MediaFile record (synchronous).
@@ -1393,6 +1440,11 @@ class MediaDownloadService:
             user: User requesting the processing
             media_file: Pre-created MediaFile to update
             progress_callback: Optional callback for progress updates
+            benchmark_task_id: Optional application-level task_id minted upstream
+                (e.g., in ``process_youtube_url_task``) so per-stage wall-clock
+                markers join the same ``benchmark:{task_id}`` Redis hash as the
+                downstream transcription pipeline. No-op when falsy or when
+                ``ENABLE_BENCHMARK_TIMING`` is off.
 
         Returns:
             Updated MediaFile object
@@ -1400,6 +1452,8 @@ class MediaDownloadService:
         Raises:
             HTTPException: If processing fails
         """
+        from app.utils import benchmark_timing
+
         if not self.is_valid_media_url(url):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid media URL")
 
@@ -1432,17 +1486,18 @@ class MediaDownloadService:
 
             # Download the video using the already extracted info (this will use 20-60% progress range)
             logger.info(f"Starting media download for URL: {url}")
-            download_result = self.download_video(
-                url,
-                temp_dir,
-                progress_callback=progress_callback,
-                media_username=media_username,
-                media_password=media_password,
-                video_quality=video_quality,
-                audio_only=audio_only,
-                audio_quality=audio_quality,
-                user_id=resolve_user_id,
-            )
+            with benchmark_timing.stage(benchmark_task_id, "url_download"):
+                download_result = self.download_video(
+                    url,
+                    temp_dir,
+                    progress_callback=progress_callback,
+                    media_username=media_username,
+                    media_password=media_password,
+                    video_quality=video_quality,
+                    audio_only=audio_only,
+                    audio_quality=audio_quality,
+                    user_id=resolve_user_id,
+                )
 
             if progress_callback:
                 progress_callback(65, "Video downloaded, processing metadata...")
@@ -1466,11 +1521,32 @@ class MediaDownloadService:
             file_extension = Path(downloaded_file).suffix
             storage_path = f"media/{user.id}/{file_uuid}{file_extension}"
 
+            # Compute imohash against the local downloaded file BEFORE the
+            # upload clears it from disk. imohash samples three small byte
+            # ranges (≤384 KiB total) — constant-time regardless of file
+            # size, and cheap enough to run on every URL ingest. Used for
+            # server-side duplicate detection + artifact cache keys
+            # (Phase 2 PR #9 — URL ingress parity with direct uploads).
+            imohash_value: str | None = None
+            try:
+                from app.services.imohash_service import compute_from_stream
+
+                with (
+                    benchmark_timing.stage(benchmark_task_id, "imohash"),
+                    open(downloaded_file, "rb") as imo_fp,
+                ):
+                    imohash_value = compute_from_stream(imo_fp, file_size)
+            except Exception as imo_err:
+                logger.debug(f"imohash compute failed for {url} (non-fatal): {imo_err}")
+
             # Upload to MinIO. Use the tuned uploader so large yt-dlp files
             # use 64 MiB multipart parts (~12× fewer parts than the minio-py
             # 5 MB default) — Phase 2 PR #6.
             logger.info(f"Uploading downloaded video to MinIO: {storage_path}")
-            with open(downloaded_file, "rb") as f:
+            with (
+                benchmark_timing.stage(benchmark_task_id, "minio_put"),
+                open(downloaded_file, "rb") as f,
+            ):
                 file_content = io.BytesIO(f.read())
                 upload_file_tuned(
                     file_content=file_content,
@@ -1482,10 +1558,22 @@ class MediaDownloadService:
             if progress_callback:
                 progress_callback(85, "Processing thumbnails...")
 
-            # Download and upload media thumbnail with fallback
-            thumbnail_path = _get_thumbnail_with_fallback(
-                self, media_info, int(user.id), int(media_file.id), downloaded_file
-            )
+            # Thumbnail derivation. If the source already provides a thumbnail
+            # URL (YouTube, Vimeo, etc.) we fetch it inline — a single ~60 KB
+            # HTTP GET is cheap and keeps the row usable immediately. Only the
+            # expensive FFmpeg-frame-extraction fallback is deferred to an
+            # async task (Phase 2 PR #9, item 3).
+            thumbnail_path: str | None = None
+            with benchmark_timing.stage(benchmark_task_id, "thumbnail"):
+                thumbnail_path = _get_thumbnail_with_fallback(
+                    self,
+                    media_info,
+                    int(user.id),
+                    int(media_file.id),
+                    downloaded_file,
+                    defer_fallback_generation=True,
+                    storage_path=storage_path,
+                )
 
             if progress_callback:
                 progress_callback(95, "Finalizing and updating database...")
@@ -1502,11 +1590,23 @@ class MediaDownloadService:
                 thumbnail_path=thumbnail_path,
                 original_filename=original_filename,
                 source_url=url,
+                imohash_value=imohash_value,
             )
 
             # Save updated record to database
-            db.commit()
-            db.refresh(media_file)
+            with benchmark_timing.stage(benchmark_task_id, "db_commit"):
+                db.commit()
+                db.refresh(media_file)
+
+            # Surface per-file context (size + MIME) so the analysis layer can
+            # slice timing by file characteristics later.
+            benchmark_timing.set_context(
+                benchmark_task_id,
+                {
+                    "file_size_bytes": int(file_size) if file_size else 0,
+                    "content_type": technical_metadata.get("content_type") or "",
+                },
+            )
 
             logger.info(f"Updated MediaFile record {media_file.id} for media video")
 

@@ -86,6 +86,30 @@ class TranscriptionPipeline:
 
         profiler.snapshot("after_transcriber_loaded")
 
+        # Phase 2 PR #9 (item D12): overlap diarizer model load with
+        # transcription when diarization is enabled. The 500 ms-1.5 s
+        # PyAnnote load cost is absorbed into the transcription window
+        # because Whisper dominates wall-clock. ``ModelManager.get_diarizer``
+        # is protected by an RLock that safely serializes concurrent
+        # loads, so we only pay the cost once even on warm paths.
+        diarizer_preload_thread: threading.Thread | None = None
+        if self.config.enable_diarization and self.config.concurrent_requests <= 1:
+            # Single-request mode has headroom to hold both models; skip the
+            # overlap in multi-request mode where VRAM is tight and we need
+            # to release the transcriber before diarizing.
+            def _preload_diarizer() -> None:
+                try:
+                    self.manager.get_diarizer(self.config)
+                except Exception as preload_err:
+                    logger.debug(f"Diarizer preload (non-fatal, will retry inline): {preload_err}")
+
+            diarizer_preload_thread = threading.Thread(
+                target=_preload_diarizer,
+                name="diarizer-preload",
+                daemon=True,
+            )
+            diarizer_preload_thread.start()
+
         # Transcribe
         self._report(progress_callback, 0.43, "Running AI transcription")
         step_start = time.perf_counter()
@@ -94,6 +118,13 @@ class TranscriptionPipeline:
         logger.info(
             f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
         )
+
+        # Join the preload thread so subsequent get_diarizer() is guaranteed
+        # to return a fully-initialised model. If transcription was fast
+        # enough that the load hasn't finished yet, we absorb only the
+        # remainder here instead of the full load.
+        if diarizer_preload_thread is not None:
+            diarizer_preload_thread.join()
 
         if not transcript.get("segments"):
             logger.warning("Transcription produced no segments")
