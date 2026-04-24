@@ -79,18 +79,20 @@ class LocalDiarizationProvider(DiarizationProvider):
 
         diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
 
-        # Convert PyAnnote DataFrame to DiarizeSegment list
+        # Convert DiarizeResult to DiarizeSegment list
+        import numpy as np
+
         segments: list[DiarizeSegment] = []
-        for _, row in diarize_df.iterrows():
+        for s, e, sp in zip(diarize_df.start, diarize_df.end, diarize_df.speaker):
             segments.append(
                 DiarizeSegment(
-                    start=float(row["start"]),
-                    end=float(row["end"]),
-                    speaker=self._normalize_speaker_label(row["speaker"]) or "SPEAKER_00",
+                    start=float(s),
+                    end=float(e),
+                    speaker=self._normalize_speaker_label(str(sp)) or "SPEAKER_00",
                 )
             )
 
-        unique_speakers = int(diarize_df["speaker"].nunique()) if len(diarize_df) > 0 else 0
+        unique_speakers = int(np.unique(diarize_df.speaker).size) if len(diarize_df) > 0 else 0
 
         if progress_callback:
             progress_callback(1.0, "Diarization complete")

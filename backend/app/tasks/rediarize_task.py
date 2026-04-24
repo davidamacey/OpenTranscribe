@@ -238,9 +238,11 @@ def rediarize_task(  # noqa: C901
             audio_file_path, min_speakers, max_speakers, num_speakers
         )
 
+        import numpy as np
+
         logger.info(
             f"TIMING: diarization completed in {time.perf_counter() - step_start:.3f}s - "
-            f"{diarize_df['speaker'].nunique()} speakers, {len(diarize_df)} rows"
+            f"{int(np.unique(diarize_df.speaker).size)} speakers, {len(diarize_df)} rows"
         )
 
         with session_scope() as db:

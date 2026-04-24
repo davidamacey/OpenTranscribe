@@ -12,10 +12,10 @@ from typing import ClassVar
 from typing import NoReturn
 
 import numpy as np
-import pandas as pd
 import torch
 
 from app.transcription.config import TranscriptionConfig
+from app.transcription.diarize_result import DiarizeResult
 from app.utils.pyannote_utils import build_native_embeddings
 from app.utils.pyannote_utils import extract_overlap_regions
 
@@ -209,7 +209,9 @@ class SpeakerDiarizer:
         self._pipeline.embedding_batch_size = batch_size
         logger.info(f"Diarization embedding batch_size: {batch_size} (pinned)")
 
-    def diarize(self, audio: np.ndarray) -> tuple[pd.DataFrame, dict, dict[str, np.ndarray] | None]:
+    def diarize(
+        self, audio: np.ndarray
+    ) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
         """Run speaker diarization on audio.
 
         Args:
@@ -269,13 +271,12 @@ class SpeakerDiarizer:
         exclusive = self._extract_diarization(output, prefer_exclusive=True)
         full = self._extract_diarization(output, prefer_exclusive=False)
 
-        # Convert to DataFrame
-        diarize_df = pd.DataFrame(
-            exclusive.itertracks(yield_label=True),
-            columns=["segment", "label", "speaker"],
+        tracks = list(exclusive.itertracks(yield_label=True))
+        diarize_df = DiarizeResult(
+            start=np.asarray([seg.start for seg, _, _ in tracks], dtype=np.float64),
+            end=np.asarray([seg.end for seg, _, _ in tracks], dtype=np.float64),
+            speaker=np.asarray([spk for _, _, spk in tracks], dtype=object),
         )
-        diarize_df["start"] = diarize_df["segment"].apply(lambda x: x.start)
-        diarize_df["end"] = diarize_df["segment"].apply(lambda x: x.end)
 
         # Extract overlap info (gated by config, shared utility)
         overlaps = (
@@ -292,9 +293,6 @@ class SpeakerDiarizer:
                 "duration": total_duration,
                 "regions": overlaps,
             }
-            diarize_df.attrs["overlaps"] = overlaps
-            diarize_df.attrs["overlap_count"] = len(overlaps)
-            diarize_df.attrs["overlap_duration"] = total_duration
             logger.info(
                 f"Detected {len(overlaps)} overlapping regions (total: {total_duration:.2f}s)"
             )
@@ -319,7 +317,7 @@ class SpeakerDiarizer:
             }
 
         elapsed = time.perf_counter() - step_start
-        num_speakers = diarize_df["speaker"].nunique()
+        num_speakers = int(np.unique(diarize_df.speaker).size)
         logger.info(
             f"TIMING: diarization completed in {elapsed:.3f}s - "
             f"{num_speakers} speakers, {len(diarize_df)} segments"

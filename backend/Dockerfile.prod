@@ -52,6 +52,12 @@ RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps whispe
 RUN pip install --user --no-cache-dir --force-reinstall --no-deps \
     "onnxruntime-gpu>=1.22.0"
 
+# triton removed: openai/triton is unrelated to NVIDIA TensorRT and is only used
+# by torch.compile(backend="inductor") JIT. torch.compile is opt-in and not on
+# the production path (Phase 6.1). Callers setting torch_compile=True will get
+# an eager fallback with a warning. Saves ~540 MB.
+RUN pip uninstall -y --root-user-action=ignore triton || true
+
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime Stage - Minimal production image with non-root user
 # -----------------------------------------------------------------------------
@@ -73,24 +79,13 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
 # tag manually. This is important because the base image (python:3.13-slim-
 # trixie) may have been built before the latest security advisories landed.
 #
-# gcc/g++: required by `torch.compile` (Inductor JIT) at runtime to compile
-# generated C++ launcher code for Triton kernels. Without them the first
-# forward pass falls back to eager silently. ~150 MB image growth.
-#
-# Measured Phase 6.1 impact (2026-04-23, A6000, 2.2h, 3 warm runs):
-#   Segmentation stage: 5.52s -> 5.1-5.2s (~6-7% faster)
-#   Embedding stage:    noise
-#   End-to-end:         noise (segmentation is ~5% of pipeline)
-#
-# The `torch_compile=True` kwarg is opt-in (default False). If future container
-# optimization removes this opt-in path, gcc/g++ can be removed too for the
-# image size savings. Kept here because (a) the opt-in is a valid user path
-# and (b) gcc/g++ also unblocks future ONNX/TRT export-time tooling.
+# gcc/g++ removed from runtime: they were added in Phase 6.1 to unblock
+# torch.compile's Inductor JIT, which emits C++ kernels. torch.compile is now
+# opt-in only (production uses eager PyTorch). Without gcc and triton, a
+# torch_compile=True caller gets an eager fallback. Saves ~150 MB.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
-    gcc \
-    g++ \
     libsndfile1 \
     libimage-exiftool-perl \
     libgomp1 \

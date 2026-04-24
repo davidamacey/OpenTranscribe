@@ -127,8 +127,10 @@ class TranscriptionPipeline:
         # Cleanup
         hw.log_vram_usage("before final pipeline cleanup")
         audio_duration = len(audio) / 16000 if audio is not None else 0.0
-        if diarize_df is not None and not diarize_df.empty:
-            num_speakers = diarize_df["speaker"].nunique()
+        if diarize_df is not None and len(diarize_df) > 0:
+            import numpy as np
+
+            num_speakers = int(np.unique(diarize_df.speaker).size)
         else:
             num_speakers = 1 if not self.config.enable_diarization else 0
         del diarize_df, audio
@@ -300,10 +302,9 @@ class TranscriptionPipeline:
         with open(os.path.join(out_dir, "raw_transcript.json"), "w") as f:
             json.dump(transcript, f, indent=2, default=str)
 
-        # Diarization DataFrame
-        diarize_df.to_json(
-            os.path.join(out_dir, "raw_diarization.json"), orient="records", indent=2
-        )
+        # Diarization data
+        with open(os.path.join(out_dir, "raw_diarization.json"), "w") as _f:
+            json.dump(diarize_df.to_records(), _f, indent=2)
 
         # Overlap info
         with open(os.path.join(out_dir, "overlap_info.json"), "w") as f:
