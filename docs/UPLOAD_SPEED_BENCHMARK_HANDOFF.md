@@ -4,6 +4,27 @@
 
 ---
 
+## 📍 Where this document lives — and how to get here
+
+**This file only exists on the `feat/upload-speed-improvement` branch.** If you're reading it, you're already on that branch. Good.
+
+After the host reboot, the checked-out branch will be `feat/upload-speed-improvement` (commit `73b9aa5` or later). David's instruction to the new agent is: **"Read `docs/UPLOAD_SPEED_BENCHMARK_HANDOFF.md`"**.
+
+The benchmark work starts by switching to `master` for the baseline run — but that's **Step 7.2**, AFTER you've finished reading this whole document. Do NOT run `git checkout master` before finishing the read, or you'll lose access to this doc and the scripts it describes.
+
+Verify you're on the right branch before doing anything else:
+
+```bash
+cd /mnt/nvm/repos/transcribe-app
+git branch --show-current                          # → feat/upload-speed-improvement
+ls docs/UPLOAD_SPEED_BENCHMARK_HANDOFF.md          # → file exists
+ls scripts/benchmark_upload_baseline.py scripts/benchmark_upload_matrix.py   # → both exist
+```
+
+If any of those checks fail, stop and tell David — the tree state doesn't match this doc.
+
+---
+
 ## ⚠️ STOP — READ THIS FIRST
 
 **Two reboots have already happened on this machine because of CUDA misuse.** This is the single most important rule:
@@ -114,12 +135,13 @@ These are real-speech recordings. **Do not use synthetic sine-wave audio** — W
 
 ## 5. State at the moment of handoff
 
-The reboot was triggered because GPU 0 hit an XID fault during the master-baseline run. State at that moment:
+The reboot was triggered because GPU 0 hit an XID fault during the master-baseline run. State persisted across the reboot:
 
-- **Branch checked out:** `master` (commit `fdfde5b`)
-- **Stack:** running master code (was healthy until GPU 0 died — only the celery-worker GPU process crashed, container restarted to "healthy" but had been processing into a corrupt context)
-- **Alembic version in DB:** `v355_add_diarization_settings` (we stamped it back so master could run cleanly)
-- **Fixture rows:** zero — we'd cleaned out IDs 3128-3139 before the master run started
+- **Branch checked out (post-reboot):** `feat/upload-speed-improvement` at commit `73b9aa5` — this is where the handoff doc and scripts live, so the tree is left here so you can read them. You'll switch to `master` in Step 7.2 after finishing the read.
+- **Stack:** stopped (must be restarted post-reboot — see Step 7.2)
+- **Alembic version in DB:** `v355_add_diarization_settings` (was stamped back so master could run cleanly; stays at v355 until you flip to the branch for the after-run in Step 7.8)
+- **Fixture rows:** zero — all benchmark test uploads were cleaned out before the reboot
+- **The benchmark commit on branch:** `73b9aa5 docs(benchmark): handoff doc + persist upload-benchmark scripts`
 - **Already-collected AFTER results (branch):**
 
   ```
@@ -196,42 +218,72 @@ nvidia-smi
 
 ```bash
 cd /mnt/nvm/repos/transcribe-app
+git branch --show-current
+```
+
+**Expected:** `feat/upload-speed-improvement`. The tree was intentionally left here so this doc and the benchmark scripts are readable.
+
+```bash
 git status
 ```
 
 **Expected:**
 ```
-On branch master
+On branch feat/upload-speed-improvement
 nothing to commit, working tree clean
 ```
 
-(or some uncommitted local files in `docs/` or `scripts/` — that's fine; this very handoff doc may still be staged).
+(or a few local-only files you may have created during this session — that's fine.)
 
 ```bash
 git log -1 --oneline
 ```
 
-**Expected:** `fdfde5b build(docker): remove tensorrt pip dep + LD_LIBRARY_PATH entry (-4.5 GB)` (or whatever master HEAD is now).
+**Expected:** `73b9aa5 docs(benchmark): handoff doc + persist upload-benchmark scripts` (or later).
 
 ```bash
 docker ps -a | head
 ```
 
-**Expected:** Containers may show "Exited" status from before the reboot. That's normal. We'll restart fresh.
+**Expected:** Containers may show "Exited" status from before the reboot. That's normal — we'll restart fresh.
 
 ```bash
 docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -t \
-  -c "SELECT version_num FROM alembic_version;"
+  -c "SELECT version_num FROM alembic_version;" 2>&1 | head -5
 ```
 
-**Expected:** ` v355_add_diarization_settings ` (with leading space — psql formatting). If it's at `v362_add_pipeline_timing_markers` instead, master will fail to start because the version isn't in master's `versions/` directory. Stamp back to v355:
+**Expected:** ` v355_add_diarization_settings ` (with leading space — psql formatting). If the postgres container isn't running yet, this fails — start the stack first (Step 7.2 sub-step A), then check.
+
+If the stamp is wrong (showing `v362_add_pipeline_timing_markers` instead of v355), fix it so master can boot cleanly:
 
 ```bash
 docker exec opentranscribe-postgres psql -U postgres -d opentranscribe \
   -c "UPDATE alembic_version SET version_num='v355_add_diarization_settings';"
 ```
 
-### Step 7.2 — Start the master stack
+### Step 7.2 — Switch to master AND start the stack
+
+Now you can safely check out master — you've read the handoff.
+
+**Important:** the benchmark scripts exist only on the branch (`feat/upload-speed-improvement`). Master's `scripts/` directory does NOT contain them. Before switching to master, copy the baseline script to `/tmp` so you can invoke it during the master run:
+
+```bash
+# While still on feat/upload-speed-improvement, copy the baseline script.
+# (benchmark_upload_matrix.py is branch-only in any case — it reads
+# file_pipeline_timing which master doesn't have — so don't bother with it.)
+cp scripts/benchmark_upload_baseline.py /tmp/benchmark_upload_baseline.py
+ls -l /tmp/benchmark_upload_baseline.py      # confirm the copy exists
+
+# Now switch to master
+git checkout master
+git log -1 --oneline                          # → fdfde5b
+ls scripts/benchmark_upload_baseline.py       # → "No such file" — expected
+ls /tmp/benchmark_upload_baseline.py          # → present
+```
+
+**All master-side invocations of the baseline script use `/tmp/benchmark_upload_baseline.py`**, NOT `scripts/benchmark_upload_baseline.py`. This is called out again in Step 7.5 and Step 7.7. When you switch back to the branch in Step 7.8, you'll be back to using `scripts/...`.
+
+Start the stack on master:
 
 ```bash
 ./opentr.sh start dev --nas
@@ -299,8 +351,10 @@ ls -lh /tmp/bench_pilot/
 ```bash
 source backend/venv/bin/activate
 BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
-  python3 scripts/benchmark_upload_baseline.py /tmp/bench_pilot /tmp/master_pilot.csv
+  python3 /tmp/benchmark_upload_baseline.py /tmp/bench_pilot /tmp/master_pilot.csv
 ```
+
+Note the `/tmp/benchmark_upload_baseline.py` path — on master, the script doesn't exist in `scripts/` (it's branch-only). Step 7.2 copied it to `/tmp` for this reason.
 
 **Expected stdout (rough):**
 ```
@@ -365,11 +419,11 @@ docker exec opentranscribe-minio sh -c "
 "
 ```
 
-Then run the full matrix:
+Then run the full matrix (still on master, using the `/tmp` copy of the script):
 
 ```bash
 BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
-  python3 scripts/benchmark_upload_baseline.py benchmark/test_audio /tmp/master_full.csv
+  python3 /tmp/benchmark_upload_baseline.py benchmark/test_audio /tmp/master_full.csv
 ```
 
 **Expected runtime:** ~25-30 minutes total (the script processes one at a time, smallest first). Do NOT background this — let it run in the foreground so you can react if a GPU error happens.
