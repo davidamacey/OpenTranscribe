@@ -153,7 +153,7 @@ While `large-v3-turbo` is recommended for most users, other models are available
 |-------|------|-------|----------|----------|
 | tiny | 1GB | Fastest | Good | Quick drafts, testing |
 | base | 1GB | Very fast | Better | Testing |
-| small | 2GB | Fast | Great | CPU systems |
+| small | 2GB | Fast | Great | CPU systems / hybrid mode |
 | medium | 5GB | Moderate | Excellent | Balanced performance |
 | large-v2 | 6GB | Slower | Excellent | Legacy (slower than turbo) |
 | **large-v3-turbo** | 6GB | **6x faster** | **Excellent** | **Production (default)** |
@@ -162,6 +162,12 @@ While `large-v3-turbo` is recommended for most users, other models are available
 **Default Recommendation**: Use `large-v3-turbo` for production (6x faster with excellent accuracy)
 
 **Alternative**: Use `large-v3` if you need translation to English or maximum accuracy
+
+:::info Hybrid Mode (Low-VRAM GPU / macOS)
+When the GPU cannot fit the transcription model (or on macOS), OpenTranscribe automatically switches to **hybrid mode**: the `small` model runs on CPU (int8) while PyAnnote diarization stays on GPU/MPS. You still get speaker-separated transcripts — just at CPU transcription speeds (~15–30× real-time).
+
+Override with `WHISPER_HYBRID_MODE=true/false/auto` and `WHISPER_HYBRID_CPU_MODEL=small|medium|base`.
+:::
 
 ## Technical Details
 

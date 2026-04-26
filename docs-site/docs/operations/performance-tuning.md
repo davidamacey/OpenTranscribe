@@ -83,6 +83,30 @@ Use `large-v3-turbo` unless you need translation to English or maximum non-Engli
 WHISPER_MODEL=large-v3-turbo
 ```
 
+### Hybrid Mode {#hybrid-mode}
+
+For systems where the GPU cannot fit the full transcription model, OpenTranscribe auto-activates **hybrid mode**: transcription runs on CPU while diarization stays on GPU/MPS. This requires only ~1.3 GB VRAM.
+
+**Auto-activation thresholds** (minimum batch=2 VRAM peak vs. 80% of GPU VRAM):
+
+| Model | Min Peak VRAM | Auto-hybrid if GPU < |
+|-------|--------------|----------------------|
+| large-v3-turbo / large-v3 | 3,893 MB | ~4.9 GB |
+| medium | 3,829 MB | ~4.8 GB |
+| small | 2,933 MB | ~3.7 GB |
+
+macOS (Apple Silicon) always uses hybrid mode — PyAnnote runs on MPS, transcription runs on CPU.
+
+```bash
+# Hybrid mode environment variables
+WHISPER_HYBRID_MODE=auto          # auto (default) | true | false
+WHISPER_HYBRID_CPU_MODEL=small    # CPU transcription model: small | medium | base
+```
+
+**Accuracy**: The `small` model (default for hybrid) gives good accuracy at 15–30× real-time on modern CPUs. Use `WHISPER_HYBRID_CPU_MODEL=medium` for better accuracy at ~half the speed.
+
+**Benchmark data**: See `docs/whisper-vram-profile/README.md` for full VRAM sweep results across models and batch sizes.
+
 ## GPU Optimization
 
 ### VRAM Usage by Pipeline Stage
