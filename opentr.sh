@@ -1259,7 +1259,10 @@ case "$1" in
     # Uses docker-compose.bench.yml which mounts fresh named volumes for
     # postgres, minio, and opensearch, completely separate from the NAS dataset.
     BENCH_SUBCOMMAND="${2:-help}"
-    BENCH_COMPOSE="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.gpu.yml -f docker-compose.bench.yml"
+    # NOTE: docker-compose.override.yml is intentionally excluded — it mounts ./backend:/app
+    # which makes the running code track the current git branch instead of the built image.
+    # docker-compose.bench.yml provides its own build/image definitions without source mounts.
+    BENCH_COMPOSE="-f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.bench.yml"
     BENCH_VOLUME_PREFIX="transcribe-app"
 
     case "$BENCH_SUBCOMMAND" in
@@ -1303,7 +1306,8 @@ case "$1" in
           "${BENCH_VOLUME_PREFIX}_postgres_bench_data" \
           "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
           "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
-          "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" 2>/dev/null || true
+          "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
 
         # Switch git branch
         CURRENT_BRANCH="$(git branch --show-current)"
@@ -1345,7 +1349,8 @@ case "$1" in
           "${BENCH_VOLUME_PREFIX}_postgres_bench_data" \
           "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
           "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
-          "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" 2>/dev/null || true
+          "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
         echo "✅ Bench volumes wiped."
         ;;
 

@@ -1,28 +1,99 @@
 # docker-compose.bench.yml
-# Benchmark isolation overlay — replaces ALL persistent storage with fresh named volumes.
+# Benchmark isolation overlay — replaces ALL persistent storage with fresh named volumes
+# and builds backend/frontend images from local source (no live code mounts).
 #
 # Purpose: A/B upload-speed benchmarks that must never touch the NAS dataset
-# (postgres, MinIO, OpenSearch).  Use this instead of docker-compose.nas.yml.
+# (postgres, MinIO, OpenSearch, Redis).  Use this instead of docker-compose.nas.yml.
+#
+# IMPORTANT: Do NOT combine with docker-compose.override.yml — the override mounts
+# ./backend:/app which makes the running code track the current git branch, not the
+# branch that was built.  The bench stack must use the built image to stay on the
+# branch that was checked out when `docker compose build` ran.
 #
 # Usage (master baseline):
 #   git checkout master
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
-#     -f docker-compose.bench.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#     -f docker-compose.bench.yml up -d --build
 #
 # Usage (branch after):
 #   git checkout feat/upload-speed-improvement
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
-#     -f docker-compose.bench.yml up -d
-#
-# To wipe bench data between runs (e.g. before branch run):
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
 #     -f docker-compose.bench.yml down -v
-#   # Then bring it back up fresh.
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#     -f docker-compose.bench.yml up -d --build
 #
 # The NAS bind mounts in docker-compose.nas.yml are NOT loaded here, so the
 # production dataset is completely isolated from these runs.
 
 services:
+  # Build backend image from local source — no live source mounts so the branch
+  # used at build time is frozen into the image.
+  backend:
+    image: opentranscribe-backend:bench
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+  celery-worker:
+    image: opentranscribe-backend:bench
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+
+  celery-download-worker:
+    image: opentranscribe-backend:bench
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+
+  celery-cpu-worker:
+    image: opentranscribe-backend:bench
+
+  celery-cloud-asr-worker:
+    image: opentranscribe-backend:bench
+
+  celery-nlp-worker:
+    image: opentranscribe-backend:bench
+
+  celery-embedding-worker:
+    image: opentranscribe-backend:bench
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+
+  celery-beat:
+    image: opentranscribe-backend:bench
+
+  flower:
+    image: opentranscribe-backend:bench
+    volumes:
+      - flower_bench_data:/app
+
+  frontend:
+    image: opentranscribe-frontend:bench
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   postgres:
     volumes:
       - postgres_bench_data:/var/lib/postgresql/data/
@@ -45,3 +116,4 @@ volumes:
   minio_bench_data:
   redis_bench_data:
   opensearch_bench_data:
+  flower_bench_data:
