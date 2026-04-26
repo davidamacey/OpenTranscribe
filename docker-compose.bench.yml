@@ -94,6 +94,14 @@ services:
       retries: 5
       start_period: 30s
 
+  docs:
+    image: opentranscribe-docs:bench
+    build:
+      context: ./docs-site
+      dockerfile: Dockerfile
+    ports:
+      - "${DOCS_PORT:-5183}:8080"
+
   postgres:
     volumes:
       - postgres_bench_data:/var/lib/postgresql/data/
