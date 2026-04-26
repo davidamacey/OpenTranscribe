@@ -209,6 +209,54 @@ class HardwareConfig:
         else:
             return torch.device(self.device)
 
+    def should_use_hybrid_mode(self, model_name: str) -> bool:
+        """Return True when transcription should run on CPU with GPU/MPS for diarization only.
+
+        Hybrid mode activates automatically when:
+        - macOS MPS: faster-whisper MPS support is unreliable; CPU transcription +
+          MPS diarization is the correct split on Apple Silicon
+        - Small GPU (CUDA): configured model cannot fit even at the minimum batch size
+          (bs=2) within 80% of available VRAM
+
+        Override via WHISPER_HYBRID_MODE env var: "true", "false", or "auto" (default).
+        """
+        override = os.getenv("WHISPER_HYBRID_MODE", "auto").lower()
+        if override == "true":
+            return True
+        if override == "false":
+            return False
+
+        # MPS: always hybrid — MPS transcription is unreliable; CPU is fast on Apple Silicon
+        if self.device == "mps":
+            return True
+
+        if self.device == "cuda":
+            try:
+                import torch
+
+                total_mb = float(torch.cuda.get_device_properties(0).total_memory) / (1024**2)
+                min_peak = self._min_peak_mb(model_name)
+                # If bs=2 peak exceeds 80% of total VRAM, GPU can't run this model safely
+                return bool(min_peak > total_mb * 0.80)
+            except Exception:
+                return False
+
+        return False
+
+    @staticmethod
+    def _min_peak_mb(model_name: str) -> float:
+        """Minimum peak VRAM at bs=2 (production baseline included).
+
+        From Phase B sweep (RTX A6000, int8_float16, 2026-04-26).
+        """
+        name = model_name.lower()
+        if name in ("small", "small.en"):
+            return 2933.0
+        if name in ("medium", "medium.en"):
+            return 3829.0
+        # large-v3-turbo and other large variants
+        return 3893.0
+
     def get_whisperx_config(self) -> dict[str, Any]:
         """Get configuration parameters for WhisperX."""
         # WhisperX doesn't support MPS natively, so we use CPU for Apple Silicon

@@ -36,7 +36,8 @@ class TranscriptionConfig:
     compute_type: str = "float16"
     beam_size: int = 5
     batch_size: int = 16
-    device: str = "cuda"
+    device: str = "cuda"  # transcription device
+    diarization_device: str = "cuda"  # diarization device (differs in hybrid mode)
     device_index: int = 0
     source_language: str = "auto"
     translate_to_english: bool = False
@@ -75,22 +76,49 @@ class TranscriptionConfig:
 
         hw = detect_hardware()
         whisperx_config = hw.get_whisperx_config()
+        resolved_model = cls._resolve_model_name()
 
-        # Batch size: honor BATCH_SIZE env var, fall back to model-aware hardware detection
-        batch_size_env = os.getenv("BATCH_SIZE", "auto")
-        if batch_size_env != "auto":
-            batch_size = int(batch_size_env)
+        # Hybrid mode: CPU transcription + GPU/MPS diarization.
+        # Auto-activates when the GPU lacks VRAM to run the configured model (or on MPS).
+        # Override via WHISPER_HYBRID_MODE=true|false|auto.
+        hybrid = hw.should_use_hybrid_mode(resolved_model)
+        if hybrid:
+            hybrid_model = os.getenv("WHISPER_HYBRID_CPU_MODEL", "small")
+            transcription_device = "cpu"
+            transcription_compute = "int8"
+            transcription_model = hybrid_model
+            # Batch size for CPU: small at bs=4 is efficient; override-able
+            batch_size_env = os.getenv("BATCH_SIZE", "auto")
+            batch_size = 4 if batch_size_env == "auto" else int(batch_size_env)
+            # Diarization stays on GPU/MPS (the actual hw.device)
+            diarization_device = hw.device
+            logger.info(
+                "Hybrid mode active: transcription=CPU(%s), diarization=%s",
+                transcription_model,
+                diarization_device,
+            )
         else:
-            model_for_batch = cls._resolve_model_name()
-            batch_size = hw._get_optimal_batch_size(model_for_batch)
+            transcription_device = whisperx_config["device"]
+            transcription_compute = os.getenv(
+                "WHISPER_COMPUTE_TYPE", whisperx_config["compute_type"]
+            )
+            transcription_model = resolved_model
+            diarization_device = hw.device
+            batch_size_env = os.getenv("BATCH_SIZE", "auto")
+            batch_size = (
+                int(batch_size_env)
+                if batch_size_env != "auto"
+                else hw._get_optimal_batch_size(resolved_model)
+            )
 
         # Base config from environment and hardware detection
         config = cls(
-            model_name=cls._resolve_model_name(),
-            compute_type=os.getenv("WHISPER_COMPUTE_TYPE", whisperx_config["compute_type"]),
+            model_name=transcription_model,
+            compute_type=transcription_compute,
             beam_size=int(os.getenv("WHISPER_BEAM_SIZE", "5")),
             batch_size=batch_size,
-            device=whisperx_config["device"],
+            device=transcription_device,
+            diarization_device=diarization_device,
             device_index=whisperx_config.get("device_index", 0),
             source_language=os.getenv("SOURCE_LANGUAGE", "auto"),
             translate_to_english=False,
@@ -129,8 +157,14 @@ class TranscriptionConfig:
             if hasattr(config, key):
                 setattr(config, key, value)
 
+        diar_info = (
+            f"diarization_device={config.diarization_device}"
+            if config.diarization_device != config.device
+            else ""
+        )
         logger.info(
-            f"TranscriptionConfig: model={config.model_name}, device={config.device}, "
+            f"TranscriptionConfig: model={config.model_name}, device={config.device}"
+            f"{' ' + diar_info if diar_info else ''}, "
             f"compute_type={config.compute_type}, batch_size={config.batch_size}, "
             f"beam_size={config.beam_size}, language={config.source_language}, "
             f"translate={config.translate_to_english}, "

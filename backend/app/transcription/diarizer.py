@@ -103,8 +103,8 @@ class SpeakerDiarizer:
                     f"Primary: {e}, Fallback: {fallback_e}"
                 ) from e
 
-        # Move to device
-        device = torch.device(self.config.device)
+        # Move to diarization device (may differ from transcription device in hybrid mode)
+        device = torch.device(self.config.diarization_device)
         self._pipeline = self._pipeline.to(device)  # type: ignore[attr-defined]
 
         # Configure segmentation batch_size based on GPU VRAM or env override.
@@ -142,8 +142,9 @@ class SpeakerDiarizer:
                     f"Invalid DIARIZATION_BATCH_SIZE='{env_batch}', using auto-detection"
                 )
 
-        # Auto-detect based on GPU VRAM
-        if self.config.device == "cuda" and torch.cuda.is_available():
+        # Auto-detect based on diarization device VRAM (may differ from transcription device)
+        diar_device = self.config.diarization_device
+        if diar_device == "cuda" and torch.cuda.is_available():
             total_memory = torch.cuda.get_device_properties(0).total_memory
             memory_gb = total_memory / (1024**3)
 
@@ -157,7 +158,7 @@ class SpeakerDiarizer:
                 batch_size = 8  # RTX 3080 Ti — conservative, WhisperX still in memory
             else:
                 batch_size = 4
-        elif self.config.device == "mps":
+        elif diar_device == "mps":
             batch_size = 8
         else:
             batch_size = 4  # CPU
@@ -167,7 +168,7 @@ class SpeakerDiarizer:
             self._pipeline.segmentation_batch_size = batch_size
             logger.info(
                 f"Diarization segmentation batch_size: {current} → {batch_size} "
-                f"(auto-detected for {self.config.device})"
+                f"(auto-detected for {diar_device})"
             )
         else:
             logger.info(f"Diarization segmentation batch_size: {batch_size} (default OK)")
