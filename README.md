@@ -974,18 +974,46 @@ docker stats
 - Fast NVMe storage
 - Load balancer for multiple instances
 
+#### **Low-VRAM / macOS Deployments — Hybrid Mode**
+
+For systems where the GPU cannot fit the full transcription model, OpenTranscribe automatically activates **hybrid mode**: transcription runs on CPU while diarization stays on GPU/MPS. This requires only ~1.3 GB VRAM for PyAnnote and delivers speaker-diarized transcripts without a dedicated GPU.
+
+| Scenario | Transcription | Diarization | Trigger |
+|---|---|---|---|
+| GPU ≥ 8 GB + large-v3-turbo | GPU | GPU | Normal mode |
+| GPU 4–6 GB + large-v3-turbo | CPU (small model) | GPU | Auto hybrid |
+| macOS Apple Silicon (any) | CPU (small model) | MPS (PyAnnote fork) | Always hybrid |
+| `WHISPER_HYBRID_MODE=true` | CPU (small model) | GPU/MPS | Manual override |
+
+The CPU model defaults to `small` (int8, ~15–30× real-time on modern hardware). Override with `WHISPER_HYBRID_CPU_MODEL=medium` for better accuracy at the cost of speed.
+
+```bash
+# Force hybrid mode on (useful for testing or shared-GPU deployments)
+WHISPER_HYBRID_MODE=true
+WHISPER_HYBRID_CPU_MODEL=small   # small | medium | base
+
+# Force hybrid mode off (never auto-activate)
+WHISPER_HYBRID_MODE=false
+
+# Auto-detect (default — recommended)
+WHISPER_HYBRID_MODE=auto
+```
+
 ### **Performance Tuning**
 
 ```bash
-# GPU optimization
+# GPU optimization (≥ 8 GB VRAM)
 COMPUTE_TYPE=float16              # Use half precision
-BATCH_SIZE=32                     # Increase for more GPU memory
+BATCH_SIZE=auto                   # Auto-tuned per model (turbo→16, medium→24, small→24)
 WHISPER_MODEL=large-v3-turbo      # Default: fast and accurate; use large-v3 for translation or max accuracy
 
-# CPU optimization (if no GPU)
-COMPUTE_TYPE=int8                 # Use quantization
-BATCH_SIZE=1                      # Reduce memory usage
-WHISPER_MODEL=base                # Faster processing
+# Hybrid mode (low-VRAM GPU or macOS — CPU transcription + GPU diarization)
+WHISPER_HYBRID_MODE=auto          # Auto-activates when GPU VRAM is insufficient; always on for macOS
+WHISPER_HYBRID_CPU_MODEL=small    # Transcription model used in hybrid mode (small | medium | base)
+
+# CPU-only (no GPU)
+WHISPER_HYBRID_MODE=true          # Force CPU transcription
+WHISPER_HYBRID_CPU_MODEL=small    # small (good accuracy) or base (faster, lower accuracy)
 ```
 
 ## 🔐 Security Considerations

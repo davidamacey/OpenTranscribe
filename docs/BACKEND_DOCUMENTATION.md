@@ -96,6 +96,17 @@ Auth method configuration is stored in the database (Admin UI → Settings → A
 - Per-user cloud provider configuration with encrypted API key storage
 - `DEPLOYMENT_MODE=lite` disables local GPU workers entirely
 
+**Hybrid Mode (CPU Transcription + GPU/MPS Diarization)**
+
+Auto-activates when the GPU lacks VRAM for the configured model, or always on macOS (MPS).
+
+- Detection: `HardwareInfo.should_use_hybrid_mode(model_name)` in `app/utils/hardware_detection.py`
+- VRAM threshold: minimum batch=2 peak for model (turbo=3893 MB, medium=3829 MB, small=2933 MB) vs. 80% of total GPU VRAM
+- When active: transcription → CPU with `WHISPER_HYBRID_CPU_MODEL` (default `small`, int8), diarization → GPU/MPS unchanged
+- Config field: `TranscriptionConfig.diarization_device` separates diarization device from transcription device
+- Override: `WHISPER_HYBRID_MODE=auto|true|false` (auto = default, true = always, false = never)
+- Benchmark data: `docs/whisper-vram-profile/README.md`
+
 ### 🛠️ [Utilities](backend/app/utils/README.md)
 **Common utilities and helper functions**
 - Authentication decorators

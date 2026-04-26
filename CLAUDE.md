@@ -679,6 +679,30 @@ WHISPER_MODEL=large-v3        # For translation or maximum accuracy
 WHISPER_MODEL=large-v2        # Legacy fallback
 ```
 
+### Hybrid Mode (CPU Transcription + GPU/MPS Diarization)
+
+For low-VRAM GPUs and macOS, OpenTranscribe auto-activates **hybrid mode**: transcription runs on CPU while diarization remains on GPU/MPS. This requires only ~1.3 GB VRAM for PyAnnote.
+
+**Auto-activation conditions:**
+- macOS (MPS): always hybrid — faster-whisper MPS support is unreliable; PyAnnote MPS (fork) is production-ready
+- CUDA GPU: activates when the minimum batch=2 VRAM peak for the configured model exceeds 80% of total GPU VRAM
+  - large-v3-turbo / large-v3: min peak 3,893 MB → triggers on GPUs < ~4.9 GB
+  - medium: min peak 3,829 MB → triggers on GPUs < ~4.8 GB
+  - small: min peak 2,933 MB → triggers on GPUs < ~3.7 GB
+
+**Key files:**
+- `backend/app/utils/hardware_detection.py` — `should_use_hybrid_mode()`, `_min_peak_mb()`
+- `backend/app/transcription/config.py` — `diarization_device` field, hybrid branch in `from_environment()`
+- `backend/app/transcription/diarizer.py` — uses `config.diarization_device` (not `config.device`)
+
+**Environment variables:**
+```bash
+WHISPER_HYBRID_MODE=auto          # auto (default) | true | false
+WHISPER_HYBRID_CPU_MODEL=small    # CPU model in hybrid mode: small | medium | base
+```
+
+**Benchmark data:** `docs/whisper-vram-profile/README.md`
+
 ### LLM Features
 
 The application now includes optional AI-powered features using Large Language Models:
