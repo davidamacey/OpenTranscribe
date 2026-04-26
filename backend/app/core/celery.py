@@ -178,6 +178,8 @@ celery_app.conf.update(
         "cleanup.deep_cleanup": {"queue": CeleryQueues.UTILITY},
         "cleanup.health_check": {"queue": CeleryQueues.UTILITY},
         "cleanup.emergency_recovery": {"queue": CeleryQueues.UTILITY},
+        "cleanup.scratch_janitor": {"queue": CeleryQueues.CPU},
+        "cleanup.orphan_upload_sweeper": {"queue": CeleryQueues.UTILITY},
         "check_migration_status": {"queue": CeleryQueues.UTILITY},
         "finalize_v4_migration": {"queue": CeleryQueues.UTILITY},
         "export_transcript_baseline": {"queue": CeleryQueues.UTILITY},
@@ -213,6 +215,19 @@ celery_app.conf.update(
         "cleanup-expired-files": {
             "task": "cleanup_expired_files",
             "schedule": crontab(minute=0),  # Every hour on the hour
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+        },
+        "scratch-janitor": {
+            "task": "cleanup.scratch_janitor",
+            "schedule": crontab(minute=15),  # Hourly at :15, offset from cleanup/maintenance
+            "options": {"queue": "cpu", "priority": 5},  # CPUPriority.SYSTEM
+        },
+        "orphan-upload-sweeper": {
+            "task": "cleanup.orphan_upload_sweeper",
+            # Every 15 minutes, offset from the hourly cleanup tasks. PENDING
+            # rows older than 30 min are the signal we never heard back from
+            # the client / presigned PUT.
+            "schedule": crontab(minute="5,20,35,50"),
             "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
         },
     },

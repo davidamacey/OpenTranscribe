@@ -16,6 +16,7 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ def extract_speaker_embeddings_task(
     self,
     file_uuid: str,
     speaker_mapping: dict[str, int],
+    pipeline_task_id: str | None = None,
 ):
     """
     Extract speaker embeddings asynchronously after transcription completes.
@@ -40,7 +42,10 @@ def extract_speaker_embeddings_task(
     import os
     import tempfile
 
+    from app.services.minio_service import cleanup_temp_audio
     from app.services.minio_service import download_file
+    from app.services.minio_service import download_temp_audio
+    from app.services.minio_service import temp_audio_exists
     from app.services.speaker_embedding_service import SpeakerEmbeddingService
     from app.services.speaker_matching_service import SpeakerMatchingService
     from app.tasks.transcription.audio_processor import get_audio_file_extension
@@ -51,6 +56,7 @@ def extract_speaker_embeddings_task(
     from app.utils.uuid_helpers import get_file_by_uuid
 
     task_id = self.request.id
+    benchmark_timing.mark(pipeline_task_id, "speaker_upsert_start")
 
     with session_scope() as db:
         try:
@@ -99,21 +105,38 @@ def extract_speaker_embeddings_task(
 
             update_task_status(db, task_id, "in_progress", progress=0.2)
 
-            # Download file from MinIO and prepare audio
-            logger.info(f"Downloading file {storage_path} for speaker embedding extraction")
-            file_data, _, _ = download_file(storage_path)
+            # Prefer the preprocessed WAV that preprocess just staged. When
+            # the shared scratch volume is mounted this is a hard-link (zero
+            # copy); otherwise it's one MinIO fetch of a ~50 MB WAV instead
+            # of a full re-download of the original media (Phase 2 PR #4).
             file_ext = get_audio_file_extension(content_type, filename)
 
             with tempfile.TemporaryDirectory() as temp_dir:
-                # Save downloaded file
-                temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
-                with open(temp_file_path, "wb") as f:
-                    f.write(file_data.read())
+                audio_file_path = os.path.join(temp_dir, "audio.wav")
+                used_temp_wav = False
+                if temp_audio_exists(file_uuid):
+                    try:
+                        download_temp_audio(file_uuid, audio_file_path)
+                        used_temp_wav = True
+                        logger.info("Using preprocessed WAV for speaker embedding extraction")
+                    except Exception as temp_err:
+                        logger.warning(
+                            f"Temp WAV fetch failed ({temp_err}); falling back to original"
+                        )
 
-                # Prepare audio for embedding extraction
-                audio_file_path = prepare_audio_for_transcription(
-                    temp_file_path, content_type, temp_dir
-                )
+                if not used_temp_wav:
+                    logger.info(
+                        f"Downloading original {storage_path} for speaker embedding extraction"
+                    )
+                    file_data, _, _ = download_file(storage_path)
+                    temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
+                    with open(temp_file_path, "wb") as f:
+                        f.write(file_data.read())
+                    # Re-run the 16 kHz mono conversion the preprocess task
+                    # would otherwise have already done for us.
+                    audio_file_path = prepare_audio_for_transcription(
+                        temp_file_path, content_type, temp_dir
+                    )
 
                 update_task_status(db, task_id, "in_progress", progress=0.4)
 
@@ -183,6 +206,13 @@ def extract_speaker_embeddings_task(
             except Exception as notify_err:
                 logger.warning(f"Failed to send completion notification: {notify_err}")
 
+            benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
+            # We were the deferred consumer of the temp WAV — clean it up
+            # now that we're done. No-op if postprocess already cleaned it.
+            try:
+                cleanup_temp_audio(file_uuid)
+            except Exception as cleanup_err:
+                logger.debug(f"Temp audio cleanup after embedding extraction failed: {cleanup_err}")
             return {
                 "status": "success",
                 "file_id": file_id,
@@ -193,6 +223,11 @@ def extract_speaker_embeddings_task(
             logger.error(f"Error in speaker embedding task for {file_uuid}: {str(e)}")
             logger.error("Full traceback:", exc_info=True)
             update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
+            benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
+            try:
+                cleanup_temp_audio(file_uuid)
+            except Exception as cleanup_err:
+                logger.debug(f"Temp audio cleanup after embedding error failed: {cleanup_err}")
             return {"status": "error", "message": str(e)}
 
 

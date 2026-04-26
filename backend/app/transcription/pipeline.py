@@ -86,6 +86,30 @@ class TranscriptionPipeline:
 
         profiler.snapshot("after_transcriber_loaded")
 
+        # Phase 2 PR #9 (item D12): overlap diarizer model load with
+        # transcription when diarization is enabled. The 500 ms-1.5 s
+        # PyAnnote load cost is absorbed into the transcription window
+        # because Whisper dominates wall-clock. ``ModelManager.get_diarizer``
+        # is protected by an RLock that safely serializes concurrent
+        # loads, so we only pay the cost once even on warm paths.
+        diarizer_preload_thread: threading.Thread | None = None
+        if self.config.enable_diarization and self.config.concurrent_requests <= 1:
+            # Single-request mode has headroom to hold both models; skip the
+            # overlap in multi-request mode where VRAM is tight and we need
+            # to release the transcriber before diarizing.
+            def _preload_diarizer() -> None:
+                try:
+                    self.manager.get_diarizer(self.config)
+                except Exception as preload_err:
+                    logger.debug(f"Diarizer preload (non-fatal, will retry inline): {preload_err}")
+
+            diarizer_preload_thread = threading.Thread(
+                target=_preload_diarizer,
+                name="diarizer-preload",
+                daemon=True,
+            )
+            diarizer_preload_thread.start()
+
         # Transcribe
         self._report(progress_callback, 0.43, "Running AI transcription")
         step_start = time.perf_counter()
@@ -94,6 +118,13 @@ class TranscriptionPipeline:
         logger.info(
             f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
         )
+
+        # Join the preload thread so subsequent get_diarizer() is guaranteed
+        # to return a fully-initialised model. If transcription was fast
+        # enough that the load hasn't finished yet, we absorb only the
+        # remainder here instead of the full load.
+        if diarizer_preload_thread is not None:
+            diarizer_preload_thread.join()
 
         if not transcript.get("segments"):
             logger.warning("Transcription produced no segments")
@@ -127,8 +158,10 @@ class TranscriptionPipeline:
         # Cleanup
         hw.log_vram_usage("before final pipeline cleanup")
         audio_duration = len(audio) / 16000 if audio is not None else 0.0
-        if diarize_df is not None and not diarize_df.empty:
-            num_speakers = diarize_df["speaker"].nunique()
+        if diarize_df is not None and len(diarize_df) > 0:
+            import numpy as np
+
+            num_speakers = int(np.unique(diarize_df.speaker).size)
         else:
             num_speakers = 1 if not self.config.enable_diarization else 0
         del diarize_df, audio
@@ -300,10 +333,9 @@ class TranscriptionPipeline:
         with open(os.path.join(out_dir, "raw_transcript.json"), "w") as f:
             json.dump(transcript, f, indent=2, default=str)
 
-        # Diarization DataFrame
-        diarize_df.to_json(
-            os.path.join(out_dir, "raw_diarization.json"), orient="records", indent=2
-        )
+        # Diarization data
+        with open(os.path.join(out_dir, "raw_diarization.json"), "w") as _f:
+            json.dump(diarize_df.to_records(), _f, indent=2)
 
         # Overlap info
         with open(os.path.join(out_dir, "overlap_info.json"), "w") as f:

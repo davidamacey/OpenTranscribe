@@ -12,7 +12,6 @@ Part of the 3-stage chain: preprocess (CPU) → transcribe (GPU) → postprocess
 """
 
 import logging
-import os
 import time
 
 import numpy as np
@@ -21,14 +20,12 @@ from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
-from app.services.opensearch_service import index_transcript
+from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 from app.utils.websocket_notify import send_ws_event
 
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
-from .storage import generate_full_transcript
-from .storage import get_unique_speaker_names
 
 logger = logging.getLogger(__name__)
 
@@ -57,15 +54,12 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
     clustering) are dispatched as background work after completion. Each
     sends its own WebSocket event when done.
     """
-    # Record postprocess received timestamp for inter-stage gap measurement
-    if os.getenv("ENABLE_BENCHMARK_TIMING"):
-        task_id_for_bench = gpu_result.get("task_id")
-        if task_id_for_bench:
-            from app.core.redis import get_redis
-
-            get_redis().hset(
-                f"benchmark:{task_id_for_bench}", "postprocess_received", str(time.time())
-            )
+    # Record postprocess received timestamp + pickup markers for inter-stage
+    # gap measurement. Cold-start flag is shared with preprocess (same worker
+    # role).
+    task_id_for_bench = gpu_result.get("task_id")
+    benchmark_timing.mark(task_id_for_bench, "postprocess_received")
+    benchmark_timing.mark(task_id_for_bench, "postprocess_task_prerun")
 
     if gpu_result.get("status") == "error":
         logger.warning(
@@ -85,6 +79,12 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
     downstream_tasks = gpu_result.get("downstream_tasks")
 
     post_start = time.perf_counter()
+    # When we dispatch a GPU-side task that still needs the preprocessed
+    # WAV (cloud ASR → speaker embedding, or cloud ASR → local rediarize)
+    # we MUST NOT clean up the temp audio here — those downstream tasks
+    # will clean it up themselves once they finish. Phase 2 PR #4 relies
+    # on this for the cloud-ASR embedding path to read from scratch.
+    defer_temp_cleanup = False
 
     try:
         diarization_disabled = gpu_result.get("diarization_disabled", False)
@@ -114,6 +114,9 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                     },
                     queue=CeleryQueues.GPU,
                 )
+                # rediarize consumes the temp WAV on the GPU worker; keep
+                # the file around until that task finishes its own cleanup.
+                defer_temp_cleanup = True
                 logger.info(f"Dispatched local rediarization for cloud-transcribed file {file_id}")
             except Exception as e:
                 logger.warning(f"Failed to dispatch rediarization: {e}")
@@ -128,8 +131,12 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
 
                     extract_speaker_embeddings_task.apply_async(
                         args=[str(file_uuid), speaker_mapping],
+                        kwargs={"pipeline_task_id": task_id},
                         queue=CeleryQueues.GPU,
                     )
+                    # Embedding task reads the preprocessed WAV; defer
+                    # cleanup until it finishes (it cleans up itself).
+                    defer_temp_cleanup = True
                     logger.info(
                         f"Dispatched speaker embedding extraction to GPU queue for "
                         f"cloud-transcribed file {file_id}"
@@ -192,6 +199,7 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
             file_uuid=file_uuid,
             user_id=user_id,
             downstream_tasks=downstream_tasks,
+            pipeline_task_id=task_id,
         )
 
         # Notify frontend that background enrichment tasks are running
@@ -227,7 +235,18 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         }
 
     finally:
-        _cleanup_temp(file_uuid)
+        if defer_temp_cleanup:
+            logger.debug(
+                f"Deferring temp audio cleanup for {file_uuid} "
+                "(downstream GPU task still needs the preprocessed WAV)"
+            )
+        else:
+            _cleanup_temp(file_uuid)
+        # Mark end-of-postprocess for inter-stage gap measurement and flush
+        # the Redis benchmark hash into the durable file_pipeline_timing row.
+        # Both are no-ops when ENABLE_BENCHMARK_TIMING is off.
+        benchmark_timing.mark(task_id, "postprocess_end")
+        _persist_timing_row(task_id, file_id, user_id)
 
     elapsed = time.perf_counter() - post_start
     logger.info(f"TIMING: postprocess completed in {elapsed:.3f}s for file {file_id}")
@@ -237,6 +256,22 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         "file_id": file_id,
         "segment_count": gpu_result.get("segment_count", 0),
     }
+
+
+def _persist_timing_row(task_id: str, file_id: int, user_id: int) -> None:
+    """Flush the ``benchmark:{task_id}`` Redis hash into file_pipeline_timing.
+
+    Best-effort: instrumentation failures must never break the pipeline. No-op
+    when benchmark timing is disabled (the hash will be empty anyway).
+    """
+    if not benchmark_timing.benchmark_enabled():
+        return
+    try:
+        from app.services.pipeline_timing_service import record_pipeline_timing
+
+        record_pipeline_timing(task_id=task_id, file_id=file_id, user_id=user_id)
+    except Exception as e:
+        logger.debug(f"Failed to persist pipeline timing row for {task_id}: {e}")
 
 
 def _build_enrichment_task_list(downstream_tasks: list[str] | None) -> list[str]:
@@ -268,15 +303,20 @@ def enrich_and_dispatch(
     file_uuid: str,
     user_id: int,
     downstream_tasks: list[str] | None = None,
+    pipeline_task_id: str | None = None,
 ) -> None:
     """Fire-and-forget: search indexing + downstream task dispatch.
 
     Runs after the main postprocess marks the file as COMPLETED.
     Each downstream task sends its own WebSocket event when done.
+
+    ``pipeline_task_id`` is the upstream application task_id; when supplied
+    it is propagated into child tasks so their ``_start``/``_end`` benchmark
+    markers land in the same ``benchmark:{task_id}`` Redis hash.
     """
     # Search indexing (invisible to user)
     try:
-        _index_transcript(file_id, file_uuid, user_id)
+        _index_transcript(file_id, file_uuid, user_id, pipeline_task_id=pipeline_task_id)
         send_ws_event(
             user_id,
             "enrichment_task_complete",
@@ -380,35 +420,17 @@ def _store_v4_centroids(
         logger.warning(f"v4 staging error (non-fatal): {e}")
 
 
-def _index_transcript(file_id: int, file_uuid: str, user_id: int) -> None:
-    """Index transcript in OpenSearch (whole-doc + dispatch chunk-level)."""
-    from sqlalchemy.orm import joinedload
+def _index_transcript(
+    file_id: int, file_uuid: str, user_id: int, pipeline_task_id: str | None = None
+) -> None:
+    """Dispatch OpenSearch indexing for the completed transcript.
 
-    from app.db.session_utils import get_refreshed_object
-    from app.models.media import MediaFile
-    from app.models.media import TranscriptSegment
-
-    with session_scope() as db:
-        segments = (
-            db.query(TranscriptSegment)
-            .options(joinedload(TranscriptSegment.speaker))
-            .filter(TranscriptSegment.media_file_id == file_id)
-            .order_by(TranscriptSegment.start_time)
-            .all()
-        )
-        seg_dicts = [
-            {"text": s.text, "speaker": s.speaker.name if s.speaker else None} for s in segments
-        ]
-
-        media_file = get_refreshed_object(db, MediaFile, file_id)
-        file_title = (media_file.title or media_file.filename) if media_file else f"File {file_id}"
-
-    full_transcript = generate_full_transcript(seg_dicts)
-    speaker_names = get_unique_speaker_names(seg_dicts)
-
-    index_transcript(file_id, file_uuid, user_id, full_transcript, speaker_names, file_title)
-
-    # Dispatch chunk-level search indexing
+    Phase 2 PR #5: the full-document index used to be built inline on the
+    CPU worker here (adding 200-400 ms to the postprocess critical path).
+    It now runs inside ``index_transcript_search_task`` on the embedding
+    worker together with the chunk-level index, so CPU postprocess can
+    return as soon as speaker matching finishes.
+    """
     try:
         from app.tasks.search_indexing_task import index_transcript_search_task
 
@@ -416,6 +438,7 @@ def _index_transcript(file_id: int, file_uuid: str, user_id: int) -> None:
             file_id=file_id,
             file_uuid=str(file_uuid),
             user_id=user_id,
+            pipeline_task_id=pipeline_task_id,
         )
         logger.info(f"Dispatched search indexing task for file {file_uuid}")
     except Exception as e:

@@ -1,3 +1,4 @@
+import contextlib
 import datetime
 import json
 import logging
@@ -225,6 +226,148 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     return important_fields
 
 
+def _parse_frame_rate(value: Any) -> Optional[float]:
+    """Parse an ffprobe frame rate ("30000/1001", "24/1", "25", …) into a float."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip()
+        if "/" in text:
+            num, _, den = text.partition("/")
+            den_f = float(den)
+            if den_f == 0:
+                return None
+            return float(num) / den_f
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _run_ffprobe_json(url: str, timeout: int) -> Optional[dict[str, Any]]:
+    """Invoke ffprobe against a URL and return parsed JSON (or None)."""
+    import shutil
+
+    ffprobe_path = shutil.which("ffprobe")
+    if not ffprobe_path:
+        logger.warning("ffprobe binary not found on PATH")
+        return None
+    try:
+        # Security: ffprobe_path resolved via shutil.which; URL is a
+        # MinIO-internal presigned URL we generated, not user-supplied.
+        proc = subprocess.run(  # noqa: S603 # nosec B603
+            [
+                ffprobe_path,
+                "-v",
+                "error",
+                "-show_format",
+                "-show_streams",
+                "-of",
+                "json",
+                "-timeout",
+                str(timeout * 1_000_000),  # ffprobe wants microseconds
+                url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout + 5,
+            check=False,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError) as e:
+        logger.warning(f"ffprobe failed for presigned URL: {e}")
+        return None
+
+    if proc.returncode != 0 or not proc.stdout:
+        logger.debug(f"ffprobe non-zero exit for URL ({proc.returncode}): {proc.stderr[:200]}")
+        return None
+    try:
+        return json.loads(proc.stdout)  # type: ignore[no-any-return]
+    except json.JSONDecodeError as e:
+        logger.debug(f"ffprobe JSON decode failed: {e}")
+        return None
+
+
+def _map_ffprobe_format(fmt: dict[str, Any], out: dict[str, Any]) -> None:
+    """Copy format-level ffprobe fields into the exiftool-keyed dict."""
+    duration = fmt.get("duration")
+    if duration is not None:
+        with contextlib.suppress(TypeError, ValueError):
+            out["Duration"] = float(duration)
+    if fmt.get("format_name"):
+        out["VideoFormat"] = fmt.get("format_name")
+    if fmt.get("format_long_name"):
+        out.setdefault("AudioFormat", fmt.get("format_long_name"))
+
+
+def _map_ffprobe_video_stream(stream: dict[str, Any], out: dict[str, Any]) -> None:
+    """Copy video-stream ffprobe fields into the exiftool-keyed dict."""
+    if stream.get("width"):
+        out["ImageWidth"] = int(stream["width"])
+    if stream.get("height"):
+        out["ImageHeight"] = int(stream["height"])
+    fr = _parse_frame_rate(stream.get("r_frame_rate"))
+    if fr is not None:
+        out["VideoFrameRate"] = fr
+    if stream.get("codec_name"):
+        out["VideoCodec"] = stream.get("codec_name")
+    if stream.get("nb_frames"):
+        with contextlib.suppress(TypeError, ValueError):
+            out["FrameCount"] = int(stream["nb_frames"])
+
+
+def _map_ffprobe_audio_stream(stream: dict[str, Any], out: dict[str, Any]) -> None:
+    """Copy audio-stream ffprobe fields into the exiftool-keyed dict."""
+    if stream.get("channels") is not None:
+        out["AudioChannels"] = int(stream["channels"])
+    if stream.get("sample_rate"):
+        with contextlib.suppress(TypeError, ValueError):
+            out["AudioSampleRate"] = int(stream["sample_rate"])
+    if stream.get("bits_per_sample"):
+        with contextlib.suppress(TypeError, ValueError):
+            bps = int(stream["bits_per_sample"])
+            if bps > 0:
+                out["AudioBitsPerSample"] = bps
+    if not out.get("AudioFormat") and stream.get("codec_name"):
+        out["AudioFormat"] = stream.get("codec_name")
+
+
+def extract_media_metadata_from_url(url: str, timeout: int = 15) -> Optional[dict[str, Any]]:
+    """Extract media metadata via ffprobe against a presigned URL.
+
+    ffprobe reads only container headers (≈ first 1 MB for MP4) so this is
+    fast and avoids a full re-download of the original media when the
+    preprocess task has already streamed audio out via a presigned URL.
+
+    Returns a dict whose keys match the subset of exiftool field names that
+    ``update_media_file_metadata`` looks up — so both paths share the same
+    downstream code.
+
+    Used in Phase 2 PR #3 to eliminate the duplicate video download on the
+    fast preprocess path.
+    """
+    if not url:
+        return None
+    data = _run_ffprobe_json(url, timeout)
+    if not data:
+        return None
+
+    fmt = data.get("format", {}) or {}
+    streams = data.get("streams", []) or []
+
+    out: dict[str, Any] = {}
+    _map_ffprobe_format(fmt, out)
+
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
+    if video_stream:
+        _map_ffprobe_video_stream(video_stream, out)
+    if audio_stream:
+        _map_ffprobe_audio_stream(audio_stream, out)
+
+    return out if out else None
+
+
 def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
     """
     Extract metadata from a media file using ExifTool.
@@ -391,7 +534,10 @@ def update_media_file_metadata(
         media_file: SQLAlchemy MediaFile object
         extracted_metadata: Raw metadata from ExifTool
         content_type: MIME type of the file
-        file_path: Path to the file for additional operations
+        file_path: Path to the file for additional operations. May be empty
+            when metadata came from a remote source (e.g. ffprobe against a
+            presigned URL) — file-size and mtime fallbacks are skipped in
+            that case.
     """
     important_metadata = get_important_metadata(extracted_metadata)
 
@@ -399,8 +545,10 @@ def update_media_file_metadata(
     media_file.metadata_raw = extracted_metadata
     media_file.metadata_important = important_metadata
 
-    # Set basic file information
-    media_file.file_size = os.path.getsize(file_path)
+    # Set basic file information. file_path may be empty when we extracted
+    # metadata without a local copy; leave the DB value alone in that case.
+    if file_path and os.path.exists(file_path):
+        media_file.file_size = os.path.getsize(file_path)
     media_file.media_format = important_metadata.get("FileType")
 
     # Video/image specific metadata

@@ -1063,11 +1063,6 @@
     margin-bottom: 1rem;
   }
 
-  .problems-header h3 {
-    margin: 0;
-    color: var(--text-color);
-  }
-
   .problem-files {
     display: flex;
     flex-direction: column;
@@ -1228,11 +1223,6 @@
     margin-top: 1rem;
   }
 
-  .recent-files h3 {
-    color: var(--text-color);
-    margin-bottom: 0.5rem;
-  }
-
   .recent-files-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -1251,16 +1241,6 @@
     transform: scale(1.02);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     border-color: var(--border-hover);
-  }
-
-  .recent-file-card .filename {
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-    font-size: 0.9rem;
-    color: var(--text-color);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .file-status-row {
@@ -1383,11 +1363,6 @@
 
   .tasks-header {
     margin-bottom: 1rem;
-  }
-
-  .tasks-header h3 {
-    margin: 0;
-    color: var(--text-color);
   }
 
   .compact-filters {
@@ -1958,22 +1933,11 @@
   }
 
   /* Collapsible section styles */
-  .problems-header .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
   .recent-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.5rem;
-  }
-
-  .recent-header h3 {
-    margin: 0;
-    color: var(--text-color);
   }
 
   .section-toggle-btn {
@@ -1992,10 +1956,6 @@
   .section-toggle-btn:hover {
     background: var(--surface-color);
     color: var(--text-color);
-  }
-
-  .section-toggle-btn svg {
-    transition: transform 0.2s ease;
   }
 
   @media (max-width: 768px) {

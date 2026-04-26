@@ -182,6 +182,15 @@ class PrepareUploadRequest(BaseModel):
         "Only applies to local ASR provider.",
         examples=["tiny", "medium", "large-v2", "large-v3", "large-v3-turbo"],
     )
+    use_presigned: Optional[bool] = Field(
+        False,
+        description=(
+            "When true, the prepare response includes a presigned PUT URL so "
+            "the browser can upload bytes directly to MinIO, bypassing the "
+            "API container. Requires a follow-up call to /files/complete. "
+            "Defaults to the legacy multipart-form upload flow."
+        ),
+    )
 
     @field_validator("min_speakers", "max_speakers", "num_speakers")
     @classmethod

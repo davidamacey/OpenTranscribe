@@ -26,13 +26,15 @@ import os
 import time
 from typing import Any
 
-import pandas as pd
+import numpy as np
+
+from app.transcription.diarize_result import DiarizeResult
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
-def load_intermediate(debug_dir: str) -> tuple[dict, pd.DataFrame]:
+def load_intermediate(debug_dir: str) -> tuple[dict, DiarizeResult]:
     """Load raw transcript and diarization from saved files."""
     transcript_path = os.path.join(debug_dir, "raw_transcript.json")
     diarize_path = os.path.join(debug_dir, "raw_diarization.json")
@@ -40,13 +42,19 @@ def load_intermediate(debug_dir: str) -> tuple[dict, pd.DataFrame]:
     with open(transcript_path) as f:
         transcript = json.load(f)
 
-    diarize_df = pd.read_json(diarize_path, orient="records")
+    with open(diarize_path) as f:
+        records = json.load(f)
+    diarize_df = DiarizeResult(
+        start=np.asarray([r["start"] for r in records], dtype=np.float64),
+        end=np.asarray([r["end"] for r in records], dtype=np.float64),
+        speaker=np.asarray([r["speaker"] for r in records], dtype=object),
+    )
 
     logger.info(
         f"Loaded: {len(transcript.get('segments', []))} segments, "
         f"{sum(len(s.get('words', [])) for s in transcript.get('segments', []))} words, "
         f"{len(diarize_df)} diarization rows, "
-        f"{diarize_df['speaker'].nunique()} speakers"
+        f"{int(np.unique(diarize_df.speaker).size)} speakers"
     )
 
     return transcript, diarize_df
@@ -54,7 +62,7 @@ def load_intermediate(debug_dir: str) -> tuple[dict, pd.DataFrame]:
 
 def reprocess(
     transcript: dict,
-    diarize_df: pd.DataFrame,
+    diarize_df: DiarizeResult,
     enable_dedup: bool = True,
 ) -> dict:
     """Run post-processing on saved intermediate data."""

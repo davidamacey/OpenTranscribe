@@ -379,10 +379,36 @@ def delete_file(object_name: str):
 TEMP_PREPROCESS_PREFIX = "temp/preprocess"
 
 
+def _temp_audio_object_name(file_uuid: str) -> str:
+    """MinIO object key for the preprocessed WAV."""
+    return f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+
+
 def upload_temp_audio(file_uuid: str, local_path: str) -> str:
-    """Upload preprocessed audio.wav to MinIO temp storage for cross-worker transfer."""
-    logger = logging.getLogger(__name__)
-    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    """Stage the preprocessed audio.wav for consumption by downstream workers.
+
+    Phase 2 PR #4: when the shared scratch volume is available we move the
+    WAV into ``/scratch/opentranscribe/{file_uuid}/audio.wav`` (one atomic
+    rename, zero network I/O) and skip the MinIO round-trip entirely.
+    Multi-host deployments without the scratch mount fall through to the
+    original MinIO upload path, preserving backward compatibility.
+    """
+    _logger = logging.getLogger(__name__)
+    from app.utils import scratch_volume
+
+    # Scratch-first fast path
+    if scratch_volume.is_scratch_available():
+        file_size = os.path.getsize(local_path)
+        dest = scratch_volume.write_audio(file_uuid, local_path)
+        if dest is not None:
+            _logger.info(f"Staged temp audio ({file_size / (1024 * 1024):.1f}MB) to scratch {dest}")
+            return str(dest)
+        _logger.warning("scratch write failed; falling back to MinIO temp upload")
+
+    # Fallback: MinIO temp bucket (cross-host compatible). Use tuned part
+    # size so multi-hundred-MB WAVs transfer in ~64 MiB chunks rather than
+    # the minio-py 5 MB default.
+    object_name = _temp_audio_object_name(file_uuid)
     file_size = os.path.getsize(local_path)
     with open(local_path, "rb") as f:
         minio_client.put_object(
@@ -391,26 +417,56 @@ def upload_temp_audio(file_uuid: str, local_path: str) -> str:
             f,
             file_size,
             content_type="audio/wav",
+            part_size=PRESIGNED_PUT_PART_SIZE if file_size >= PRESIGNED_PUT_PART_SIZE else 0,
         )
-    logger.info(f"Uploaded temp audio ({file_size / (1024 * 1024):.1f}MB) to {object_name}")
+    _logger.info(f"Uploaded temp audio ({file_size / (1024 * 1024):.1f}MB) to {object_name}")
     return object_name
 
 
 def download_temp_audio(file_uuid: str, local_path: str) -> None:
-    """Download preprocessed audio.wav from MinIO temp storage."""
-    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    """Fetch the preprocessed audio.wav for a downstream worker.
+
+    Tries the shared scratch volume first (same-host hard-link path), then
+    falls back to MinIO temp when the scratch copy isn't present. Raises
+    the underlying MinIO exception when neither source has the file.
+    """
+    from app.utils import scratch_volume
+
+    if scratch_volume.read_audio(file_uuid, local_path):
+        return
+
+    object_name = _temp_audio_object_name(file_uuid)
     minio_client.fget_object(settings.MEDIA_BUCKET_NAME, object_name, local_path)
 
 
+def temp_audio_exists(file_uuid: str) -> bool:
+    """Return True when the preprocessed WAV is reachable from either source."""
+    from app.utils import scratch_volume
+
+    if scratch_volume.scratch_audio_path(file_uuid).exists():
+        return True
+    try:
+        minio_client.stat_object(settings.MEDIA_BUCKET_NAME, _temp_audio_object_name(file_uuid))
+        return True
+    except Exception:
+        return False
+
+
 def cleanup_temp_audio(file_uuid: str) -> None:
-    """Remove preprocessed audio from MinIO temp storage (best-effort)."""
-    logger = logging.getLogger(__name__)
-    object_name = f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/audio.wav"
+    """Remove preprocessed audio from both scratch and MinIO temp (best-effort)."""
+    _logger = logging.getLogger(__name__)
+    from app.utils import scratch_volume
+
+    # Scratch dir — best effort, shared volume may not be mounted
+    scratch_volume.cleanup(file_uuid)
+
+    # MinIO temp — always try; no-op if nothing there
+    object_name = _temp_audio_object_name(file_uuid)
     try:
         minio_client.remove_object(settings.MEDIA_BUCKET_NAME, object_name)
-        logger.info(f"Cleaned up temp audio: {object_name}")
+        _logger.info(f"Cleaned up temp audio: {object_name}")
     except Exception as e:
-        logger.debug(f"Temp audio cleanup failed (non-fatal): {e}")
+        _logger.debug(f"Temp audio cleanup failed (non-fatal): {e}")
 
 
 def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
@@ -423,6 +479,132 @@ def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
             expires=delta,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Presigned PUT helpers (Phase 2 of the timing audit plan)
+#
+# The legacy upload path buffers the entire file in the API container's heap
+# (up to 50 GB) before calling put_object. Presigned PUTs let the browser
+# stream bytes directly to MinIO, removing the API's heap pressure and
+# cutting HTTP-response latency from 19-40 s to ~100 ms for a 200 MB video.
+# See docs/PIPELINE_TIMING.md for the full flow description.
+# ---------------------------------------------------------------------------
+
+
+# 64 MiB is the sweet spot for a 10 GB file: ~160 parts, high throughput,
+# predictable memory on the MinIO server. 5 MB (minio-py default) would
+# require 2000 parts for the same file.
+PRESIGNED_PUT_PART_SIZE = 64 * 1024 * 1024
+
+
+def _rewrite_minio_host(url: str) -> str:
+    """Replace MinIO's internal hostname with the browser-accessible host.
+
+    Mirrors the rewriting logic used by ``get_file_url`` for GET URLs so
+    browsers can follow the presigned URL.
+    """
+    minio_internal = f"http://{settings.MINIO_HOST}:{settings.MINIO_PORT}"
+    if minio_internal not in url:
+        return url
+    public_base = settings.MINIO_PUBLIC_URL.rstrip("/") if settings.MINIO_PUBLIC_URL else "/s3"
+    return url.replace(minio_internal, public_base)
+
+
+def presigned_put_url(
+    object_name: str,
+    expires: int = 4 * 3600,
+    *,
+    rewrite_host: bool = True,
+) -> str:
+    """Generate a presigned PUT URL for direct browser → MinIO upload.
+
+    Args:
+        object_name: Target object path in ``MEDIA_BUCKET_NAME``.
+        expires: URL expiration in seconds. Defaults to 4 hours — enough for
+            very large uploads on slow connections.
+        rewrite_host: If True (the default) the internal MinIO hostname is
+            rewritten to the browser-facing URL via ``_rewrite_minio_host``.
+            Set False for server-to-server callers that can reach MinIO
+            directly.
+
+    Returns:
+        A signed URL the browser can PUT bytes to with no further auth.
+    """
+    ensure_bucket_exists()
+    delta = datetime.timedelta(seconds=max(60, int(expires)))
+    url = str(
+        minio_client.presigned_put_object(
+            bucket_name=settings.MEDIA_BUCKET_NAME,
+            object_name=object_name,
+            expires=delta,
+        )
+    )
+    if rewrite_host:
+        url = _rewrite_minio_host(url)
+    return url
+
+
+def object_exists_and_size(object_name: str) -> int | None:
+    """Return the object's size in bytes, or None if it doesn't exist.
+
+    Used by ``complete_upload`` to verify the browser actually delivered the
+    bytes to MinIO before we dispatch the transcription pipeline.
+    """
+    try:
+        stats = minio_client.stat_object(settings.MEDIA_BUCKET_NAME, object_name)
+        return int(stats.size) if stats.size is not None else None
+    except Exception:
+        return None
+
+
+def range_read(object_name: str, offset: int, length: int) -> bytes:
+    """Read ``length`` bytes starting at ``offset`` from a MinIO object.
+
+    Used by the imohash fingerprinter to sample first/middle/last chunks
+    without downloading the full file.
+    """
+    _logger = logging.getLogger(__name__)
+    response = None
+    try:
+        response = minio_client.get_object(
+            bucket_name=settings.MEDIA_BUCKET_NAME,
+            object_name=object_name,
+            offset=int(offset),
+            length=int(length),
+        )
+        return bytes(response.read())
+    finally:
+        if response is not None:
+            try:
+                response.close()
+                response.release_conn()
+            except Exception as e:
+                _logger.debug(f"range_read close failed for {object_name}: {e}")
+
+
+def upload_file_tuned(
+    file_content: BinaryIO,
+    file_size: int,
+    object_name: str,
+    content_type: str,
+) -> str:
+    """Upload a file to MinIO with tuned multipart part size.
+
+    Identical behavior to ``upload_file`` but passes ``part_size`` for
+    the minio-py multipart path so large uploads use ~64 MiB parts
+    instead of the 5 MB default (12.8× fewer parts → ~2× throughput).
+    """
+    ensure_bucket_exists()
+    minio_client.put_object(
+        bucket_name=settings.MEDIA_BUCKET_NAME,
+        object_name=object_name,
+        data=file_content,
+        length=file_size,
+        content_type=content_type,
+        part_size=PRESIGNED_PUT_PART_SIZE if file_size >= PRESIGNED_PUT_PART_SIZE else 0,
+    )
+    return object_name
 
 
 class MinIOService:

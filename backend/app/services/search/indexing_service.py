@@ -1,8 +1,10 @@
 """Transcript indexing service for OpenSearch chunk-level search."""
 
+import contextlib
 import datetime
 import logging
 import time
+from collections.abc import Iterator
 from typing import Any
 
 from app.core.config import settings
@@ -516,6 +518,67 @@ def _check_index_version(index_name: str) -> None:
         logger.debug(f"Could not check index version for {index_name}: {e}")
 
 
+@contextlib.contextmanager
+def _suspended_refresh_for_large_index(
+    index_name: str,
+    *,
+    chunk_count: int,
+    threshold: int,
+) -> Iterator[None]:
+    """Suspend an index's ``refresh_interval`` while a bulk load runs.
+
+    Only triggers when ``chunk_count >= threshold`` — small transcripts
+    still benefit from near-real-time search. On exit the prior interval
+    is restored and a manual refresh is issued so the newly loaded
+    chunks become searchable immediately.
+
+    Args:
+        index_name: Target OpenSearch index.
+        chunk_count: Number of chunks about to be loaded.
+        threshold: Minimum chunk count that activates the suspension.
+    """
+    if chunk_count < threshold or not opensearch_client:
+        yield
+        return
+
+    prior_interval: str | None = None
+    try:
+        settings_resp = opensearch_client.indices.get_settings(index=index_name)
+        prior_interval = (
+            settings_resp.get(index_name, {})
+            .get("settings", {})
+            .get("index", {})
+            .get("refresh_interval")
+        )
+    except Exception as e:
+        logger.debug(f"Could not read refresh_interval for {index_name}, skipping suspension: {e}")
+        yield
+        return
+
+    try:
+        opensearch_client.indices.put_settings(
+            index=index_name, body={"index": {"refresh_interval": "-1"}}
+        )
+        logger.info(
+            f"Suspended refresh on {index_name} for bulk load of {chunk_count} chunks "
+            f"(prior refresh_interval={prior_interval!r})"
+        )
+        yield
+    finally:
+        try:
+            restored = prior_interval if prior_interval is not None else "1s"
+            opensearch_client.indices.put_settings(
+                index=index_name, body={"index": {"refresh_interval": restored}}
+            )
+            opensearch_client.indices.refresh(index=index_name)
+            logger.info(f"Restored refresh_interval={restored!r} on {index_name} and refreshed")
+        except Exception as e:
+            logger.warning(
+                f"Failed to restore refresh_interval on {index_name}: {e}. "
+                f'Run `PUT /{index_name}/_settings -d \'{{"index":{{"refresh_interval":"1s"}}}}\'`'
+            )
+
+
 class TranscriptIndexingService:
     """Handles chunking, embedding, and indexing transcripts into OpenSearch.
 
@@ -629,7 +692,16 @@ class TranscriptIndexingService:
                     chunk["embedding_model"] = None
                 logger.warning(f"Neural pipeline not available for {file_uuid}, text-only")
 
-            indexed = self._bulk_index_chunks(chunks, use_neural_pipeline=use_neural)
+            # For very large transcripts (6h+ recordings produce 500+ chunks)
+            # suspend index refresh during the bulk load so we don't pay the
+            # per-batch refresh cost. The context manager restores the prior
+            # refresh_interval on exit.
+            with _suspended_refresh_for_large_index(
+                settings.OPENSEARCH_CHUNKS_INDEX,
+                chunk_count=len(chunks),
+                threshold=settings.SEARCH_LARGE_TRANSCRIPT_CHUNKS,
+            ):
+                indexed = self._bulk_index_chunks(chunks, use_neural_pipeline=use_neural)
             index_ms = round((time.time() - t_index_start) * 1000)
             total_ms = chunk_ms + index_ms
             mode_str = "neural" if use_neural else "text-only"

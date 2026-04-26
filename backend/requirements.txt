@@ -16,11 +16,11 @@ redis>=5.0.0
 flower>=2.0.0
 psycopg2-binary>=2.9.7
 minio>=7.2.18
+imohash>=1.0.4  # Fast constant-time file fingerprint (sampled SHA-512) for server-side dedup + artifact caching
+
 opensearch-py>=3.0.0,<4.0.0
 httpx>=0.24.1
 python-dotenv>=1.0.0
-pytest>=7.4.2
-
 # LDAP/Active Directory Authentication
 ldap3>=2.9.1
 
@@ -58,11 +58,11 @@ faster-whisper>=1.1.1
 
 # ML/Data processing
 transformers>=4.48.0
-pandas>=2.2.3
 huggingface-hub<1.0.0
-
-# Triton for optimized attention (Linux x86_64 only)
-triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
+# pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
+# DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
+# triton removed: openai/triton only needed for torch.compile(backend="inductor") JIT,
+# which is opt-in and not on the production path (Phase 6.1). Saves ~540 MB.
 
 # ONNX Runtime — Phase 6.2. Serves pyannote segmentation + WeSpeaker backbone
 # via ORT sessions when PYANNOTE_USE_ONNX=1. onnxruntime-gpu includes CUDA EP

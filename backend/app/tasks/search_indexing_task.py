@@ -7,6 +7,7 @@ from typing import Any
 from app.core.celery import celery_app
 from app.core.constants import EmbeddingPriority
 from app.core.constants import UtilityPriority
+from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ def index_transcript_search_task(  # noqa: C901
     file_id: int,
     file_uuid: str,
     user_id: int,
+    pipeline_task_id: str | None = None,
 ) -> dict[str, Any]:
     """Index a transcript in OpenSearch as a tracked Celery task.
 
@@ -37,10 +39,11 @@ def index_transcript_search_task(  # noqa: C901
     Returns:
         Dict with indexing stats and timing.
     """
+    from sqlalchemy.orm import joinedload
+
     from app.db.session_utils import get_refreshed_object
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
     from app.services.permission_service import PermissionService
     from app.services.search.indexing_service import TranscriptIndexingService
@@ -56,9 +59,19 @@ def index_transcript_search_task(  # noqa: C901
         update_task_status(db, task_id, "in_progress", progress=0.1)
 
     total_start = time.time()
+    benchmark_timing.mark(pipeline_task_id, "search_index_chunks_start")
 
     try:
-        # Load transcript segments from PostgreSQL
+        # Single DB session: fetch segments (with speaker joinedload),
+        # media_file, tags/collections, and the access-list in one sweep.
+        # Previously the task opened three separate sessions and issued
+        # three segment-range queries for the same ``media_file_id``; that
+        # doubled row-read pressure on Postgres for every completed file.
+        # Phase 2 PR #10: consolidate to one session, one segment fetch.
+        from app.services.opensearch_service import index_transcript
+        from app.tasks.transcription.storage import generate_full_transcript
+        from app.tasks.transcription.storage import get_unique_speaker_names
+
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.2)
 
@@ -68,6 +81,7 @@ def index_transcript_search_task(  # noqa: C901
 
             segments = (
                 db.query(TranscriptSegment)
+                .options(joinedload(TranscriptSegment.speaker))
                 .filter(TranscriptSegment.media_file_id == file_id)
                 .order_by(TranscriptSegment.start_time)
                 .all()
@@ -78,59 +92,71 @@ def index_transcript_search_task(  # noqa: C901
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
                 return {"status": "skipped", "reason": "no_segments"}
 
-            # Batch-fetch speakers
-            speaker_ids = {seg.speaker_id for seg in segments if seg.speaker_id}
-            speakers_map: dict[int, str] = {}
-            if speaker_ids:
-                spk_rows = (
-                    db.query(Speaker.id, Speaker.name, Speaker.display_name)
-                    .filter(Speaker.id.in_(speaker_ids))
-                    .all()
-                )
-                speakers_map = {r.id: r.display_name or r.name or "Unknown" for r in spk_rows}
-
-            # Convert to dicts
-            segment_dicts = []
+            # Shared per-segment derived values consumed by both indexes.
+            # Chunk-level index wants a non-null "Unknown" fallback so the
+            # BM25 ``speaker`` field is always filterable; the full-doc
+            # index wants the raw name or None to preserve
+            # speaker-transition structure in the document body.
+            seg_dicts_full: list[dict[str, str | None]] = []
+            segment_dicts: list[dict[str, float | str]] = []
             for seg in segments:
-                speaker_name = (
-                    speakers_map.get(seg.speaker_id, "Unknown") if seg.speaker_id else "Unknown"
+                speaker_obj = seg.speaker
+                raw_name = speaker_obj.name if speaker_obj else None
+                display_name = (
+                    speaker_obj.display_name
+                    if speaker_obj and speaker_obj.display_name
+                    else raw_name
                 )
+                chunk_speaker = display_name or "Unknown"
+
+                seg_dicts_full.append({"text": seg.text, "speaker": raw_name})
                 segment_dicts.append(
                     {
                         "start": float(seg.start_time),
                         "end": float(seg.end_time),
                         "text": seg.text or "",
-                        "speaker": speaker_name,
+                        "speaker": chunk_speaker,
                     }
                 )
 
-            # Extract metadata
+            # Extract per-file metadata from the MediaFile while the session
+            # is still open — relationship access (tags, collections)
+            # requires attached ORM state.
             title = media_file.title or media_file.filename or f"File {file_id}"
             speaker_names = list(
-                set(str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown")
+                {str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown"}
             )
-            tag_names = []
+            tag_names: list[str] = []
             if hasattr(media_file, "tags") and media_file.tags:
                 tag_names = [t.name for t in media_file.tags]
             upload_time = (
                 (media_file.creation_date or media_file.upload_time).isoformat()
-                if media_file and (media_file.creation_date or media_file.upload_time)
+                if media_file.creation_date or media_file.upload_time
                 else None
             )
             language = media_file.language or "en"
             content_type = media_file.content_type or ""
             duration = media_file.duration
             file_size = media_file.file_size
-            collection_ids = []
+            collection_ids: list[int] = []
             if hasattr(media_file, "collections") and media_file.collections:
                 collection_ids = [c.id for c in media_file.collections]
-
-            # Compute full access list (owner + shared users/groups)
             accessible_user_ids = PermissionService.get_users_with_file_access(db, file_id)
-
-        # Index in OpenSearch
-        with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.4)
+
+            doc_title = title  # captured before session close
+
+        # Phase 2 PR #5: full-document transcript index runs here on the
+        # embedding worker (moved off the CPU postprocess critical path).
+        # Best-effort — a failure here must not block the chunk-level index.
+        try:
+            full_transcript = generate_full_transcript(seg_dicts_full)
+            doc_speaker_names = get_unique_speaker_names(seg_dicts_full)
+            index_transcript(
+                file_id, file_uuid, user_id, full_transcript, doc_speaker_names, doc_title
+            )
+        except Exception as full_doc_err:
+            logger.warning(f"Full-document transcript indexing failed (non-fatal): {full_doc_err}")
 
         indexing_service = TranscriptIndexingService()
         result = indexing_service.index_transcript_chunks(
@@ -169,10 +195,12 @@ def index_transcript_search_task(  # noqa: C901
             f"Search indexing completed for file {file_uuid}: "
             f"{timing.get('chunk_count', 0)} chunks in {total_ms}ms"
         )
+        benchmark_timing.mark(pipeline_task_id, "search_index_chunks_end")
         return {"status": "success", "file_id": file_id, **timing}
 
     except Exception as exc:
         logger.error(f"Search indexing failed for file {file_uuid}: {exc}")
+        benchmark_timing.mark(pipeline_task_id, "search_index_chunks_end")
 
         # Mark task as failed
         try:
@@ -180,6 +208,18 @@ def index_transcript_search_task(  # noqa: C901
                 update_task_status(db, task_id, "failed", error_message=str(exc))
         except Exception:
             logger.error(f"Failed to update task status for {task_id}")
+
+        # Record this attempt's wall-clock into per_retry_timings so the
+        # analysis layer can tell retry-inflated wall-clock apart from
+        # first-try wall-clock (Phase 2 PR #8, G26).
+        benchmark_timing.record_retry(
+            pipeline_task_id,
+            stage="search_index",
+            attempt=int(self.request.retries) + 1,
+            start=total_start,
+            end=time.time(),
+            error=str(exc),
+        )
 
         # Retry with exponential backoff for transient errors
         if self.request.retries < self.max_retries:

@@ -16,8 +16,6 @@ the next file's audio is already prepared.
 import contextlib
 import json
 import logging
-import os
-import time
 import uuid
 
 from celery import chain
@@ -70,6 +68,7 @@ def dispatch_transcription_pipeline(
     disable_diarization: bool | None = None,
     diarization_source: str | None = None,
     whisper_model: str | None = None,
+    task_id: str | None = None,
 ) -> str:
     """Build and dispatch a 3-stage transcription chain.
 
@@ -88,13 +87,18 @@ def dispatch_transcription_pipeline(
         gpu_queue: Queue for GPU task. None = auto-resolve from user's ASR
             provider ('gpu' for local, 'cloud-asr' for cloud providers).
         whisper_model: Optional per-task Whisper model override (local ASR only).
+        task_id: Optional pre-generated application task_id. When provided
+            (e.g., from the HTTP upload handler) it is reused so HTTP-phase
+            benchmark markers share the ``benchmark:{task_id}`` Redis hash
+            with the pipeline markers. When None, a fresh UUID is generated.
     """
     from .core import transcribe_cpu_task
     from .core import transcribe_gpu_task
     from .postprocess import finalize_transcription
     from .preprocess import preprocess_for_transcription
 
-    task_id = str(uuid.uuid4())
+    if not task_id:
+        task_id = str(uuid.uuid4())
     use_cpu = whisper_model in LIGHTWEIGHT_MODELS
 
     # Create task record and set file to PROCESSING
@@ -145,11 +149,12 @@ def dispatch_transcription_pipeline(
         ),
     )
 
-    # Record dispatch timestamp for inter-stage gap measurement
-    if os.getenv("ENABLE_BENCHMARK_TIMING"):
-        from app.core.redis import get_redis
+    # Record dispatch timestamp + queue depth snapshot for inter-stage gap
+    # measurement. Both are no-ops when ENABLE_BENCHMARK_TIMING is off.
+    from app.utils import benchmark_timing
 
-        get_redis().hset(f"benchmark:{task_id}", "dispatch_timestamp", str(time.time()))
+    benchmark_timing.mark(task_id, "dispatch_timestamp")
+    benchmark_timing.capture_queue_depth(task_id)
 
     # Dispatch with error callback for cleanup
     pipeline.apply_async(
@@ -287,6 +292,7 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
       the file is marked COMPLETED with a warning rather than ERROR
     """
     from app.services.minio_service import cleanup_temp_audio
+    from app.utils import benchmark_timing
     from app.utils.uuid_helpers import get_file_by_uuid
 
     from .notifications import send_error_notification
@@ -297,10 +303,22 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
     with contextlib.suppress(Exception):
         cleanup_temp_audio(file_uuid)
 
+    # Record a terminal marker so the analysis layer can distinguish
+    # error-mode completions from successful ones (Phase 2 PR #8, G27).
+    benchmark_timing.mark(task_id, "pipeline_error_end")
+
+    # Track the captured file id for the error-path timing flush below —
+    # avoids running the flush inside the closed session_scope.
+    flushed_file_id: int | None = None
+    flushed_user_id: int | None = None
+
     # Ensure file is marked as errored
     try:
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
+            if media_file is not None:
+                flushed_file_id = int(media_file.id)
+                flushed_user_id = int(media_file.user_id)
 
             # Check task error to determine failure stage
             from app.models.media import Task
@@ -321,6 +339,7 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
                     f"Postprocess failed but segments already saved for {file_uuid}, "
                     "keeping COMPLETED status"
                 )
+                _flush_error_timing(task_id, flushed_file_id, flushed_user_id)
                 return
 
             if media_file and media_file.status not in (
@@ -348,6 +367,27 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
                     )
     except Exception as e:
         logger.error(f"Error in pipeline error handler: {e}")
+    finally:
+        _flush_error_timing(task_id, flushed_file_id, flushed_user_id)
+
+
+def _flush_error_timing(task_id: str, file_id: int | None, user_id: int | None) -> None:
+    """Persist the Redis timing hash into ``file_pipeline_timing`` on failure.
+
+    Mirrors the success-path flush that finalize_transcription performs, so
+    the error wall-clock stays queryable. Best-effort: instrumentation
+    failures never propagate.
+    """
+    from app.utils import benchmark_timing
+
+    if not benchmark_timing.benchmark_enabled() or file_id is None:
+        return
+    try:
+        from app.services.pipeline_timing_service import record_pipeline_timing
+
+        record_pipeline_timing(task_id=task_id, file_id=file_id, user_id=user_id)
+    except Exception as e:
+        logger.debug(f"Error-path timing flush failed for {task_id}: {e}")
 
 
 def _log_oom_diagnostics(error_msg: str) -> None:

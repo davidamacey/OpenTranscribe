@@ -15,7 +15,8 @@ import logging
 import time
 
 import numpy as np
-import pandas as pd
+
+from app.transcription.diarize_result import DiarizeResult
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ _CHUNK_SIZE = 5000
 
 
 def assign_speakers(
-    diarize_df: pd.DataFrame,
+    diarize_df: DiarizeResult,
     transcript_result: dict,
 ) -> dict:
     """Assign speaker labels to transcript segments and words.
@@ -34,7 +35,7 @@ def assign_speakers(
     assigns the dominant speaker per word and segment.
 
     Args:
-        diarize_df: Diarization DataFrame with columns [start, end, speaker].
+        diarize_df: DiarizeResult with start/end/speaker numpy arrays.
         transcript_result: Dict with "segments" key containing transcript segments.
 
     Returns:
@@ -47,9 +48,9 @@ def assign_speakers(
     step_start = time.perf_counter()
 
     # Extract diarization intervals as numpy arrays
-    d_starts = diarize_df["start"].values.astype(np.float64)
-    d_ends = diarize_df["end"].values.astype(np.float64)
-    d_speaker_labels = diarize_df["speaker"].values
+    d_starts = diarize_df.start.astype(np.float64)
+    d_ends = diarize_df.end.astype(np.float64)
+    d_speaker_labels = diarize_df.speaker
 
     # Build speaker index mapping for matrix multiply
     unique_speakers = np.unique(d_speaker_labels)

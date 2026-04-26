@@ -51,6 +51,14 @@ services:
     volumes:
       - ./backend:/app  # Mount source code for development
 
+  celery-cloud-asr-worker:
+    image: opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+
   celery-nlp-worker:
     image: opentranscribe-backend:latest
     build:

@@ -1,0 +1,187 @@
+"""Shared scratch volume for cross-worker artifact handoff.
+
+The preprocess task produces a 16 kHz mono WAV that the GPU worker, the
+waveform task, and the cloud-ASR speaker-embedding task all need to
+consume. Routing that through MinIO costs one upload + N downloads per
+file. When workers share a host (the default OpenTranscribe deployment)
+a plain Docker volume at ``/scratch/opentranscribe`` lets us hand the
+WAV off by file link instead — approximately zero I/O beyond the initial
+ffmpeg write.
+
+Design properties (Phase 2 PR #4 of the timing audit plan):
+
+- **Always-on when the directory exists** — presence of the mount is the
+  feature flag. No "is this enabled" env var to forget.
+- **Graceful fallback** — every caller has a MinIO fallback, so
+  multi-host deployments and laptops without the mount keep working.
+- **Adaptive backing** — the volume can be a regular disk volume
+  (default, works everywhere) or tmpfs (opt-in for servers with
+  abundant RAM via ``docker-compose`` override). The helper doesn't
+  care; both look identical.
+- **Same-host fast path** — when the writer and reader share the host,
+  ``write_audio`` renames the file (atomic, no copy) into the scratch
+  dir; readers just ``stat`` + read.
+- **TTL cleanup** — janitor task purges ``{file_uuid}/`` dirs older
+  than the TTL so a crashed pipeline doesn't leak forever.
+
+Callers should treat ``is_scratch_available()`` as the single check —
+downstream readers try ``read_audio()`` first and MinIO second.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import tempfile
+import time
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Root of the shared volume inside any container that mounts it. Override
+# via ``PIPELINE_SCRATCH_DIR`` for non-standard deployments.
+SCRATCH_DIR = Path(os.environ.get("PIPELINE_SCRATCH_DIR", "/scratch/opentranscribe"))
+
+# Name of the audio artifact inside each per-file directory.
+AUDIO_FILENAME = "audio.wav"
+
+# Default TTL for janitor cleanup. 1 hour is enough for the longest
+# typical pipeline run (3-hour audio ≈ 12-min wall-clock on A6000).
+DEFAULT_TTL_SECONDS = 60 * 60
+
+
+def is_scratch_available() -> bool:
+    """Return True when the scratch volume is mounted and writable.
+
+    Checked on every call — the mount can appear/disappear at runtime
+    on systems using systemd-managed bind mounts. Cheap syscall.
+    """
+    try:
+        if not SCRATCH_DIR.is_dir():
+            return False
+        return os.access(SCRATCH_DIR, os.W_OK | os.X_OK)
+    except OSError:
+        return False
+
+
+def scratch_dir_for(file_uuid: str) -> Path:
+    """Per-file subdirectory inside the scratch volume."""
+    return SCRATCH_DIR / str(file_uuid)
+
+
+def scratch_audio_path(file_uuid: str) -> Path:
+    """Canonical path for the preprocessed WAV artifact."""
+    return scratch_dir_for(file_uuid) / AUDIO_FILENAME
+
+
+def write_audio(file_uuid: str, src_path: str) -> Path | None:
+    """Move/copy ``src_path`` into the scratch volume as the canonical WAV.
+
+    Returns the destination path on success, None when scratch is not
+    available or the write fails. Uses ``os.replace`` when the source
+    sits on the same filesystem (atomic, no copy); falls back to a copy
+    + unlink otherwise.
+    """
+    if not is_scratch_available():
+        return None
+    if not src_path or not os.path.exists(src_path):
+        return None
+
+    dest_dir = scratch_dir_for(file_uuid)
+    dest = scratch_audio_path(file_uuid)
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        # Try an atomic rename first (fastest, no data copy).
+        try:
+            os.replace(src_path, dest)
+        except OSError:
+            # Cross-filesystem rename fails with EXDEV — fall back to copy.
+            shutil.copy2(src_path, dest)
+        logger.debug(f"staged WAV to scratch: {dest}")
+        return dest
+    except OSError as e:
+        logger.warning(f"scratch write_audio({file_uuid}) failed: {e}")
+        return None
+
+
+def read_audio(file_uuid: str, dest_path: str) -> bool:
+    """Copy the scratch WAV to ``dest_path``. Returns True when copied.
+
+    Returns False when scratch isn't available or the file is missing —
+    callers should then fall back to MinIO. A hard link is used when
+    possible so we don't double the RAM pressure on tmpfs.
+    """
+    if not is_scratch_available():
+        return False
+    src = scratch_audio_path(file_uuid)
+    if not src.exists():
+        return False
+    try:
+        os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
+        # Try a hard link first — same inode, zero copy.
+        try:
+            if os.path.exists(dest_path):
+                os.unlink(dest_path)
+            os.link(src, dest_path)
+        except OSError:
+            shutil.copy2(src, dest_path)
+        return True
+    except OSError as e:
+        logger.warning(f"scratch read_audio({file_uuid}) failed: {e}")
+        return False
+
+
+def cleanup(file_uuid: str) -> None:
+    """Remove the per-file scratch directory (best-effort)."""
+    if not is_scratch_available():
+        return
+    path = scratch_dir_for(file_uuid)
+    if not path.exists():
+        return
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+        logger.debug(f"cleaned scratch dir: {path}")
+    except OSError as e:
+        logger.debug(f"scratch cleanup({file_uuid}) failed (non-fatal): {e}")
+
+
+def sweep_expired(ttl_seconds: int = DEFAULT_TTL_SECONDS) -> tuple[int, int]:
+    """Remove per-file scratch dirs older than ``ttl_seconds``.
+
+    Returns a ``(removed_count, error_count)`` tuple. Designed for the
+    periodic janitor Celery task; safe to run concurrently with the
+    pipeline because the janitor only touches dirs whose mtime exceeds
+    the TTL (well past the typical pipeline wall-clock).
+    """
+    if not is_scratch_available():
+        return (0, 0)
+    cutoff = time.time() - ttl_seconds
+    removed = 0
+    errors = 0
+    try:
+        entries = list(SCRATCH_DIR.iterdir())
+    except OSError as e:
+        logger.warning(f"scratch sweep failed to list dir: {e}")
+        return (0, 1)
+    for entry in entries:
+        try:
+            if not entry.is_dir():
+                continue
+            if entry.stat().st_mtime > cutoff:
+                continue
+            shutil.rmtree(entry, ignore_errors=True)
+            removed += 1
+        except OSError as e:
+            errors += 1
+            logger.debug(f"scratch sweep failed on {entry}: {e}")
+    return (removed, errors)
+
+
+def make_local_tempfile(suffix: str = ".wav") -> str:
+    """Helper used by readers who need an on-disk path for downstream
+    tools that don't accept file-like objects.
+    """
+    fd, path = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+    return path

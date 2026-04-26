@@ -57,6 +57,14 @@ services:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
 
+  celery-cloud-asr-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+    # No volumes needed for cloud-ASR worker (network-bound only)
+    environment:
+      # Offline mode for HuggingFace (prevents network calls)
+      - HF_HUB_OFFLINE=1
+
   celery-nlp-worker:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never

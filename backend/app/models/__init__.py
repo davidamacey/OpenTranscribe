@@ -28,6 +28,7 @@ from .media import Task
 from .media import TranscriptSegment
 from .password_history import PasswordHistory
 from .password_reset import PasswordResetToken
+from .pipeline_timing import FilePipelineTiming
 from .prompt import SummaryPrompt
 from .prompt import UserSetting
 from .refresh_token import RefreshToken
@@ -78,4 +79,5 @@ __all__ = [
     "UserGroupMember",
     "CollectionShare",
     "UploadBatch",
+    "FilePipelineTiming",
 ]

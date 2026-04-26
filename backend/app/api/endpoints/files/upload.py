@@ -2,6 +2,7 @@ import contextlib
 import io
 import logging
 import os
+import uuid
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -13,12 +14,11 @@ from app.core.constants import UPLOAD_CHUNK_SIZE
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
-from app.services.minio_service import upload_file
-from app.tasks.waveform import generate_waveform_task
+from app.services.minio_service import upload_file_tuned
+from app.utils import benchmark_timing
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
-from app.utils.thumbnail import generate_and_upload_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +95,15 @@ def create_media_file_record(
             thumbnail_path=None,
         )
 
+        # Flush (not commit) so we get the DB-assigned id + uuid without
+        # persisting the row yet. Callers commit the outer transaction
+        # after they finish their own updates — eliminates one of the
+        # two round-trips the legacy upload flow was paying per file
+        # (Phase 2 PR #7, item E18). prepare_upload's own db.commit()
+        # later on now covers the INSERT and its follow-on mutations in
+        # a single transaction.
         db.add(db_file)
-        db.commit()
+        db.flush()
         db.refresh(db_file)
 
         return db_file
@@ -122,7 +129,7 @@ def upload_file_to_storage(
         content_type: MIME type of the file
     """
     if os.environ.get("SKIP_S3", "False").lower() != "true":
-        upload_file(
+        upload_file_tuned(
             file_content=io.BytesIO(file_content),
             file_size=file_size,
             object_name=storage_path,
@@ -142,7 +149,8 @@ def start_transcription_task(
     user_id: int | None = None,
     db=None,
     disable_diarization: bool | None = None,
-) -> None:
+    task_id: str | None = None,
+) -> str | None:
     """
     Start the background transcription and waveform generation tasks in parallel.
 
@@ -158,28 +166,37 @@ def start_transcription_task(
         whisper_model: Optional Whisper model override for this transcription
         user_id: Unused (kept for backward compatibility)
         db: Unused (kept for backward compatibility)
+        task_id: Optional pre-generated application task_id. When provided,
+            it's threaded through dispatch_transcription_pipeline and
+            generate_waveform_task so HTTP-ingress benchmark markers share
+            the benchmark:{task_id} Redis hash with the pipeline markers.
+
+    Returns:
+        The application-level task_id that was dispatched, or None when
+        running with SKIP_CELERY=true.
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         # Dispatch 3-stage pipeline chain: CPU preprocess → GPU transcribe → CPU postprocess
         # Queue routing is auto-resolved inside dispatch_transcription_pipeline
         from app.tasks.transcription import dispatch_transcription_pipeline
 
-        task_id = dispatch_transcription_pipeline(
+        dispatched_task_id = dispatch_transcription_pipeline(
             file_uuid=file_uuid,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             disable_diarization=disable_diarization,
             whisper_model=whisper_model,
+            task_id=task_id,
         )
-        # Launch CPU waveform generation task in parallel
-        generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
-        logger.info(
-            f"Started parallel tasks for file {file_id}: "
-            f"pipeline chain (task_id={task_id}) and waveform (CPU)"
-        )
+        # Waveform generation is dispatched from the preprocess task once the
+        # 16 kHz WAV is staged in MinIO temp (see Phase 2 PR #3: eliminates
+        # the second full download of the original file).
+        logger.info(f"Dispatched pipeline chain for file {file_id} (task_id={dispatched_task_id})")
+        return dispatched_task_id
     else:
         logger.info("Skipping Celery task in test environment")
+        return None
 
 
 def _get_or_create_file_record(
@@ -225,31 +242,39 @@ def _get_or_create_file_record(
 
     logger.info(f"Using existing file record with UUID={existing_file_uuid}")
     db_file_result.status = FileStatus.PENDING  # type: ignore[assignment]
-    db.commit()
+    # Commit deferred to the outer transaction (Phase 2 PR #7, item E18).
+    db.flush()
     return db_file_result  # type: ignore[no-any-return]
 
 
-async def _read_file_content(file: UploadFile) -> tuple[bytearray, int]:
+async def _read_first_chunk(file: UploadFile) -> tuple[bytearray, int]:
+    """Read the first chunk so magic-byte validation can run fail-fast.
+
+    Large uploads (multi-GB videos) with the wrong MIME type should be
+    rejected before we pay to read the remaining bytes. Returns the
+    first chunk's bytes and the number of bytes read.
     """
-    Read file content in chunks.
+    first_chunk = await file.read(UPLOAD_CHUNK_SIZE)
+    buf = bytearray(first_chunk) if first_chunk else bytearray()
+    return buf, len(buf)
 
-    Args:
-        file: Uploaded file
 
-    Returns:
-        Tuple of (file_content, total_size)
+async def _continue_read_after_first_chunk(
+    file: UploadFile, buffered: bytearray
+) -> tuple[bytearray, int]:
+    """Extend ``buffered`` by reading the remaining chunks of the upload.
+
+    Used after ``_read_first_chunk`` passes magic-byte validation — keeps
+    the already-read first chunk and appends the rest in place.
     """
-    file_content = bytearray()
-    total_read = 0
-
+    total_read = len(buffered)
     while True:
         chunk = await file.read(UPLOAD_CHUNK_SIZE)
         if not chunk:
             break
-        file_content.extend(chunk)
+        buffered.extend(chunk)
         total_read += len(chunk)
-
-    return file_content, total_read
+    return buffered, total_read
 
 
 def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename: str) -> None:
@@ -268,63 +293,6 @@ def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename
         db_file.file_hash = client_file_hash  # type: ignore[assignment]
     elif not db_file.file_hash:
         logger.warning(f"No file hash provided for {filename} - duplicate detection may not work")
-
-
-def _cleanup_temp_file(temp_file_path: str | None) -> None:
-    """
-    Clean up a temporary file if it exists.
-
-    Args:
-        temp_file_path: Path to temporary file
-    """
-    if temp_file_path and os.path.exists(temp_file_path):
-        with contextlib.suppress(Exception):
-            os.unlink(temp_file_path)
-
-
-async def _generate_video_thumbnail(
-    file_content: bytearray,
-    filename: str,
-    current_user: User,
-    db_file: MediaFile,
-) -> tuple[str | None, str | None]:
-    """
-    Generate and upload a thumbnail for video files.
-
-    Args:
-        file_content: Video file content
-        filename: Original filename
-        current_user: Current user
-        db_file: MediaFile database record
-
-    Returns:
-        Tuple of (thumbnail_path, temp_file_path)
-    """
-    import tempfile
-
-    temp_file_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=os.path.splitext(filename)[1]
-        ) as temp_video:
-            temp_video.write(file_content)
-            temp_file_path = temp_video.name
-
-        thumbnail_path = await generate_and_upload_thumbnail(
-            user_id=int(current_user.id),
-            media_file_id=int(db_file.id),
-            video_path=temp_file_path,
-        )
-
-        if thumbnail_path:
-            logger.info(f"Generated thumbnail for video: {filename}, path: {thumbnail_path}")
-        else:
-            logger.warning(f"Failed to generate thumbnail for video: {filename}")
-
-        return thumbnail_path, temp_file_path
-    except Exception as e:
-        logger.warning(f"Error generating thumbnail for {filename}: {e}")
-        return None, temp_file_path
 
 
 async def process_file_upload(
@@ -360,11 +328,38 @@ async def process_file_upload(
     Raises:
         HTTPException: If there's an error during file processing
     """
+    # Generate the application task_id at ingress so every HTTP-phase marker
+    # lands in the same benchmark:{task_id} Redis hash as the downstream
+    # pipeline stages. Threaded through start_transcription_task.
+    task_id = str(uuid.uuid4())
+    benchmark_timing.mark(task_id, "http_request_received")
+
     logger.info(f"File upload request received from user: {current_user.email}")
 
     # Validate file type first
     validate_file_type(file)
     logger.info(f"Processing file - filename: {file.filename}, content_type: {file.content_type}")
+
+    # Duplicate short-circuit (Phase 2 PR #7, item E20): if the client sent a
+    # file hash and this is a direct legacy POST (no existing_file_uuid),
+    # check for a matching file and 409 out before reading bytes.
+    # prepare_upload already does this check for the presigned flow.
+    if client_file_hash and not existing_file_uuid:
+        from app.utils.file_hash import check_duplicate_by_hash
+
+        duplicate_uuid = await check_duplicate_by_hash(db, client_file_hash, int(current_user.id))
+        if duplicate_uuid:
+            logger.info(
+                f"Duplicate upload rejected for {file.filename} "
+                f"(hash={client_file_hash[:12]}…, duplicate_uuid={duplicate_uuid})"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "A file with this content already exists.",
+                    "duplicate_file_uuid": duplicate_uuid,
+                },
+            )
 
     # Get file size from content-length header if available
     file_size = 0
@@ -378,39 +373,58 @@ async def process_file_upload(
     storage_path = get_safe_storage_filename(
         file.filename or "unknown", int(current_user.id), int(db_file.id)
     )
-    temp_file_path: str | None = None
 
     try:
-        # Read file content in chunks
-        file_content, file_size = await _read_file_content(file)
-
-        # Validate magic bytes match declared MIME type (security measure)
+        # Read and validate the first chunk BEFORE committing to the full read
+        # (Phase 2 PR #7, item E19). Streaming magic-byte validation lets us
+        # reject wrong-type uploads after a single chunk instead of buffering
+        # 50 GB of garbage to learn the MIME is wrong.
+        first_chunk, _first_bytes = await _read_first_chunk(file)
         is_valid, validation_result = validate_uploaded_file(
-            bytes(file_content), file.content_type, file.filename
+            bytes(first_chunk[:64]), file.content_type, file.filename
         )
+        benchmark_timing.mark(task_id, "http_validation_end")
         if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=validation_result,  # User-friendly message from validator
+                detail=validation_result,
             )
         logger.info(f"File validated: {file.filename} (detected: {validation_result})")
+
+        # Now read the remainder; the first chunk is kept in place.
+        file_content, file_size = await _continue_read_after_first_chunk(file, first_chunk)
+        benchmark_timing.mark(task_id, "http_read_complete")
 
         # Update file hash
         _update_file_hash(db_file, client_file_hash, file.filename or "unknown")
 
-        # Upload to storage
-        upload_file_to_storage(
-            file_content, file_size, storage_path, file.content_type or "application/octet-stream"
-        )
+        # Compute imohash from the in-memory buffer (cheap: 3x 128KiB samples
+        # regardless of file size). Used for server-side dedup + artifact
+        # caching. Best-effort — failures never break uploads.
+        try:
+            from app.services.imohash_service import compute_from_bytes
 
-        # For video files, generate and upload a thumbnail
-        if file.content_type and file.content_type.startswith("video/"):
-            thumbnail_path, temp_file_path = await _generate_video_thumbnail(
-                file_content, file.filename or "unknown", current_user, db_file
+            benchmark_timing.mark(task_id, "imohash_start")
+            db_file.imohash = compute_from_bytes(bytes(file_content))  # type: ignore[assignment]
+            benchmark_timing.mark(task_id, "imohash_end")
+        except Exception as im_err:
+            logger.debug(f"imohash compute failed (non-fatal): {im_err}")
+
+        # Upload to storage
+        with benchmark_timing.stage(task_id, "minio_put"):
+            upload_file_to_storage(
+                file_content,
+                file_size,
+                storage_path,
+                file.content_type or "application/octet-stream",
             )
-            if thumbnail_path:
-                db_file.thumbnail_path = thumbnail_path  # type: ignore[assignment]
-            _cleanup_temp_file(temp_file_path)
+
+        # Thumbnail generation was previously inline here (3-8s FFmpeg on
+        # the buffered video). Now deferred to generate_thumbnail_task,
+        # dispatched after the commit below — keeps the HTTP response
+        # fast (Phase 2 PR #5). thumbnail_path will land on the row when
+        # the task finishes and the frontend refreshes on the
+        # file_updated WebSocket event.
 
         # Update storage path, file size, and thumbnail path in database
         db_file.storage_path = storage_path  # type: ignore[assignment]
@@ -420,14 +434,44 @@ async def process_file_upload(
         if skip_summary:
             db_file.summary_status = "disabled"  # type: ignore[assignment]
 
-        db.commit()
-        db.refresh(db_file)
+        with benchmark_timing.stage(task_id, "db_commit"):
+            db.commit()
+            db.refresh(db_file)
+
+        # Dispatch the background thumbnail generation for video files.
+        if file.content_type and file.content_type.startswith("video/"):
+            try:
+                from app.tasks.thumbnail import generate_thumbnail_task
+
+                generate_thumbnail_task.delay(
+                    file_id=int(db_file.id),
+                    user_id=int(current_user.id),
+                    storage_path=storage_path,
+                )
+                logger.info(f"Dispatched thumbnail generation for video file {db_file.id}")
+            except Exception as thumb_err:
+                logger.warning(
+                    f"Thumbnail dispatch failed for {db_file.id} (non-fatal): {thumb_err}"
+                )
+
+        # Capture file context for later reporting (persists until flushed
+        # into file_pipeline_timing by finalize_transcription).
+        benchmark_timing.set_context(
+            task_id,
+            {
+                "file_size_bytes": int(file_size),
+                "content_type": file.content_type or "",
+                "http_flow": "legacy",
+            },
+        )
 
         # Read requested model from the prepare step if not explicitly provided
         if not whisper_model and db_file.requested_whisper_model:
-            whisper_model = db_file.requested_whisper_model
+            whisper_model = str(db_file.requested_whisper_model)
 
-        # Start background transcription and waveform generation in parallel
+        # Start background transcription and waveform generation in parallel.
+        # Pass our ingress-minted task_id through so the pipeline writes into
+        # the same benchmark hash we've been populating.
         start_transcription_task(
             int(db_file.id),
             str(db_file.uuid),
@@ -437,8 +481,10 @@ async def process_file_upload(
             whisper_model=whisper_model,
             user_id=int(current_user.id),
             db=db,
+            task_id=task_id,
         )
 
+        benchmark_timing.mark(task_id, "http_response_end")
         logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
         return db_file
 
@@ -446,13 +492,11 @@ async def process_file_upload(
         # Re-raise HTTP exceptions after cleanup
         db.delete(db_file)
         db.commit()
-        _cleanup_temp_file(temp_file_path)
         raise
     except Exception as e:
         # Clean up on failure
         db.delete(db_file)
         db.commit()
-        _cleanup_temp_file(temp_file_path)
         logger.error(f"Upload failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

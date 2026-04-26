@@ -48,6 +48,14 @@ services:
     pull_policy: always
     # No volumes needed - CPU worker doesn't need model cache
 
+  celery-cloud-asr-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
+    pull_policy: always
+    # No volumes needed - cloud-ASR worker is network-bound only
+
   celery-nlp-worker:
     image: davidamacey/opentranscribe-backend:latest
     build:

@@ -1,4 +1,5 @@
 import logging
+import uuid as uuid_lib
 from typing import Any
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
 from app.services.auto_label_service import AutoLabelService
+from app.utils import benchmark_timing
 from app.utils.file_hash import check_duplicate_by_hash
 from app.utils.file_hash import cleanup_failed_duplicates
 
@@ -157,7 +159,7 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
     db.flush()
 
 
-@router.post("/prepare", response_model=dict[str, str | int])
+@router.post("/prepare", response_model=dict[str, Any])
 async def prepare_upload(
     request: PrepareUploadRequest,
     db: Session = Depends(get_db),
@@ -167,7 +169,10 @@ async def prepare_upload(
     Prepare for a file upload by creating a MediaFile record and returning the file ID.
     This allows the frontend to track the file ID before the actual upload begins.
 
-    If a file hash is provided, check if a duplicate file already exists.
+    If a file hash is provided, check if a duplicate file already exists. When
+    ``use_presigned`` is true, the response additionally includes an
+    application-level ``task_id`` and a presigned PUT URL for the browser to
+    upload bytes directly to MinIO, bypassing the API container entirely.
     """
     try:
         # If file hash is provided, check for duplicates
@@ -241,10 +246,39 @@ async def prepare_upload(
         # Commit all assignments (batch, collections, tags)
         db.commit()
 
-        logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
+        response: dict[str, Any] = {"file_id": str(db_file.uuid), "is_duplicate": 0}
 
-        # Return the file UUID for frontend
-        return {"file_id": str(db_file.uuid), "is_duplicate": 0}
+        # Optional: emit a presigned PUT URL so the browser can upload bytes
+        # directly to MinIO. The caller follows up with POST /files/complete
+        # once the PUT succeeds. We mint the application task_id here so all
+        # HTTP-phase markers share the benchmark:{task_id} Redis hash with
+        # the downstream pipeline.
+        if request.use_presigned:
+            from app.services.minio_service import presigned_put_url
+
+            task_id = str(uuid_lib.uuid4())
+            put_url = presigned_put_url(storage_path)
+            benchmark_timing.mark(task_id, "prepare_upload_end")
+            benchmark_timing.set_context(
+                task_id,
+                {
+                    "file_size_bytes": int(request.file_size or 0),
+                    "content_type": request.content_type or "",
+                    "http_flow": "presigned",
+                },
+            )
+            response.update(
+                {
+                    "task_id": task_id,
+                    "upload_url": put_url,
+                    "upload_method": "PUT",
+                    "http_flow": "presigned",
+                    "storage_path": storage_path,
+                }
+            )
+
+        logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
+        return response
 
     except Exception as e:
         logger.error(f"Error preparing upload: {str(e)}")

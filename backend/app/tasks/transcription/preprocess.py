@@ -6,6 +6,7 @@ the normalized audio.wav in MinIO temp storage for the GPU worker.
 Part of the 3-stage chain: preprocess (CPU) → transcribe (GPU) → postprocess (CPU)
 """
 
+import contextlib
 import logging
 import os
 import tempfile
@@ -17,6 +18,7 @@ from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.utils import benchmark_timing
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -25,6 +27,7 @@ from .audio_processor import extract_audio_from_video
 from .audio_processor import get_audio_file_extension
 from .audio_processor import prepare_audio_for_transcription
 from .metadata_extractor import extract_media_metadata
+from .metadata_extractor import extract_media_metadata_from_url
 from .metadata_extractor import update_media_file_metadata
 from .notifications import send_error_notification
 from .notifications import send_progress_notification
@@ -67,6 +70,10 @@ def preprocess_for_transcription(
 
     step_start = time.perf_counter()
 
+    # Record task pickup time + cold-start status for queue-wait analysis.
+    benchmark_timing.mark(task_id, "preprocess_task_prerun")
+    benchmark_timing.mark_cold_start(task_id, "cpu")
+
     try:
         # Resolve file from DB
         with session_scope() as db:
@@ -99,6 +106,7 @@ def preprocess_for_transcription(
                     file_id,
                     user_id,
                     content_type,
+                    task_id,
                 )
             else:
                 _preprocess_audio(
@@ -109,12 +117,22 @@ def preprocess_for_transcription(
                     file_id,
                     user_id,
                     content_type,
+                    task_id,
                 )
 
             # Upload preprocessed audio to MinIO temp for GPU worker
             send_progress_notification(user_id, file_id, 0.18, "Staging audio for transcription")
             audio_size_mb = os.path.getsize(temp_audio_path) / (1024 * 1024)
-            audio_temp_path = upload_temp_audio(file_uuid, temp_audio_path)
+            with benchmark_timing.stage(task_id, "temp_upload"):
+                audio_temp_path = upload_temp_audio(file_uuid, temp_audio_path)
+
+            # Dispatch waveform generation in parallel with the GPU task.
+            # Previously fired from upload.py, which forced a full re-download
+            # of the original media (Phase 2 PR #3 fix). Now it consumes the
+            # preprocessed 16 kHz WAV we've just staged — ~10x less I/O.
+            # Only runs for files that don't already have waveform_data
+            # (skips reprocess runs).
+            _dispatch_waveform_if_missing(file_id, file_uuid, task_id)
 
         # Resolve diarization_source: explicit arg > legacy bool > user DB setting
         if diarization_source is None:
@@ -141,10 +159,7 @@ def preprocess_for_transcription(
         )
 
         # Record preprocess end timestamp for inter-stage gap measurement
-        if os.getenv("ENABLE_BENCHMARK_TIMING"):
-            from app.core.redis import get_redis
-
-            get_redis().hset(f"benchmark:{task_id}", "preprocess_end", str(time.time()))
+        benchmark_timing.mark(task_id, "preprocess_end")
 
         send_progress_notification(user_id, file_id, 0.20, "Audio ready for transcription")
 
@@ -182,25 +197,87 @@ def _preprocess_video(
     file_id: int,
     user_id: int,
     content_type: str,
+    task_id: str,
 ) -> None:
-    """Extract audio from video via FFmpeg with presigned URL fallback."""
+    """Extract audio + metadata from a video in parallel, with presigned-URL fallback.
+
+    Phase 2 PR #9 (item D11): FFmpeg audio extraction and ffprobe metadata
+    reads are independent subprocess calls against the same source (presigned
+    MinIO URL or downloaded file). They now run concurrently on a
+    ``ThreadPoolExecutor`` — subprocesses release the GIL, so threading buys
+    real parallelism. Eliminates 1-3 s of serial latency per video on the
+    critical path.
+
+    If the presigned URL path fails (rare — typically only in offline
+    deployments), we fall back to a single local download and then run the
+    same two operations concurrently against the on-disk file.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
     from app.services.minio_service import download_file_to_path
     from app.services.minio_service import get_internal_presigned_url
 
     send_progress_notification(user_id, file_id, 0.08, "Extracting audio from video")
 
-    # Try presigned URL first (FFmpeg reads directly from MinIO, no full download)
+    # Resolve the source once. The presigned URL lets FFmpeg + ffprobe read
+    # only the byte ranges they need (no full download); we only fall back
+    # to a local copy if the presigned route actually fails at runtime.
+    presigned_url: str | None = None
     try:
-        minio_url = get_internal_presigned_url(storage_path, expires=3600)
-        extract_audio_from_video(minio_url, temp_audio_path)
+        presigned_url = get_internal_presigned_url(storage_path, expires=3600)
     except Exception as url_err:
-        logger.warning(f"Presigned URL FFmpeg failed, falling back to download: {url_err}")
-        temp_video_path = os.path.join(temp_dir, f"input{file_ext}")
-        download_file_to_path(storage_path, temp_video_path)
-        extract_audio_from_video(temp_video_path, temp_audio_path)
+        logger.warning(f"Could not mint presigned URL, will fall back: {url_err}")
 
-    # Metadata extraction (best-effort, downloads video if needed)
-    _extract_metadata_best_effort(storage_path, file_ext, temp_dir, file_id, content_type)
+    local_video_path: str | None = None
+
+    def _run_ffmpeg_against(source: str) -> None:
+        with benchmark_timing.stage(task_id, "ffmpeg"):
+            extract_audio_from_video(source, temp_audio_path)
+
+    def _run_metadata_against(source_url_or_path: str, is_url: bool) -> None:
+        # Reuses the best-effort metadata helper but hands in the exact
+        # source we want; no second MinIO download happens inside.
+        _extract_metadata_best_effort(
+            storage_path,
+            file_ext,
+            temp_dir,
+            file_id,
+            content_type,
+            existing_local_path=None if is_url else source_url_or_path,
+            presigned_url=source_url_or_path if is_url else None,
+            task_id=task_id,
+        )
+
+    # Fast path: both stages run in parallel against the presigned URL.
+    if presigned_url is not None:
+        try:
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="preproc-video") as pool:
+                ffmpeg_future = pool.submit(_run_ffmpeg_against, presigned_url)
+                metadata_future = pool.submit(_run_metadata_against, presigned_url, True)
+                # Propagate the FFmpeg error (pipeline-fatal); the metadata
+                # extraction is best-effort and already swallows its own
+                # exceptions inside ``_extract_metadata_best_effort``.
+                ffmpeg_future.result()
+                # Wait for metadata so its wall-clock joins the preprocess
+                # window rather than racing into the next stage's markers.
+                metadata_future.result()
+            return
+        except Exception as url_err:
+            logger.warning(
+                f"Parallel presigned-URL preprocess failed, falling back to download: {url_err}"
+            )
+
+    # Fallback path: single download, then parallel local FFmpeg + metadata.
+    temp_video_path = os.path.join(temp_dir, f"input{file_ext}")
+    with benchmark_timing.stage(task_id, "media_download"):
+        download_file_to_path(storage_path, temp_video_path)
+    local_video_path = temp_video_path
+
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="preproc-video") as pool:
+        ffmpeg_future = pool.submit(_run_ffmpeg_against, local_video_path)
+        metadata_future = pool.submit(_run_metadata_against, local_video_path, False)
+        ffmpeg_future.result()
+        metadata_future.result()
 
 
 def _preprocess_audio(
@@ -211,13 +288,15 @@ def _preprocess_audio(
     file_id: int,
     user_id: int,
     content_type: str,
+    task_id: str,
 ) -> None:
     """Download audio file and convert to WAV."""
     from app.services.minio_service import download_file_to_path
 
     send_progress_notification(user_id, file_id, 0.08, "Processing audio file")
     temp_input_path = os.path.join(temp_dir, f"input{file_ext}")
-    download_file_to_path(storage_path, temp_input_path)
+    with benchmark_timing.stage(task_id, "media_download"):
+        download_file_to_path(storage_path, temp_input_path)
 
     # Metadata extraction
     _extract_metadata_best_effort(
@@ -227,10 +306,12 @@ def _preprocess_audio(
         file_id,
         content_type,
         existing_local_path=temp_input_path,
+        task_id=task_id,
     )
 
     # Convert to WAV (modifies temp_audio_path in-place via prepare_audio_for_transcription)
-    result_path = prepare_audio_for_transcription(temp_input_path, content_type, temp_dir)
+    with benchmark_timing.stage(task_id, "ffmpeg"):
+        result_path = prepare_audio_for_transcription(temp_input_path, content_type, temp_dir)
 
     # If prepare returned a different path (e.g., input was already .wav), copy it
     if result_path != temp_audio_path:
@@ -246,25 +327,78 @@ def _extract_metadata_best_effort(
     file_id: int,
     content_type: str,
     existing_local_path: str | None = None,
+    presigned_url: str | None = None,
+    task_id: str | None = None,
 ) -> None:
-    """Extract media metadata. Best-effort — failures are logged but don't stop pipeline."""
+    """Extract media metadata. Best-effort — failures are logged but don't stop pipeline.
+
+    Ordered preference:
+      1. ``existing_local_path`` — file is already on disk (fallback path).
+      2. ``presigned_url`` — run ffprobe against MinIO directly, no download.
+      3. Download the original (legacy behaviour; only triggered when
+         neither of the above is supplied).
+    """
     from app.services.minio_service import download_file_to_path
 
-    try:
-        local_path = existing_local_path
-        if not local_path or not os.path.exists(local_path):
-            local_path = os.path.join(temp_dir, f"meta_input{file_ext}")
-            download_file_to_path(storage_path, local_path)
+    with benchmark_timing.stage(task_id, "metadata"):
+        try:
+            metadata: dict | None = None
+            local_path_for_raw: str | None = existing_local_path
 
-        metadata = extract_media_metadata(local_path)
-        if metadata:
-            with session_scope() as db:
-                mf = get_refreshed_object(db, MediaFile, file_id)
-                if mf:
-                    update_media_file_metadata(mf, metadata, content_type, local_path)
-                    db.commit()
+            if existing_local_path and os.path.exists(existing_local_path):
+                metadata = extract_media_metadata(existing_local_path)
+            elif presigned_url:
+                metadata = extract_media_metadata_from_url(presigned_url)
+            else:
+                fallback_local = os.path.join(temp_dir, f"meta_input{file_ext}")
+                download_file_to_path(storage_path, fallback_local)
+                metadata = extract_media_metadata(fallback_local)
+                local_path_for_raw = fallback_local
+
+            if metadata:
+                with session_scope() as db:
+                    mf = get_refreshed_object(db, MediaFile, file_id)
+                    if mf:
+                        update_media_file_metadata(
+                            mf, metadata, content_type, local_path_for_raw or ""
+                        )
+                        # Persist audio duration into benchmark context when known
+                        duration_val = metadata.get("Duration") or metadata.get("duration")
+                        if duration_val is not None:
+                            with contextlib.suppress(TypeError, ValueError):
+                                benchmark_timing.set_context(
+                                    task_id,
+                                    {"audio_duration_s": float(duration_val)},
+                                )
+                        db.commit()
+        except Exception as e:
+            logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")
+
+
+def _dispatch_waveform_if_missing(file_id: int, file_uuid: str, task_id: str) -> None:
+    """Fire waveform generation for files that don't have it yet.
+
+    Fresh uploads skip this if ``MediaFile.waveform_data`` is populated;
+    reprocess runs hit that condition. The task reads the preprocessed WAV
+    we've just written to MinIO temp, so no extra download of the
+    original is needed.
+    """
+    try:
+        with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            if media_file is None or media_file.waveform_data:
+                return
+        from app.tasks.waveform import generate_waveform_task
+
+        generate_waveform_task.delay(
+            file_id=file_id,
+            file_uuid=file_uuid,
+            task_id=task_id,
+            prefer_temp_audio=True,
+        )
+        logger.info(f"Dispatched waveform task for file {file_id} from preprocess")
     except Exception as e:
-        logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")
+        logger.warning(f"Waveform dispatch from preprocess failed (non-fatal): {e}")
 
 
 def _mark_pipeline_error(file_uuid: str, task_id: str, error_msg: str) -> None:

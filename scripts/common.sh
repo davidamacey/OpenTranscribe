@@ -118,6 +118,54 @@ fix_model_cache_permissions() {
   return 0
 }
 
+# Fix ownership of the shared pipeline_scratch Docker named volume.
+#
+# The volume is created root-owned by default, which blocks the non-root
+# container user (UID 1000) from staging the preprocessed WAV into it —
+# turning the Phase 2 shared-memory handoff into a silent fallback to
+# MinIO. This helper resolves the namespaced volume (compose prefixes
+# it with the project name) and chowns it via a throwaway busybox
+# container — same pattern used for the model cache.
+#
+# Safe to run multiple times. No-op when the volume doesn't exist yet
+# (first boot before compose up).
+fix_pipeline_scratch_permissions() {
+  if ! command -v docker &> /dev/null; then
+    return 0
+  fi
+
+  # Resolve the actual volume name (docker-compose prefixes with project
+  # name; matching on the suffix keeps this portable across checkouts).
+  local vol
+  vol=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '_pipeline_scratch$' | head -1)
+
+  if [ -z "$vol" ]; then
+    # Volume not created yet — will be picked up on next invocation after
+    # `docker compose up`. Silent return; not an error.
+    return 0
+  fi
+
+  # Cheap probe: if the volume already mounts as UID 1000, skip the chown.
+  local owner
+  owner=$(docker run --rm -v "$vol:/scratch" busybox:latest stat -c '%u' /scratch 2>/dev/null || echo "unknown")
+  if [ "$owner" = "1000" ]; then
+    return 0
+  fi
+
+  echo "🔧 Fixing pipeline_scratch volume permissions for non-root container (UID 1000)..."
+  if docker run --rm -v "$vol:/scratch" busybox:latest \
+      sh -c "chown -R 1000:1000 /scratch && chmod 775 /scratch" > /dev/null 2>&1; then
+    echo "✅ pipeline_scratch permissions fixed"
+    return 0
+  fi
+
+  echo "⚠️  Warning: Could not fix pipeline_scratch permissions."
+  echo "   Scratch-volume handoff will fall back to MinIO until this is resolved."
+  echo "   Manual fix:"
+  echo "     docker run --rm -v $vol:/scratch busybox chown -R 1000:1000 /scratch"
+  return 1
+}
+
 # Ensure OpenSearch neural models are downloaded for offline capability
 ensure_opensearch_models() {
   # Read MODEL_CACHE_DIR from .env if it exists

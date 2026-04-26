@@ -1232,6 +1232,100 @@ def add_speaker_embedding_v4(
         )
 
 
+def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Bulk-index v4 (256-dim) speaker embeddings in one OpenSearch round-trip.
+
+    Every post-transcription run stores one centroid per detected speaker.
+    A 10-speaker meeting previously hit 10 sequential ``index()`` calls
+    against OpenSearch (~200-500 ms of round-trip overhead); this helper
+    batches them into one bulk request. Phase 2 PR #9, item D14.
+
+    The per-speaker dimension guard mirrors ``add_speaker_embedding_v4`` —
+    malformed entries are skipped rather than failing the whole batch, so
+    a single bad embedding can't block the rest from landing.
+
+    Args:
+        embeddings_data: List of dicts shaped like the kwargs of
+            ``add_speaker_embedding_v4``. ``speaker_uuid``, ``speaker_id``,
+            ``user_id``, ``name``, and ``embedding`` are required. All
+            other fields default the same way as the single-write helper.
+
+    Returns:
+        The OpenSearch bulk response dict, or None when the client is
+        unavailable or no valid entries remain after validation.
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized, skipping bulk v4 speaker embeddings")
+        return None
+    if not embeddings_data:
+        return None
+
+    v4_index = get_speaker_index_v4()
+    bulk_body: list[dict[str, Any]] = []
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    accepted = 0
+
+    for data in embeddings_data:
+        speaker_uuid = data.get("speaker_uuid")
+        speaker_id = data.get("speaker_id")
+        embedding = data.get("embedding")
+
+        if speaker_uuid is None or speaker_id is None:
+            logger.error("Bulk v4 add skipping entry: missing speaker_uuid/speaker_id")
+            continue
+        if not isinstance(embedding, list) or len(embedding) != PYANNOTE_EMBEDDING_DIMENSION_V4:
+            logger.error(
+                f"Bulk v4 add skipping speaker {speaker_uuid}: embedding dim "
+                f"{len(embedding) if isinstance(embedding, list) else 'n/a'} "
+                f"!= {PYANNOTE_EMBEDDING_DIMENSION_V4}"
+            )
+            continue
+
+        bulk_body.append(
+            {
+                "index": {
+                    "_index": v4_index,
+                    "_id": str(speaker_uuid),
+                }
+            }
+        )
+        profile_uuid = data.get("profile_uuid")
+        bulk_body.append(
+            {
+                "speaker_id": speaker_id,
+                "speaker_uuid": str(speaker_uuid),
+                "profile_id": data.get("profile_id"),
+                "profile_uuid": str(profile_uuid) if profile_uuid else None,
+                "user_id": data["user_id"],
+                "name": data["name"],
+                "display_name": data.get("display_name"),
+                "collection_ids": data.get("collection_ids") or [],
+                "media_file_id": data.get("media_file_id"),
+                "segment_count": data.get("segment_count", 1),
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "embedding": embedding,
+            }
+        )
+        accepted += 1
+
+    if accepted == 0:
+        return None
+
+    try:
+        response = opensearch_client.bulk(body=bulk_body)
+        if response.get("errors"):
+            logger.error(f"Bulk v4 speaker embedding indexing had errors: {response}")
+        else:
+            logger.info(
+                f"Bulk-indexed {accepted} v4 speaker embeddings into {v4_index} in one request"
+            )
+        return response  # type: ignore[no-any-return]
+    except Exception as e:
+        logger.error(f"Error bulk-indexing v4 speaker embeddings: {e}")
+        return None
+
+
 def store_profile_embedding_v4(
     profile_id: int,
     profile_uuid: str,

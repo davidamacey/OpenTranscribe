@@ -147,6 +147,8 @@ services:
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      # Shared scratch for cross-worker preprocessed-WAV handoff
+      - pipeline_scratch:/scratch/opentranscribe
     ports:
       - "${BACKEND_PORT:-5174}:8080"
     environment:
@@ -215,6 +217,8 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # Shared scratch — reads the preprocessed WAV that the CPU worker staged
+      - pipeline_scratch:/scratch/opentranscribe
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -251,7 +255,7 @@ services:
     env_file: .env
     security_opt:
       - no-new-privileges:true
-    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-3} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
+    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-5} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
@@ -284,7 +288,13 @@ services:
     env_file: .env
     security_opt:
       - no-new-privileges:true
-    command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility,cloud-asr,cpu-transcribe --concurrency=8 --max-tasks-per-child=20 --hostname cpu-processor@%h -E
+    # Compute-bound queues only. cloud-asr runs on its own container
+    # (celery-cloud-asr-worker) so long-running network-bound cloud
+    # transcription tasks cannot head-of-line-block postprocess.
+    command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility,cpu-transcribe --concurrency=${CPU_WORKER_CONCURRENCY:-8} --max-tasks-per-child=20 --hostname cpu-processor@%h -E
+    volumes:
+      # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
+      - pipeline_scratch:/scratch/opentranscribe
     environment:
       - PRELOAD_CPU_WHISPER=true
       # Internal Docker network settings (same as backend)
@@ -299,6 +309,44 @@ services:
       - TEMP_DIR=/app/temp
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cpu-processor@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-cloud-asr-worker:
+    # Dedicated worker for cloud ASR provider tasks (Deepgram, AssemblyAI,
+    # Google, AWS, etc.). These are long-running network-bound jobs; giving
+    # them their own pool with higher concurrency avoids them blocking the
+    # latency-sensitive postprocess / waveform / utility work on the main
+    # CPU worker. Phase 2 of the timing audit plan — item 17.
+    container_name: opentranscribe-celery-cloud-asr-worker
+    restart: always
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    command: celery -A app.core.celery worker --loglevel=info -Q cloud-asr --concurrency=${CLOUD_ASR_CONCURRENCY:-16} --max-tasks-per-child=50 --hostname cloud-asr@%h -E
+    volumes:
+      # Shared scratch — cloud-ASR speaker embedding reads the temp WAV
+      - pipeline_scratch:/scratch/opentranscribe
+    environment:
+      # Internal Docker network settings (same as backend)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - TEMP_DIR=/app/temp
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cloud-asr@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -353,6 +401,8 @@ services:
     command: celery -A app.core.celery worker --loglevel=info -Q embedding --concurrency=1 --max-tasks-per-child=500 --hostname search-indexer@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # Shared scratch — so embedding worker can use the temp WAV if needed
+      - pipeline_scratch:/scratch/opentranscribe
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -504,6 +554,13 @@ volumes:
   redis_data:
   opensearch_data:
   flower_data:
+  # Shared scratch volume for cross-worker artifact handoff. Holds the
+  # preprocessed 16 kHz WAV (one per in-flight file, plus ephemeral
+  # derived artifacts). Defaults to a regular disk-backed volume so the
+  # stack works on every host; override to tmpfs in an environment
+  # overlay (see docker-compose.scratch-tmpfs.yml) for RAM-backed speed.
+  # See backend/app/utils/scratch_volume.py for the contract.
+  pipeline_scratch:
 
 networks:
   default:
