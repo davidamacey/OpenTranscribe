@@ -1295,11 +1295,12 @@ case "$1" in
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE stop 2>/dev/null || true
 
-        # Wipe bench volumes so each run starts with an empty DB/MinIO/OpenSearch
+        # Wipe bench volumes so each run starts with an empty DB/MinIO/OpenSearch/Redis
         echo "🗑  Wiping bench volumes for clean run..."
         docker volume rm \
           "${BENCH_VOLUME_PREFIX}_postgres_bench_data" \
           "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
           "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" 2>/dev/null || true
 
         # Switch git branch
@@ -1341,6 +1342,7 @@ case "$1" in
         docker volume rm \
           "${BENCH_VOLUME_PREFIX}_postgres_bench_data" \
           "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
           "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" 2>/dev/null || true
         echo "✅ Bench volumes wiped."
         ;;
