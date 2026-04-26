@@ -1,0 +1,42 @@
+# docker-compose.bench.yml
+# Benchmark isolation overlay — replaces ALL persistent storage with fresh named volumes.
+#
+# Purpose: A/B upload-speed benchmarks that must never touch the NAS dataset
+# (postgres, MinIO, OpenSearch).  Use this instead of docker-compose.nas.yml.
+#
+# Usage (master baseline):
+#   git checkout master
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.bench.yml up -d
+#
+# Usage (branch after):
+#   git checkout feat/upload-speed-improvement
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.bench.yml up -d
+#
+# To wipe bench data between runs (e.g. before branch run):
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.bench.yml down -v
+#   # Then bring it back up fresh.
+#
+# The NAS bind mounts in docker-compose.nas.yml are NOT loaded here, so the
+# production dataset is completely isolated from these runs.
+
+services:
+  postgres:
+    volumes:
+      - postgres_bench_data:/var/lib/postgresql/data/
+
+  minio:
+    volumes:
+      - minio_bench_data:/data
+
+  opensearch:
+    volumes:
+      - opensearch_bench_data:/usr/share/opensearch/data
+      - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models:ro
+
+volumes:
+  postgres_bench_data:
+  minio_bench_data:
+  opensearch_bench_data:
