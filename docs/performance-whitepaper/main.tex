@@ -1187,9 +1187,14 @@ A parallel sweep for the \textit{transcription} stage was conducted on
 2026-04-26 using the same RTX A6000, the same 2.2-hour reference file,
 and the same NVML-polling methodology (script:
 \texttt{backend/app/scripts/whisper\_batch\_diag.py}).  The study
-covers \texttt{large-v3-turbo} with \texttt{int8\_float16} quantisation
+covers three models (\texttt{large-v3-turbo}, \texttt{medium},
+\texttt{small}) with \texttt{int8\_float16} quantisation
 and \texttt{beam\_size=5}, sweeping
 $\text{batch\_size} \in \{2, 4, 8, 12, 16, 24, 32\}$.
+All sweeps ran with PyAnnote pre-loaded, so every measurement
+includes the shared process baseline of \SI{2039}{\mega\byte}
+(CUDA context \SI{300}{\mega\byte} + PyAnnote models
+\SI{1739}{\mega\byte}).
 
 \paragraph{Motivation.}
 CTranslate2---the inference backend underlying faster-whisper---uses its
@@ -1199,9 +1204,9 @@ requires reading device memory directly via NVML at \SI{100}{\milli\second}
 intervals during inference, the same technique used in Phase~A.
 
 \paragraph{Results.}
-Figure~\ref{fig:whisper-batch} and Table~\ref{tab:whisper-vram} summarise
-the sweep.  The pattern closely mirrors the diarization embedding study:
-throughput saturates early, but VRAM grows linearly.
+Figure~\ref{fig:whisper-batch} and Tables~\ref{tab:whisper-vram}--\ref{tab:whisper-vram-small}
+summarise the sweeps.  The pattern closely mirrors the diarization
+embedding study: throughput saturates early, but VRAM grows linearly.
 
 \begin{figure}[!t]
 \centering
@@ -1231,7 +1236,9 @@ throughput saturates early, but VRAM grows linearly.
 \caption{Transcription wall time and peak VRAM vs.~\texttt{batch\_size}
   (\texttt{large-v3-turbo}, \texttt{int8\_float16}, 2.2-hour audio,
   RTX A6000).  Throughput saturates at batch=8; VRAM scales
-  ${\sim}\SI{928}{\mega\byte}$ per 8-unit increment.}
+  ${\sim}\SI{928}{\mega\byte}$ per 8-unit increment.
+  Medium and small models shown in Tables~\ref{tab:whisper-vram-medium}
+  and~\ref{tab:whisper-vram-small}.}
 \label{fig:whisper-batch}
 \end{figure}
 
@@ -1258,26 +1265,90 @@ throughput saturates early, but VRAM grows linearly.
   Stable = NVML \SI{500}{\milli\second} post-load.
   $\Delta$ = peak $-$ stable (encoder activations + KV cache).
   Baseline (PyAnnote + CUDA context, no Whisper): \SI{2039}{\mega\byte}.
-  Whisper model footprint: stable $-$ baseline $=$ \SI{1332}{\mega\byte}.
+  Whisper model footprint above baseline: \SI{1332}{\mega\byte}.
   Raw CSV: \texttt{docs/whisper-vram-profile/a6000\_large-v3-turbo\_2026-04-26.csv}.}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\caption{WhisperX batch size sweep --- RTX A6000, medium}
+\label{tab:whisper-vram-medium}
+\begin{tabular}{@{}R{0.9cm}R{1.3cm}R{1.1cm}R{0.7cm}@{}}
+\toprule
+\textbf{Batch} & \textbf{Peak\,MB} & \textbf{$\Delta$\,MB} & \textbf{RTF} \\
+\midrule
+2  & 3829  & +522  & 0.026 \\
+4  & 4181  & +874  & 0.018 \\
+8  & 5045  & +1738 & 0.013 \\
+12 & 5973  & +2666 & 0.012 \\
+16 & 6869  & +3562 & 0.011 \\
+24 & 8629  & +5322 & 0.011 \\
+32 & 10389 & +7082 & 0.011 \\
+\bottomrule
+\end{tabular}
+\\[4pt]
+{\footnotesize
+  Plateau at batch=24 (RTF $= 0.011$).  Baseline \SI{2039}{\mega\byte};
+  medium model footprint above baseline: \SI{1172}{\mega\byte}.
+  Increment per 8-unit step: ${\sim}\SI{864}{\mega\byte}$.}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\caption{WhisperX batch size sweep --- RTX A6000, small}
+\label{tab:whisper-vram-small}
+\begin{tabular}{@{}R{0.9cm}R{1.3cm}R{1.1cm}R{0.7cm}@{}}
+\toprule
+\textbf{Batch} & \textbf{Peak\,MB} & \textbf{$\Delta$\,MB} & \textbf{RTF} \\
+\midrule
+2  & 2933 & +330  & 0.017 \\
+4  & 3221 & +618  & 0.011 \\
+8  & 3797 & +1194 & 0.009 \\
+12 & 4341 & +1738 & 0.008 \\
+16 & 4885 & +2282 & 0.007 \\
+24 & 6005 & +3402 & 0.007 \\
+32 & 7157 & +4554 & 0.007 \\
+\bottomrule
+\end{tabular}
+\\[4pt]
+{\footnotesize
+  Plateau at batch=24 (RTF $= 0.007$).  Baseline \SI{2039}{\mega\byte};
+  small model footprint above baseline: \SI{564}{\mega\byte}.
+  Increment per 8-unit step: ${\sim}\SI{576}{\mega\byte}$.
+  Only model that fits on 4\,GB GPUs at bs=2 (peak \SI{2933}{\mega\byte}
+  $<$ \SI{3277}{\mega\byte} gate); bs=4 at \SI{3221}{\mega\byte}
+  is marginal.}
 \end{table}
 
 \paragraph{Key findings.}
 \begin{itemize}[nosep,leftmargin=*]
-  \item \textbf{Throughput plateau at batch=8.}  Going from batch=2 to
-    batch=8 recovers \SI{29}{\percent} of wall time (RTF $0.013 \to 0.009$).
-    Batch sizes 8 through 32 are statistically identical (RTF $= 0.009$
-    throughout).  This matches the diarization result where throughput
-    plateaued at embedding batch 16.
-  \item \textbf{Linear VRAM growth.}  Above the plateau, each 8-unit
-    increment in batch size costs ${\sim}\SI{928}{\mega\byte}$ of
-    additional peak VRAM (encoder activations + attention maps).
-  \item \textbf{batch=32 wastes \SI{5568}{\mega\byte}.}  The faster-whisper
-    default for large-memory GPUs is batch=32, yet batch=8 achieves
-    identical throughput at \SI{5269}{\mega\byte} peak versus
-    \SI{10837}{\mega\byte}.  The freed \SI{5.5}{\giga\byte} is enough
-    headroom for five additional concurrent PyAnnote diarization
-    pipelines at ${\sim}\SI{1}{\giga\byte}$ each.
+  \item \textbf{Plateau batch varies with model size.}
+    \texttt{large-v3-turbo} saturates at batch=8 (RTF $0.013 \to 0.009$,
+    $+29\%$); \texttt{medium} and \texttt{small} both saturate later,
+    at batch=24 (medium RTF $0.026 \to 0.011$; small RTF $0.017 \to 0.007$).
+    Larger encoders exhaust the pipeline's parallelism sooner.
+  \item \textbf{Activation cost scales with encoder size.}  Each 8-unit
+    batch increment costs ${\sim}\SI{928}{\mega\byte}$ for turbo,
+    ${\sim}\SI{864}{\mega\byte}$ for medium, and
+    ${\sim}\SI{576}{\mega\byte}$ for small.  The reduction confirms that
+    encoder width---not the decoder---dominates activation memory.
+  \item \textbf{batch=32 wastes peak VRAM on every model.}  For turbo,
+    batch=8 matches batch=32 throughput at \SI{5269}{\mega\byte} vs.\
+    \SI{10837}{\mega\byte} (saves \SI{5.5}{\giga\byte}).  For medium,
+    batch=16 matches batch=32 at \SI{6869}{\mega\byte} vs.\ \SI{10389}{\mega\byte}.
+    For small, batch=16 matches batch=32 at \SI{4885}{\mega\byte} vs.\ \SI{7157}{\mega\byte}.
+    In all cases the freed headroom accommodates additional concurrent
+    PyAnnote pipelines at ${\sim}\SI{1}{\giga\byte}$ each.
+  \item \textbf{Small model enables 4\,GB GPUs.}  At bs=2, the small model
+    peaks at \SI{2933}{\mega\byte}, just below the
+    $0.80 \times \SI{4096}{\mega\byte} = \SI{3277}{\mega\byte}$ gate.
+    bs=4 (\SI{3221}{\mega\byte}) is too close to the gate for comfort;
+    bs=2 is the safe ceiling on 4\,GB hardware.
+  \item \textbf{Shared process baseline.}  All measurements include the
+    \SI{2039}{\mega\byte} baseline: CUDA context (\SI{300}{\mega\byte}) plus
+    PyAnnote diarization models (\SI{1739}{\mega\byte}).  The Whisper model
+    footprints \textit{above} this baseline are turbo \SI{1332}{\mega\byte},
+    medium \SI{1172}{\mega\byte}, small \SI{564}{\mega\byte}.
 \end{itemize}
 
 \paragraph{Safe batch ceiling by GPU class.}
@@ -1286,25 +1357,23 @@ used for diarization (Section~\ref{sec:concurrency}):
 
 \begin{center}
 {\footnotesize
-\begin{tabular}{@{}lR{1.4cm}R{1.4cm}@{}}
+\begin{tabular}{@{}lR{1.2cm}R{1.2cm}R{1.2cm}R{1.2cm}@{}}
 \toprule
-\textbf{GPU class} & \textbf{Safe max batch} & \textbf{Peak (MB)} \\
+\textbf{GPU} & \textbf{Gate\,MB} & \textbf{Turbo} & \textbf{Medium} & \textbf{Small} \\
 \midrule
-6\,GB   & 4  & 4341 \\
-8\,GB   & 8  & 5269 \\
-12\,GB+ & 16 & 7125 \\
+4\,GB  & 3277 & \texttimes  & \texttimes & bs=2 \\
+6\,GB  & 4915 & bs=4  & bs=2  & bs=8 \\
+8\,GB  & 6554 & bs=8  & bs=8  & bs=16 \\
+12\,GB & 9830 & bs=16 & bs=16 & bs=24 \\
 \bottomrule
 \end{tabular}}
 \end{center}
 
-The \textbf{recommended universal cap is batch=16}: identical speed to
-batch=24/32, \SI{3.7}{\giga\byte} less peak VRAM, and safe on every GPU
-that can run \texttt{large-v3-turbo}.  For 6\,GB and 8\,GB GPUs the
-cap is tighter (4 and 8 respectively) due to the 80\% headroom
-constraint.  4\,GB GPUs cannot run \texttt{large-v3-turbo} at any
-batch size (minimum peak \SI{3893}{\mega\byte} exceeds the
-$0.80 \times \SI{4096}{\mega\byte} = \SI{3277}{\mega\byte}$ gate);
-the \texttt{medium} or \texttt{small} models are required.
+The \textbf{recommended universal cap is batch=16} for turbo and medium:
+identical speed to batch=24/32, substantially less peak VRAM, and safe on
+every 8\,GB+ GPU.  For small, batch=16 also matches the plateau.
+4\,GB GPUs cannot run \texttt{large-v3-turbo} or \texttt{medium} at any
+batch size; \texttt{small} at bs=2 is the only viable configuration.
 
 These thresholds are encoded in
 \texttt{backend/app/utils/hardware\_detection.py} and drive automatic
