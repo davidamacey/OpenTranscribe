@@ -116,15 +116,19 @@ class HardwareConfig:
             # CPU: int8 for better performance, float32 for compatibility
             return "int8"
 
-    def _get_optimal_batch_size(self) -> int:
-        """Get optimal batch size based on device and available memory.
+    def _get_optimal_batch_size(self, model_name: str | None = None) -> int:
+        """Get optimal batch size based on device, available memory, and model size.
 
-        Thresholds derived from Phase B VRAM sweep (2026-04-26, RTX A6000,
-        large-v3-turbo int8_float16, NVML poller).  80% rule: peak_mb <= 0.80 * total_mb.
+        Thresholds from Phase B VRAM sweep (2026-04-26, RTX A6000, int8_float16, NVML poller).
+        80% rule: peak_mb <= 0.80 * total_mb.  Baseline (2039 MB) includes CUDA context +
+        PyAnnote diarization models pre-loaded in the celery worker.
 
-        Throughput plateau: batch=8 to batch=32 all achieve RTF=0.009 (identical speed).
-        Cap at batch=16 for all >=12 GB GPUs — same throughput as 24/32, 3.7 GB less VRAM.
-        Raw data: docs/whisper-vram-profile/a6000_large-v3-turbo_2026-04-26.csv
+        Plateau points (RTF stops improving above these):
+          large-v3-turbo: batch=8  (RTF 0.009 from bs=8 onward)
+          medium:         batch=24 (RTF 0.011 from bs=24 onward)
+          small:          batch=24 (RTF 0.007 from bs=24 onward)
+
+        Raw data: docs/whisper-vram-profile/
         """
         if self.device == "cuda":
             try:
@@ -132,32 +136,65 @@ class HardwareConfig:
 
                 total_memory = torch.cuda.get_device_properties(0).total_memory
                 memory_gb = total_memory / (1024**3)
-
-                # Phase B validated thresholds (large-v3-turbo, int8_float16):
-                #   batch=2:  peak 3893 MB  → needs >=4868 MB total (fails 4 GB cards)
-                #   batch=4:  peak 4341 MB  → safe on 6 GB (80% = 4915 MB)
-                #   batch=8:  peak 5269 MB  → safe on 8 GB (80% = 6554 MB)  ← plateau begins
-                #   batch=16: peak 7125 MB  → safe on 12 GB (80% = 9830 MB) ← recommended cap
-                # Batches 24/32 add 1856/3712 MB vs batch=16 with zero speed gain.
-                if memory_gb >= 12:
-                    return 16  # Plateau; capped here — same RTF as 24/32
-                elif memory_gb >= 8:
-                    return 8  # Plateau start; 80% safe on 8 GB (peak 5269 MB)
-                elif memory_gb >= 6:
-                    return 4  # 80% safe on 6 GB (peak 4341 MB < 4915 MB threshold)
-                else:
-                    return 2  # 4 GB or less: large-v3-turbo may OOM; use smaller model
+                return self._batch_for_model(model_name or "", memory_gb)
             except Exception:
                 return 8  # Safe default
 
         elif self.device == "mps":
-            # Apple Silicon - conservative due to unified memory
-            # Increase batch size since WhisperX will use CPU
             return 8
 
         else:  # CPU
-            # CPU processing - very conservative
             return 1
+
+    @staticmethod
+    def _batch_for_model(model_name: str, memory_gb: float) -> int:
+        """Return safe batch ceiling for a given model and GPU VRAM size.
+
+        Phase B empirical ceilings (80% VRAM rule, production baseline included):
+
+        large-v3-turbo peaks: bs=2→3893, bs=4→4341, bs=8→5269, bs=16→7125 MB
+        medium peaks:         bs=2→3829, bs=4→4181, bs=8→5045, bs=16→6869, bs=24→8629 MB
+        small peaks:          bs=2→2933, bs=4→3221, bs=8→3797, bs=16→4885, bs=24→6005 MB
+        """
+        name = model_name.lower()
+        is_small = name in ("small", "small.en")
+        is_medium = name in ("medium", "medium.en")
+        # everything else (large-v3-turbo, large-v3, large-v2, large, base, tiny) uses turbo thresholds
+        # as a conservative baseline; large-v2/v3 may need lower values but are not yet profiled
+
+        if is_small:
+            # small: plateau=24; 4 GB is marginal at bs=4 (56 MB margin) — cap at 2 for safety
+            if memory_gb >= 12:
+                return 24
+            elif memory_gb >= 8:
+                return 16
+            elif memory_gb >= 6:
+                return 12
+            elif memory_gb >= 4:
+                return 2  # bs=4 peak 3221 MB vs 3277 MB threshold — too tight
+            else:
+                return 2
+        elif is_medium:
+            # medium: plateau=24; 4 GB unsupported (bs=2 peak 3829 MB > 3277 MB threshold)
+            if memory_gb >= 12:
+                return 24
+            elif memory_gb >= 8:
+                return 8
+            elif memory_gb >= 6:
+                return 4
+            else:
+                return 2  # likely OOM on 4 GB; use small instead
+        else:
+            # large-v3-turbo (and fallback for other large variants): plateau=8
+            # 4 GB unsupported (bs=2 peak 3893 MB > 3277 MB threshold)
+            if memory_gb >= 12:
+                return 16  # Capped at plateau; 24/32 add VRAM with zero speed gain
+            elif memory_gb >= 8:
+                return 8
+            elif memory_gb >= 6:
+                return 4
+            else:
+                return 2  # likely OOM; use medium or small
 
     def get_torch_device(self):
         """Get PyTorch device object."""

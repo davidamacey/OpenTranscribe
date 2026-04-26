@@ -76,12 +76,13 @@ class TranscriptionConfig:
         hw = detect_hardware()
         whisperx_config = hw.get_whisperx_config()
 
-        # Batch size: honor BATCH_SIZE env var, fall back to hardware-detected value
+        # Batch size: honor BATCH_SIZE env var, fall back to model-aware hardware detection
         batch_size_env = os.getenv("BATCH_SIZE", "auto")
         if batch_size_env != "auto":
             batch_size = int(batch_size_env)
         else:
-            batch_size = whisperx_config["batch_size"]
+            model_for_batch = cls._resolve_model_name()
+            batch_size = hw._get_optimal_batch_size(model_for_batch)
 
         # Base config from environment and hardware detection
         config = cls(
