@@ -119,34 +119,34 @@ class HardwareConfig:
     def _get_optimal_batch_size(self) -> int:
         """Get optimal batch size based on device and available memory.
 
-        Batch sizes are optimized for large-v3-turbo (~6GB VRAM) which is the default model.
-        This leaves headroom for the diarization stage that follows.
-        Users with large-v2/large-v3 (~10GB VRAM) can override via BATCH_SIZE env var.
+        Thresholds derived from Phase B VRAM sweep (2026-04-26, RTX A6000,
+        large-v3-turbo int8_float16, NVML poller).  80% rule: peak_mb <= 0.80 * total_mb.
+
+        Throughput plateau: batch=8 to batch=32 all achieve RTF=0.009 (identical speed).
+        Cap at batch=16 for all >=12 GB GPUs — same throughput as 24/32, 3.7 GB less VRAM.
+        Raw data: docs/whisper-vram-profile/a6000_large-v3-turbo_2026-04-26.csv
         """
         if self.device == "cuda":
             try:
                 import torch
 
-                # Get GPU memory info
                 total_memory = torch.cuda.get_device_properties(0).total_memory
                 memory_gb = total_memory / (1024**3)
 
-                # Batch sizes optimized for large-v3-turbo (~6GB model)
-                # With turbo using ~40% less VRAM than large-v2, we can batch more aggressively
-                if memory_gb >= 40:  # A6000, A100 (48GB+)
-                    return 32
-                elif memory_gb >= 24:  # RTX 3090, A5000 (24GB)
-                    return 24
-                elif memory_gb >= 16:  # RTX 4080 (16GB)
-                    return 16
-                elif memory_gb >= 12:  # RTX 3080 (12GB) - turbo uses ~6GB, safe for batch 12
-                    return 12
-                elif memory_gb >= 8:  # RTX 3070 (8GB)
-                    return 8
-                elif memory_gb >= 6:  # Entry-level GPU
-                    return 4
+                # Phase B validated thresholds (large-v3-turbo, int8_float16):
+                #   batch=2:  peak 3893 MB  → needs >=4868 MB total (fails 4 GB cards)
+                #   batch=4:  peak 4341 MB  → safe on 6 GB (80% = 4915 MB)
+                #   batch=8:  peak 5269 MB  → safe on 8 GB (80% = 6554 MB)  ← plateau begins
+                #   batch=16: peak 7125 MB  → safe on 12 GB (80% = 9830 MB) ← recommended cap
+                # Batches 24/32 add 1856/3712 MB vs batch=16 with zero speed gain.
+                if memory_gb >= 12:
+                    return 16  # Plateau; capped here — same RTF as 24/32
+                elif memory_gb >= 8:
+                    return 8  # Plateau start; 80% safe on 8 GB (peak 5269 MB)
+                elif memory_gb >= 6:
+                    return 4  # 80% safe on 6 GB (peak 4341 MB < 4915 MB threshold)
                 else:
-                    return 2
+                    return 2  # 4 GB or less: large-v3-turbo may OOM; use smaller model
             except Exception:
                 return 8  # Safe default
 
