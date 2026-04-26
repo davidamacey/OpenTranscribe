@@ -31,6 +31,10 @@ services:
     volumes:
       - minio_bench_data:/data
 
+  redis:
+    volumes:
+      - redis_bench_data:/data
+
   opensearch:
     volumes:
       - opensearch_bench_data:/usr/share/opensearch/data
@@ -39,4 +43,5 @@ services:
 volumes:
   postgres_bench_data:
   minio_bench_data:
+  redis_bench_data:
   opensearch_bench_data:
