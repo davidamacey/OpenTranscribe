@@ -3,6 +3,10 @@
 Sweeps batch_size across a range for a given model and audio file, recording
 peak VRAM, stable VRAM, wall time, and real-time factor (RTF) at each setting.
 
+VRAM is measured via NVML (libnvidia-ml) which captures true device-level
+allocations including CTranslate2 — torch.cuda.memory_allocated() misses
+these because faster-whisper uses its own CUDA allocator.
+
 Mirrors the diarization Phase A study methodology.  Results inform the
 WHISPER_VRAM_BUDGET_MB table in hardware_detection.py.
 
@@ -10,7 +14,7 @@ Run inside the celery-worker container (has GPU + loaded torch):
 
     docker exec -it opentranscribe-celery-worker \\
         python -m app.scripts.whisper_batch_diag \\
-            --audio /tmp/2.2h_7998s.wav \\
+            --audio /app/benchmark/test_audio/2.2h_7998s.wav \\
             --model large-v3-turbo \\
             --batch-sizes 2,4,8,12,16,24,32 \\
             --output /tmp/whisper_batch_a6000.csv
@@ -25,6 +29,7 @@ import csv
 import gc
 import logging
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -49,8 +54,37 @@ FIELDS = [
 ]
 
 
-def _mb(bytes_: int) -> float:
-    return round(bytes_ / 1024**2, 1)
+class _PeakVramPoller:
+    """Background thread that polls NVML VRAM at 100 ms intervals."""
+
+    def __init__(self) -> None:
+        self._peak: float = 0.0
+        self._running = False
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        from app.utils.nvml_monitor import get_used_mb
+
+        self._peak = get_used_mb()
+        self._running = True
+        self._thread = threading.Thread(target=self._poll, daemon=True)
+        self._thread.start()
+
+    def _poll(self) -> None:
+        from app.utils.nvml_monitor import get_used_mb
+
+        while self._running:
+            used = get_used_mb()
+            if used > self._peak:
+                self._peak = used
+            time.sleep(0.1)
+
+    def stop(self) -> float:
+        """Stop polling and return peak VRAM in MB."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        return self._peak
 
 
 def run_sweep(
@@ -67,9 +101,17 @@ def run_sweep(
         print("ERROR: CUDA not available — run inside the GPU worker container.", file=sys.stderr)
         sys.exit(1)
 
+    from app.utils.nvml_monitor import get_gpu_memory
+    from app.utils.nvml_monitor import get_used_mb
+
     gpu_name = torch.cuda.get_device_name(0)
-    gpu_total = torch.cuda.get_device_properties(0).total_memory
-    print(f"GPU : {gpu_name}  ({_mb(gpu_total):.0f} MB total)")
+    gpu_info = get_gpu_memory()
+    gpu_total_mb = (
+        gpu_info.total_mb
+        if gpu_info
+        else torch.cuda.get_device_properties(0).total_memory / 1024**2
+    )
+    print(f"GPU : {gpu_name}  ({gpu_total_mb:.0f} MB total NVML)")
     print(f"Model: {model_name}  compute_type: {compute_type}")
     print(f"Audio: {audio_path.name}")
 
@@ -80,11 +122,10 @@ def run_sweep(
     audio_duration = len(audio) / 16000.0
     print(f"Duration: {audio_duration:.1f}s  ({audio_duration / 3600:.2f}h)")
 
-    # Baseline VRAM with no model loaded
-    torch.cuda.empty_cache()
+    # Baseline VRAM before any model is loaded
     gc.collect()
-    baseline_mb = _mb(torch.cuda.memory_allocated())
-    print(f"Baseline VRAM (no model): {baseline_mb:.0f} MB")
+    baseline_mb = get_used_mb()
+    print(f"Baseline VRAM (NVML, no model): {baseline_mb:.0f} MB")
     print()
     print(
         f"{'batch':>6}  {'stable_before MB':>16}  {'peak MB':>9}  "
@@ -95,11 +136,10 @@ def run_sweep(
     rows: list[dict] = []
 
     for bs in batch_sizes:
-        torch.cuda.empty_cache()
         gc.collect()
-        torch.cuda.reset_peak_memory_stats()
 
         from app.transcription.config import TranscriptionConfig
+        from app.transcription.transcriber import Transcriber
 
         cfg = TranscriptionConfig(
             model_name=model_name,
@@ -110,13 +150,16 @@ def run_sweep(
             device_index=0,
         )
 
-        from app.transcription.transcriber import Transcriber
-
         transcriber = Transcriber(cfg)
         transcriber.load_model()
 
-        stable_before = _mb(torch.cuda.memory_allocated())
-        torch.cuda.reset_peak_memory_stats()
+        # Settle after model load, then record stable-before
+        time.sleep(0.5)
+        stable_before = get_used_mb()
+
+        # Start NVML poller, run transcription, stop and get peak
+        poller = _PeakVramPoller()
+        poller.start()
 
         t0 = time.perf_counter()
         status = "ok"
@@ -125,13 +168,16 @@ def run_sweep(
         try:
             transcriber.transcribe(audio)
             wall_time = round(time.perf_counter() - t0, 2)
-            peak_mb = _mb(torch.cuda.max_memory_allocated())
-            stable_after = _mb(torch.cuda.memory_allocated())
+            peak_mb = round(poller.stop(), 1)
+            time.sleep(0.3)
+            stable_after = round(get_used_mb(), 1)
             rtf = round(wall_time / audio_duration, 4)
         except torch.cuda.OutOfMemoryError as exc:
+            poller.stop()
             status = "OOM"
             note = str(exc)[:120]
         except Exception as exc:
+            poller.stop()
             status = "ERROR"
             note = str(exc)[:120]
 
@@ -149,7 +195,7 @@ def run_sweep(
                 "audio_file": audio_path.name,
                 "audio_duration_s": round(audio_duration, 1),
                 "gpu_name": gpu_name,
-                "gpu_total_vram_mb": round(_mb(gpu_total), 0),
+                "gpu_total_vram_mb": round(gpu_total_mb, 0),
                 "vram_baseline_mb": baseline_mb,
                 "vram_stable_before_mb": stable_before,
                 "vram_peak_mb": peak_mb,
@@ -162,8 +208,8 @@ def run_sweep(
         )
 
         del transcriber
-        torch.cuda.empty_cache()
         gc.collect()
+        time.sleep(1.0)  # let CTranslate2 release VRAM before next run
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     with open(output_csv, "w", newline="") as f:
@@ -173,14 +219,13 @@ def run_sweep(
 
     print(f"\nSaved: {output_csv}")
     print()
-    _print_summary(rows, gpu_total)
+    _print_summary(rows, gpu_total_mb)
 
 
-def _print_summary(rows: list[dict], gpu_total_bytes: int) -> None:
-    total_mb = gpu_total_bytes / 1024**2
+def _print_summary(rows: list[dict], gpu_total_mb: float) -> None:
     print("=== VRAM budget headroom (80% rule: peak <= 0.80 x total) ===")
     print(f"{'batch':>6}  {'peak MB':>9}  {'80% threshold MB':>17}  {'safe?':>6}  {'RTF':>7}")
-    threshold = total_mb * 0.80
+    threshold = gpu_total_mb * 0.80
     for r in rows:
         if r["status"] != "ok":
             print(f"{r['batch_size']:>6}  {'OOM/ERR':>9}  {threshold:>17.0f}  {'NO':>6}  —")

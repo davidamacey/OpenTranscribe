@@ -1,0 +1,8 @@
+model,compute_type,batch_size,audio_file,audio_duration_s,gpu_name,gpu_total_vram_mb,vram_baseline_mb,vram_stable_before_mb,vram_peak_mb,vram_stable_after_mb,wall_time_s,rtf,status,note
+large-v3-turbo,int8_float16,2,2.2h_7998s.wav,8005.3,NVIDIA RTX A6000,49140.0,2039.375,3362.6875,3892.7,3444.7,106.56,0.0133,ok,
+large-v3-turbo,int8_float16,4,2.2h_7998s.wav,8005.3,NVIDIA RTX A6000,49140.0,2039.375,3370.6875,4340.7,3476.7,86.19,0.0108,ok,
+large-v3-turbo,int8_float16,8,2.2h_7998s.wav,8005.3,NVIDIA RTX A6000,49140.0,2039.375,3370.6875,5268.7,3476.7,75.29,0.0094,ok,
+large-v3-turbo,int8_float16,12,2.2h_7998s.wav,8005.3,NVIDIA RTX A6000,49140.0,2039.375,3370.6875,6196.7,3540.7,72.29,0.009,ok,
+large-v3-turbo,int8_float16,16,2.2h_7998s.wav,8005.3,NVIDIA RTX A6000,49140.0,2039.375,3370.6875,7124.7,3508.7,73.48,0.0092,ok,
+large-v3-turbo,int8_float16,24,2.2h_7998s.wav,8005.3,NVIDIA RTX A6000,49140.0,2039.375,3370.6875,8980.7,3540.7,72.43,0.009,ok,
+large-v3-turbo,int8_float16,32,2.2h_7998s.wav,8005.3,NVIDIA RTX A6000,49140.0,2039.375,3370.6875,10836.7,3540.7,71.15,0.0089,ok,
