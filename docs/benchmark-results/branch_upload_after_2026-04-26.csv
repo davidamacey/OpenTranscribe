@@ -1,0 +1,6 @@
+fixture,size_mb,file_uuid,client_hash_s,http_put_s,end_to_end_wall_s,status
+0.5h_1899s.wav,58.0,19bbe75c-ce6b-430c-b72c-fe85eaf7e57c,0.182,2.304,51.048,ok
+1.0h_3758s.wav,115.0,df333ce0-928e-465d-94a1-94090c0c1b8c,0.385,3.058,97.228,ok
+2.2h_7998s.wav,244.3,f6d96300-e0c6-4a79-bf51-fc81409c9563,0.911,5.979,197.165,ok
+3.2h_11495s.wav,351.2,39d53375-7532-4050-8be3-9672ae4ca9e5,1.172,6.545,285.665,ok
+4.7h_17044s.wav,520.6,f2b3ef97-61bc-4a3b-85dc-321b12e5ec23,1.776,10.643,562.772,ok
