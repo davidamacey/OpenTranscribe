@@ -73,6 +73,14 @@ show_help() {
   echo "  health              - Check health status of all services"
   echo "  help                - Show this help menu"
   echo ""
+  echo "Benchmark Commands (isolated from NAS data):"
+  echo "  bench start [master|branch]              - Wipe bench volumes, switch branch, start bench stack"
+  echo "  bench stop                               - Stop bench stack (keep volumes)"
+  echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
+  echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
+  echo "  bench status                             - Show bench containers, GPU state, volumes"
+  echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
+  echo ""
   echo "HTTPS/SSL Setup (for microphone recording from other devices):"
   echo "  1. Generate certificates: ./scripts/generate-ssl-cert.sh opentranscribe.local --auto-ip"
   echo "  2. Add to .env: NGINX_SERVER_NAME=opentranscribe.local"
@@ -1244,6 +1252,176 @@ case "$1" in
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES build
     echo "✅ Build complete. Use './opentr.sh start' to start the application."
+    ;;
+
+  bench)
+    # Isolated upload-speed A/B benchmark — never touches NAS data.
+    # Uses docker-compose.bench.yml which mounts fresh named volumes for
+    # postgres, minio, and opensearch, completely separate from the NAS dataset.
+    BENCH_SUBCOMMAND="${2:-help}"
+    BENCH_COMPOSE="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.gpu.yml -f docker-compose.bench.yml"
+    BENCH_VOLUME_PREFIX="transcribe-app"
+
+    case "$BENCH_SUBCOMMAND" in
+      start)
+        BENCH_TARGET="${3:-}"
+        if [[ -z "$BENCH_TARGET" ]]; then
+          echo "❌ Usage: ./opentr.sh bench start [master|branch]"
+          exit 1
+        fi
+
+        if [[ "$BENCH_TARGET" == "master" ]]; then
+          TARGET_BRANCH="master"
+        elif [[ "$BENCH_TARGET" == "branch" ]]; then
+          TARGET_BRANCH="feat/upload-speed-improvement"
+        else
+          echo "❌ Unknown target '$BENCH_TARGET'. Use 'master' or 'branch'."
+          exit 1
+        fi
+
+        echo "🧪 Preparing bench environment for: $BENCH_TARGET ($TARGET_BRANCH)"
+        echo ""
+
+        # GPU safety check before touching anything
+        if ! nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu \
+            --format=csv,noheader 2>/dev/null; then
+          echo "❌ nvidia-smi failed — check GPU state before benchmarking. Aborting."
+          exit 1
+        fi
+        echo ""
+
+        # Stop any running bench stack cleanly
+        echo "🛑 Stopping any running bench stack..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE stop 2>/dev/null || true
+
+        # Wipe bench volumes so each run starts with an empty DB/MinIO/OpenSearch
+        echo "🗑  Wiping bench volumes for clean run..."
+        docker volume rm \
+          "${BENCH_VOLUME_PREFIX}_postgres_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" 2>/dev/null || true
+
+        # Switch git branch
+        CURRENT_BRANCH="$(git branch --show-current)"
+        if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
+          echo "🔀 Switching from $CURRENT_BRANCH → $TARGET_BRANCH..."
+          git checkout "$TARGET_BRANCH" || { echo "❌ git checkout failed"; exit 1; }
+        fi
+
+        echo ""
+        echo "🚀 Starting bench stack on $TARGET_BRANCH (no NAS, fresh volumes)..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE up -d --build
+
+        echo ""
+        echo "⏳ Waiting 20 s for healthchecks to settle..."
+        sleep 20
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
+        echo ""
+        echo "✅ Bench stack ready on $TARGET_BRANCH."
+        if [[ "$TARGET_BRANCH" == "master" ]]; then
+          echo "   Run:  ./opentr.sh bench run /tmp/master_full.csv"
+        else
+          echo "   Run:  ./opentr.sh bench run /tmp/branch_after.csv"
+        fi
+        ;;
+
+      stop)
+        echo "🛑 Stopping bench stack..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE stop
+        echo "✅ Bench stack stopped. Volumes preserved. Use 'bench clean' to wipe."
+        ;;
+
+      clean)
+        echo "🗑  Stopping bench stack and wiping all bench volumes..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE down --remove-orphans 2>/dev/null || true
+        docker volume rm \
+          "${BENCH_VOLUME_PREFIX}_postgres_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" 2>/dev/null || true
+        echo "✅ Bench volumes wiped."
+        ;;
+
+      run)
+        OUTPUT_CSV="${3:-}"
+        FIXTURES_DIR="${4:-benchmark/test_audio}"
+
+        # Auto-detect which script to use based on current branch
+        CURRENT_BRANCH="$(git branch --show-current)"
+        if [[ "$CURRENT_BRANCH" == "master" ]]; then
+          BENCH_SCRIPT="/tmp/benchmark_upload_baseline.py"
+          DEFAULT_CSV="/tmp/master_full_$(date +%Y%m%d_%H%M%S).csv"
+        else
+          BENCH_SCRIPT="scripts/benchmark_upload_baseline.py"
+          DEFAULT_CSV="/tmp/branch_after_$(date +%Y%m%d_%H%M%S).csv"
+        fi
+        [[ -z "$OUTPUT_CSV" ]] && OUTPUT_CSV="$DEFAULT_CSV"
+
+        if [[ ! -f "$BENCH_SCRIPT" ]]; then
+          echo "❌ Benchmark script not found: $BENCH_SCRIPT"
+          if [[ "$CURRENT_BRANCH" == "master" ]]; then
+            echo "   Copy it first: git show feat/upload-speed-improvement:scripts/benchmark_upload_baseline.py > /tmp/benchmark_upload_baseline.py"
+          fi
+          exit 1
+        fi
+
+        echo "🧪 Upload benchmark — branch: $CURRENT_BRANCH"
+        echo "   Script:   $BENCH_SCRIPT"
+        echo "   Fixtures: $FIXTURES_DIR"
+        echo "   Output:   $OUTPUT_CSV"
+        echo ""
+        nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu --format=csv,noheader
+        echo ""
+
+        # shellcheck disable=SC1091
+        source backend/venv/bin/activate
+        BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
+          python3 "$BENCH_SCRIPT" "$FIXTURES_DIR" "$OUTPUT_CSV"
+        ;;
+
+      status)
+        echo "=== Bench Containers ==="
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe || echo "(none running)"
+        echo ""
+        echo "=== GPU State ==="
+        nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu --format=csv,noheader
+        echo ""
+        echo "=== Bench Volumes ==="
+        docker volume ls | grep bench || echo "(none)"
+        echo ""
+        echo "=== Current Branch ==="
+        git branch --show-current
+        ;;
+
+      compare)
+        MASTER_CSV="${3:-}"
+        BRANCH_CSV="${4:-}"
+        if [[ -z "$MASTER_CSV" || -z "$BRANCH_CSV" ]]; then
+          echo "❌ Usage: ./opentr.sh bench compare <master.csv> <branch.csv>"
+          exit 1
+        fi
+        if [[ ! -f "scripts/compare_baseline.py" ]]; then
+          echo "❌ scripts/compare_baseline.py not found — switch to the branch first."
+          exit 1
+        fi
+        # shellcheck disable=SC1091
+        source backend/venv/bin/activate
+        python3 scripts/compare_baseline.py "$MASTER_CSV" "$BRANCH_CSV"
+        ;;
+
+      help|*)
+        echo "🧪 Benchmark subcommands (isolated from NAS data):"
+        echo "  bench start [master|branch]              - Wipe bench volumes, switch branch, start bench stack"
+        echo "  bench stop                               - Stop bench stack (keep volumes)"
+        echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
+        echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
+        echo "  bench status                             - Show bench containers, GPU state, volumes"
+        echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
+        ;;
+    esac
     ;;
 
   help|--help|-h)
