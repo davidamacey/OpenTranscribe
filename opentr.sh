@@ -1280,7 +1280,9 @@ case "$1" in
         # Stop any running bench stack cleanly
         echo "🛑 Stopping any running bench stack..."
         # shellcheck disable=SC2086
-        docker compose $BENCH_COMPOSE stop 2>/dev/null || true
+        # Use 'down' (not 'stop') so containers are removed before volume rm.
+        # docker volume rm fails silently when stopped containers still reference it.
+        docker compose $BENCH_COMPOSE down --remove-orphans 2>/dev/null || true
 
         # Wipe bench volumes so each run starts with an empty DB/MinIO/OpenSearch/Redis
         echo "🗑  Wiping bench volumes for clean run..."
