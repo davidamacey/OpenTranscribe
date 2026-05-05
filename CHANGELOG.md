@@ -5,6 +5,12 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **CPU-only install flag (`--cpu`)**: `setup-opentranscribe.sh`, `opentranscribe.sh`, and `opentr.sh` now accept a `--cpu` flag (and honor `OPENTRANSCRIBE_FORCE_CPU=1` for unattended installs) to explicitly opt out of the GPU compose overlay. Required on hosts where the NVIDIA Container Toolkit is detected by Docker but GPU passthrough is non-functional — e.g. WSL2 without a WSL-capable Windows NVIDIA driver, where auto-detection would otherwise enable the GPU overlay and cause celery-worker / celery-cpu-worker to fail at container start with `nvidia-container-cli: initialization error: WSL environment detected but no adapters were found`. The choice is persisted to `.env` as `FORCE_CPU_MODE=true`, so `./opentranscribe.sh start/restart/stop` continues to skip the GPU overlay without re-passing the flag. Default behaviour for GPU users is unchanged.
+
 ## [0.4.1] - 2026-04-14
 
 ### Overview
