@@ -36,11 +36,17 @@ def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
     show the right reason text.
     """
     force_cpu = os.getenv("FORCE_CPU_MODE", "false").strip().lower() == "true"
-    gpu_available = bool(gpu_stats) and gpu_stats[0].get("available") is True
+    first_gpu = gpu_stats[0] if gpu_stats else {}
+    gpu_available = first_gpu.get("available") is True
+    # On fresh GPU-host startup, get_gpu_usage() returns
+    # {"available": False, "loading": True} until the worker pushes its
+    # first stats. Treat that transient state as "unknown — assume GPU"
+    # so the CPU banner doesn't flash on every cold start.
+    gpu_loading = first_gpu.get("loading") is True
 
     if force_cpu:
         device_mode = "cpu"
-    elif gpu_available:
+    elif gpu_available or gpu_loading:
         device_mode = "cuda"
     else:
         # No FORCE_CPU_MODE flag and no usable GPU — auto-fallback CPU.

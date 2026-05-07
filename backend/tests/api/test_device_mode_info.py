@@ -64,6 +64,16 @@ def test_whisper_model_passthrough(monkeypatch):
     assert out["whisper_model"] == "large-v3-turbo"
 
 
+def test_loading_state_treated_as_gpu_to_avoid_banner_flash():
+    """On fresh GPU-host startup, get_gpu_usage returns
+    {"available": False, "loading": True} until the worker pushes its
+    first stats. We classify this as cuda to prevent the CPU banner from
+    flashing on cold start."""
+    out = _device_mode_info([{"available": False, "loading": True, "name": "Loading GPU stats..."}])
+    assert out["device_mode"] == "cuda"
+    assert out["force_cpu_mode"] is False
+
+
 def test_diarization_flag_parsed(monkeypatch):
     monkeypatch.setenv("ENABLE_DIARIZATION", "true")
     out = _device_mode_info([{"available": True}])
