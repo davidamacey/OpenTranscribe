@@ -99,6 +99,15 @@ if [[ -n "${OPENTRANSCRIBE_FORCE_CPU:-}" ]]; then
     FORCE_CPU="true"
 fi
 
+# CPU-friendly diarization default written into .env when
+# DETECTED_DEVICE=cpu (either forced via --cpu or auto-detected on a host
+# with no GPU). PyAnnote diarization requires CUDA — running it on CPU
+# would either fail or be unusably slow — so we default it to off at
+# install time. The Whisper model recommendation is handled separately by
+# select_whisper_model() which already proposes "base" for CPU. Users can
+# edit .env afterwards to override either choice.
+ENABLE_DIARIZATION_CPU_DEFAULT="false"
+
 #######################
 # HARDWARE DETECTION
 #######################
@@ -1523,6 +1532,21 @@ create_env_file() {
     # requiring the user to re-pass --cpu.
     echo "FORCE_CPU_MODE=${FORCE_CPU}" >> .env
 
+    # CPU-friendly diarization default. When DETECTED_DEVICE=cpu (either
+    # because FORCE_CPU was set or because no GPU was found on the host),
+    # disable diarization in .env. PyAnnote requires CUDA — leaving it on
+    # would crash workers or run unusably slow. WHISPER_MODEL is already
+    # handled by select_whisper_model() (which recommends "base" for CPU
+    # and is written to .env above via WHISPER_MODEL=$WHISPER_MODEL). Users
+    # can flip ENABLE_DIARIZATION=true in .env if they have a reason.
+    if [[ "$DETECTED_DEVICE" == "cpu" ]]; then
+        if grep -q '^ENABLE_DIARIZATION=' .env; then
+            sed -i.bak "s|^ENABLE_DIARIZATION=.*|ENABLE_DIARIZATION=${ENABLE_DIARIZATION_CPU_DEFAULT}|" .env
+        else
+            echo "ENABLE_DIARIZATION=${ENABLE_DIARIZATION_CPU_DEFAULT}" >> .env
+        fi
+    fi
+
     # Note: Database schema is managed by Alembic migrations on backend startup
 
     # Clean up backup file
@@ -2023,6 +2047,30 @@ display_summary() {
     fi
     echo "   • Project Location: $PROJECT_DIR"
     echo ""
+
+    # CPU-mode advisory: explain the trade-offs and how to undo this choice.
+    # Emitted whenever the running stack will use CPU for transcription —
+    # whether the user passed --cpu or no GPU was detected.
+    if [[ "$DETECTED_DEVICE" == "cpu" ]]; then
+        echo -e "${YELLOW}╔══════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║  🧮  CPU-Only Mode — Performance Notes          ║${NC}"
+        echo -e "${YELLOW}╚══════════════════════════════════════════════════╝${NC}"
+        if [[ "$FORCE_CPU" == "true" ]]; then
+            echo "   • Reason: forced via --cpu / OPENTRANSCRIBE_FORCE_CPU"
+        else
+            echo "   • Reason: no NVIDIA GPU detected on this host"
+        fi
+        echo "   • Whisper model: ${WHISPER_MODEL}"
+        echo "       (CPU is too slow for large-v3-turbo — base/small recommended)"
+        echo "   • Diarization (speaker labels): DISABLED"
+        echo "       (PyAnnote requires CUDA — leaving it on would crash workers)"
+        echo ""
+        echo "   To re-enable diarization later (slow but functional on a"
+        echo "   strong CPU): edit .env, set ENABLE_DIARIZATION=true, restart."
+        echo "   To switch this install to GPU later: edit .env, set"
+        echo "   FORCE_CPU_MODE=false, ensure nvidia-smi works, restart."
+        echo ""
+    fi
 
     # QUICK START section (show last so users see it without scrolling)
     echo ""
